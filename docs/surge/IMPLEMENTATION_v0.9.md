@@ -6,7 +6,7 @@
 
 ## 実装済みプリミティブ
 
-- RecognitionPacket Adapter v0.1（Python）: Draft 2020-12 schema validation、immutable NFC UTF-8 source snapshotの全体digestとrange digest検証、byte offset bounds、packet/idempotency/sequence/range identity検査、append-only revision lineage、exact retryの冪等Admission。11件の独立テストをfixture検証コマンドから実行する。
+- RecognitionPacket Adapter v0.1（Python）: Draft 2020-12 schema validation、immutable NFC UTF-8 source snapshotの全体digestとrange digest検証、byte offset bounds、packet/idempotency/sequence/range identity検査、append-only revision lineage、exact retryの冪等Admission。12件の独立テストをfixture検証コマンドから実行する。
 
 - ContextHintBuilder / RetrievalTicketRegistry: mandatory優先順、stable dedup/sort、budget overflow、mandatory omitted digest、state-version再評価/STALE、read-only resolve
 
@@ -40,7 +40,7 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループ、ContextHintの7グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査、D01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性、およびRecognitionPacket Adapterの11テストを検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループ、ContextHintの7グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査、D01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性、およびRecognitionPacket Adapterの12テストを検査する。
 
 AdapterのAdmissionはprocess-localであり、永続化・認可・C++ Coreとの原子的統合は未実装。source snapshotの真正性は呼出元のtrusted source adapterに依存する。fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
