@@ -55,7 +55,7 @@ bool ContextGraph::apply_scope_span(State& s,const AddScopeSpan& add,std::string
  if(s.scope_spans.count(add.span.span_id)){e="SCOPE_SPAN_ID_DUPLICATE";return false;}
  const auto result=ScopeSpanValidator::validate(add.span,add.source_snapshot,s.nodes);
  if(!result.accepted){e=result.error.empty()?"SCOPE_SPAN_REJECTED":result.error;return false;}
- s.scope_spans.emplace(add.span.span_id,add.span);return true;
+ s.scope_spans.emplace(add.span.span_id,ScopeSpanRecord{add.span,result.status,result.effect,result.may_emit_unconditional_claim});return true;
 }
 bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
  if(!s.nodes.count(f.cluster_id)||s.nodes.at(f.cluster_id).kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
