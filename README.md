@@ -4,6 +4,8 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
+- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
+
 - **Atomic Packet-Semantic Transaction v0.1:** [docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md](docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md)
 
 - **ScopeSpan ContextGraph Integration v0.1:** [docs/surge/SCOPESPAN_CONTEXT_GRAPH_v0.1.md](docs/surge/SCOPESPAN_CONTEXT_GRAPH_v0.1.md)
@@ -102,7 +104,7 @@ structural contracts validate.
 
 This establishes execution of the implemented LLM-to-Core path, not complete
 v0.9 semantic conformance. D01-D20 are not yet all end-to-end semantic tests.
-Typed ScopeSpan validation, ContextGraph persistence and restart replay are now implemented. Automatic high-accuracy LLM scope extraction, cross-process cluster and contradiction lookup, scope-bearing atomic SemanticDelta support, cross-process cluster and contradiction lookup, quality metrics, RTF, p99 latency and peak RSS remain unimplemented or unmeasured. See the runtime execution report for the exact
+Typed ScopeSpan validation, ContextGraph persistence and restart replay are now implemented. Automatic high-accuracy LLM scope extraction, cross-process cluster and contradiction lookup, cross-process cluster and contradiction lookup, automatic high-quality LLM ScopeSpan extraction, quality metrics, RTF, p99 latency and peak RSS remain unimplemented or unmeasured. See the runtime execution report for the exact
 boundary and reproducible commands.
 
 ### Packet source integrity

@@ -3,6 +3,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from surge_adapter.llm_interface import LLMSemanticRuntime, LLMRecognizer
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
+from surge_adapter.packet_ingest import RecognitionPacketAdapter, PacketRejected
 
 class StubProvider:
     def __init__(self, outputs):
@@ -124,6 +125,62 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                         "relations":[],"scope_spans":[scope],"source_snapshot":source})
                 self.assertEqual(core.state_version,0)
                 self.assertEqual(core.scope_count,0)
+
+
+    def _atomic_scope_case(self, core, source, exact_text):
+        packet = LLMSemanticRuntime._packet(source, "ctx-scope", "source-scope", "scope-gen", 1)
+        packet_id = packet["packet_id"]
+        digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        delta = {
+            "delta_id": "semantic/" + packet_id,
+            "idempotency_key": "semantic-idem/" + packet_id,
+            "expected_state_version": core.state_version,
+            "nodes": [
+                {"id": "evidence/" + packet_id, "kind": "EVIDENCE",
+                 "content": source, "references": []},
+                {"id": "claim/" + packet_id, "kind": "CLAIM",
+                 "content": "承認した", "references": ["evidence/" + packet_id]}
+            ],
+            "relations": [],
+            "scope_spans": [{
+                "span_id": "scope/" + packet_id, "kind": "NEGATION",
+                "source_digest": digest, "offset_basis": "UTF8_BYTE_NFC",
+                "opener": {"anchor_id": "anchor/" + packet_id,
+                    "source_digest": digest, "offset_basis": "UTF8_BYTE_NFC",
+                    "start_offset": 0, "end_offset": 3,
+                    "exact_text": exact_text, "packet_ref": packet_id},
+                "closer": None, "target_refs": ["claim/" + packet_id],
+                "antecedent_refs": [], "attribution_ref": "",
+                "modality_kind": "", "temporal_role": "", "parent_ref": "",
+                "packet_refs": [packet_id]
+            }]
+        }
+        return RecognitionPacketAdapter().admit_and_apply_to_core(packet, source, core, delta)
+
+    def test_scope_span_commits_atomically_with_packet_and_replays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "atomic-scope.sgj"
+            with SemanticCoreBridge(journal) as core:
+                admission, committed = self._atomic_scope_case(core, "not approved", "not")
+                self.assertEqual(admission.status, "COMMITTED")
+                self.assertTrue(committed["committed"])
+                self.assertEqual(core.state_version, 1)
+                self.assertEqual(core.packet_count, 1)
+                self.assertEqual(core.scope_count, 1)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, 1)
+                self.assertEqual(recovered.packet_count, 1)
+                self.assertEqual(recovered.scope_count, 1)
+
+    def test_invalid_scope_prevents_packet_and_semantic_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "atomic-invalid-scope.sgj"
+            with SemanticCoreBridge(journal) as core:
+                with self.assertRaisesRegex(PacketRejected, "SCOPE_OPENER_ANCHOR_INVALID"):
+                    self._atomic_scope_case(core, "not approved", "bad")
+                self.assertEqual(core.state_version, 0)
+                self.assertEqual(core.packet_count, 0)
+                self.assertEqual(core.scope_count, 0)
 
     def test_50_independent_claim_inputs_commit_and_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
