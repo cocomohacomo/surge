@@ -5,6 +5,36 @@
 using namespace surge;
 int main(){
   const auto root=std::filesystem::temp_directory_path()/"surge-context-graph-tests";
+
+  {
+    const auto qpath=(root/"question-aspect-status.sgj").string();
+    {
+      ContextGraph graph(qpath);assert(graph.open());
+      SemanticDelta d;d.delta_id="qa-seed";d.idempotency_key="qa-seed";d.expected_state_version=0;
+      d.nodes={{{"question-x",NodeKind::Question,"確認事項",{}}},
+               {{"aspect-x",NodeKind::QuestionAspect,"期限の確認",{"question-x"}}}};
+      assert(graph.apply(d).committed && graph.state_version()==1);
+      std::string error;
+      assert(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Open);
+      assert(graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Resolved,1,error));
+      assert(graph.state_version()==2);
+      assert(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
+      assert(!graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,1,error));
+      assert(error=="STATE_VERSION_CONFLICT");
+    }
+    {
+      ContextGraph recovered(qpath);assert(recovered.open());
+      assert(recovered.state_version()==2);
+      assert(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
+      std::string error;
+      assert(recovered.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,2,error));
+    }
+    {
+      ContextGraph recovered(qpath);assert(recovered.open());
+      assert(recovered.state_version()==3);
+      assert(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Deferred);
+    }
+  }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);assert(graph.open());
