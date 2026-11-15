@@ -4,7 +4,7 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
-- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
+- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
 
 - **Atomic Packet-Semantic Transaction v0.1:** [docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md](docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md)
 
