@@ -202,6 +202,22 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   staged.sequencer.observe(p.source_sequence);
 
   const auto expected = journal_.state_version();
+  if (!semantic_events.empty()) {
+    if (semantic_events.front().kind != "DELTA_META") {
+      result.error = "SEMANTIC_TRANSACTION_META_REQUIRED"; return result;
+    }
+    std::istringstream meta(semantic_events.front().payload);
+    std::string delta_id, semantic_key, fingerprint;
+    std::uint64_t semantic_expected = 0;
+    if (!(meta >> std::quoted(delta_id) >> std::quoted(semantic_key) >>
+          semantic_expected >> std::quoted(fingerprint)) ||
+        delta_id.empty() || semantic_key.empty() || fingerprint.empty()) {
+      result.error = "SEMANTIC_TRANSACTION_META_INVALID"; return result;
+    }
+    if (semantic_expected != expected) {
+      result.error = "STATE_VERSION_CONFLICT"; return result;
+    }
+  }
   const std::string tx = "recognition-packet-tx:" + p.packet_id;
   std::vector<JournalEvent> transaction_events;
   transaction_events.push_back({packet_event_id(p.packet_id),
