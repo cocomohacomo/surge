@@ -81,7 +81,8 @@ int surge_packet_core_admit(
     packet.revision_of_packet_id = revision_of_packet_id ? revision_of_packet_id : "";
     packet.revision = revision == 1;
     packet.revision_sequence = revision_sequence;
-    const std::string source(reinterpret_cast<const char*>(snapshot), snapshot_size);
+    const std::string source = snapshot_size == 0
+        ? std::string() : std::string(reinterpret_cast<const char*>(snapshot), snapshot_size);
     const auto result = static_cast<Handle*>(opaque)->coordinator.admit(packet, source);
     if (duplicate) *duplicate = result.duplicate ? 1 : 0;
     if (state_version) *state_version = result.state_version;
