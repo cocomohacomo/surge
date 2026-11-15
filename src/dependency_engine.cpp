@@ -32,6 +32,10 @@ ImpactResult DependencyEngine::compute(const std::map<std::string, GraphNode>& n
     if(!nodes.count(id)){result.error="IMPACT_ROOT_NOT_FOUND";return result;}
     if(impacted.insert(id).second)work.push_back(id);
   }
+  if(impacted.size()>maximum_nodes){
+    result.impacted_nodes.assign(impacted.begin(),impacted.end());
+    result.error="IMPACT_BUDGET_EXCEEDED";return result;
+  }
   for(std::size_t i=0;i<work.size();++i){
     const auto found=adjacency.find(work[i]);
     if(found==adjacency.end())continue;
