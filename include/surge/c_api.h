@@ -5,29 +5,45 @@
 extern "C" {
 #endif
 
-// Opaque, single-process Core handle. The handle owns its journal and coordinator.
+typedef struct SurgeGraphNodeInput {
+  const char* id;
+  const char* kind;       // CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST
+  const char* content;
+  const char* const* references;
+  size_t reference_count;
+} SurgeGraphNodeInput;
+
+typedef struct SurgeGraphRelationInput {
+  const char* id;
+  const char* kind;       // SUPPORTS, CONTRADICTS, AGREES_WITH, CONFLICTS_WITH, DEPENDS_ON, ABOUT
+  const char* from_id;
+  const char* to_id;
+} SurgeGraphRelationInput;
+
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
-
-// Returns 1 when admitted (including an exact duplicate), otherwise 0.
-// Snapshot is an exact byte buffer, not a NUL-terminated string.
 int surge_packet_core_admit(
-    void* handle,
-    const char* packet_id, const char* idempotency_key,
-    const char* context_id, const char* source_id,
-    const char* source_generation, const char* block_ref,
-    const char* offset_basis, uint64_t start_offset, uint64_t end_offset,
-    uint64_t source_sequence, const char* source_snapshot_digest,
+    void* handle, const char* packet_id, const char* idempotency_key,
+    const char* context_id, const char* source_id, const char* source_generation,
+    const char* block_ref, const char* offset_basis, uint64_t start_offset,
+    uint64_t end_offset, uint64_t source_sequence, const char* source_snapshot_digest,
     const char* source_range_digest, const char* canonical_request_digest,
     const char* revision_of_packet_id, int revision, uint64_t revision_sequence,
-    const unsigned char* snapshot, size_t snapshot_size,
-    int* duplicate, uint64_t* state_version, uint64_t* watermark,
-    char* packet_status, size_t status_capacity,
-    char* error, size_t error_capacity);
+    const unsigned char* snapshot, size_t snapshot_size, int* duplicate,
+    uint64_t* state_version, uint64_t* watermark, char* packet_status,
+    size_t status_capacity, char* error, size_t error_capacity);
+
+// Atomically validates and commits a typed SemanticDelta to the shared ContextGraph/EventJournal.
+int surge_context_graph_apply(
+    void* handle, const char* delta_id, const char* idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeGraphRelationInput* relations, size_t relation_count,
+    const char* focus_cluster_id, const char* focus_interest_id,
+    int* duplicate, uint64_t* state_version, char* error, size_t error_capacity);
 
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
-
 #ifdef __cplusplus
 }
 #endif
