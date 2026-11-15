@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.2
+
+- Add an append-only framed event journal with commit markers, state-version checks, event-ID uniqueness and idempotent transactions.
+- Recover committed transactions on restart; discard incomplete/uncommitted tail records and fail closed on complete CRC mismatches.
+- Add journal conformance tests for restart, retries, conflict handling, truncated-tail recovery and checksum corruption.
+- Document that CRC/FNV are not cryptographic and stream flush is not an OS-level power-loss durability barrier.
+
+
 ## 0.9.1
 
 - Add a C++17 Core prototype for source sequencing, gap lifecycle, range idempotency/revisions, ScopeSpan transitions, RetrievalTicket staleness and quality/performance gates.
