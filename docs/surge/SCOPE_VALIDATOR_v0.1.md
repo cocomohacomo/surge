@@ -2,7 +2,7 @@
 
 ## Anchor contract
 
-All anchors use half-open UTF8_BYTE_NFC offsets into the immutable normalized source snapshot. The validator checks source digest, offset basis, packet lineage, bounds and exact byte-slice equality. It does not infer or repair offsets.
+All anchors use half-open UTF8_BYTE_NFC offsets into the immutable normalized source snapshot. The validator checks that every anchor carries the span's immutable source digest and offset basis, that packet lineage is declared, and that offsets are in bounds with exact byte-slice equality. The digest value itself is supplied by the trusted source adapter and is not recomputed by this C++ primitive. It does not infer or repair offsets.
 
 ## Type-specific rules
 
