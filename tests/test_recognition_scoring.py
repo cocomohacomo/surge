@@ -19,6 +19,8 @@ class RecognitionScoringTests(unittest.TestCase):
    self.assertEqual(list(self.validator.iter_errors(result)),[])
    self.assertEqual(result["priority_score"],case["scores"]["importance"])
    self.assertEqual(result["decision"],case["expected_decision"])
+ def test_novelty_is_an_independent_dimension(self):
+  self.assertTrue(any(c["scores"]["novelty"] != c["scores"]["importance"] for c in self.corpus["cases"]))
  def test_importance_is_not_confidence(self):
   scores={k:.9 for k in SCORE_FIELDS}; scores["importance"]=.98; scores["confidence"]=.4
   result=self.scorer.evaluate("separate-axes",scores)
