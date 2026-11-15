@@ -7,7 +7,9 @@ from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 class StubProvider:
     def __init__(self, outputs):
         self.outputs=list(outputs)
-    def recognize(self, text):
+        self.contexts=[]
+    def recognize(self, text, context=None):
+        self.contexts.append(context or {})
         return self.outputs.pop(0)
 
 def result(kind="CLAIM", topic="予算", proposition="予算を増額", polarity="POSITIVE",
@@ -64,6 +66,17 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
         provider=StubProvider([{"kind":"CLAIM","unexpected":True}])
         with self.assertRaisesRegex(ValueError,"LLM_OUTPUT_KEYS_INVALID"):
             LLMRecognizer(provider).recognize("任意の文章")
+
+    def test_llm_receives_recent_context_and_current_context_hint_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider=StubProvider([result(), result(kind="ACKNOWLEDGEMENT",topic=None,
+                proposition=None,polarity="UNKNOWN",importance=.60)])
+            runtime=LLMSemanticRuntime(provider,"ctx","source")
+            with SemanticCoreBridge(pathlib.Path(tmp)/"context.sgj") as core:
+                runtime.process("予算を増額します。",core)
+                runtime.process("うん",core)
+                self.assertEqual(provider.contexts[1]["active_topic"],"予算")
+                self.assertEqual(len(provider.contexts[1]["recent_claims"]),1)
 
     def test_50_independent_claim_inputs_commit_and_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
