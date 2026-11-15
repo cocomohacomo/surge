@@ -1,5 +1,6 @@
 #include "surge/scope_validator.hpp"
 #include <algorithm>
+#include <cctype>
 
 namespace surge {
 namespace {
@@ -35,12 +36,15 @@ ScopeValidationResult closed(ScopeEffect effect,bool unconditional=false){
 ScopeValidationResult ScopeSpanValidator::validate(
     const ScopeSpanProposal& s,const std::string& source,
     const std::map<std::string,GraphNode>& nodes){
-  if(s.span_id.empty()||s.source_digest.size()!=64||s.offset_basis!="UTF8_BYTE_NFC"||
+  const bool digest_hex=s.source_digest.size()==64 &&
+    std::all_of(s.source_digest.begin(),s.source_digest.end(),[](unsigned char c){return std::isxdigit(c)!=0;});
+  if(s.span_id.empty()||!digest_hex||s.offset_basis!="UTF8_BYTE_NFC"||
      s.packet_refs.empty())return reject("SCOPE_SOURCE_IDENTITY_INVALID");
   if(!anchor_valid(s.opener,s,source)||!has_packet(s,s.opener.packet_ref))
     return reject("SCOPE_OPENER_ANCHOR_INVALID");
   if(s.closer){
-    if(!anchor_valid(*s.closer,s,source)||!has_packet(s,s.closer->packet_ref)||
+    if(s.closer->anchor_id==s.opener.anchor_id ||
+       !anchor_valid(*s.closer,s,source)||!has_packet(s,s.closer->packet_ref)||
        s.closer->start_offset<s.opener.end_offset)
       return reject("SCOPE_CLOSER_ANCHOR_INVALID");
   }
