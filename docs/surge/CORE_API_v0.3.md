@@ -479,7 +479,7 @@ Aspect mutations are State Delta operations and are committed only by commit_del
 - SPLIT_ASPECT: create child Aspects and Lineage Event atomically.
 - MERGE_ASPECTS: create new Aspect with all parent refs and dependency candidates.
 
-Core recalculates Question status after all Aspect operations in the Delta. Client-supplied Question status is rejected or ignored. Aspect dependency evaluation and Question aggregation use the same committed State Version.
+Core recalculates Question status after all Aspect operations in the Delta: all required Aspects INVALIDATED => INVALIDATED; all required Aspects terminal with at least one RESOLVED => RESOLVED; terminal and non-terminal Aspects mixed => PARTIALLY_RESOLVED; otherwise INVESTIGATING/DEFERRED/OPEN follow the normative aggregation order. Client-supplied Question status is rejected or ignored. Aspect dependency evaluation and Question aggregation use the same committed State Version.
 
 ### 13.3 resolve_question_aspect
 Convenience request fields: context_id, question_id, aspect_id, resolution, expected_state_version, idempotency_key. It is semantically equivalent to a validated RESOLVE_ASPECT Delta and MUST NOT bypass validate_delta/commit_delta.
