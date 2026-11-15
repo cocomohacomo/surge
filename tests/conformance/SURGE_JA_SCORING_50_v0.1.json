@@ -44,7 +44,7 @@
         "ambiguity": 0.22,
         "novelty": 0.75
       },
-      "expected_decision": "ACCEPT"
+      "expected_decision": "REVIEW"
     },
     {
       "case_id": "S04",
@@ -114,7 +114,7 @@
         "ambiguity": 0.3,
         "novelty": 0.7
       },
-      "expected_decision": "ACCEPT"
+      "expected_decision": "REVIEW"
     },
     {
       "case_id": "S09",
@@ -618,7 +618,7 @@
         "ambiguity": 0.42,
         "novelty": 0.7
       },
-      "expected_decision": "REVIEW"
+      "expected_decision": "ACCEPT"
     },
     {
       "case_id": "S45",
