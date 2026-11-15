@@ -1,7 +1,7 @@
 name: SURGE v0.9 conformance
 on:
   push:
-    branches: [main, "spec/**"]
+    branches: [main, "spec/**", "impl/**"]
   pull_request:
     branches: [main]
 jobs:
