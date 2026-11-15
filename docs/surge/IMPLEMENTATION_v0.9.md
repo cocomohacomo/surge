@@ -6,6 +6,8 @@
 
 ## 実装済みプリミティブ
 
+- QuestionRouter: 明示的なClaim間CONTRADICTSからQuestion/QuestionAspectを生成し、ABOUT関係からInterestを各対象Clusterへ向ける。対象Clusterが一意の場合のみFocusを設定し、複数候補ではFocusを推測しない
+
 - DependencyEngine: prerequisite→dependentの推移的Impact Set、上限検査、Tarjan SCC検出、安定ソート、budget超過時のpartial扱い
 
 - ContextGraph: typed Node/Relation、QuestionAspect/Interest/Focusの参照制約、staged SemanticDelta検証、EventJournalへの原子的commit、restart replay、冪等性復元
@@ -31,7 +33,7 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
 
 fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
@@ -46,3 +48,7 @@ ContextGraphはContext単位の型付きグラフ基盤であり、SemanticDelta
 ## DependencyEngine v0.1の範囲
 
 Dependencyノードのreferences[0]を前提、references[1]を依存先として、変更ノードからの到達閉包を計算する。SCCを検出するが、SCC内部の意味推論の反復収束やDelta commitはまだ行わない。上限超過時は不完全結果として返し、完全なImpact Setとして利用してはならない。
+
+## QuestionRouter v0.1の範囲
+
+テキストから矛盾を自動発見する機能ではなく、検証済みのClaim間CONTRADICTS Relationを入力として受け取る。矛盾をQuestion/QuestionAspectに変換し、関係するClusterへInterestを向ける。複数Clusterがある場合はFocusを選ばず、既存Focusを維持する。信頼度・成長度・時間・重要度による候補順位付けは未実装。
