@@ -84,3 +84,37 @@ For text-only tests, the v0.8 benchmark convention is T_ref = normalized Japanes
 ## 6. Conclusion
 
 The v0.8 interface design preserves the full v0.7 semantic contract by moving only local recognition into a bounded compact classifier and retaining cross-event cognition in the Core. All 20 compact-profile thought experiments have a defined safe path. Runtime performance, model accuracy and semantic parity remain open empirical acceptance gates.
+
+
+## 7. Follow-up design review: cross-packet and scheduler hardening
+
+The following twelve cases were added after the initial C01-C20 review. These are design thought experiments, not executable tests.
+
+| ID | Scenario | Expected safe behavior | Design result |
+|---|---|---|---|
+| D01 | Negation cue ends packet; predicate begins next | Open ScopeSpan continues by exact anchors; no premature polarity | PASS |
+| D02 | Condition and consequent split | conditional relation remains unresolved; no unconditional Claim | PASS |
+| D03 | Modality separated from predicate | modality retained or abstained; no factual promotion | PASS |
+| D04 | Concession crosses boundary | both propositions and contrast relation retained | PASS |
+| D05 | Pronoun antecedent in prior packet | candidate antecedent refs; no forced identity merge | PASS |
+| D06 | Quote closes in later packet | quote attribution remains distinct from author stance | PASS |
+| D07 | N+2 inference completes before N | proposal stored READY_BUT_BLOCKED | PASS |
+| D08 | Source sequence gap | watermark does not advance; gap is observable | PASS |
+| D09 | Mandatory ContextHint refs exceed budget | retrieval ticket plus abstention/defer for affected decisions | PASS |
+| D10 | State changes after ticket issuance | re-evaluate at new version or reject stale ticket | PASS |
+| D11 | Model abstains on nearly all inputs | coverage/selective-risk gate fails even if RTF is low | PASS |
+| D12 | Overlap across micro-batches | single Evidence lineage and deterministic integration | PASS |
+
+Design result: 12/12 safe handling paths specified.
+
+## 8. Revised proof obligations
+
+1. Implement ScopeSpan storage, typed transitions and exact source-anchor validation.
+2. Implement per-source sequencer, gap records, watermark and causal commit gate.
+3. Implement RetrievalTicket query persistence and state-version revalidation.
+4. Add packet-level concurrency and late-arrival replay tests.
+5. Build Japanese benchmark sets with gold labels for negation, condition, modality, concession, coreference, quotation and temporal scope.
+6. Pre-register quality thresholds and report selective risk alongside RTF.
+7. Verify that all inherited 179 thought-experiment cases and D01-D12 become executable conformance tests before claiming implementation conformance.
+
+The 191 design cases (179 inherited + 12 additions) have defined handling paths. This is not a measured accuracy, runtime, memory, or production-readiness result.
