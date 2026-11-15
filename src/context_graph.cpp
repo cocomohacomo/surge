@@ -149,8 +149,8 @@ bool ContextGraph::apply_focus(State& state,const FocusRecord& f,std::string& er
 std::string ContextGraph::fingerprint(const SemanticDelta& d) const {
   std::ostringstream out;
   out<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' ';
-  for(const auto& n:d.nodes)out<<"N "<<encode_node(n)<<'\n';
-  for(const auto& r:d.relations)out<<"R "<<encode_relation(r)<<'\n';
+  for(const auto& n:d.nodes)out<<"N "<<encode_node(n.node)<<'\n';
+  for(const auto& r:d.relations)out<<"R "<<encode_relation(r.relation)<<'\n';
   if(d.focus)out<<"F "<<encode_focus(d.focus->focus)<<'\n';
   return hash_text(out.str());
 }
