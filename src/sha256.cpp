@@ -33,11 +33,37 @@ std::string sha256_hex(const std::string& input) {
  }
  std::ostringstream out;out<<std::hex<<std::setfill('0');for(auto v:h)out<<std::setw(8)<<v;return out.str();
 }
-bool is_valid_utf8(const std::string& s){
- std::size_t i=0;while(i<s.size()){auto c=static_cast<unsigned char>(s[i]);if(c<=0x7f){++i;continue;}
-  std::size_t n=0;std::uint32_t cp=0;if(c>=0xc2&&c<=0xdf){n=2;cp=c&0x1f;}else if(c>=0xe0&&c<=0xef){n=3;cp=c&0x0f;}else if(c>=0xf0&&c<=0xf4){n=4;cp=c&0x07;}else return false;
-  if(i+n>s.size())return false;for(std::size_t j=1;j<n;++j){auto d=static_cast<unsigned char>(s[i+j]);if((d&0xc0)!=0x80)return false;cp=(cp<<6)|(d&0x3f);}
-  if((n==3&&cp<0x800)||(n==4&&cp<0x10000)||(cp>=0xd800&&cp<=0xdfff)||cp>0x10ffff)return false;i+=n;
- }return true;
+bool is_valid_utf8(const std::string& s) {
+  std::size_t i = 0;
+  while (i < s.size()) {
+    const auto c = static_cast<unsigned char>(s[i]);
+    if (c <= 0x7f) {
+      ++i;
+      continue;
+    }
+    std::size_t n = 0;
+    std::uint32_t cp = 0;
+    if (c >= 0xc2 && c <= 0xdf) {
+      n = 2; cp = c & 0x1f;
+    } else if (c >= 0xe0 && c <= 0xef) {
+      n = 3; cp = c & 0x0f;
+    } else if (c >= 0xf0 && c <= 0xf4) {
+      n = 4; cp = c & 0x07;
+    } else {
+      return false;
+    }
+    if (i + n > s.size()) return false;
+    for (std::size_t j = 1; j < n; ++j) {
+      const auto d = static_cast<unsigned char>(s[i + j]);
+      if ((d & 0xc0) != 0x80) return false;
+      cp = (cp << 6) | (d & 0x3f);
+    }
+    if ((n == 3 && cp < 0x800) || (n == 4 && cp < 0x10000) ||
+        (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff) {
+      return false;
+    }
+    i += n;
+  }
+  return true;
 }
 }  // namespace surge
