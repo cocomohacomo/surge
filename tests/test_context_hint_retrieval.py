@@ -60,5 +60,49 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
         self.assertIsNone(hint["retrieval_ticket"])
 
 
+    def test_graph_derived_hint_promotes_unresolved_scope_and_question(self):
+        class FakeCore:
+            state_version = 9
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = FakeCore()
+            def search(self, query, kinds=None, limit=20):
+                return {
+                    "state_version": 9,
+                    "items": [
+                        {"kind": "SCOPE_SPAN", "id": "scope-open",
+                         "status": "UNRESOLVED", "score": 90},
+                        {"kind": "SCOPE_SPAN", "id": "scope-closed",
+                         "status": "CLOSED", "score": 88},
+                        {"kind": "QUESTION_ASPECT", "id": "qa-1", "score": 80},
+                        {"kind": "CLUSTER", "id": "cluster-1", "score": 70,
+                         "relations": [{"kind": "ABOUT", "ref": "question-1"}]},
+                        {"kind": "DEPENDENCY", "id": "dep-1", "score": 60,
+                         "relations": [{"kind": "DEPENDS_ON", "ref": "claim-1"}]},
+                    ],
+                }
+        hint = FakeRetriever().build_hint_from_graph(
+            context_id="ctx", packet_ref="packet",
+            source_range_digest="c" * 64, policy_version="hint-v1",
+            query="予算計画", reference_budget=10,
+        )
+        self.assertEqual(
+            hint["included_refs"],
+            ["scope-open", "qa-1", "dep-1", "cluster-1", "question-1"],
+        )
+        self.assertNotIn("scope-closed", hint["included_refs"])
+
+    def test_graph_derived_hint_rejects_empty_query(self):
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = object()
+        with self.assertRaisesRegex(ValueError, "CONTEXT_HINT_GRAPH_QUERY_INVALID"):
+            FakeRetriever().build_hint_from_graph(
+                context_id="ctx", packet_ref="packet",
+                source_range_digest="d" * 64, policy_version="hint-v1",
+                query=" ", reference_budget=5,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
