@@ -14,7 +14,7 @@
         "relation_strength": 0.55,
         "confidence": 0.95,
         "ambiguity": 0.1,
-        "novelty": 0.9
+        "novelty": 0.45
       },
       "expected_decision": "ACCEPT"
     },
@@ -28,7 +28,7 @@
         "relation_strength": 0.5,
         "confidence": 0.96,
         "ambiguity": 0.08,
-        "novelty": 0.86
+        "novelty": 0.35
       },
       "expected_decision": "ACCEPT"
     },
@@ -42,7 +42,7 @@
         "relation_strength": 0.45,
         "confidence": 0.82,
         "ambiguity": 0.22,
-        "novelty": 0.75
+        "novelty": 0.28
       },
       "expected_decision": "REVIEW"
     },
@@ -56,7 +56,7 @@
         "relation_strength": 0.85,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.94
+        "novelty": 0.42
       },
       "expected_decision": "ACCEPT"
     },
@@ -70,7 +70,7 @@
         "relation_strength": 0.92,
         "confidence": 0.98,
         "ambiguity": 0.02,
-        "novelty": 0.98
+        "novelty": 0.95
       },
       "expected_decision": "ACCEPT"
     },
@@ -84,7 +84,7 @@
         "relation_strength": 0.35,
         "confidence": 0.86,
         "ambiguity": 0.18,
-        "novelty": 0.5
+        "novelty": 0.2
       },
       "expected_decision": "ACCEPT"
     },
@@ -98,7 +98,7 @@
         "relation_strength": 0.4,
         "confidence": 0.96,
         "ambiguity": 0.05,
-        "novelty": 0.62
+        "novelty": 0.3
       },
       "expected_decision": "ACCEPT"
     },
@@ -112,7 +112,7 @@
         "relation_strength": 0.52,
         "confidence": 0.76,
         "ambiguity": 0.3,
-        "novelty": 0.7
+        "novelty": 0.25
       },
       "expected_decision": "REVIEW"
     },
@@ -126,7 +126,7 @@
         "relation_strength": 0.7,
         "confidence": 0.94,
         "ambiguity": 0.08,
-        "novelty": 0.86
+        "novelty": 0.5
       },
       "expected_decision": "ACCEPT"
     },
@@ -140,7 +140,7 @@
         "relation_strength": 0.15,
         "confidence": 0.98,
         "ambiguity": 0.02,
-        "novelty": 0.24
+        "novelty": 0.1
       },
       "expected_decision": "ACCEPT"
     },
@@ -154,7 +154,7 @@
         "relation_strength": 0.82,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.95
+        "novelty": 0.45
       },
       "expected_decision": "ACCEPT"
     },
@@ -168,7 +168,7 @@
         "relation_strength": 0.9,
         "confidence": 0.89,
         "ambiguity": 0.15,
-        "novelty": 0.96
+        "novelty": 0.65
       },
       "expected_decision": "ACCEPT"
     },
@@ -182,7 +182,7 @@
         "relation_strength": 0.9,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.93
+        "novelty": 0.6
       },
       "expected_decision": "ACCEPT"
     },
@@ -196,7 +196,7 @@
         "relation_strength": 0.82,
         "confidence": 0.98,
         "ambiguity": 0.05,
-        "novelty": 0.88
+        "novelty": 0.7
       },
       "expected_decision": "ACCEPT"
     },
@@ -210,7 +210,7 @@
         "relation_strength": 0.68,
         "confidence": 0.97,
         "ambiguity": 0.05,
-        "novelty": 0.84
+        "novelty": 0.4
       },
       "expected_decision": "ACCEPT"
     },
@@ -224,7 +224,7 @@
         "relation_strength": 0.84,
         "confidence": 0.96,
         "ambiguity": 0.06,
-        "novelty": 0.92
+        "novelty": 0.62
       },
       "expected_decision": "ACCEPT"
     },
@@ -238,7 +238,7 @@
         "relation_strength": 0.72,
         "confidence": 0.84,
         "ambiguity": 0.34,
-        "novelty": 0.78
+        "novelty": 0.55
       },
       "expected_decision": "REVIEW"
     },
@@ -252,7 +252,7 @@
         "relation_strength": 0.5,
         "confidence": 0.98,
         "ambiguity": 0.06,
-        "novelty": 0.61
+        "novelty": 0.25
       },
       "expected_decision": "ACCEPT"
     },
@@ -266,7 +266,7 @@
         "relation_strength": 0.86,
         "confidence": 0.96,
         "ambiguity": 0.07,
-        "novelty": 0.94
+        "novelty": 0.58
       },
       "expected_decision": "ACCEPT"
     },
@@ -280,7 +280,7 @@
         "relation_strength": 0.84,
         "confidence": 0.96,
         "ambiguity": 0.08,
-        "novelty": 0.9
+        "novelty": 0.64
       },
       "expected_decision": "ACCEPT"
     },
@@ -294,7 +294,7 @@
         "relation_strength": 0.75,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.9
+        "novelty": 0.45
       },
       "expected_decision": "ACCEPT"
     },
@@ -308,7 +308,7 @@
         "relation_strength": 0.92,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.96
+        "novelty": 0.58
       },
       "expected_decision": "ACCEPT"
     },
@@ -322,7 +322,7 @@
         "relation_strength": 0.9,
         "confidence": 0.96,
         "ambiguity": 0.05,
-        "novelty": 0.92
+        "novelty": 0.75
       },
       "expected_decision": "ACCEPT"
     },
@@ -336,7 +336,7 @@
         "relation_strength": 0.85,
         "confidence": 0.98,
         "ambiguity": 0.04,
-        "novelty": 0.9
+        "novelty": 0.7
       },
       "expected_decision": "ACCEPT"
     },
@@ -350,7 +350,7 @@
         "relation_strength": 0.94,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.96
+        "novelty": 0.8
       },
       "expected_decision": "ACCEPT"
     },
@@ -364,7 +364,7 @@
         "relation_strength": 0.92,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.96
+        "novelty": 0.65
       },
       "expected_decision": "ACCEPT"
     },
@@ -378,7 +378,7 @@
         "relation_strength": 0.82,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.92
+        "novelty": 0.4
       },
       "expected_decision": "ACCEPT"
     },
@@ -392,7 +392,7 @@
         "relation_strength": 0.96,
         "confidence": 0.99,
         "ambiguity": 0.01,
-        "novelty": 0.98
+        "novelty": 0.75
       },
       "expected_decision": "ACCEPT"
     },
@@ -406,7 +406,7 @@
         "relation_strength": 0.7,
         "confidence": 0.96,
         "ambiguity": 0.08,
-        "novelty": 0.78
+        "novelty": 0.65
       },
       "expected_decision": "ACCEPT"
     },
@@ -420,7 +420,7 @@
         "relation_strength": 0.56,
         "confidence": 0.97,
         "ambiguity": 0.05,
-        "novelty": 0.72
+        "novelty": 0.3
       },
       "expected_decision": "ACCEPT"
     },
@@ -434,7 +434,7 @@
         "relation_strength": 0.76,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.88
+        "novelty": 0.42
       },
       "expected_decision": "ACCEPT"
     },
@@ -448,7 +448,7 @@
         "relation_strength": 0.98,
         "confidence": 0.99,
         "ambiguity": 0.01,
-        "novelty": 0.99
+        "novelty": 0.95
       },
       "expected_decision": "ACCEPT"
     },
@@ -462,7 +462,7 @@
         "relation_strength": 0.7,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.82
+        "novelty": 0.25
       },
       "expected_decision": "ACCEPT"
     },
@@ -476,7 +476,7 @@
         "relation_strength": 0.82,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.9
+        "novelty": 0.4
       },
       "expected_decision": "ACCEPT"
     },
@@ -490,7 +490,7 @@
         "relation_strength": 0.78,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.87
+        "novelty": 0.55
       },
       "expected_decision": "ACCEPT"
     },
@@ -504,7 +504,7 @@
         "relation_strength": 0.95,
         "confidence": 0.99,
         "ambiguity": 0.01,
-        "novelty": 0.96
+        "novelty": 0.72
       },
       "expected_decision": "ACCEPT"
     },
@@ -518,7 +518,7 @@
         "relation_strength": 0.92,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.94
+        "novelty": 0.78
       },
       "expected_decision": "ACCEPT"
     },
@@ -532,7 +532,7 @@
         "relation_strength": 0.78,
         "confidence": 0.93,
         "ambiguity": 0.1,
-        "novelty": 0.85
+        "novelty": 0.6
       },
       "expected_decision": "ACCEPT"
     },
@@ -546,7 +546,7 @@
         "relation_strength": 0.88,
         "confidence": 0.94,
         "ambiguity": 0.08,
-        "novelty": 0.93
+        "novelty": 0.52
       },
       "expected_decision": "ACCEPT"
     },
@@ -560,7 +560,7 @@
         "relation_strength": 0.9,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.94
+        "novelty": 0.45
       },
       "expected_decision": "ACCEPT"
     },
@@ -574,7 +574,7 @@
         "relation_strength": 0.86,
         "confidence": 0.98,
         "ambiguity": 0.03,
-        "novelty": 0.91
+        "novelty": 0.72
       },
       "expected_decision": "ACCEPT"
     },
@@ -588,7 +588,7 @@
         "relation_strength": 0.62,
         "confidence": 0.97,
         "ambiguity": 0.05,
-        "novelty": 0.74
+        "novelty": 0.45
       },
       "expected_decision": "ACCEPT"
     },
@@ -602,7 +602,7 @@
         "relation_strength": 0.4,
         "confidence": 0.65,
         "ambiguity": 0.72,
-        "novelty": 0.55
+        "novelty": 0.3
       },
       "expected_decision": "ABSTAIN"
     },
@@ -616,7 +616,7 @@
         "relation_strength": 0.55,
         "confidence": 0.88,
         "ambiguity": 0.42,
-        "novelty": 0.7
+        "novelty": 0.35
       },
       "expected_decision": "ACCEPT"
     },
@@ -644,7 +644,7 @@
         "relation_strength": 0.7,
         "confidence": 0.98,
         "ambiguity": 0.04,
-        "novelty": 0.8
+        "novelty": 0.55
       },
       "expected_decision": "ACCEPT"
     },
@@ -658,7 +658,7 @@
         "relation_strength": 0.9,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.95
+        "novelty": 0.8
       },
       "expected_decision": "ACCEPT"
     },
@@ -672,7 +672,7 @@
         "relation_strength": 0.88,
         "confidence": 0.99,
         "ambiguity": 0.02,
-        "novelty": 0.92
+        "novelty": 0.75
       },
       "expected_decision": "ACCEPT"
     },
@@ -686,7 +686,7 @@
         "relation_strength": 0.2,
         "confidence": 0.95,
         "ambiguity": 0.05,
-        "novelty": 0.3
+        "novelty": 0.05
       },
       "expected_decision": "ACCEPT"
     },
@@ -700,7 +700,7 @@
         "relation_strength": 0.65,
         "confidence": 0.84,
         "ambiguity": 0.35,
-        "novelty": 0.78
+        "novelty": 0.6
       },
       "expected_decision": "REVIEW"
     }

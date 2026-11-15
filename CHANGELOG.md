@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.13] - 2026-11-16
+
+- Add pure ClassificationProposal Builder mapping typed candidates and six-axis scoring into the v0.9 proposal contract.
+- Validate proposal Draft 2020-12 schema and packet-relative UTF-8 byte spans before handoff.
+- Preserve low-confidence/ambiguous abstention reasons and REVIEW warnings without granting Core commit authority.
+- Add proposal-builder tests for schema validity, abstention propagation and invalid span/dimension rejection.
+
+
 ## [0.9.12] - 2026-11-16
 
 - Add replaceable RecognitionScorer boundary with separate relevance, importance, relation strength, confidence, ambiguity and novelty dimensions.
