@@ -1046,3 +1046,23 @@ v0.5レコードを原文保存しDigestを付与。Migration Eventにsource/tar
 
 ## 36. Completion Gate
 Question状態の正本はAspectレコード、Question.statusは派生値。部分解消・再オープン・分割・統合・Dependency伝播を規定。Observation FrameのClock Domain、Mapping、誤差伝播、Alignment、Identity分離、Revisionを規定。Schema/API/Validator/Transactionの責務境界とMigrationを規定。
+
+
+## 37. Detailed Design Invariants D-21 through D-34
+
+| ID | 不変条件 | Core Validator |
+|---|---|---|
+| D-21 | Questionは一つ以上のrequired Aspectを持つ | Aspect cardinality |
+| D-22 | RESOLVED Aspectはresolution_kind/reason/resolved_atと適切な根拠を持つ | Resolution validation |
+| D-23 | Question.statusはAspectから決定的に導出される | Aggregation function/version |
+| D-24 | 必須Dependencyが未解決なら依存AspectをRESOLVEDにできない | Aspect dependency validation |
+| D-25 | Aspect split/mergeは旧IDとLineageを保持する | Lineage closure |
+| D-26 | RESOLVED/INVALIDATEDからの再オープンは再成立根拠を要する | Lifecycle transition |
+| D-27 | Dependency ImpactはAspect単位でtrigger条件に従い伝播する | Impact planner |
+| D-28 | 異Clock DomainのALIGNED判定は有効Clock Mappingを要する | Clock mapping validation |
+| D-29 | 同期誤差は保守的に伝播し許容差超過を隠さない | Uncertainty propagation |
+| D-30 | ALIGNED/PARTIALLY_ALIGNED等は時間精度とPolicyから導出する | Alignment validator |
+| D-31 | Observation Frame membershipはEntity同一性を確定しない | Identity separation |
+| D-32 | Observationと既存FrameはAppend-onlyである | Immutability validator |
+| D-33 | Frame Revisionは依存先を再評価し旧Frameを保持する | Revision/Impact validator |
+| D-34 | MigrationはProvenance付きAtomic Generationとして公開する | Migration validator |
