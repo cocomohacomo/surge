@@ -64,11 +64,13 @@ int main() {
     assert(recovered.committed_events().size() == 4);
   }
   const auto corrupt_path = (root / "corrupt.sgj").string();
-  std::cerr << "journal exists=" << std::filesystem::exists(path)
-            << " root exists=" << std::filesystem::exists(root)
-            << " path=" << path << "\\n";
-  assert(std::filesystem::exists(path));
-  std::filesystem::copy_file(path, corrupt_path);
+  {
+    EventJournal seed(corrupt_path);
+    assert(seed.open());
+    auto seeded = seed.commit("tx-corrupt", "idem-corrupt", 0, {{"ev-corrupt","TEST","checksum"}});
+    assert(seeded.committed);
+  }
+  assert(std::filesystem::exists(corrupt_path));
   {
     std::fstream io(corrupt_path, std::ios::binary | std::ios::in | std::ios::out);
     io.seekg(12); char byte = 0; io.read(&byte, 1); byte ^= 0x01;
