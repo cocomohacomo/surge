@@ -1,5 +1,6 @@
 #include "surge/context_hint.hpp"
 #include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <set>
 #include <sstream>
@@ -37,7 +38,9 @@ HintBuildResult ContextHintBuilder::build(const std::string& context,const std::
     const std::string& range_digest,const std::string& policy,std::uint64_t version,
     const std::vector<HintCandidate>& input,std::size_t budget){
   HintBuildResult result;
-  if(context.empty()||packet.empty()||range_digest.size()!=64||policy.empty()||budget==0){
+  const bool digest_hex=range_digest.size()==64 &&
+    std::all_of(range_digest.begin(),range_digest.end(),[](unsigned char ch){return std::isxdigit(ch)!=0;});
+  if(context.empty()||packet.empty()||!digest_hex||policy.empty()||budget==0){
     result.error="CONTEXT_HINT_REQUEST_INVALID";return result;
   }
   std::vector<HintCandidate> candidates=input;
