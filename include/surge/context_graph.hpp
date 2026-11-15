@@ -12,6 +12,7 @@ enum class NodeKind { Cluster, Entity, Evidence, Claim, Question, QuestionAspect
 enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About };
 enum class ScopeKind { Negation, Condition, Modality, Concession, Contrast, Coreference, Anaphora, Quotation, Temporal, ListContinuation, TableHeader };
 enum class ScopeStatus { Closed, Unresolved };
+enum class QuestionAspectStatus { Open, Resolved, Deferred };
 enum class ScopeEffect { NegatedClaim, ConditionalRelation, ModalityQualified, ConcessionRelation, ContrastRelation, ReferenceCandidate, QuotationEvidence, TemporalQualifier, StructuralContinuation, TableHeaderScope };
 struct GraphNode { std::string id; NodeKind kind{NodeKind::Cluster}; std::string content; std::vector<std::string> references; };
 struct GraphRelation { std::string id; RelationKind kind{RelationKind::About}; std::string from; std::string to; };
@@ -59,6 +60,9 @@ class ContextGraph {
   const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
   const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
+  QuestionAspectStatus question_aspect_status(const std::string& id) const;
+  bool set_question_aspect_status(const std::string& id, QuestionAspectStatus status,
+                                  std::uint64_t expected_state_version, std::string& error);
  private:
   struct State {
     std::map<std::string, GraphNode> nodes;
@@ -66,6 +70,7 @@ class ContextGraph {
     std::map<std::string, ScopeSpanRecord> scope_spans;
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
+    std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;

@@ -430,6 +430,27 @@ int surge_packet_core_admit_and_apply(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
 }
+
+int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
+    const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !aspect_id || !*aspect_id || !status) {
+      copy_text(error, error_capacity, "C_API_ARGUMENT_INVALID"); return 0;
+    }
+    surge::QuestionAspectStatus value;
+    const std::string name(status);
+    if (name == "OPEN") value = surge::QuestionAspectStatus::Open;
+    else if (name == "RESOLVED") value = surge::QuestionAspectStatus::Resolved;
+    else if (name == "DEFERRED") value = surge::QuestionAspectStatus::Deferred;
+    else { copy_text(error, error_capacity, "QUESTION_ASPECT_STATUS_INVALID"); return 0; }
+    std::string message;
+    auto& graph = static_cast<Handle*>(opaque)->graph;
+    const bool ok = graph.set_question_aspect_status(aspect_id, value, expected_state_version, message);
+    copy_text(error, error_capacity, message);
+    return ok ? 1 : 0;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "UNKNOWN_QUESTION_ASPECT_STATUS_EXCEPTION"); return 0; }
+}
 uint64_t surge_packet_core_state_version(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.state_version():0;
 }
@@ -463,6 +484,7 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
     const std::string needle = lower(query);
     auto score_text = [&](const std::string& value) -> int {
       const std::string hay = lower(value);
+      if (needle == "*") return 1;
       if (hay.empty()) return 0;
       if (hay == needle) return 100;
       if (hay.find(needle) != std::string::npos) return 85;
@@ -538,7 +560,14 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
         if (i) item << ',';
         item << quote(node.references[i]);
       }
-      item << "],\"relations\":[";
+      item << "],";
+      if (node.kind == surge::NodeKind::QuestionAspect) {
+        const auto status = graph.question_aspect_status(node.id);
+        const char* status_text = status == surge::QuestionAspectStatus::Open ? "OPEN" :
+            status == surge::QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
+        item << "\"status\":" << quote(status_text) << ",";
+      }
+      item << "\"relations\":[";
       bool first = true;
       for (const auto& rel_entry : graph.relations()) {
         const auto& rel = rel_entry.second;
@@ -627,7 +656,12 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
     });
     std::ostringstream result;
     result << "{\"state_version\":" << graph.state_version() << ",\"query\":"
-           << quote(query) << ",\"items\":[";
+           << quote(query) << ",\"focus\":";
+    if (graph.focus()) {
+      result << "{\"cluster_id\":" << quote(graph.focus()->cluster_id)
+             << ",\"interest_id\":" << quote(graph.focus()->interest_id) << "}";
+    } else result << "null";
+    result << ",\"items\":[";
     const size_t count = std::min(limit, hits.size());
     for (size_t i = 0; i < count; ++i) {
       if (i) result << ',';
