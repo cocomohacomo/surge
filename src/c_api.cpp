@@ -133,7 +133,6 @@ int surge_context_graph_apply(
     void* opaque,const char* delta_id,const char* idempotency_key,uint64_t expected,
     const SurgeGraphNodeInput* nodes,size_t node_count,
     const SurgeGraphRelationInput* relations,size_t relation_count,
-    const SurgeScopeSpanInput* scopes,size_t scope_count,
     const char* focus_cluster_id,const char* focus_interest_id,
     int* duplicate,uint64_t* state_version,char* error,size_t error_cap) {
   try {
