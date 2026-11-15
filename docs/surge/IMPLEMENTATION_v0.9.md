@@ -6,6 +6,8 @@
 
 ## 実装済みプリミティブ
 
+- DependencyEngine: prerequisite→dependentの推移的Impact Set、上限検査、Tarjan SCC検出、安定ソート、budget超過時のpartial扱い
+
 - ContextGraph: typed Node/Relation、QuestionAspect/Interest/Focusの参照制約、staged SemanticDelta検証、EventJournalへの原子的commit、restart replay、冪等性復元
 
 - EventJournal: append-only framed journal、transaction commit marker、state version、idempotency、event ID一意性、restart recovery、truncated tail回復、CRC不一致時のfail-closed
@@ -29,7 +31,7 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
 
 fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
@@ -40,3 +42,7 @@ EventJournalは単一プロセス内のmutexで直列化するローカルjourna
 ## ContextGraph v0.1の範囲
 
 ContextGraphはContext単位の型付きグラフ基盤であり、SemanticDeltaをstaged stateで検証後、EventJournal commit成功時だけメモリ状態へ反映する。再起動時はcommit済みイベントから復元する。矛盾からQuestion/Interest/Focusを自動生成する推論、Dependency Impact Set、SCC収束、時間的有効性、信頼度評価、Entity merge/splitは未実装。
+
+## DependencyEngine v0.1の範囲
+
+Dependencyノードのreferences[0]を前提、references[1]を依存先として、変更ノードからの到達閉包を計算する。SCCを検出するが、SCC内部の意味推論の反復収束やDelta commitはまだ行わない。上限超過時は不完全結果として返し、完全なImpact Setとして利用してはならない。
