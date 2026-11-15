@@ -300,7 +300,10 @@ class ContextRetriever:
         # Bounded breadth-first traversal over typed references and relation edges.
         adjacency: dict[str, set[str]] = {ref: set() for ref in by_id}
         for ref, item in by_id.items():
-            for target in item.get("references", []):
+            linked_refs = list(item.get("references", []))
+            linked_refs.extend(item.get("target_refs", []))
+            linked_refs.extend(item.get("antecedent_refs", []))
+            for target in linked_refs:
                 if target in by_id:
                     adjacency[ref].add(target)
                     adjacency[target].add(ref)
