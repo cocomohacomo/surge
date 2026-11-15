@@ -108,6 +108,13 @@ class RecognitionPacketAdapter:
         if previous_request is not None and previous_request != request_digest:
             raise PacketRejected("IDEMPOTENCY_KEY_REUSED")
 
+        # Reject packet-ID reuse before touching any ledger index.
+        if packet_id in self._packets:
+            existing = self._packets[packet_id]
+            if existing.canonical_request_digest != request_digest:
+                raise PacketRejected("PACKET_ID_REUSED")
+            return existing
+
         prior_sequence_packet = self._sequences.get(stream_key)
         if prior_sequence_packet is not None and prior_sequence_packet != packet_id:
             raise PacketRejected("SOURCE_SEQUENCE_REUSED")
@@ -129,12 +136,6 @@ class RecognitionPacketAdapter:
                 raise PacketRejected("SOURCE_REVISION_UNCHANGED")
         elif revision:
             raise PacketRejected("REVISION_TARGET_NOT_FOUND")
-
-        if packet_id in self._packets:
-            existing = self._packets[packet_id]
-            if existing.canonical_request_digest != request_digest:
-                raise PacketRejected("PACKET_ID_REUSED")
-            return existing
 
         self._ranges[range_key] = (actual_range_digest, packet_id,
                                    revision_seq if revision else 0)
