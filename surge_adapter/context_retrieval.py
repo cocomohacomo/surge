@@ -336,8 +336,9 @@ class ContextRetriever:
             elif kind == "QUESTION_ASPECT":
                 if item.get("status", "OPEN") == "OPEN":
                     add(ref, "REQUIRED_QUESTION_ASPECT", score, depth)
-            elif kind == "SCOPE_SPAN" and item.get("status") == "UNRESOLVED":
-                add(ref, "OPEN_SCOPE", score, depth)
+            elif kind == "SCOPE_SPAN":
+                if item.get("status") == "UNRESOLVED":
+                    add(ref, "OPEN_SCOPE", score, depth)
             elif kind not in {"DEPENDENCY"}:
                 add(ref, "LOW_PRIORITY", score, depth)
             if depth < max_depth:
