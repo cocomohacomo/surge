@@ -133,6 +133,7 @@ int surge_context_graph_apply(
     void* opaque,const char* delta_id,const char* idempotency_key,uint64_t expected,
     const SurgeGraphNodeInput* nodes,size_t node_count,
     const SurgeGraphRelationInput* relations,size_t relation_count,
+    const SurgeScopeSpanInput* scopes,size_t scope_count,
     const char* focus_cluster_id,const char* focus_interest_id,
     int* duplicate,uint64_t* state_version,char* error,size_t error_cap) {
   try {
@@ -267,8 +268,8 @@ int surge_packet_core_admit_and_apply(
        !input->offset_basis||!input->source_snapshot_digest||
        !input->source_range_digest||!input->canonical_request_digest||
        (!snapshot&&snapshot_size)|| (input->revision!=0&&input->revision!=1)||
-       (node_count&&!nodes)||(relation_count&&!relations)||
-       node_count>4096||relation_count>8192) {
+       (node_count&&!nodes)||(relation_count&&!relations)||(scope_count&&!scopes)||
+       node_count>4096||relation_count>8192||scope_count>4096) {
       copy_text(error,error_cap,"C_API_ATOMIC_ARGUMENT_INVALID");return 0;
     }
     auto* handle=static_cast<Handle*>(opaque);
@@ -308,6 +309,48 @@ int surge_packet_core_admit_and_apply(
       relation.from=relations[i].from_id;relation.to=relations[i].to_id;
       if(!relation_kind(relations[i].kind,relation.kind)){copy_text(error,error_cap,"C_API_RELATION_KIND_INVALID");return 0;}
       delta.relations.push_back({std::move(relation)});
+    }
+    const std::string packet_ref=input->packet_id;
+    for(size_t i=0;i<scope_count;++i){
+      const auto& scope_input=scopes[i];
+      if(!scope_input.span_id||!scope_input.kind||!scope_input.source_digest||
+         !scope_input.offset_basis||(scope_input.has_closer!=0&&scope_input.has_closer!=1)||
+         (scope_input.target_count&&!scope_input.target_refs)||
+         (scope_input.antecedent_count&&!scope_input.antecedent_refs)||
+         (scope_input.packet_count&&!scope_input.packet_refs)||
+         scope_input.target_count>1024||scope_input.antecedent_count>1024||
+         scope_input.packet_count>4096){
+        copy_text(error,error_cap,"C_API_SCOPE_ARGUMENT_INVALID");return 0;
+      }
+      surge::ScopeSpanProposal span;
+      span.span_id=scope_input.span_id;
+      if(!scope_kind(scope_input.kind,span.kind)){
+        copy_text(error,error_cap,"C_API_SCOPE_KIND_INVALID");return 0;
+      }
+      span.source_digest=scope_input.source_digest;
+      span.offset_basis=scope_input.offset_basis;
+      span.opener=scope_anchor(scope_input.opener);
+      if(scope_input.has_closer)span.closer=scope_anchor(scope_input.closer);
+      for(size_t j=0;j<scope_input.target_count;++j){
+        if(!scope_input.target_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_TARGET_INVALID");return 0;}
+        span.target_refs.emplace_back(scope_input.target_refs[j]);
+      }
+      for(size_t j=0;j<scope_input.antecedent_count;++j){
+        if(!scope_input.antecedent_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_ANTECEDENT_INVALID");return 0;}
+        span.antecedent_refs.emplace_back(scope_input.antecedent_refs[j]);
+      }
+      for(size_t j=0;j<scope_input.packet_count;++j){
+        if(!scope_input.packet_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_PACKET_INVALID");return 0;}
+        span.packet_refs.emplace_back(scope_input.packet_refs[j]);
+      }
+      if(std::find(span.packet_refs.begin(),span.packet_refs.end(),packet_ref)==span.packet_refs.end()){
+        copy_text(error,error_cap,"SCOPE_CURRENT_PACKET_REFERENCE_REQUIRED");return 0;
+      }
+      span.attribution_ref=scope_input.attribution_ref?scope_input.attribution_ref:"";
+      span.modality_kind=scope_input.modality_kind?scope_input.modality_kind:"";
+      span.temporal_role=scope_input.temporal_role?scope_input.temporal_role:"";
+      span.parent_ref=scope_input.parent_ref?scope_input.parent_ref:"";
+      delta.scope_spans.push_back({std::move(span),source});
     }
     if(focus_cluster_id&&*focus_cluster_id)
       delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
