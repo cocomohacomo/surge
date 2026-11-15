@@ -64,6 +64,10 @@ int main() {
     assert(recovered.committed_events().size() == 4);
   }
   const auto corrupt_path = (root / "corrupt.sgj").string();
+  std::cerr << "journal exists=" << std::filesystem::exists(path)
+            << " root exists=" << std::filesystem::exists(root)
+            << " path=" << path << "\\n";
+  assert(std::filesystem::exists(path));
   std::filesystem::copy_file(path, corrupt_path);
   {
     std::fstream io(corrupt_path, std::ios::binary | std::ios::in | std::ios::out);
