@@ -160,9 +160,9 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
       <<d.expected_state_version<<' '<<std::quoted(fp);
   out.push_back({d.delta_id+"/meta","DELTA_META",meta.str()});
   std::size_t i=0;
-  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n)});
+  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
   i=0;
-  for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r)});
+  for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
   if(d.focus)out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)});
   return out;
 }
