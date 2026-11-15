@@ -7,6 +7,10 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <sstream>
+#include <set>
+#include <vector>
+#include <cctype>
 
 namespace {
 void copy_text(char* out, size_t capacity, const std::string& value) {
@@ -380,4 +384,214 @@ size_t surge_packet_core_packet_count(void* opaque) {
 size_t surge_context_graph_scope_count(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->graph.scope_spans().size():0;
 }
+
+int surge_context_graph_retrieve(void* opaque, const char* query, const char* kinds_csv,
+    size_t limit, char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !query || !*query || limit == 0 || limit > 1000) {
+      copy_text(error, error_capacity, "RETRIEVAL_ARGUMENT_INVALID"); return 0;
+    }
+    auto* handle = static_cast<Handle*>(opaque);
+    std::set<std::string> allowed;
+    if (kinds_csv && *kinds_csv) {
+      std::istringstream filters(kinds_csv);
+      std::string item;
+      while (std::getline(filters, item, ',')) {
+        if (!item.empty()) allowed.insert(item);
+      }
+    }
+    auto lower = [](std::string value) {
+      for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      return value;
+    };
+    const std::string needle = lower(query);
+    auto score_text = [&](const std::string& value) -> int {
+      const std::string hay = lower(value);
+      if (hay.empty()) return 0;
+      if (hay == needle) return 100;
+      if (hay.find(needle) != std::string::npos) return 85;
+      std::istringstream terms(needle);
+      std::string term;
+      int total = 0, hits = 0;
+      while (terms >> term) { ++total; if (hay.find(term) != std::string::npos) ++hits; }
+      if (total == 0 || hits == 0) return 0;
+      return hits == total ? 65 + hits : 20 + (40 * hits / total);
+    };
+    auto quote = [](const std::string& value) {
+      std::string out = "\"";
+      for (unsigned char ch : value) {
+        switch (ch) {
+          case '\"': out += "\\\""; break;
+          case '\\': out += "\\\\"; break;
+          case '\b': out += "\\b"; break;
+          case '\f': out += "\\f"; break;
+          case '\n': out += "\\n"; break;
+          case '\r': out += "\\r"; break;
+          case '\t': out += "\\t"; break;
+          default:
+            if (ch < 0x20) {
+              const char hex[] = "0123456789abcdef";
+              out += "\\u00"; out += hex[(ch >> 4) & 0x0f]; out += hex[ch & 0x0f];
+            } else out += static_cast<char>(ch);
+        }
+      }
+      out += "\"";
+      return out;
+    };
+    struct Hit { int score; std::string kind, id, json; };
+    std::vector<Hit> hits;
+    const auto& graph = handle->graph;
+    auto kind_allowed = [&](const std::string& kind) {
+      return allowed.empty() || allowed.count(kind) != 0;
+    };
+    auto node_kind_text = [](surge::NodeKind kind) {
+      switch (kind) {
+        case surge::NodeKind::Cluster: return "CLUSTER";
+        case surge::NodeKind::Entity: return "ENTITY";
+        case surge::NodeKind::Evidence: return "EVIDENCE";
+        case surge::NodeKind::Claim: return "CLAIM";
+        case surge::NodeKind::Question: return "QUESTION";
+        case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
+        case surge::NodeKind::Dependency: return "DEPENDENCY";
+        case surge::NodeKind::Interest: return "INTEREST";
+      }
+      return "UNKNOWN";
+    };
+    auto relation_kind_text = [](surge::RelationKind kind) {
+      switch (kind) {
+        case surge::RelationKind::Supports: return "SUPPORTS";
+        case surge::RelationKind::Contradicts: return "CONTRADICTS";
+        case surge::RelationKind::AgreesWith: return "AGREES_WITH";
+        case surge::RelationKind::ConflictsWith: return "CONFLICTS_WITH";
+        case surge::RelationKind::DependsOn: return "DEPENDS_ON";
+        case surge::RelationKind::About: return "ABOUT";
+      }
+      return "UNKNOWN";
+    };
+    for (const auto& entry : graph.nodes()) {
+      const auto& node = entry.second;
+      const std::string kind = node_kind_text(node.kind);
+      if (!kind_allowed(kind)) continue;
+      int score = std::max(score_text(node.content), score_text(node.id));
+      if (score == 0) continue;
+      std::ostringstream item;
+      item << "{\"kind\":" << quote(kind) << ",\"id\":" << quote(node.id)
+           << ",\"content\":" << quote(node.content) << ",\"score\":" << score
+           << ",\"references\":[";
+      for (size_t i = 0; i < node.references.size(); ++i) {
+        if (i) item << ',';
+        item << quote(node.references[i]);
+      }
+      item << "],\"relations\":[";
+      bool first = true;
+      for (const auto& rel_entry : graph.relations()) {
+        const auto& rel = rel_entry.second;
+        if (rel.from != node.id && rel.to != node.id) continue;
+        if (!first) item << ',';
+        first = false;
+        const std::string other = rel.from == node.id ? rel.to : rel.from;
+        item << "{\"kind\":" << quote(relation_kind_text(rel.kind))
+             << ",\"ref\":" << quote(other) << "}";
+      }
+      item << "]}";
+      hits.push_back({score, kind, node.id, item.str()});
+    }
+    for (const auto& entry : graph.scope_spans()) {
+      const auto& record = entry.second;
+      const auto& span = record.proposal;
+      if (!kind_allowed("SCOPE_SPAN")) continue;
+      std::string searchable = span.span_id + " " + span.opener.exact_text + " " +
+          span.attribution_ref + " " + span.modality_kind + " " + span.temporal_role +
+          " " + span.parent_ref;
+      for (const auto& ref : span.target_refs) searchable += " " + ref;
+      for (const auto& ref : span.antecedent_refs) searchable += " " + ref;
+      int score = score_text(searchable);
+      if (score == 0) continue;
+      std::ostringstream item;
+      item << "{\"kind\":\"SCOPE_SPAN\",\"id\":" << quote(span.span_id)
+           << ",\"scope_kind\":" << quote([&]() {
+                switch (span.kind) {
+                  case surge::ScopeKind::Negation: return "NEGATION";
+                  case surge::ScopeKind::Condition: return "CONDITION";
+                  case surge::ScopeKind::Modality: return "MODALITY";
+                  case surge::ScopeKind::Concession: return "CONCESSION";
+                  case surge::ScopeKind::Contrast: return "CONTRAST";
+                  case surge::ScopeKind::Coreference: return "COREFERENCE";
+                  case surge::ScopeKind::Anaphora: return "ANAPHORA";
+                  case surge::ScopeKind::Quotation: return "QUOTATION";
+                  case surge::ScopeKind::Temporal: return "TEMPORAL";
+                  case surge::ScopeKind::ListContinuation: return "LIST_CONTINUATION";
+                  case surge::ScopeKind::TableHeader: return "TABLE_HEADER";
+                }
+                return "UNKNOWN";
+              }())
+           << ",\"opener_text\":" << quote(span.opener.exact_text)
+           << ",\"status\":" << quote(record.status == surge::ScopeStatus::Closed ? "CLOSED" : "UNRESOLVED")
+           << ",\"effect\":" << quote([&]() {
+                switch (record.effect) {
+                  case surge::ScopeEffect::NegatedClaim: return "NEGATED_CLAIM";
+                  case surge::ScopeEffect::ConditionalRelation: return "CONDITIONAL_RELATION";
+                  case surge::ScopeEffect::ModalityQualified: return "MODALITY_QUALIFIED";
+                  case surge::ScopeEffect::ConcessionRelation: return "CONCESSION_RELATION";
+                  case surge::ScopeEffect::ContrastRelation: return "CONTRAST_RELATION";
+                  case surge::ScopeEffect::ReferenceCandidate: return "REFERENCE_CANDIDATE";
+                  case surge::ScopeEffect::QuotationEvidence: return "QUOTATION_EVIDENCE";
+                  case surge::ScopeEffect::TemporalQualifier: return "TEMPORAL_QUALIFIER";
+                  case surge::ScopeEffect::StructuralContinuation: return "STRUCTURAL_CONTINUATION";
+                  case surge::ScopeEffect::TableHeaderScope: return "TABLE_HEADER_SCOPE";
+                }
+                return "UNKNOWN";
+              }())
+           << ",\"may_emit_unconditional_claim\":"
+           << (record.may_emit_unconditional_claim ? "true" : "false")
+           << ",\"target_refs\":[";
+      for (size_t i = 0; i < span.target_refs.size(); ++i) {
+        if (i) item << ',';
+        item << quote(span.target_refs[i]);
+      }
+      item << "],\"antecedent_refs\":[";
+      for (size_t i = 0; i < span.antecedent_refs.size(); ++i) {
+        if (i) item << ',';
+        item << quote(span.antecedent_refs[i]);
+      }
+      item << "],\"packet_refs\":[";
+      for (size_t i = 0; i < span.packet_refs.size(); ++i) {
+        if (i) item << ',';
+        item << quote(span.packet_refs[i]);
+      }
+      item << "],\"source_digest\":" << quote(span.source_digest)
+           << ",\"offset_basis\":" << quote(span.offset_basis)
+           << ",\"score\":" << score << "}";
+      hits.push_back({score, "SCOPE_SPAN", span.span_id, item.str()});
+    }
+    std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
+      if (a.score != b.score) return a.score > b.score;
+      if (a.kind != b.kind) return a.kind < b.kind;
+      return a.id < b.id;
+    });
+    std::ostringstream result;
+    result << "{\"state_version\":" << graph.state_version() << ",\"query\":"
+           << quote(query) << ",\"items\":[";
+    const size_t count = std::min(limit, hits.size());
+    for (size_t i = 0; i < count; ++i) {
+      if (i) result << ',';
+      result << hits[i].json;
+    }
+    result << "],\"total_matches\":" << hits.size() << "}";
+    const std::string payload = result.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "RETRIEVAL_BUFFER_TOO_SMALL"); return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_RETRIEVAL_EXCEPTION"); return 0;
+  }
+}
+
 }
