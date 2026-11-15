@@ -225,7 +225,7 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d) {
   for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return {false,false,state_version(),error};
   for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return {false,false,state_version(),error};
   if(d.focus && !apply_focus(staged,d.focus->focus,error))return {false,false,state_version(),error};
-  auto committed=journal_.commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
+  auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
   if(!committed.committed)return {false,false,state_version(),committed.error};
   state_=std::move(staged);idempotency_[d.idempotency_key]=fp;
   return {true,committed.duplicate,state_version(),{}};
