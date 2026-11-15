@@ -250,6 +250,84 @@ int surge_context_graph_apply_scoped(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_SCOPED_SEMANTIC_EXCEPTION");return 0;}
 }
+
+int surge_packet_core_admit_and_apply(
+    void* opaque,const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot,size_t snapshot_size,
+    const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
+    const SurgeGraphNodeInput* nodes,size_t node_count,
+    const SurgeGraphRelationInput* relations,size_t relation_count,
+    const char* focus_cluster_id,const char* focus_interest_id,
+    int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
+    char* error,size_t error_cap) {
+  try {
+    if(!opaque||!input||!delta_id||!semantic_idempotency_key||
+       !input->packet_id||!input->idempotency_key||!input->context_id||
+       !input->source_id||!input->source_generation||!input->block_ref||
+       !input->offset_basis||!input->source_snapshot_digest||
+       !input->source_range_digest||!input->canonical_request_digest||
+       (!snapshot&&snapshot_size)|| (input->revision!=0&&input->revision!=1)||
+       (node_count&&!nodes)||(relation_count&&!relations)||
+       node_count>4096||relation_count>8192) {
+      copy_text(error,error_cap,"C_API_ATOMIC_ARGUMENT_INVALID");return 0;
+    }
+    auto* handle=static_cast<Handle*>(opaque);
+    surge::ValidatedRecognitionPacket packet;
+    packet.packet_id=input->packet_id;packet.idempotency_key=input->idempotency_key;
+    packet.context_id=input->context_id;packet.source_id=input->source_id;
+    packet.source_generation=input->source_generation;packet.block_ref=input->block_ref;
+    packet.offset_basis=input->offset_basis;packet.start_offset=input->start_offset;
+    packet.end_offset=input->end_offset;packet.source_sequence=input->source_sequence;
+    packet.source_snapshot_digest=input->source_snapshot_digest;
+    packet.source_range_digest=input->source_range_digest;
+    packet.canonical_request_digest=input->canonical_request_digest;
+    packet.revision_of_packet_id=input->revision_of_packet_id?input->revision_of_packet_id:"";
+    packet.revision=input->revision==1;packet.revision_sequence=input->revision_sequence;
+    const std::string source=snapshot_size?std::string(reinterpret_cast<const char*>(snapshot),snapshot_size):std::string();
+
+    surge::SemanticDelta delta;delta.delta_id=delta_id;
+    delta.idempotency_key=semantic_idempotency_key;delta.expected_state_version=expected;
+    for(size_t i=0;i<node_count;++i){
+      if(!nodes[i].id||!nodes[i].kind||!nodes[i].content||
+         (nodes[i].reference_count&&!nodes[i].references)||nodes[i].reference_count>1024){
+        copy_text(error,error_cap,"C_API_NODE_ARGUMENT_INVALID");return 0;
+      }
+      surge::GraphNode node;node.id=nodes[i].id;node.content=nodes[i].content;
+      if(!node_kind(nodes[i].kind,node.kind)){copy_text(error,error_cap,"C_API_NODE_KIND_INVALID");return 0;}
+      for(size_t j=0;j<nodes[i].reference_count;++j){
+        if(!nodes[i].references[j]){copy_text(error,error_cap,"C_API_NODE_REFERENCE_INVALID");return 0;}
+        node.references.emplace_back(nodes[i].references[j]);
+      }
+      delta.nodes.push_back({std::move(node)});
+    }
+    for(size_t i=0;i<relation_count;++i){
+      if(!relations[i].id||!relations[i].kind||!relations[i].from_id||!relations[i].to_id){
+        copy_text(error,error_cap,"C_API_RELATION_ARGUMENT_INVALID");return 0;
+      }
+      surge::GraphRelation relation;relation.id=relations[i].id;
+      relation.from=relations[i].from_id;relation.to=relations[i].to_id;
+      if(!relation_kind(relations[i].kind,relation.kind)){copy_text(error,error_cap,"C_API_RELATION_KIND_INVALID");return 0;}
+      delta.relations.push_back({std::move(relation)});
+    }
+    if(focus_cluster_id&&*focus_cluster_id)
+      delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
+    std::vector<surge::JournalEvent> semantic_events;std::string prepare_error;
+    if(!handle->graph.prepare_events(delta,semantic_events,prepare_error)){
+      copy_text(error,error_cap,prepare_error);return 0;
+    }
+    const auto admitted=handle->coordinator.admit(packet,source,semantic_events);
+    if(!admitted.admitted){copy_text(error,error_cap,admitted.error);return 0;}
+    if(!handle->graph.open()){
+      copy_text(error,error_cap,"ATOMIC_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED");return 0;
+    }
+    if(duplicate)*duplicate=admitted.duplicate?1:0;
+    if(state_version)*state_version=handle->coordinator.state_version();
+    copy_text(status,status_cap,admitted.packet_status);
+    copy_text(error,error_cap,"");
+    return 1;
+  } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
+    catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
+}
 uint64_t surge_packet_core_state_version(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.state_version():0;
 }
