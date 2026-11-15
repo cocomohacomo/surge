@@ -151,11 +151,10 @@ bool ContextGraph::set_question_aspect_status(const std::string& id,
   if (!state_.nodes.count(id) || state_.nodes.at(id).kind != NodeKind::QuestionAspect) {
     error = "QUESTION_ASPECT_NOT_FOUND"; return false;
   }
+  if (question_aspect_status(id) == status) return true;
   if (expected != state_version()) { error = "STATE_VERSION_CONFLICT"; return false; }
   const char* name = status == QuestionAspectStatus::Open ? "OPEN" :
       status == QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
-  if (status == QuestionAspectStatus::Resolved &&
-      question_aspect_status(id) == QuestionAspectStatus::Resolved) return true;
   std::ostringstream payload; payload << std::quoted(id) << ' ' << name;
   const auto key = "question-aspect/status/" + id + "/" + std::to_string(expected + 1);
   const auto committed = journal_->commit(key, key, expected,
