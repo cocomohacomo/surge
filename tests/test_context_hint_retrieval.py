@@ -60,37 +60,60 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
         self.assertIsNone(hint["retrieval_ticket"])
 
 
-    def test_graph_derived_hint_promotes_unresolved_scope_and_question(self):
+
+    def test_graph_derived_hint_uses_focus_dependency_conditions_and_multihop(self):
         class FakeCore:
-            state_version = 9
+            state_version = 12
         class FakeRetriever(ContextRetriever):
             def __init__(self):
                 self._core = FakeCore()
             def search(self, query, kinds=None, limit=20):
                 return {
-                    "state_version": 9,
+                    "state_version": 12,
+                    "focus": {"cluster_id": "cluster-focus", "interest_id": "interest-focus"},
+                    "total_matches": 8,
                     "items": [
-                        {"kind": "SCOPE_SPAN", "id": "scope-open",
-                         "status": "UNRESOLVED", "score": 90},
-                        {"kind": "SCOPE_SPAN", "id": "scope-closed",
-                         "status": "CLOSED", "score": 88},
-                        {"kind": "QUESTION_ASPECT", "id": "qa-1", "score": 80},
-                        {"kind": "CLUSTER", "id": "cluster-1", "score": 70,
-                         "relations": [{"kind": "ABOUT", "ref": "question-1"}]},
-                        {"kind": "DEPENDENCY", "id": "dep-1", "score": 60,
-                         "relations": [{"kind": "DEPENDS_ON", "ref": "claim-1"}]},
+                        {"kind": "SCOPE_SPAN", "id": "scope-open", "status": "UNRESOLVED", "score": 90},
+                        {"kind": "SCOPE_SPAN", "id": "scope-closed", "status": "CLOSED", "score": 88},
+                        {"kind": "QUESTION_ASPECT", "id": "qa-open", "status": "OPEN", "score": 80,
+                         "references": ["question-1"], "relations": []},
+                        {"kind": "QUESTION_ASPECT", "id": "qa-done", "status": "RESOLVED", "score": 99,
+                         "references": ["question-1"], "relations": []},
+                        {"kind": "CLUSTER", "id": "cluster-focus", "score": 70, "references": [],
+                         "relations": [{"kind": "ABOUT", "ref": "claim-1"}]},
+                        {"kind": "INTEREST", "id": "interest-focus", "score": 70,
+                         "references": ["qa-open", "cluster-focus"], "relations": []},
+                        {"kind": "CLAIM", "id": "claim-1", "score": 65,
+                         "references": ["evidence-1"], "relations": [{"kind": "SUPPORTS", "ref": "claim-2"}]},
+                        {"kind": "CLAIM", "id": "claim-2", "score": 60,
+                         "references": ["evidence-2"], "relations": []},
+                        {"kind": "EVIDENCE", "id": "evidence-1", "score": 55, "references": [], "relations": []},
+                        {"kind": "EVIDENCE", "id": "evidence-2", "score": 55, "references": [], "relations": []},
+                        {"kind": "DEPENDENCY", "id": "dep-1", "content": "ON_CHANGE",
+                         "references": ["claim-1", "claim-2"], "score": 50, "relations": []},
                     ],
                 }
         hint = FakeRetriever().build_hint_from_graph(
             context_id="ctx", packet_ref="packet",
-            source_range_digest="c" * 64, policy_version="hint-v1",
-            query="予算計画", reference_budget=10,
+            source_range_digest="c" * 64, policy_version="hint-v2",
+            query="予算計画", reference_budget=30,
+            changed_refs=["claim-1"], max_depth=3, max_nodes=64,
         )
-        self.assertEqual(
-            hint["included_refs"],
-            ["scope-open", "qa-1", "dep-1", "cluster-1", "claim-1", "question-1"],
-        )
-        self.assertNotIn("scope-closed", hint["included_refs"])
+        included = set(hint["included_refs"])
+        self.assertTrue({"cluster-focus", "interest-focus", "scope-open", "qa-open",
+                         "claim-1", "claim-2", "dep-1"}.issubset(included))
+        self.assertNotIn("scope-closed", included)
+        self.assertNotIn("qa-done", included)
+
+    def test_dependency_condition_does_not_fire_without_trigger(self):
+        dependency = {"content": "ON_CHANGE", "references": ["claim-a", "claim-b"]}
+        prerequisite = {"content": "予算案", "kind": "CLAIM"}
+        self.assertFalse(ContextRetriever._dependency_fires(dependency, prerequisite, set()))
+        self.assertTrue(ContextRetriever._dependency_fires(
+            dependency, prerequisite, {"claim-a"}))
+        self.assertTrue(ContextRetriever._dependency_fires(
+            {"content": "CONTENT_CONTAINS:予算", "references": ["claim-a", "claim-b"]},
+            prerequisite, set()))
 
     def test_graph_derived_hint_rejects_empty_query(self):
         class FakeRetriever(ContextRetriever):
