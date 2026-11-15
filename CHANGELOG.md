@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.6
+
+- Add type-specific ScopeSpan validation for all 11 v0.9 scope kinds.
+- Validate normalized UTF-8 byte anchors, digest/offset metadata, packet lineage and target bindings.
+- Preserve unresolved condition/concession/contrast/quotation scopes and ambiguous coreference/anaphora.
+- Prevent negation overreach, unconditionalization of conditionals and modality/factuality conflation.
+- Add 12 C++ scope conformance groups.
+
+
 ## 0.9.5
 
 - Add deterministic contradiction routing from explicit Claim-to-Claim CONTRADICTS relations.
