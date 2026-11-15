@@ -1,0 +1,199 @@
+# SURGE 基礎設計 v0.8
+## Universal Context Cognition Framework
+### Resource-Bounded Recognition Interface / 30MB-Class Model Profile
+
+Version: 0.8.0
+Status: Architecture and Core Contract Specification
+Parent: SPECIFICATION_v0.7.md
+Detailed design: DETAILED_DESIGN_v0.5.md
+Input contract: schemas/surge-v0.8-input.schema.json
+Core API extension: docs/surge/CORE_API_v0.3.md
+
+## 1. Version policy
+
+v0.8 inherits v0.7 and v0.6 in all non-conflicting clauses. It does not remove, weaken, or collapse any v0.7 semantic object, invariant, lifecycle, provenance rule, temporal distinction, or reconciliation behavior. It changes the Recognition Engine input/output boundary and adds a resource-bounded execution profile.
+
+The 30MB-class profile is a model deployment target, not a claim that the entire SURGE runtime, adapters, dictionaries, repository, or working memory must fit in 30MB. Model artifact size, resident memory, adapter memory, Core memory, and repository storage MUST be reported separately.
+
+## 2. Design principle: preserve cognition, bound each inference
+
+A small Recognition Engine MUST NOT be asked to reconstruct the entire Context graph from raw text. It receives a bounded RecognitionPacket containing a local content window, typed structural metadata, and a compact ContextHint. It emits multi-label candidate scores and explicit abstentions. The Core combines these proposals with immutable Evidence, existing graph state, deterministic validators, and bounded Dependency reconciliation.
+
+The model is a local classifier and candidate proposer. It is not the Context repository, truth authority, temporal database, lineage resolver, or transaction coordinator.
+
+The framework MUST preserve:
+- all v0.7 SourceDocument, PageSnapshot, ContentBlock, SourceAnchor, CoverageRecord, Adapter Descriptor and lineage semantics;
+- all v0.6 Event, Evidence, Interpretation, Unit/Claim, Entity, Cluster, Relation, Dependency, Question Aspect, Interest, Focus, Observation Frame, temporal, transaction, recovery and convergence semantics;
+- all v0.7 invariants I-36 through I-50 and all inherited invariants;
+- uncertainty, unknown, partial, opaque, unmapped, and deferred states.
+
+## 3. Resource-bounded Recognition Engine profile
+
+### 3.1 Model profile
+
+A conforming compact profile SHOULD target:
+- serialized model artifact: <= 30 MiB (decimal MB MAY be additionally reported);
+- quantized, non-autoregressive classification;
+- bounded local input window;
+- multi-head or multi-label outputs;
+- no generative decoding and no KV cache;
+- no network access during inference;
+- deterministic output for a fixed model, packet, and runtime configuration, subject to documented numeric tolerance.
+
+The profile MAY use hashed character n-grams, byte/subword features, compact embeddings, linear or shallow neural heads, and quantized weights. A large general-purpose tokenizer or generative language model is not required. The exact classifier family is replaceable and MUST be declared in Model Descriptor.
+
+### 3.2 Model responsibilities
+
+The compact model MAY propose:
+- document and block type;
+- semantic role;
+- language/script and domain hints;
+- candidate semantic function (assertion, question, definition, instruction, observation, evaluation, quotation, metadata);
+- candidate entity/claim/relation/question cues;
+- uncertainty, ambiguity, and abstention;
+- candidate routing to specialized deterministic processors.
+
+It MUST NOT independently:
+- assert source independence or source trust;
+- confirm Entity identity or merge/split Clusters;
+- resolve contradictions or Question Aspects;
+- infer missing table headers, units, dates, speaker attribution, or omitted page content;
+- supersede earlier snapshots or claims;
+- commit Context State, Focus, Interest, Question status, or Dependency changes.
+
+### 3.3 Core responsibilities
+
+The Core retains authoritative responsibility for typed record creation, evidence linkage, deterministic structural validation, candidate reconciliation, temporal comparison, lineage, Question Aspect lifecycle, Interest/Focus arbitration, Dependency Impact, SCC convergence, transaction validation, commit, history, and recovery.
+
+A compact model score is a producer-specific proposal score, not a calibrated truth probability. Scores from different model versions or heads MUST NOT be compared unless calibration compatibility is declared and validated.
+
+## 4. RecognitionPacket input interface
+
+The Adapter MUST convert raw input into a sequence of bounded packets. A packet contains:
+- packet identity and idempotency key;
+- source/event/snapshot references and source position;
+- block type, semantic role, hierarchy path and structural flags;
+- a bounded text slice with exact offsets into immutable source content;
+- neighboring block references, not duplicated full documents;
+- a compact ContextHint containing active scope, relevant cluster/entity/question IDs, typed relation cues, temporal mode and policy version;
+- coverage, extraction confidence, language and adapter capability metadata;
+- finalization status and continuation/revision references.
+
+The ContextHint is an index and routing hint, not a substitute for the full graph. It MUST be generated from the committed Context View and carry its state version. Missing or stale hints are explicitly marked; the Core MUST revalidate proposals against the current version.
+
+### 4.1 Bounded window and overlap
+
+The Adapter uses a configurable maximum character/byte window and a small overlap. A semantic unit crossing a packet boundary is represented by continuation references and source offsets. The overlap MUST NOT create duplicate Evidence or duplicate committed Units. The Core performs deterministic deduplication using source identity, offsets, normalized digest, and idempotency keys.
+
+No fixed window size is normative across languages or modalities. Each Model Descriptor declares maximum bytes, maximum characters/tokens if applicable, overlap policy, and truncation behavior. Truncation MUST be explicit and anchored.
+
+### 4.2 Structural-first interface
+
+The Adapter supplies structural facts that do not require semantic inference: heading level, list nesting, table coordinates, header references, code fence/language, quote boundaries, link target, source anchor, timestamps explicitly present in metadata, and capture coverage. The classifier labels the local semantic function but MUST NOT reconstruct structure already available from the Adapter.
+
+For tables, the packet includes cell coordinate, row/column header references, units and footnotes when extracted. If these are unavailable, the cell remains structurally incomplete and cannot support a fully scoped numerical Claim.
+
+### 4.3 ContextHint budget
+
+ContextHint is bounded and typed. It SHOULD include only:
+- active scope IDs and current Focus refs;
+- a small ranked set of potentially relevant Cluster, Entity, Claim and Question Aspect refs;
+- compact relation/dependency signatures;
+- temporal scope and current state version;
+- retrieval reason for each included reference.
+
+The hint MUST NOT silently discard an unresolved contradiction or a dependency required by policy. If the hint budget is exceeded, Core retains authoritative graph state and records omitted refs; the classifier may abstain or request a wider Core-side lookup.
+
+## 5. Proposal output contract
+
+The model returns a ClassificationProposal with:
+- packet_ref, producer/model/runtime versions and base_state_version;
+- zero or more typed labels with producer-local scores;
+- candidate spans anchored to packet offsets;
+- candidate semantic roles and relation cues;
+- explicit uncertainty/abstention codes;
+- truncation and capability warnings;
+- no direct commit operation.
+
+Allowed abstention reasons include LOW_MARGIN, OUT_OF_DISTRIBUTION, UNSUPPORTED_LANGUAGE, WINDOW_TRUNCATED, STRUCTURE_MISSING, CONTEXT_HINT_STALE, LABEL_CONFLICT, and MODEL_ERROR.
+
+A missing prediction is not a negative assertion. A low score is not evidence that a semantic object is absent.
+
+## 6. Two-path recognition
+
+The Core MUST support:
+1. Fast path: structural normalization, compact classification, local candidate validation, append-only Evidence registration, and bounded integration.
+2. Reconciliation path: triggered only by relevant changes, uncertainty resolution, dependency activation, page revision, late arrival, or explicit policy. It reevaluates the impacted graph, not the entire source corpus.
+
+The fast path MUST NOT bypass v0.7 validation or commit invariants. The reconciliation path MUST retain v0.6 generation, cycle, idempotency, and fixed-point controls.
+
+## 7. RTF and performance contract
+
+### 7.1 Media-stream RTF
+
+For audio/video or another source with a defined presentation duration:
+RTF = total measured processing wall time / source presentation duration.
+The target is RTF < 0.01 under the declared benchmark profile. Report cold-start and warm steady-state separately, and include adapter, classifier, Core, and end-to-end timings.
+
+### 7.2 Text-only reference RTF
+
+Text has no intrinsic presentation duration. For reproducible text-stream comparison, v0.8 defines a benchmark-only reference clock:
+T_ref = normalized Japanese character count / 20 characters per second.
+Text RTF = measured end-to-end processing wall time / T_ref.
+This is a normalization convention, not a claim about human reading speed. Every report MUST also include characters/second, packets/second, p50/p95/p99 packet latency, and maximum queue depth. Other languages MUST declare a versioned reference rate; their results MUST NOT be silently compared to Japanese results.
+
+### 7.3 Measurement boundary
+
+The report MUST identify CPU model, core/thread count, clock policy, RAM, OS, compiler/runtime, quantization, model artifact size, warm/cold state, thread count, input corpus, packet/window sizes, and whether I/O is included. RTF < 0.01 is an acceptance target, not a presumed result. No design-level or simulated PASS may be reported as measured performance.
+
+### 7.4 Resource accounting
+
+Report separately: model bytes, peak RSS, steady RSS, temporary buffers, adapter memory, Core memory, repository storage, and cache. The model-size target does not cap immutable evidence storage.
+
+## 8. Semantic preservation and failure behavior
+
+v0.8 is conformant only if compact mode preserves the same semantic projection as the reference v0.7 pipeline on equivalent complete inputs, or explicitly records uncertainty/abstention where it cannot safely decide. Silent semantic loss is failure.
+
+Required behavior:
+- preserve every source anchor and block boundary;
+- retain multiple candidate interpretations where ambiguity exists;
+- preserve table headers/units/denominators and quote attribution;
+- maintain source lineage and independence counts;
+- keep publication, update, retrieval, event and validity times distinct;
+- retain Questions and individual Aspects independently;
+- keep Interest and Focus separate from truth and Cluster lifecycle;
+- trigger bounded Dependency reevaluation on impacted changes;
+- retain historical snapshots and reconstructability;
+- treat web content as untrusted data;
+- never convert model confidence into truth or source trust.
+
+When the compact model cannot classify, the Core MUST use deterministic structural evidence where sufficient, otherwise preserve UNKNOWN/UNMAPPED/OPAQUE/DEFERRED and continue. It MUST NOT invent a semantic answer to meet latency.
+
+## 9. Acceptance and regression
+
+All v0.7 W01-W50 and A-H cases remain mandatory. Add the compact-profile tests C01-C20 in DETAILED_DESIGN_v0.5.md. Acceptance requires:
+- semantic projection equivalence or explicitly justified abstention;
+- zero invariant violations;
+- no duplicate Evidence/Units from overlap;
+- deterministic replay and idempotency;
+- bounded Impact Set and reconciliation;
+- no fabricated structure or provenance;
+- measured RTF and latency under the declared profile.
+
+A 50-page thought experiment is not a runtime benchmark. Runtime performance and semantic accuracy require an executable model and Core implementation.
+
+## 10. Compatibility
+
+v0.7 records remain unchanged. v0.8 packet/proposal records are additive. Existing full-text Event payloads MAY be wrapped in a single packet without rewriting their original content. Migration MUST preserve original source offsets and digest. Model replacement creates a new producer/model version; it does not rewrite committed historical interpretations.
+
+## 11. Implementation priorities
+
+1. RecognitionPacket and ClassificationProposal schema.
+2. Structural-first Adapter packetization with exact offsets.
+3. Compact Model Descriptor and abstention contract.
+4. Core-side ContextHint retrieval and validation.
+5. Fast-path batching and bounded reconciliation scheduling.
+6. v0.7 corpus plus C01-C20 regression fixtures.
+7. Reproducible CPU benchmark harness and semantic projection comparison.
+
+Conclusion: v0.8 preserves the complete v0.7 context semantics while constraining only the local inference interface. A small classifier performs bounded recognition; SURGE Core maintains the continuous, evidence-grounded context.
