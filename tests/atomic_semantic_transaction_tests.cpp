@@ -93,11 +93,9 @@ int main() {
     std::string error;
     assert(!graph.prepare_events(delta,events,error));
     assert(error=="NODE_ID_OR_CONTENT_INVALID");
-    const auto rejected=packets.admit(packet_for(source),source,events);
-    assert(rejected.admitted);
-    // Empty events here intentionally exercise legacy packet-only admission.
-    // The combined C++ transaction caller must stop when prepare_events fails.
-    assert(journal.state_version()==1);
+    // The orchestrator must not call packet admission after semantic validation fails.
+    assert(journal.state_version()==0);
+    assert(packets.packet_count()==0);
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE atomic packet-semantic transaction: commit/retry/replay passed\n";
