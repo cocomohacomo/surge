@@ -2,9 +2,9 @@
 
 **Specification:** 0.6.0  
 **Test type:** Model-based design conformance  
-**Count:** 100
+**Count:** 101
 
-設計上の期待結果が100ケース全てで定義済み。PASSは仕様レベルの設計適合を示し、実装自動テストの実行を意味しない。
+設計上の期待結果が101ケース全てで定義済み。PASSは仕様レベルの設計適合を示し、実装自動テストの実行を意味しない。
 
 | ID | ケース | 期待結果 |
 |---|---|---|
@@ -108,9 +108,10 @@
 | T-098 | v0.5 Question Migration | 各旧Aspectを変換し未解決Mappingを報告する。 |
 | T-099 | 旧RESOLVED根拠欠落 | Resolutionを捏造せずReview Aspectを生成する。 |
 | T-100 | Migration失敗時旧State保持 | 新Generationを公開せず旧Stateを保持する。 |
+| T-101 | RESOLVEDとINVALIDATEDの終端混在 | 全required Aspectが終端し少なくとも一つRESOLVEDならQuestionはRESOLVED、Aspect個別の結果は保持する。 |
 
 ## 集計
-- 設計適合: 100/100 PASS
+- 設計適合: 101/101 PASS
 - 未定義の成功経路: 0
 - 実装自動テスト: 未実行
 - 要実測: Clock Mapping誤差伝播、SCC収束、DB Transaction、並列Delta競合、JSON Schema Validator実装。
