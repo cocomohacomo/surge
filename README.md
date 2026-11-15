@@ -4,7 +4,7 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
-- **ContextHint + Durable RetrievalTicket v0.1:** ContextHint priority and journal-backed ticket issue/resolution are integrated into the retrieval bridge. See [CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md).\n- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
+- **Graph-Derived ContextHint v0.1:** [docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md](docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md)\n- **ContextHint + Durable RetrievalTicket v0.1:** ContextHint priority and journal-backed ticket issue/resolution are integrated into the retrieval bridge. See [CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md).\n- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
 
 - **Atomic Packet-Semantic Transaction v0.1:** [docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md](docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md)
 
