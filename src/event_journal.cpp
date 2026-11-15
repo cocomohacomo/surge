@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <utility>
 
 namespace surge {
 namespace {
@@ -22,15 +23,6 @@ std::uint32_t crc32(const std::string& data) {
 }
 void put_u32(std::ostream& out, std::uint32_t value) {
   for (int i = 0; i < 4; ++i) out.put(static_cast<char>((value >> (i * 8)) & 0xFFU));
-}
-bool get_u32(std::istream& in, std::uint32_t& value) {
-  value = 0;
-  for (int i = 0; i < 4; ++i) {
-    const int c = in.get();
-    if (c == EOF) return false;
-    value |= static_cast<std::uint32_t>(static_cast<unsigned char>(c)) << (i * 8);
-  }
-  return true;
 }
 std::string request_fingerprint(const std::string& tx, std::uint64_t version,
                                 const std::vector<JournalEvent>& events) {
@@ -114,6 +106,7 @@ bool EventJournal::recover() {
     std::string idem, fingerprint;
     std::uint64_t expected{};
     std::vector<JournalEvent> events;
+    std::streamoff begin_offset{};
   };
   std::map<std::string, Pending> pending;
   bool truncated_tail = false;
@@ -160,7 +153,7 @@ bool EventJournal::recover() {
           tx.empty() || idem.empty() || fingerprint.empty() || pending.count(tx)) {
         last_error_ = "JOURNAL_BEGIN_RECORD_INVALID"; return false;
       }
-      pending.emplace(tx, Pending{idem, fingerprint, expected, {}});
+      pending.emplace(tx, Pending{idem, fingerprint, expected, {}, static_cast<std::streamoff>(frame_start)});
     } else if (type == 'E') {
       std::string tx; JournalEvent event;
       if (!(frame >> std::quoted(tx) >> std::quoted(event.event_id) >>
@@ -192,6 +185,14 @@ bool EventJournal::recover() {
       pending.erase(tx);
     } else {
       last_error_ = "JOURNAL_RECORD_TYPE_INVALID"; return false;
+    }
+  }
+  if (!pending.empty()) {
+    for (const auto& item : pending) {
+      if (!truncated_tail || item.second.begin_offset < truncate_at) {
+        truncated_tail = true;
+        truncate_at = item.second.begin_offset;
+      }
     }
   }
   in.close();
