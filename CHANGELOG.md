@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.4
+
+- Add bounded transitive Dependency impact-set computation with deterministic ordering and budget enforcement.
+- Add Tarjan SCC detection for cyclic dependency groups.
+- Mark budget-exceeded results incomplete and prohibit treating partial impact sets as complete.
+- Add dependency engine tests for chains, cycles, determinism, missing roots and invalid edges.
+
+
 ## 0.9.3
 
 - Add typed ContextGraph nodes (Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest) and relations.
