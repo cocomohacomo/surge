@@ -101,6 +101,8 @@ bool EventJournal::append_frame(const std::string& payload) {
 }
 
 bool EventJournal::recover() {
+  state_version_ = 0;
+  events_.clear(); idempotency_.clear(); transaction_ids_.clear(); event_ids_.clear();
   std::ifstream in(path_, std::ios::binary);
   if (!in) { last_error_ = "JOURNAL_OPEN_READ_ERROR"; return false; }
   std::array<char, sizeof(kMagic) - 1> magic{};
@@ -173,6 +175,12 @@ bool EventJournal::recover() {
       last_error_ = "JOURNAL_RECORD_TYPE_INVALID"; return false;
     }
   }
+  in.close();
+  if (truncated_tail) {
+    std::error_code ec;
+    std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
+    if (ec) { last_error_ = "JOURNAL_TAIL_TRUNCATE_ERROR"; return false; }
+  }
   return true;
 }
 
@@ -196,12 +204,17 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
         batch_ids.count(event.event_id)) return {false, false, state_version_, "EVENT_ID_INVALID_OR_DUPLICATE"};
     batch_ids[event.event_id] = true;
   }
-  if (!append_frame(begin_frame(tx, idem, expected, fingerprint)))
-    return {false, false, state_version_, last_error_};
-  for (const auto& event : events)
-    if (!append_frame(event_frame(tx, event))) return {false, false, state_version_, last_error_};
-  if (!append_frame(commit_frame(tx, expected + 1, events.size(), fingerprint)))
-    return {false, false, state_version_, last_error_};
+  if (!append_frame(begin_frame(tx, idem, expected, fingerprint))) {
+    opened_ = false; return {false, false, state_version_, last_error_};
+  }
+  for (const auto& event : events) {
+    if (!append_frame(event_frame(tx, event))) {
+      opened_ = false; return {false, false, state_version_, last_error_};
+    }
+  }
+  if (!append_frame(commit_frame(tx, expected + 1, events.size(), fingerprint))) {
+    opened_ = false; return {false, false, state_version_, last_error_};
+  }
   for (const auto& event : events) { events_.push_back(event); event_ids_[event.event_id] = true; }
   idempotency_[idem] = fingerprint;
   transaction_ids_[tx] = fingerprint;
