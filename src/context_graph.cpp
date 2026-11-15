@@ -31,7 +31,7 @@ ContextGraph::ContextGraph(EventJournal& j):journal_(&j){}
 bool ContextGraph::open(){if(!journal_||!journal_->open())return false;return replay();}
 
 bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
- if(n.id.empty()||n.content.empty()||s.nodes.count(n.id)){e="NODE_ID_OR_CONTENT_INVALID";return false;}
+ if(n.id.empty()||(n.content.empty()&&n.kind!=NodeKind::Dependency)||s.nodes.count(n.id)){e="NODE_ID_OR_CONTENT_INVALID";return false;}
  auto ref_kind=[&](std::size_t x,NodeKind k){return x<n.references.size()&&s.nodes.count(n.references[x])&&s.nodes.at(n.references[x]).kind==k;};
  for(const auto& r:n.references)if(!s.nodes.count(r)){e="NODE_REFERENCE_NOT_FOUND";return false;}
  switch(n.kind){
