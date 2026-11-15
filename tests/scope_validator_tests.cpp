@@ -7,7 +7,7 @@ static ScopeAnchor anchor(const std::string& id,const std::string& digest,const 
   return {id,digest,"UTF8_BYTE_NFC",start,start+text.size(),text,packet};
 }
 int main(){
-  const std::string source="not approve if funded may approve although delayed but approve he said "yes" in 2026 item header";
+  const std::string source="not approve if funded may approve although delayed but approve he said \"yes\" in 2026 item header";
   const std::string digest(64,'a');
   std::map<std::string,GraphNode> nodes={
     {"c1",{"c1",NodeKind::Claim,"claim1",{"e1"}}},
