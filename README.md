@@ -14,6 +14,9 @@ Universal Context Cognition Framework.
 - **D01-D12 fixtures:** [tests/conformance/SURGE_v0.9_D01_D12.json](tests/conformance/SURGE_v0.9_D01_D12.json)
 - **D13-D20 fixtures:** [tests/conformance/SURGE_v0.9_D13_D20.json](tests/conformance/SURGE_v0.9_D13_D20.json)
 
+- **Event journal design:** [docs/surge/EVENT_JOURNAL_v0.1.md](docs/surge/EVENT_JOURNAL_v0.1.md)
+- **Event journal conformance:** [tests/conformance/SURGE_v0.9_EVENT_JOURNAL.md](tests/conformance/SURGE_v0.9_EVENT_JOURNAL.md)
+
 ## Build and test
 
 C++17 Core prototype:
@@ -49,4 +52,4 @@ v0.9 is the current normative architecture and execution contract. v0.8 and earl
 
 ## Conformance status
 
-The C++17 prototype currently covers selected v0.9 primitives only. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
+The C++17 prototype currently covers selected v0.9 primitives and an append-only local event journal. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
