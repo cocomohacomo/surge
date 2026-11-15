@@ -335,3 +335,121 @@ Passing one gate MUST NOT be described as passing another. In particular, artifa
 ## 15. v0.8 normative conclusion
 
 The 30 MiB model profile is plausible as a bounded local recognizer, but the specification makes no empirical claim that a particular model, CPU, or implementation achieves RTF < 0.01. The design targets this through structural-first input, bounded packets, micro-batching, indexed ContextHint retrieval, incremental Core updates, and event-driven reconciliation. Full v0.7 semantic state remains authoritative in the Core. The acceptance decision is made only from reproducible end-to-end measurements and semantic regression results.
+
+
+## 16. Cross-packet semantic scope contract
+
+### 16.1 Scope-bearing spans
+
+A semantic cue whose interpretation may extend beyond one RecognitionPacket MUST be represented by a Core-owned ScopeSpan record. A ScopeSpan contains:
+- scope_span_id and scope_kind (NEGATION, CONDITION, MODALITY, CONCESSION, CONTRAST, COREFERENCE, ANAPHORA, QUOTATION, TEMPORAL, LIST_CONTINUATION, TABLE_HEADER);
+- source_anchor_refs and exact normalized-source offsets;
+- opener_ref, optional closer_ref, and continuation_status (OPEN, CLOSED, UNRESOLVED, INVALIDATED);
+- antecedent/candidate refs where applicable;
+- origin packet refs and source-order range;
+- confidence/proposal provenance, which remains producer-local;
+- resolution_policy_version.
+
+The compact model may propose local cues and candidate boundaries. Only Core may extend, close, split, or invalidate a ScopeSpan after checking source order, offsets, structural boundaries and available evidence.
+
+### 16.2 Boundary continuation
+
+A packet ending while a scope is open MUST emit a continuation reference, not a completed semantic interpretation. The next packet may close or refine that scope. Until closure or an explicit policy-defined safe boundary, dependent Claim candidates MUST retain the relevant uncertainty. Packet completion does not imply semantic-scope completion.
+
+A packet may reference an earlier packet without copying its text. Core retrieves the exact source slice from the immutable source representation. Missing antecedents remain UNRESOLVED; the system MUST NOT guess them from a truncated window.
+
+### 16.3 Scope propagation
+
+Scope propagation follows source order and typed rules, not generic text similarity. A negation scope, for example, may govern a predicate span but MUST NOT automatically negate every later sentence. Conditions and concessions retain their own target spans. Quote scope keeps attributed content separate from author commentary. ScopeSpan records are immutable revisions: corrections create new records with revision lineage.
+
+## 17. Causal scheduling and ordered integration
+
+### 17.1 Three distinct orders
+
+The implementation MUST distinguish:
+1. source order: order in which content occurs in its source;
+2. inference completion order: order in which parallel model jobs finish;
+3. Core commit order: order in which accepted semantic deltas become visible.
+
+Inference completion order MUST NOT define source meaning or commit precedence.
+
+### 17.2 Per-source sequencer
+
+Each source stream has a monotonic source_sequence and a sequencer watermark. The scheduler may run compatible packets concurrently, but Core integration is serialized by source causal order unless a declared commutativity proof permits reordering. A later packet whose predecessor is not yet integrated remains READY_BUT_BLOCKED. Independent sources may progress concurrently.
+
+A source sequence gap is explicit. The system MUST NOT advance the watermark across an unaccepted, deferred, failed, or unknown range. A gap may be closed only by accepted packet receipt, an explicit source correction/retraction event, or an authorized gap-resolution record with provenance.
+
+### 17.3 Proposal and Delta binding
+
+Every proposal records packet_ref, source_sequence, source_range, base_state_version, ContextHint state_version, model descriptor, and idempotency key. Core validates the proposal against the current committed state and exact predecessor watermark before generating or committing a Delta.
+
+When a stale proposal can be safely rebased, Core MUST regenerate/revalidate its Delta against the current version. It MUST NOT merely replace the version field. A conflict affecting its read set returns NEEDS_REBASE or DEFERRED.
+
+### 17.4 Deterministic replay
+
+Given the same immutable source records, model/runtime descriptor, policy versions, and deterministic tie-break rules, replay MUST produce the same ordered integration decisions or explicit recorded nondeterminism. A late-arriving earlier source segment triggers bounded re-evaluation of affected later records; it does not rewrite their historical commit records.
+
+## 18. ContextHint overflow and mandatory retrieval
+
+### 18.1 Mandatory versus optional references
+
+ContextHint candidate references are divided into:
+- MANDATORY: unresolved Question Aspects, active Dependencies whose trigger condition is met, open ScopeSpans crossing the packet boundary, required source/lineage refs, and policy-mandated Focus/Scope refs;
+- OPTIONAL: ranked related Clusters, historical examples, low-priority entity candidates and convenience context.
+
+MANDATORY references are not evictable by OPTIONAL references. If mandatory references exceed the packet/model hint budget, Core MUST return a truncated hint with omitted mandatory count and a retrieval ticket. The classifier MUST abstain from decisions that require omitted references.
+
+### 18.2 Retrieval ticket
+
+A RetrievalTicket is a Core-owned, immutable query descriptor containing ticket_id, context_id, state_version, packet_ref/source_range, omitted_ref_count, omitted_ref_digest, mandatory_reason_codes, retrieval_policy_version and expiry/revalidation policy. It is not a copy of the omitted graph.
+
+The proposal may return NEEDS_CORE_LOOKUP with ticket refs and the exact label/span needing context. Core resolves the ticket against authoritative state, records the retrieved refs and reasons, and revalidates the candidate. Tickets are idempotent and state-version-bound.
+
+### 18.3 Overflow behavior
+
+If the mandatory set cannot fit:
+1. preserve all mandatory refs in Core state;
+2. include the highest-priority subset in the bounded hint;
+3. record the complete omitted set by digest and retrievable query;
+4. mark affected decisions CONTEXT_INCOMPLETE;
+5. abstain or defer any decision whose validity depends on omitted refs;
+6. schedule lookup/reconciliation only for those decisions.
+
+No context item is deleted merely because it was omitted from ContextHint. A hint is never the authoritative store.
+
+## 19. Quality, coverage and performance acceptance
+
+RTF is accepted only alongside semantic quality. A benchmark report MUST include:
+- per-label precision, recall and F1 (or an explicitly justified task-specific metric);
+- candidate coverage and abstention rate;
+- selective risk at declared coverage levels;
+- abstention rate on examples classifiable by the reference pipeline;
+- false-negative rate for negation, condition, modality, attribution and temporal scope;
+- semantic projection EXACT/EQUIVALENT rate, and explicit INCOMPARABLE/CONFLICTING/DEFERRED counts;
+- duplicate Evidence/Unit count (required zero);
+- queue stability, source-order violations (required zero), and p50/p95/p99/max latency;
+- end-to-end fast-path and settled RTF, separately;
+- peak/steady RSS and model/runtime/adapter/Core memory accounting.
+
+A model cannot pass by abstaining on nearly all inputs. Each benchmark declares minimum coverage and maximum selective risk before execution. These thresholds are profile-specific and versioned; they MUST be fixed before the test run, not tuned after seeing results.
+
+A semantic acceptance result and a performance acceptance result are independent gates. Overall compact-profile acceptance requires both gates, zero invariant violations, and no silent source-range loss. Thought experiments remain DESIGN_REVIEW, never MEASURED_PASS.
+
+## 20. New v0.8 invariants
+
+| ID | Invariant |
+|---|---|
+| I-61 | Scope Continuity: semantic scopes crossing packet boundaries retain explicit continuation and exact source anchors |
+| I-62 | Scope Non-Overreach: scope propagation is typed and bounded; no blanket carry-forward |
+| I-63 | Causal Integration: inference completion order cannot override source causal order |
+| I-64 | Watermark Integrity: source watermarks cannot advance across unresolved gaps |
+| I-65 | Mandatory Hint Retention: mandatory graph references cannot be discarded by ContextHint truncation |
+| I-66 | Lookup Completeness: omitted mandatory refs remain retrievable through a version-bound Core ticket |
+| I-67 | Abstention Validity: decisions depending on omitted context must abstain or defer |
+| I-68 | Quality-Performance Coupling: RTF acceptance requires predeclared coverage and selective-risk gates |
+| I-69 | Replay Determinism: ordered integration is deterministic or explicitly records nondeterminism |
+| I-70 | Scope Provenance: every ScopeSpan revision remains traceable to immutable source anchors and proposal lineage |
+
+## 21. Conformance additions
+
+Add detailed-design cases D01-D12 and API rules in CORE_API_v0.3.md. Existing W01-W50, A-H, C01-C20 and T-001–T-101 remain inherited mandatory fixtures. A passing thought experiment does not establish executable conformance, model accuracy, memory use, or RTF.
