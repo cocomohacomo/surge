@@ -430,6 +430,27 @@ int surge_packet_core_admit_and_apply(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
 }
+
+int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
+    const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !aspect_id || !*aspect_id || !status) {
+      copy_text(error, error_capacity, "C_API_ARGUMENT_INVALID"); return 0;
+    }
+    surge::QuestionAspectStatus value;
+    const std::string name(status);
+    if (name == "OPEN") value = surge::QuestionAspectStatus::Open;
+    else if (name == "RESOLVED") value = surge::QuestionAspectStatus::Resolved;
+    else if (name == "DEFERRED") value = surge::QuestionAspectStatus::Deferred;
+    else { copy_text(error, error_capacity, "QUESTION_ASPECT_STATUS_INVALID"); return 0; }
+    std::string message;
+    auto& graph = static_cast<Handle*>(opaque)->graph;
+    const bool ok = graph.set_question_aspect_status(aspect_id, value, expected_state_version, message);
+    copy_text(error, error_capacity, message);
+    return ok ? 1 : 0;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "UNKNOWN_QUESTION_ASPECT_STATUS_EXCEPTION"); return 0; }
+}
 uint64_t surge_packet_core_state_version(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.state_version():0;
 }
