@@ -100,4 +100,7 @@
 - Build the C++ Core as a shared library and expose a stable C ABI for journal-backed RecognitionPacket admission.
 - Add Python ctypes `CppCoreBridge` and `RecognitionPacketAdapter.admit_to_core()`; C++ is the durable admission authority.
 - Add end-to-end integration coverage for NFC normalization, schema rejection, durable commit, duplicate retry and restart replay.
+- Allow ContextGraph and PacketAdmissionCoordinator to share one EventJournal, with domain-aware replay and global transaction-version accounting.
+- Add a complete implemented-Core pipeline test: packet admission → typed graph → contradiction Question/Interest routing → dependency impact → ContextHint/RetrievalTicket → shared-journal restart replay.
+- Publish a runnability report that separates verified prototype behavior from semantic-model, durability and performance work still outstanding.
 - Run the Python/C++ integration suite in GitHub Actions after building the shared Core.
