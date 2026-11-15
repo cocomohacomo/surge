@@ -49,7 +49,7 @@ class ContextGraph {
   explicit ContextGraph(EventJournal& shared_journal);
   bool open();
   DeltaResult apply(const SemanticDelta& delta);
-  std::uint64_t state_version() const { return journal_.state_version(); }
+  std::uint64_t state_version() const { return journal_->state_version(); }
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
