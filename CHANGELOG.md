@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.9
+
+- Add C++ PacketAdmissionCoordinator to stage SourceSequencer and RangeLedger changes before a single EventJournal commit.
+- Publish in-memory admission state only after successful journal commit.
+- Rebuild packet identity, idempotency, source sequence and range state from committed journal events on restart.
+- Add conformance coverage for exact retries, sequence gaps, range conflicts, restart replay and failed-commit non-publication.
+- Document trusted-adapter boundary and remaining lack of a Python/C++ binding and C++ SHA-256 recomputation.
+
+
 ## 0.9.8
 
 - Add Python RecognitionPacket admission adapter with Draft 2020-12 schema validation.
