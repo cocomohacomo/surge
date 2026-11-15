@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace surge {
 struct JournalEvent {
