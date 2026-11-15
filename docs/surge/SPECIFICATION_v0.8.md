@@ -7,6 +7,7 @@ Status: Architecture and Core Contract Specification
 Parent: SPECIFICATION_v0.7.md
 Detailed design: DETAILED_DESIGN_v0.5.md
 Input contract: schemas/surge-v0.8-input.schema.json
+Proposal contract: schemas/surge-v0.8-proposal.schema.json
 Core API extension: docs/surge/CORE_API_v0.3.md
 
 ## 1. Version policy
@@ -188,7 +189,7 @@ v0.7 records remain unchanged. v0.8 packet/proposal records are additive. Existi
 
 ## 11. Implementation priorities
 
-1. RecognitionPacket and ClassificationProposal schema.
+1. RecognitionPacket and ClassificationProposal schemas.
 2. Structural-first Adapter packetization with exact offsets.
 3. Compact Model Descriptor and abstention contract.
 4. Core-side ContextHint retrieval and validation.
