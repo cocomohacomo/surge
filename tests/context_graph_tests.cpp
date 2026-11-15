@@ -37,9 +37,20 @@ int main(){
     assert(recovered.nodes().size()==6 && recovered.relations().size()==1);
     assert(recovered.focus() && recovered.focus()->cluster_id=="cluster-1");
     assert(recovered.focus_history().size()==1);
+    SemanticDelta original;original.delta_id="d1";original.idempotency_key="k1";original.expected_state_version=0;
+    original.nodes={{{"cluster-1",NodeKind::Cluster,"予算案",{}}},{{"evidence-1",NodeKind::Evidence,"会議発言",{}}},{{"claim-1",NodeKind::Claim,"予算を増額する",{"evidence-1"}}},{{"question-1",NodeKind::Question,"予算は増額可能か",{}}},{{"aspect-1",NodeKind::QuestionAspect,"財源の有無",{"question-1"}}},{{"interest-1",NodeKind::Interest,"財源を確認",{"aspect-1","cluster-1"}}}};
+    original.relations={{{"rel-1",RelationKind::About,"claim-1","cluster-1"}}};
+    original.focus=SetFocus{{"cluster-1","interest-1"}};
+    auto replay_retry=recovered.apply(original);assert(replay_retry.committed && replay_retry.duplicate);
     SemanticDelta d;d.delta_id="d2";d.idempotency_key="k2";d.expected_state_version=1;
     d.nodes={{{"cluster-2",NodeKind::Cluster,"派生議題",{}}}};
     auto result=recovered.apply(d);assert(result.committed && result.state_version==2);
+  }
+  {
+    ContextGraph recovered(path);assert(recovered.open());
+    assert(recovered.state_version()==2);
+    assert(recovered.nodes().count("cluster-2")==1);
+    assert(recovered.nodes().count("cluster-1")==1);
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: 2 groups passed\n";
