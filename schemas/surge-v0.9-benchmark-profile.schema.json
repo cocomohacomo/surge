@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:benchmark-profile:0.9.0",
+  "title": "SURGE v0.9 Immutable Benchmark Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "corpus_digest",
+    "split_digest",
+    "reference_pipeline",
+    "metric_implementation_version",
+    "critical_labels",
+    "min_examples_per_critical_label",
+    "thresholds",
+    "coverage_points",
+    "registered_at",
+    "evaluator_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.9.0"
+    },
+    "profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "corpus_digest": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "split_digest": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "reference_pipeline": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metric_implementation_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "critical_labels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "min_examples_per_critical_label": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_overall_coverage",
+        "minimum_critical_label_coverage",
+        "minimum_critical_label_recall",
+        "maximum_selective_risk",
+        "minimum_semantic_projection_agreement",
+        "maximum_critical_false_negative_rate",
+        "maximum_invariant_violations",
+        "maximum_duplicate_evidence",
+        "maximum_duplicate_units"
+      ],
+      "properties": {
+        "minimum_overall_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minimum_critical_label_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minimum_critical_label_recall": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maximum_selective_risk": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minimum_semantic_projection_agreement": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maximum_critical_false_negative_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maximum_invariant_violations": {
+          "const": 0
+        },
+        "maximum_duplicate_evidence": {
+          "const": 0
+        },
+        "maximum_duplicate_units": {
+          "const": 0
+        }
+      }
+    },
+    "coverage_points": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1
+      }
+    },
+    "performance_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maximum_end_to_end_rtf": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "maximum_p99_latency_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "maximum_peak_rss_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "minimum_throughput_per_second": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "registered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evaluator_ref": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$comment": "Profile is immutable after registration. Zero eligible denominator or fewer than min_examples_per_critical_label yields INCONCLUSIVE, never PASS."
+}
