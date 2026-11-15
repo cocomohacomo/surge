@@ -19,7 +19,7 @@ int main() {
   assert(sha256_hex("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   assert(sha256_hex("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   assert(is_valid_utf8("日本語"));
-  assert(!is_valid_utf8(std::string("\\xff",1)));
+  assert(!is_valid_utf8(std::string(1, static_cast<char>(0xff))));
   const auto root=std::filesystem::temp_directory_path()/"surge-packet-admission";
   std::filesystem::remove_all(root);
   const auto path=(root/"events.sgj").string();
