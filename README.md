@@ -4,6 +4,7 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
+- **LLM Semantic Core Integration v0.1:** [docs/surge/LLM_SEMANTIC_INTEGRATION_v0.1.md](docs/surge/LLM_SEMANTIC_INTEGRATION_v0.1.md)
 - **Streaming Text Runtime v0.1:** [docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md](docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md)
 
 - **ClassificationProposal Builder v0.1:** [docs/surge/PROPOSAL_BUILDER_v0.1.md](docs/surge/PROPOSAL_BUILDER_v0.1.md)
@@ -75,11 +76,18 @@ v0.9 is the current normative architecture and execution contract. v0.8 and earl
 
 ## Conformance status
 
-The C++17 Core is built as a shared library and exposes a stable C ABI. The
-Python RecognitionPacket adapter connects through ctypes; C++ performs
-independent UTF-8/SHA-256 validation and journal-backed atomic packet admission.
-PacketAdmissionCoordinator and ContextGraph can share one EventJournal and
-recover their respective state after restart.
+The C++17 Core is built as a shared library and exposes a C ABI for both
+journal-backed packet admission and typed SemanticDelta application. The
+Python RecognitionPacket and LLM adapters connect through ctypes; C++ performs
+independent UTF-8/SHA-256 validation, Core graph validation, and journal-backed
+semantic commits. PacketAdmissionCoordinator and ContextGraph share one
+EventJournal and recover their respective state after restart.
+
+The provider-neutral LLM interface accepts strict structured recognition
+outputs, applies Recognition Scoring, and submits Evidence/Claim/Cluster/
+Relation/Question/Interest operations to the C++ Core. CI uses a deterministic
+provider fixture and exercises 50 sequential text-to-semantic commits followed
+by journal restart replay. A live external LLM endpoint is not called in CI.
 
 The end-to-end runtime test executes packet admission, typed graph commit,
 contradiction-to-Question/Interest routing, ambiguous-focus suppression,
@@ -88,11 +96,11 @@ resolution, followed by shared-journal replay. Current CI passes 9/9 CTest
 targets and 15/15 Python tests. All 3 Draft 2020-12 schemas and D01-D20 fixture
 structural contracts validate.
 
-This establishes execution of the implemented Core path, not complete v0.9
-semantic conformance. D01-D20 are not yet all end-to-end semantic tests.
-Automatic text-to-Claim/Evidence/ScopeSpan recognition, actual Recognition
-Engine/model integration, quality metrics, RTF, p99 latency and peak RSS remain
-unimplemented or unmeasured. See the runtime execution report for the exact
+This establishes execution of the implemented LLM-to-Core path, not complete
+v0.9 semantic conformance. D01-D20 are not yet all end-to-end semantic tests.
+Full typed ScopeSpan extraction/commit, cross-process cluster and contradiction
+lookup, atomic packet-plus-semantic transaction, quality metrics, RTF, p99
+latency and peak RSS remain unimplemented or unmeasured. See the runtime execution report for the exact
 boundary and reproducible commands.
 
 ### Packet source integrity
