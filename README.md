@@ -7,11 +7,29 @@ Universal Context Cognition Framework.
 - **Foundational specification v0.9.0:** [docs/surge/SPECIFICATION_v0.9.md](docs/surge/SPECIFICATION_v0.9.md)
 - **Detailed design v0.6:** [docs/surge/DETAILED_DESIGN_v0.6.md](docs/surge/DETAILED_DESIGN_v0.6.md)
 - **Core API v0.4:** [docs/surge/CORE_API_v0.4.md](docs/surge/CORE_API_v0.4.md)
+- **Implementation status:** [docs/surge/IMPLEMENTATION_v0.9.md](docs/surge/IMPLEMENTATION_v0.9.md)
 - **RecognitionPacket Schema Draft 2020-12:** [schemas/surge-v0.9-input.schema.json](schemas/surge-v0.9-input.schema.json)
 - **ClassificationProposal Schema Draft 2020-12:** [schemas/surge-v0.9-proposal.schema.json](schemas/surge-v0.9-proposal.schema.json)
 - **Benchmark Profile Schema:** [schemas/surge-v0.9-benchmark-profile.schema.json](schemas/surge-v0.9-benchmark-profile.schema.json)
 - **D01-D12 fixtures:** [tests/conformance/SURGE_v0.9_D01_D12.json](tests/conformance/SURGE_v0.9_D01_D12.json)
 - **D13-D20 fixtures:** [tests/conformance/SURGE_v0.9_D13_D20.json](tests/conformance/SURGE_v0.9_D13_D20.json)
+
+## Build and test
+
+C++17 Core prototype:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+Schema and fixture checks:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python tools/validate_fixtures.py
+```
 
 ## Specification hierarchy
 
@@ -31,4 +49,4 @@ v0.9 is the current normative architecture and execution contract. v0.8 and earl
 
 ## Conformance status
 
-D01-D20 are executable-oriented fixtures, not evidence of executed tests. Design review, schema validation, executable conformance, model accuracy and measured performance are reported separately.
+The C++17 prototype currently covers selected v0.9 primitives only. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
