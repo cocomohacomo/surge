@@ -1,8 +1,8 @@
 # SURGE Core API v0.3
-## Core Contract for SURGE Specification v0.4
+## Core API with SURGE v0.8 Compact Recognition Extension
 
 **Version:** 0.3.0  
-**Applies to:** SURGE v0.6.0  
+**Applies to:** SURGE v0.6.0 base API + additive SURGE v0.8.0 packet interface  
 **Status:** Normative API Design  
 **Transport:** Transport-neutral (HTTP / RPC / in-process ABI mapping is implementation-specific)
 
@@ -22,7 +22,7 @@ The Core API separates:
 - bounded reconciliation from ordinary updates;
 - read access from state mutation.
 
-The JSON payload contract is defined by `schemas/surge-v0.6.schema.json`. Cross-record invariants and lifecycle rules remain Core Validator responsibilities.
+The inherited JSON payload contract is defined by `schemas/surge-v0.6.schema.json`; the bounded RecognitionPacket contract is defined by `schemas/surge-v0.8-input.schema.json`. Cross-record invariants and lifecycle rules remain Core Validator responsibilities.
 
 ## 2. Authority and trust boundaries
 
