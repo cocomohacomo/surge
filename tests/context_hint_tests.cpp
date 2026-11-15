@@ -22,6 +22,8 @@ int main(){
   assert(built.hint.included_refs[1]=="qa-1");
   assert(built.hint.included_refs[2]=="dep-1");
   assert(!built.hint.context_complete && !built.hint.retrieval_ticket_id.empty());
+  assert(built.ticket.omitted_refs.size()==2);
+  assert(built.ticket.omitted_refs[0]=="lineage-1" && built.ticket.omitted_refs[1]=="focus-1");
   RetrievalTicketRegistry registry;
   assert(registry.issue(built.ticket));
   assert(registry.issue(built.ticket) && registry.size()==1);
