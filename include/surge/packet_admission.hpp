@@ -25,6 +25,7 @@ struct ValidatedRecognitionPacket {
   std::uint64_t source_sequence{};
   std::string source_range_digest;
   std::string canonical_request_digest;
+  std::string revision_of_packet_id;
   bool source_snapshot_verified{false};
   bool range_digest_verified{false};
   bool revision{false};
@@ -55,6 +56,7 @@ class PacketAdmissionCoordinator {
     SourceSequencer sequencer;
     RangeLedger ranges;
     std::map<std::uint64_t, std::string> sequence_packets;
+    std::map<std::string, std::string> range_latest_packets;
   };
   static std::string stream_key(const ValidatedRecognitionPacket& packet);
   static std::string range_key(const ValidatedRecognitionPacket& packet);
