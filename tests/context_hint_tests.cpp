@@ -1,4 +1,5 @@
 #include "surge/context_hint.hpp"
+#include "surge/context_graph.hpp"
 #include <cassert>
 #include <iostream>
 #include <filesystem>
@@ -37,6 +38,7 @@ int main(){
   auto repeat=registry.resolve(built.ticket.ticket_id,8,true,{"ignored"});
   assert(repeat.refs==reevaluated.refs);
 
+  std::string error;
   const auto journal_path=(std::filesystem::temp_directory_path()/"surge-persistent-ticket-tests.sgj").string();
   std::filesystem::remove(journal_path);
   std::string persistent_ticket_id=built.ticket.ticket_id;
