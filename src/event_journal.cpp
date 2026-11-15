@@ -35,7 +35,7 @@ bool get_u32(std::istream& in, std::uint32_t& value) {
 std::string request_fingerprint(const std::string& tx, std::uint64_t version,
                                 const std::vector<JournalEvent>& events) {
   // Stable non-cryptographic FNV-1a fingerprint for idempotency comparison only.
-  std::uint64_t h = 146959810393成4665603ULL;
+  std::uint64_t h = 1469598103934665603ULL;
   auto mix = [&h](const std::string& s) {
     for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
     h ^= 0xFFU; h *= 1099511628211ULL;
