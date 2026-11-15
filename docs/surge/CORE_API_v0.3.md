@@ -587,3 +587,82 @@ A benchmark profile includes CPU/runtime identity, model artifact digest/size, q
 ## 20. Authority
 
 Only Core Transaction Coordinator commits state. Recognition Engine emits candidate labels and spans. Adapter emits structural facts and coverage. Neither can independently confirm Entity identity, source independence, Question resolution, Focus transition or Claim truth.
+
+
+## 21. v0.8.1 causal-scope and hint-overflow API additions
+
+### 21.1 ingest_packet ordering fields
+
+The packet source-position contract is extended with:
+- source_generation
+- source_sequence
+- source_range_start / source_range_end
+- predecessor_packet_refs (optional explicit predecessor set)
+- overlap_group_ref (optional)
+- source_revision_sequence (when the source supports revisions)
+
+The Adapter assigns sequence values. Core validates monotonicity and immutable assignment within a source generation. Missing sequence ranges are recorded as gaps; Core MUST NOT infer that an absent packet is empty content.
+
+### 21.2 ScopeSpan operations
+
+| Operation | Access | Effect |
+|---|---|---|
+| propose_scope_span | Proposal write | Immutable candidate only |
+| get_scope_span | Read | Read record and continuation lineage |
+| resolve_scope_continuation | Core Delta | Close/update via new immutable revision |
+| invalidate_scope_span | Core Delta | Invalidate with correction/revision basis |
+
+A proposal includes scope_kind, source_anchor_refs, exact offsets, opener/closer candidates, target candidates, antecedent candidates, packet refs and producer lineage. Proposal submission does not mutate committed Scope State.
+
+Core validation checks offset basis/digest, source ordering, structural compatibility, scope-kind policy, source generation and continuation lineage. A missing closer or antecedent remains OPEN/UNRESOLVED. Packet FINAL alone is not a closer.
+
+### 21.3 RetrievalTicket operations
+
+build_context_hint response is extended with:
+- context_complete
+- included_ref_digest
+- omitted_ref_digest
+- omitted_mandatory_count
+- omitted_optional_count
+- retrieval_ticket_refs
+
+New operations:
+- resolve_retrieval_ticket(context_id, ticket_ref, expected_state_version, idempotency_key)
+- get_retrieval_ticket(context_id, ticket_ref, at_state_version)
+
+Ticket resolution returns exact candidate refs, retrieval reasons, completeness, resolved_state_version and ticket_status (RESOLVED, STALE_TICKET, EXPIRED, SUPERSEDED). The operation is Context-scoped and cannot retrieve records outside the caller's authorized Context.
+
+### 21.4 Ordered packet integration
+
+get_packet_status adds:
+- source_generation
+- source_sequence
+- integration_status
+- committed_watermark
+- gap_refs
+- blocked_by_packet_refs
+- rebase_required
+- settled_status
+
+integration_status values: READY, READY_BUT_BLOCKED, NEEDS_REBASE, INTEGRATING, COMMITTED, DEFERRED, REJECTED.
+
+The scheduler may parallelize inference. The Core sequencer controls commit eligibility. A later packet cannot become committed ahead of an unresolved predecessor in the same source generation unless a commutativity proof or authorized gap-resolution record is stored.
+
+### 21.5 New error codes
+
+- SOURCE_SEQUENCE_GAP
+- SOURCE_SEQUENCE_REUSED
+- SOURCE_GENERATION_MISMATCH
+- PACKET_CAUSAL_PREDECESSOR_PENDING
+- SCOPE_SPAN_ANCHOR_INVALID
+- SCOPE_SPAN_TRANSITION_INVALID
+- SCOPE_CONTINUATION_UNRESOLVED
+- CONTEXT_HINT_MANDATORY_OVERFLOW
+- RETRIEVAL_TICKET_STALE
+- RETRIEVAL_TICKET_EXPIRED
+- RETRIEVAL_TICKET_SCOPE_VIOLATION
+- QUALITY_GATE_NOT_MET
+
+### 21.6 Atomicity and replay
+
+ScopeSpan closure, its supporting Evidence refs, and any Claim polarity/modality update MUST be committed in one Delta. A partial closure is forbidden. RetrievalTicket resolution is read-only; applying its result still requires ordinary proposal validation and commit. Replay preserves original proposal, rebase and commit lineage.
