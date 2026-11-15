@@ -484,6 +484,7 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
     const std::string needle = lower(query);
     auto score_text = [&](const std::string& value) -> int {
       const std::string hay = lower(value);
+      if (needle == "*") return 1;
       if (hay.empty()) return 0;
       if (hay == needle) return 100;
       if (hay.find(needle) != std::string::npos) return 85;
@@ -559,7 +560,14 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
         if (i) item << ',';
         item << quote(node.references[i]);
       }
-      item << "],\"relations\":[";
+      item << "],";
+      if (node.kind == surge::NodeKind::QuestionAspect) {
+        const auto status = graph.question_aspect_status(node.id);
+        const char* status_text = status == surge::QuestionAspectStatus::Open ? "OPEN" :
+            status == surge::QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
+        item << "\"status\":" << quote(status_text) << ",";
+      }
+      item << "\"relations\":[";
       bool first = true;
       for (const auto& rel_entry : graph.relations()) {
         const auto& rel = rel_entry.second;
@@ -648,7 +656,12 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
     });
     std::ostringstream result;
     result << "{\"state_version\":" << graph.state_version() << ",\"query\":"
-           << quote(query) << ",\"items\":[";
+           << quote(query) << ",\"focus\":";
+    if (graph.focus()) {
+      result << "{\"cluster_id\":" << quote(graph.focus()->cluster_id)
+             << ",\"interest_id\":" << quote(graph.focus()->interest_id) << "}";
+    } else result << "null";
+    result << ",\"items\":[";
     const size_t count = std::min(limit, hits.size());
     for (size_t i = 0; i < count; ++i) {
       if (i) result << ',';
