@@ -6,6 +6,8 @@
 
 ## 実装済みプリミティブ
 
+- ContextHintBuilder / RetrievalTicketRegistry: mandatory優先順、stable dedup/sort、budget overflow、mandatory omitted digest、state-version再評価/STALE、read-only resolve
+
 - ScopeSpanValidator: 11種の型別検証、UTF-8 byte anchor一致、packet lineage、target binding、未解決保持、否定・条件・法性・引用の過剰解釈防止
 
 - QuestionRouter: 明示的なClaim間CONTRADICTSからQuestion/QuestionAspectを生成し、ABOUT関係からInterestを各対象Clusterへ向ける。対象Clusterが一意の場合のみFocusを設定し、複数候補ではFocusを推測しない
@@ -35,7 +37,7 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループ、ContextHintの7グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
 
 fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
@@ -58,3 +60,7 @@ Dependencyノードのreferences[0]を前提、references[1]を依存先とし�
 ## ScopeSpanValidator v0.1の範囲
 
 11種のScopeSpanについて型別のanchor/target条件を検証する。anchor digestはtrusted Adapterから渡されたimmutable source digestとの整合性を確認し、C++側でdigest値そのものを再計算しない。複数source digestをまたぐanchor、ScopeSpanの永続revision、ContextGraphとの原子統合は次段階。
+
+## ContextHint v0.1の範囲
+
+mandatory refsの優先順位とoptional refsの切り分け、budget超過時のRetrievalTicket発行を実装。Ticket Registryはprocess-local/in-memoryで、Context認可、expiry/supersede、永続化、predicate保存、実グラフ検索は未実装。FNV-1a fingerprintは暗号学的保証を持たない。
