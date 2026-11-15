@@ -111,6 +111,16 @@ class PacketAdapterTests(unittest.TestCase):
         revision2["source_position"]["revision_of_ref"] = "p2"
         self.assertEqual(adapter.admit(revision2, "abe").status, "REVISION_ADMITTED")
 
+
+    def test_packet_id_reuse_rejected_without_mutating_existing_admission(self):
+        adapter = RecognitionPacketAdapter()
+        original = packet_for("abc")
+        first = adapter.admit(original, "abc")
+        changed = packet_for("xyz", packet_id="p1", sequence=2, idem="i2")
+        with self.assertRaisesRegex(PacketRejected, "PACKET_ID_REUSED"):
+            adapter.admit(changed, "xyz")
+        self.assertEqual(adapter.admit(original, "abc"), first)
+
     def test_out_of_bounds_range_rejected(self):
         adapter = RecognitionPacketAdapter()
         packet = packet_for("abc")
