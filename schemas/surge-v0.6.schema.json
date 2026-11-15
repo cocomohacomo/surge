@@ -94,7 +94,45 @@
       "required": [
         "status"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "KNOWN"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "UNKNOWN"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "value"
+              ]
+            }
+          }
+        }
+      ]
     },
     "inputEvent": {
       "type": "object",
@@ -2246,7 +2284,8 @@
           "items": {
             "$ref": "#/$defs/id"
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "minItems": 1
         },
         "clock_mapping_refs": {
           "type": "array",
@@ -2268,7 +2307,45 @@
         "alignment_status",
         "alignment_provenance_refs"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "alignment_status": {
+                "const": "ALIGNED"
+              }
+            },
+            "required": [
+              "alignment_status"
+            ]
+          },
+          "then": {
+            "required": [
+              "synchronization_uncertainty_ms",
+              "synchronization_tolerance_ms"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "alignment_status": {
+                "const": "PARTIALLY_ALIGNED"
+              }
+            },
+            "required": [
+              "alignment_status"
+            ]
+          },
+          "then": {
+            "required": [
+              "synchronization_uncertainty_ms",
+              "synchronization_tolerance_ms"
+            ]
+          }
+        }
+      ]
     }
   }
 }
