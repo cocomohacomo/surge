@@ -10,20 +10,21 @@ IngestResult RangeLedger::ingest(const std::string& key, const std::string& dige
   if (k != keys_.end()) return {true, {}};
   auto it = ranges_.find(key);
   if (it != ranges_.end()) {
+    const auto& latest = it->second.back();
     if (!revision) {
-      if (it->second.digest != digest) return {false, "RANGE_CONTENT_CONFLICT"};
+      if (latest.digest != digest) return {false, "RANGE_CONTENT_CONFLICT"};
       return {false, "METADATA_CONFLICT"};
     }
-    if (revision_sequence == 0 || revision_sequence <= it->second.revision_sequence || it->second.digest == digest)
+    if (revision_sequence == 0 || revision_sequence <= latest.revision_sequence || latest.digest == digest)
       return {false, "SOURCE_REVISION_INVALID"};
     ++revision_count_;
-    it->second = {digest, idem, request, revision_sequence};
+    it->second.push_back({digest, idem, request, revision_sequence});
     keys_[idem] = request;
     ++evidence_count_;
     return {false, {}};
   }
   if (revision) return {false, "REVISION_TARGET_NOT_FOUND"};
-  ranges_[key] = {digest, idem, request, 0};
+  ranges_[key].push_back({digest, idem, request, 0});
   keys_[idem] = request;
   ++evidence_count_;
   return {false, {}};
