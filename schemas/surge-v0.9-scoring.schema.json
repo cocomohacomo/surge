@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:recognition-score:0.1.0",
+  "title": "SURGE Recognition Score v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "score_version",
+    "case_id",
+    "scores",
+    "priority_score",
+    "decision",
+    "abstention_reasons",
+    "score_policy"
+  ],
+  "properties": {
+    "score_version": {
+      "const": "0.1.0"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relevance",
+        "importance",
+        "relation_strength",
+        "confidence",
+        "ambiguity",
+        "novelty"
+      ],
+      "properties": {
+        "relevance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "importance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "relation_strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ambiguity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "novelty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "priority_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "decision": {
+      "enum": [
+        "ACCEPT",
+        "REVIEW",
+        "ABSTAIN"
+      ]
+    },
+    "abstention_reasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "LOW_CONFIDENCE",
+          "AMBIGUOUS_REFERENCE",
+          "LABEL_CONFLICT",
+          "OUT_OF_DISTRIBUTION",
+          "UNSUPPORTED_LANGUAGE",
+          "MODEL_ERROR"
+        ]
+      }
+    },
+    "score_policy": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
