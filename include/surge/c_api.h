@@ -103,6 +103,9 @@ int surge_context_graph_apply(
     const char* focus_cluster_id, const char* focus_interest_id,
     int* duplicate, uint64_t* state_version, char* error, size_t error_capacity);
 
+int surge_question_aspect_set_status(void* handle, const char* aspect_id,
+    const char* status, uint64_t expected_state_version, char* error, size_t error_capacity);
+
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
 size_t surge_context_graph_scope_count(void* handle);
