@@ -183,7 +183,37 @@
         "idempotency_key",
         "input_status"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "source_sequence"
+              ]
+            },
+            {
+              "required": [
+                "source_position"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "content"
+              ]
+            },
+            {
+              "required": [
+                "payload_ref"
+              ]
+            }
+          ]
+        }
+      ]
     },
     "evidence": {
       "type": "object",
