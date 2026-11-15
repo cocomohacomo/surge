@@ -9,6 +9,8 @@ Universal Context Cognition Framework.
 - **Core API v0.4:** [docs/surge/CORE_API_v0.4.md](docs/surge/CORE_API_v0.4.md)
 - **Implementation status:** [docs/surge/IMPLEMENTATION_v0.9.md](docs/surge/IMPLEMENTATION_v0.9.md)
 - **RecognitionPacket Adapter v0.1:** [docs/surge/RECOGNITION_PACKET_ADAPTER_v0.1.md](docs/surge/RECOGNITION_PACKET_ADAPTER_v0.1.md)
+- **RecognitionPacket Core atomic admission:** [docs/surge/PACKET_ADMISSION_CORE_v0.1.md](docs/surge/PACKET_ADMISSION_CORE_v0.1.md)
+- **Packet Admission Core conformance:** [tests/conformance/SURGE_v0.9_PACKET_ADMISSION_CORE.md](tests/conformance/SURGE_v0.9_PACKET_ADMISSION_CORE.md)
 - **RecognitionPacket adapter conformance:** [tests/conformance/SURGE_v0.9_RECOGNITION_PACKET_ADAPTER.md](tests/conformance/SURGE_v0.9_RECOGNITION_PACKET_ADAPTER.md)
 - **RecognitionPacket Schema Draft 2020-12:** [schemas/surge-v0.9-input.schema.json](schemas/surge-v0.9-input.schema.json)
 - **ClassificationProposal Schema Draft 2020-12:** [schemas/surge-v0.9-proposal.schema.json](schemas/surge-v0.9-proposal.schema.json)
@@ -60,4 +62,4 @@ v0.9 is the current normative architecture and execution contract. v0.8 and earl
 
 ## Conformance status
 
-The C++17 prototype currently covers selected v0.9 primitives, an append-only local event journal typed ContextGraph delta commits bounded dependency impact/SCC analysis contradiction-to-Question/Interest/Focus routing and type-specific ScopeSpan validation and bounded ContextHint/RetrievalTicket handling. RecognitionPacket has a Python schema/source-integrity admission adapter with 11 focused conformance tests. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
+The C++17 prototype currently covers selected v0.9 primitives, including atomic RecognitionPacket admission through SourceSequencer, RangeLedger and EventJournal with restart replay, an append-only local event journal typed ContextGraph delta commits bounded dependency impact/SCC analysis contradiction-to-Question/Interest/Focus routing and type-specific ScopeSpan validation and bounded ContextHint/RetrievalTicket handling. RecognitionPacket has a Python schema/source-integrity admission adapter with 12 focused conformance tests and a C++ journal-backed atomic admission coordinator. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
