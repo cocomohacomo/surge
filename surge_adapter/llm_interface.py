@@ -83,10 +83,12 @@ class LLMRecognizer:
     def recognize(self, text: str) -> dict[str, Any]:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("INPUT_TEXT_EMPTY")
+        if chr(0) in text:
+            raise ValueError("INPUT_TEXT_NUL_BYTE")
         result = self.provider.recognize(text)
         if not isinstance(result, dict) or set(result) != RESPONSE_KEYS:
             raise ValueError("LLM_OUTPUT_KEYS_INVALID")
-        if result["kind"] not in KINDS or result["polarity"] not in POLARITIES:
+        if (not isinstance(result["kind"], str) or result["kind"] not in KINDS or not isinstance(result["polarity"], str) or result["polarity"] not in POLARITIES):
             raise ValueError("LLM_OUTPUT_ENUM_INVALID")
         if not isinstance(result["conditional"], bool):
             raise ValueError("LLM_OUTPUT_CONDITIONAL_INVALID")
@@ -139,8 +141,7 @@ class LLMSemanticRuntime:
         next_sequence = self.sequence + 1
         packet = self._packet(text, self.context_id, self.source_id,
                               self.source_generation, next_sequence)
-        admission = self.packet_adapter.admit_to_core(packet, text, core)
-        # Do not advance local stream position until recognition and commit succeed.
+        # Recognize before admission so provider errors cannot leave an orphan packet.
         candidate = self.recognizer.recognize(text)
         score = self.scorer.evaluate("llm-" + packet["packet_id"], {
             "relevance": 0.75 if candidate["topic"] else 0.40,
@@ -149,7 +150,7 @@ class LLMSemanticRuntime:
             "confidence": float(candidate["confidence"]),
             "ambiguity": float(candidate["ambiguity"]),
             "novelty": 0.70 if candidate["kind"] in ("CLAIM", "QUESTION") else 0.25})
-        self.sequence = next_sequence
+        admission = self.packet_adapter.admit_to_core(packet, text, core)
         evidence_id = "evidence/" + packet["packet_id"]
         nodes = [{"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []}]
         relations = []
@@ -160,6 +161,7 @@ class LLMSemanticRuntime:
             nodes.append({"id": cluster_id, "kind": "CLUSTER", "content": topic, "references": []})
         accepted_claim = candidate["kind"] == "CLAIM" and score.decision != "ABSTAIN"
         claim_id = "claim/" + packet["packet_id"]
+        staged_claim = None
         if accepted_claim:
             content = json.dumps({"proposition": candidate["proposition"],
                 "polarity": candidate["polarity"], "conditional": candidate["conditional"],
@@ -183,8 +185,8 @@ class LLMSemanticRuntime:
                         iid = "interest/" + packet["packet_id"] + "/" + target
                         nodes.append({"id": iid, "kind": "INTEREST", "content": "矛盾の確認対象",
                                       "references": [aid, target]})
-            self.claim_history.append({"id": claim_id, "proposition": candidate["proposition"],
-                                       "polarity": candidate["polarity"], "cluster_id": cluster_id or ""})
+            staged_claim = {"id": claim_id, "proposition": candidate["proposition"],
+                            "polarity": candidate["polarity"], "cluster_id": cluster_id or ""}
         elif candidate["kind"] == "QUESTION" and score.decision != "ABSTAIN":
             qid = "question/" + packet["packet_id"]
             aid = "aspect/" + packet["packet_id"]
@@ -199,6 +201,9 @@ class LLMSemanticRuntime:
                  "expected_state_version": core.state_version,
                  "nodes": nodes, "relations": relations}
         committed = core.apply_semantic_delta(delta)
+        self.sequence = next_sequence
+        if staged_claim is not None:
+            self.claim_history.append(staged_claim)
         return {"packet_id": packet["packet_id"], "admission": admission.status,
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
