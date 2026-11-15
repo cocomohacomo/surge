@@ -1,5 +1,6 @@
 #include "surge/c_api.h"
 #include "surge/context_graph.hpp"
+#include "surge/context_hint.hpp"
 #include "surge/event_journal.hpp"
 #include "surge/packet_admission.hpp"
 #include <algorithm>
@@ -77,8 +78,9 @@ struct Handle {
   surge::EventJournal journal;
   surge::PacketAdmissionCoordinator coordinator;
   surge::ContextGraph graph;
+  surge::PersistentRetrievalTicketRegistry tickets;
   explicit Handle(const std::string& path)
-      : journal(path), coordinator(journal), graph(journal) {}
+      : journal(path), coordinator(journal), graph(journal), tickets(journal) {}
 };
 }
 extern "C" {
@@ -89,6 +91,7 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
     if (!handle->journal.open()) { copy_text(error, cap, handle->journal.last_error()); return nullptr; }
     if (!handle->coordinator.recover()) { copy_text(error, cap, "PACKET_COORDINATOR_RECOVERY_FAILED"); return nullptr; }
     if (!handle->graph.open()) { copy_text(error, cap, "CONTEXT_GRAPH_RECOVERY_FAILED"); return nullptr; }
+    if (!handle->tickets.open()) { copy_text(error, cap, "RETRIEVAL_TICKET_RECOVERY_FAILED"); return nullptr; }
     copy_text(error, cap, "");
     return handle.release();
   } catch (const std::exception& ex) { copy_text(error, cap, ex.what()); return nullptr; }
@@ -253,6 +256,58 @@ int surge_context_graph_apply_scoped(
     return result.committed?1:0;
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_SCOPED_SEMANTIC_EXCEPTION");return 0;}
+}
+
+
+int surge_retrieval_ticket_issue(void* opaque, const SurgeRetrievalTicketInput* input,
+    char* error, size_t error_cap) {
+  try {
+    if (!opaque || !input || !input->ticket_id || !input->context_id ||
+        !input->packet_ref || !input->source_range_digest || !input->omitted_digest ||
+        !input->policy_version || (input->omitted_count && !input->omitted_refs) ||
+        input->omitted_count > 100000) {
+      copy_text(error, error_cap, "RETRIEVAL_TICKET_ARGUMENT_INVALID"); return 0;
+    }
+    surge::RetrievalTicket ticket;
+    ticket.ticket_id=input->ticket_id; ticket.context_id=input->context_id;
+    ticket.packet_ref=input->packet_ref; ticket.source_range_digest=input->source_range_digest;
+    ticket.omitted_digest=input->omitted_digest; ticket.policy_version=input->policy_version;
+    ticket.state_version=input->state_version;
+    for(size_t i=0;i<input->omitted_count;++i) {
+      if(!input->omitted_refs[i]) { copy_text(error,error_cap,"RETRIEVAL_TICKET_REF_INVALID"); return 0; }
+      ticket.omitted_refs.emplace_back(input->omitted_refs[i]);
+    }
+    std::string message;
+    const bool ok=static_cast<Handle*>(opaque)->tickets.issue(ticket,message);
+    copy_text(error,error_cap,message);
+    return ok?1:0;
+  } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
+    catch(...){copy_text(error,error_cap,"UNKNOWN_RETRIEVAL_TICKET_EXCEPTION");return 0;}
+}
+int surge_retrieval_ticket_resolve(void* opaque, const char* ticket_id,
+    uint64_t current_version, int replayable, const char* const* refs, size_t ref_count,
+    char* output, size_t output_cap, size_t* required, char* error, size_t error_cap) {
+  try {
+    if(!opaque||!ticket_id||(replayable!=0&&replayable!=1)||(ref_count&&!refs)||ref_count>100000) {
+      copy_text(error,error_cap,"RETRIEVAL_TICKET_RESOLVE_ARGUMENT_INVALID");return 0;
+    }
+    std::vector<std::string> reevaluated;
+    for(size_t i=0;i<ref_count;++i){if(!refs[i]){copy_text(error,error_cap,"RETRIEVAL_TICKET_REF_INVALID");return 0;}reevaluated.emplace_back(refs[i]);}
+    std::string message;
+    const auto result=static_cast<Handle*>(opaque)->tickets.resolve(ticket_id,current_version,replayable==1,reevaluated,message);
+    if(!message.empty()){copy_text(error,error_cap,message);return 0;}
+    auto quote=[](const std::string& value){std::string s="\"";for(unsigned char c:value){if(c=='\"'||c=='\\'){s+='\\';s+=static_cast<char>(c);}else if(c=='\n')s+="\\n";else if(c=='\r')s+="\\r";else if(c=='\t')s+="\\t";else if(c<0x20)s+=' ';else s+=static_cast<char>(c);}s+='\"';return s;};
+    std::ostringstream json;
+    const char* status=result.status==surge::TicketStatus::Resolved?"RESOLVED":"STALE";
+    json<<"{\"status\":\""<<status<<"\",\"resolved_state_version\":"<<result.resolved_state_version<<",\"refs\":[";
+    for(size_t i=0;i<result.refs.size();++i){if(i)json<<',';json<<quote(result.refs[i]);}
+    json<<"]}";
+    const std::string payload=json.str();
+    if(required)*required=payload.size()+1;
+    if(!output||output_cap<payload.size()+1){copy_text(error,error_cap,"RETRIEVAL_BUFFER_TOO_SMALL");return 0;}
+    copy_text(output,output_cap,payload);copy_text(error,error_cap,"");return 1;
+  } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
+    catch(...){copy_text(error,error_cap,"UNKNOWN_RETRIEVAL_TICKET_EXCEPTION");return 0;}
 }
 
 int surge_packet_core_admit_and_apply(
