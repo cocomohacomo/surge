@@ -21,7 +21,8 @@ class RangeLedger {
   std::size_t revision_count() const { return revision_count_; }
  private:
   struct Entry { std::string digest; std::string idempotency_key; std::string request_digest; std::uint64_t revision_sequence{0}; };
-  std::map<std::string, Entry> ranges_;
+  // A vector is append-only history; a correction never overwrites the prior Evidence record.
+  std::map<std::string, std::vector<Entry>> ranges_;
   std::map<std::string, std::string> keys_;
   std::size_t evidence_count_{0};
   std::size_t revision_count_{0};
