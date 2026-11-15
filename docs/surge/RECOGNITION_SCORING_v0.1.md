@@ -5,7 +5,7 @@ Additive v0.9 execution contract. This defines a replaceable, untrusted scoring
 boundary. It does not change Core commit authority or claim calibrated
 probabilities or semantic accuracy.
 
-## Feedback from 50 manually scored Japanese cases
+## Feedback from 50 assistant-scored Japanese cases
 1. Importance and confidence are different axes. Consequential statements may
    be uncertain; filler may be recognized confidently.
 2. Short acknowledgements are context-dependent. Length and token count do not
@@ -42,7 +42,7 @@ before commit.
 
 ## Execution contract
 RecognitionScorer validates dimensions and returns a review decision. It has
-no Core handle and cannot commit. The 50-case corpus is a manually scored,
+no Core handle and cannot commit. The 50-case corpus is a assistant-scored,
 deterministic regression set, not a representative gold-standard corpus or
 calibrated quality benchmark.
 
