@@ -1,0 +1,804 @@
+# SURGE 詳細設計 v0.1
+## Detailed Design Specification
+
+**Version:** 0.1.0  
+**基準仕様:** SURGE 基礎設計 v0.3.0  
+**Status:** Detailed Design Draft  
+**設計方針:** Architecture-preserving / Streaming-native / Evidence-first / Non-destructive
+
+---
+
+## 1. 目的と適用範囲
+
+本書はSURGE v0.3の概念および責務分離を変更せず、実装に必要なデータ契約、状態遷移、処理順序、再評価規則、整合性制約を定義する。
+
+本書は実装アルゴリズムの選択余地を残す。特定LLM、データベース、メッセージブローカー、数値重みを必須化しない。
+
+### 1.1 設計上の優先順位
+
+1. Evidenceと履歴の非破壊性
+2. 不確実性を失わないこと
+3. 確定状態をCoreのみがCommitすること
+4. 影響範囲を限定した再評価
+5. 入力粒度が異なっても意味的に同等な最終状態へ収束すること
+6. ストリーミング処理の継続性と低遅延性
+
+### 1.2 用語上の区別
+
+- **事実主張 (Claim):** EvidenceからInterpretationを介して表現された、真偽・有効性を評価可能な内容。
+- **Evidence:** 入力イベントに由来する不変の根拠。
+- **Interpretation:** Evidenceに対する一つ以上の意味仮説。
+- **Committed State:** Coreが検証し永続化した状態。
+- **Provisional State:** 暫定採用されたが、後続情報により再評価され得る状態。
+- **Question:** 文脈内に残る未解決事項。外部への質問や行動命令ではない。
+- **Interest:** QuestionまたはClusterへ認知資源を向ける必要性の評価。
+- **Focus:** Scope内で実際に選択された認知対象。
+- **Relation:** 意味的な関係。
+- **Dependency:** 変更時に再評価を必要とする影響関係。
+
+---
+
+## 2. 論理コンポーネントと責務境界
+
+既存の6レイヤーと横断Core機構を維持し、内部コンポーネントを次のように分割する。
+
+| コンポーネント | 主な入力 | 出力 | 禁止事項 |
+|---|---|---|---|
+| Event Gateway | Adapter Event | 正規化Input Event | 意味解釈、状態Commit |
+| Evidence Registrar | Input Event | Evidence | 原入力の上書き |
+| Recognition Orchestrator | Event/Evidence/Context View | Recognition Proposal | Repository直接更新 |
+| Interpretation Manager | Recognition Proposal | Interpretation候補 | 旧Interpretation削除 |
+| Context Integrator | Interpretation候補/Context View | Unit・Entity・Cluster・Relation候補 | 未確定同一性の強制統合 |
+| Question Manager | Conflict/Gap/Ambiguity候補 | Question Delta | Questionを自然言語質問や行動命令に限定 |
+| Interest Evaluator | Question/Cluster/Scope | Interest Delta | Interestのみで状態確定 |
+| Focus Manager | Interest/明示指示/Context View | Focus Delta | Focus変更によるCluster改変 |
+| Dependency Planner | Delta/Dependency Graph | Impact Set | Relationを無条件にDependency扱い |
+| Reconciliation Engine | Impact Set/Current State | Reconciliation Proposal | 全文脈の無条件再解析 |
+| State Validator | Proposal/Invariant Set | Validation Result | 不明点を暗黙に確定 |
+| Transaction Coordinator | Validated Delta | Commit/Conflict | 古いBase Versionでの無条件Commit |
+| Repository | Committed Events/State | Snapshot/History/Views | LLMからの直接書き込み |
+
+各コンポーネントは候補または差分を返す。確定状態の変更はTransaction Coordinatorを通過する。
+
+---
+
+## 3. 共通識別子と時間モデル
+
+### 3.1 識別子
+
+すべての永続エンティティに型付き一意識別子を付与する。例: `event_id`, `evidence_id`, `interpretation_id`, `unit_id`, `question_id`。
+
+識別子は生成後に再利用しない。統合・分割・置換後も旧IDを保持し、Lineageで新旧関係を表現する。
+
+### 3.2 時間属性
+
+時刻はUTC基準の機械可読値と元タイムゾーン情報を併記できる構造とする。時刻が分からない場合はゼロ値で代用せずUNKNOWNを表現する。
+
+- event_time: 情報が発生した時刻
+- observed_at: SURGEが受信した時刻
+- valid_from / valid_until: 主張の有効期間
+- revised_at: 訂正・改訂が観測された時刻
+- committed_at: 状態変更がCommitされた時刻
+
+イベント順序は少なくとも source_id + source_sequence で表す。異なるソース間の全順序を仮定せず、因果参照がある場合は因果順序を優先する。
+
+---
+
+## 4. データ契約
+
+以下は論理スキーマであり、物理DB型やシリアライズ形式を固定しない。全レコードに schema_version、created_at、provenance_refs を付与可能とする。
+
+### 4.1 Input Event
+
+必須属性:
+- event_id
+- source_id
+- source_sequence または source_position
+- observed_at
+- content_type
+- payload_ref または content
+- idempotency_key
+
+任意属性:
+- event_time
+- speaker_id
+- document_id
+- input_position
+- causal_refs
+- locale
+- adapter_metadata
+
+イベント本文は原則不変。訂正は新しいEventとして追加し、supersedes_event_ref等で関連付ける。
+
+### 4.2 Evidence
+
+必須属性:
+- evidence_id
+- event_refs
+- evidence_kind
+- source_lineage_ref
+- observed_at
+- integrity_digest
+- validity_status
+
+Evidenceは原イベントの該当範囲へ逆参照できること。派生Evidenceはderived_from_refsを持ち、原入力と派生結果を混同しない。
+
+### 4.3 Interpretation
+
+必須属性:
+- interpretation_id
+- evidence_refs
+- hypothesis
+- interpretation_status
+- confidence_record
+- created_at
+- producer_id
+- model_or_rule_version
+
+confidence_recordは単一数値だけでなく、値の尺度・校正情報・評価対象を識別できる形とする。異なるモデルの確信度を無校正で直接比較しない。
+
+Interpretationの状態:
+- CANDIDATE
+- PROVISIONAL
+- ACCEPTED
+- SUPERSEDED
+- REJECTED
+- NEEDS_REEVALUATION
+
+REJECTEDはEvidenceが削除されたことを意味しない。新しい根拠で旧解釈が再び候補化された場合は、新しいInterpretationを生成する。
+
+### 4.4 Semantic Unit / Claim
+
+Semantic Unitは意味的なまとまりを表す。真偽評価可能な主張はClaim表現を持たせる。
+
+Claimの比較キーは少なくとも subject、predicate、object、polarity、modality、temporal_scope、context_scopeを含む。表層文字列一致のみで同一Claimと判定しない。
+
+状態:
+- PROPOSED
+- PROVISIONAL
+- ACTIVE
+- DISPUTED
+- SUPERSEDED
+- INVALIDATED
+- ARCHIVED
+
+DISPUTEDはClaimが存在しない状態ではなく、相反するEvidenceまたはInterpretationが共存している状態。
+
+### 4.5 Entity
+
+Entity Identityは次の状態を持つ:
+- UNRESOLVED
+- PROVISIONAL
+- CONFIRMED
+- DISTINCT
+- MERGED
+- SPLIT
+
+MERGED/SPLITは履歴上の操作結果であり、過去参照を書き換えない。Entity Aliasは同一性の根拠ではなく、候補生成の材料として扱う。
+
+### 4.6 Cluster
+
+Cluster状態:
+- ACTIVE
+- DORMANT
+- ARCHIVED
+- MERGED
+- SPLIT
+
+Clusterにはmember lineage、parent/child lineage、merge/split eventを保持する。Cluster IDを再利用しない。
+
+### 4.7 Relation / Dependency
+
+Relationは意味的関係と根拠を保持する。Dependencyは追加でtrigger_condition、impact_policy、evaluation_policy、cycle_group_refを持つ。
+
+Dependencyの有効状態:
+- ACTIVE
+- INACTIVE
+- SUSPENDED
+- INVALIDATED
+
+依存辺は必ず方向性を持つ。AがBに依存する場合、Aの再評価対象化をBの変更が引き起こす向きで格納する。API上のsource/target命名は実装時にこの意味と一致させる。
+
+### 4.8 Question
+
+Question必須属性:
+- question_id
+- question_type
+- unresolved_aspects
+- target_refs
+- trigger_refs
+- status
+- created_at
+- updated_at
+- provenance_refs
+
+Question Type:
+- CONTRADICTION
+- AMBIGUITY
+- KNOWLEDGE_GAP
+- REFERENCE_UNRESOLVED
+- TEMPORAL_INCONSISTENCY
+- DEPENDENCY_INCONSISTENCY
+- EVIDENCE_INSUFFICIENT
+- SOURCE_INDEPENDENCE_UNCLEAR
+
+Question状態遷移:
+- OPEN -> INVESTIGATING | DEFERRED | RESOLVED | SUPERSEDED
+- INVESTIGATING -> OPEN | DEFERRED | RESOLVED | SUPERSEDED
+- DEFERRED -> OPEN | INVESTIGATING | RESOLVED | SUPERSEDED
+- RESOLVED -> OPEN (reopen) のみ新しい根拠または既存根拠の有効性変更を伴う
+- SUPERSEDED -> 終端。再利用せず新規Questionを生成
+
+RESOLVEDは「唯一の答えが確定した」ことに限定しない。時間区分による両立、複数候補の保持、矛盾の原因特定などにより、元の未解決事項が解消された場合も含む。未解決のまま保留する場合はDEFERREDとする。
+
+### 4.9 Questionの重複・統合
+
+同一Question候補の判定は次の特徴を使う:
+1. 未解決対象の意味的一致
+2. 根本原因または矛盾するClaimの一致
+3. 対象Scopeの互換性
+4. 時間範囲の重なり
+5. 既存QuestionとのEvidence/Interpretation参照関係
+
+単一の類似度閾値だけで自動統合しない。確定的な重複は既存Questionにtrigger_refsを追加する。包含関係は親子Questionで表現する。部分的に重なるだけなら別Questionを維持し、related_question_refsを付与する。
+
+統合時はcanonical Questionを選び、統合元をSUPERSEDEDとして残す。統合元の根拠と履歴はcanonical側へ参照統合し、元IDを消去しない。
+
+### 4.10 Interest
+
+Interestはtarget_ref、scope_id、component_vector、priority_band、status、evaluation_version、history_refsを持つ。
+
+component_vectorの基本要素:
+- unresolvedness
+- impact
+- dependency_reach
+- recency
+- recurrence
+- context_relevance
+- explicit_attention
+- evidence_uncertainty
+
+各要素は値だけでなく、算出根拠・尺度・評価時刻を保持する。異なるScope間で値を無条件に比較しない。
+
+Interest状態:
+- ACTIVE
+- DECAYING
+- DORMANT
+- REACTIVATED
+- CLOSED
+
+QuestionがRESOLVEDになっても、関連ClusterへのInterestが独立して存在する場合は維持できる。Question状態とInterest状態を同一遷移にしない。
+
+### 4.11 Focus
+
+Focusはscope_id、target_ref、level、role、activation_reason、status、previous_focus_refs、transition_event_refを持つ。
+
+Focus role:
+- PRIMARY
+- SECONDARY
+- BACKGROUND
+- DORMANT
+
+Focusは複数保持可能。ScopeごとにPRIMARYの一意性を要求するかはScope Policyで定義する。GlobalとLocalで別々のPRIMARYを許容する。
+
+### 4.12 State Delta
+
+State Deltaは次を持つ:
+- delta_id
+- base_state_version
+- input_event_refs
+- read_set
+- write_set
+- operations
+- affected_refs
+- dependency_generation
+- validation_requirements
+- producer_refs
+
+操作はADD、LINK、UPDATE_STATUS、SUPERSEDE、MERGE、SPLIT、REOPEN等の型付き命令とする。削除操作は原則提供せず、無効化・アーカイブ・置換で表現する。
+
+---
+
+## 5. Question生成ポリシー
+
+### 5.1 矛盾の区別
+
+少なくとも以下を区別する:
+- DIRECT_CONTRADICTION: 同一Scope・重複時間・両立不能な主張
+- TEMPORAL_DIFFERENCE: 時間が異なり両立可能
+- SCOPE_DIFFERENCE: 対象範囲が異なり両立可能
+- PERSPECTIVE_DIFFERENCE: 発言者・立場・評価軸の違い
+- MODAL_DIFFERENCE: 事実、予定、希望、仮説等の様相の違い
+- EVIDENCE_CONFLICT: 根拠の内容または信頼性が競合
+- INTERPRETATION_CONFLICT: 同一Evidenceに複数解釈がある
+
+Question生成は矛盾候補の分類後に行う。時間・Scope・話者・様相の違いで説明可能なら、直ちに事実矛盾Questionを生成せず、分類結果を記録する。分類自体が不確実なら分類不確実性をQuestion化できる。
+
+### 5.2 生成抑制
+
+Questionを生成する前に:
+1. 既存Questionを検索
+2. 同じ根本原因か判定
+3. 既存QuestionにEvidenceを追加できるか判定
+4. 親子関係または関連Questionで表現できるか判定
+5. それでも独立した未解決事項なら新規生成
+
+認識器の再実行だけで同一Questionを増殖させない。生成要求は決定的なdeduplication_keyと入力参照を持つ。
+
+### 5.3 解消と再オープン
+
+Questionの解消にはresolution_basisを必須とする。resolution_basisは根拠、適用Interpretation、解消理由、対象時間/Scopeを記録する。
+
+既存Evidenceの再評価だけでQuestionを再オープンする場合も、再評価イベントと変更された評価を記録する。単なるスコア変動ではなく、未解決状態が再成立したことを要件とする。
+
+---
+
+## 6. Interest・Focus選択規則
+
+### 6.1 評価と選択の分離
+
+Interest Evaluatorは評価状態を生成する。Focus ManagerはScope Policy、明示指示、既存Focus、Interest、文脈構造を用いて選択する。Interest順位をそのままFocus順位に変換しない。
+
+### 6.2 選択順序
+
+Focus Managerは以下の順序で判断する:
+1. 明示的Focus指示と適用Scopeを確認
+2. 現在Focusの有効性を確認
+3. Scope・階層制約を適用
+4. 明示指示に反しない候補間でInterestを比較
+5. 影響範囲・未解決度・Recency等の要素を比較
+6. ヒステリシスと最低維持条件を適用
+7. KEEP / DESCEND / ASCEND / SWITCH / REACTIVATE / MULTI / DEFERを決定
+8. 遷移理由を記録
+
+### 6.3 ヒステリシス
+
+Focus切替は新候補が一時的に上位になっただけでは実行しない。現在Focusの維持価値、候補の優位性、明示指示、緊急性、Scopeを考慮する。
+
+明示的な話題転換・注目指示はヒステリシスの対象外とする。ヒステリシスは明示指示を抑制してはならない。
+
+### 6.4 Interest減衰
+
+時間経過のみでQuestionやEvidenceを無効化しない。Recency成分の減衰とQuestionの解消は別処理である。再発・新Evidence・明示指示・Dependency ImpactによりInterestを再活性化できる。
+
+---
+
+## 7. Dependencyと再評価の収束制御
+
+### 7.1 影響グラフ
+
+Dependency Graphは有向グラフとして管理する。変更されたノードから、trigger_conditionを満たす下流ノードのみをImpact Setへ追加する。
+
+Impact Setには起点、到達経路、発火条件、評価理由を含める。Relationだけを辿って無制限に波及させない。
+
+### 7.2 再評価世代
+
+各Commitにstate_versionを割り当てる。再評価ジョブは以下を持つ:
+- reconciliation_id
+- base_state_version
+- generation
+- root_change_refs
+- scheduled_node_refs
+- visited_node_refs
+- cycle_group_refs
+- iteration_count
+- status
+
+同一generation内で同じnode + evaluation_policy_version + effective_input_fingerprintを重複評価しない。
+
+### 7.3 循環依存
+
+Dependency Graphの強連結成分(SCC)を循環グループとして扱う。SCC内は固定点評価単位として処理し、外部へは収束した差分のみを伝播する。
+
+固定点は、対象ノードの意味状態・有効性・依存出力が前回評価と同一で、新たなImpact Setが生じない状態とする。モデルの文章出力が異なるだけでは状態変化とみなさない。
+
+### 7.4 収束制御
+
+以下のいずれかで停止:
+- 固定点に到達
+- 影響対象がなくなった
+- 設定上限に到達
+- 同一状態の反復を検出
+- 入力・状態Versionが変わり再起動が必要
+- 検証不能または循環異常を検出
+
+上限到達・反復検出時はQuestionまたはRECONCILIATION_STALLED状態を記録し、暫定状態を確定扱いしない。上限値は実装設定であり、基礎意味論には埋め込まない。
+
+### 7.5 再評価の冪等性
+
+同じroot change、base version、policy version、effective input fingerprintに対する再評価は同じ論理差分に収束させる。重複ジョブの実行は重複Commitを発生させない。
+
+---
+
+## 8. Source LineageとEvidence独立性
+
+### 8.1 Source Lineage
+
+Source Lineageは情報の出所関係を有向グラフで表す。関係種別:
+- ORIGINAL
+- QUOTES
+- REPOSTS
+- DERIVED_FROM
+- SYNDICATED_FROM
+- UNKNOWN_ORIGIN
+
+出所不明は独立と仮定しない。UNKNOWN_ORIGIN同士を同一起源と断定もしない。
+
+### 8.2 独立性評価
+
+Evidenceの独立性はSource IDの相違だけで判定しない。共通原文、引用、転載、配信元、生成元、同一データセット等を参照する。
+
+独立性状態:
+- INDEPENDENT
+- DEPENDENT
+- PARTIALLY_DEPENDENT
+- UNKNOWN
+
+INDEPENDENTのみを独立裏付けとして数える。UNKNOWNは独立裏付け数へ加算せず、評価確度を下げる。PARTIALLY_DEPENDENTは独立成分と共有成分を分離できる場合のみ独立成分を評価対象にする。
+
+### 8.3 Source Trust
+
+Source Trustはdomain/scope別に評価し、Evidence自体の有効性と分離する。評価には評価値と評価確度を別々に持たせる。
+
+- 十分な実績がない: UNKNOWN / LOW_CONFIDENCE_ASSESSMENT
+- 独立裏付けがある: corroboration evidenceとして加味
+- 反証・訂正がある: 対象領域と期間に限定して履歴へ反映
+- 新規ソース: 未知として扱い、既定で高信頼/低信頼に分類しない
+
+Trustは解釈候補の比較を補助するだけで、単独でClaimを確定・無効化しない。Trust更新が同じEvidenceの再評価を誘発しても、同じTrust評価を再帰的に自分の根拠として使わない。Trust評価入力はTrust自身から独立したEvidence/評価履歴に限定する。
+
+### 8.4 Cluster Growthとの分離
+
+Cluster Growthは少なくとも以下へ分解:
+- 新規情報量
+- 意味構造の追加
+- 独立裏付け
+- 時間的安定性
+- 反証・訂正
+- 情報源の多様性
+
+量的増加のみでTrustを上昇させない。反復・転載による件数増加は独立裏付けの増加ではない。
+
+---
+
+## 9. StreamingとGranularity Convergence
+
+### 9.1 部分入力
+
+未完了入力はPARTIAL Eventまたは同一論理入力のrevisionとして表現する。部分文字列を確定Evidenceと同じ扱いにしない。入力確定時にfinalization eventを発行し、暫定解釈との関係を記録する。
+
+### 9.2 暫定結果
+
+低遅延のため暫定Interpretation/Unitを許容する。暫定状態にはprovisional marker、base version、根拠範囲を付与する。確定入力が到着したら既存の暫定状態を上書きせず、SUPERSEDED等の履歴を残して再評価する。
+
+### 9.3 粒度差の収束
+
+同じ情報列を異なる分割単位で入力した場合、次の条件を満たすことを収束目標とする:
+- 原情報の順序が等価
+- 情報欠落がない
+- finalization境界が同等
+- Adapterが同等の位置・因果情報を保持
+- 同じRecognition Policy/Model Versionを使用
+
+比較は内部IDやイベント数ではなく、正規化された意味状態、Claim、Entity、Cluster、Question、Focusの意味的同値性で行う。
+
+文字単位ストリームと文単位バッチの中間状態は一致を要求しない。確定境界後の状態同値性を評価する。
+
+### 9.4 遅延・順序逆転
+
+遅着イベントはobserved_atとevent_timeを分けて保持する。source_sequenceまたはcausal_refsで順序を復元できる場合は該当範囲を再評価する。復元不能な場合は順序不確実性を保持し、全体順序を捏造しない。
+
+---
+
+## 10. Transaction、Commit、Recovery
+
+### 10.1 Commit前検証
+
+Commit前に以下を検証:
+- Base State Versionの整合
+- 参照先IDの存在
+- Evidence/Provenanceの追跡可能性
+- 状態遷移の許可
+- 不変条件
+- Dependency Impactの妥当性
+- 同一イベント・同一差分の重複
+- Question/Interest/Focus間の参照整合
+- Source Lineageの循環・重複起源の扱い
+
+### 10.2 Optimistic Concurrency
+
+Deltaはread_setとwrite_setを宣言する。Commit時にread_setの対象Versionが変わっていない場合にCommit可能とする。
+
+競合時:
+1. Deltaを保留
+2. 競合対象を特定
+3. 現在StateからProposalを再生成、または非競合部分を安全に分離
+4. 再検証
+5. 再Commit
+
+古いDeltaの強制上書きは禁止。リトライ上限到達時はCONFLICT_PENDINGとして保持する。
+
+### 10.3 原子的Commit
+
+1回のCommitは関連するState Deltaと履歴イベントを原子的に記録する。部分的な成功を外部へCommittedとして見せない。
+
+### 10.4 Event LogとSnapshot
+
+Event Logを再構成の基準とし、Snapshotは高速復旧用の派生物とする。Snapshotには適用済みEvent Offset、State Version、Schema Version、Integrity Digestを記録する。
+
+Recovery:
+1. 最新の検証可能Snapshotを選択
+2. SnapshotのDigest/Schemaを検証
+3. Snapshot以降のEventを順序規則に従って再生
+4. Commit履歴とState Versionを照合
+5. 不整合があれば隔離し、正常状態として公開しない
+
+### 10.5 再現性
+
+確率的モデルの再実行結果を同一と仮定しない。実際にCommitされたProposal、モデル/ルールVersion、入力参照、検証結果を保存し、過去の確定状態を再構成する。
+
+---
+
+## 11. 共通処理パイプライン
+
+### 11.1 Event処理
+
+1. Event Gatewayが形式・識別子・順序情報を検証
+2. Idempotency Keyで重複検知
+3. Evidence RegistrarがEvidenceを登録
+4. Recognition OrchestratorがContext Viewを読み意味候補を生成
+5. Context IntegratorがSemantic Unit/Entity/Cluster/Relation候補を構成
+6. Contradiction/Gap Detectorが未解決候補を分類
+7. Question ManagerがQuestion Deltaを生成・統合
+8. Interest EvaluatorがInterest Deltaを評価
+9. Focus ManagerがFocus Deltaを生成
+10. Dependency PlannerがImpact Setを生成
+11. State Validatorが全Deltaを検証
+12. Transaction CoordinatorがCommit
+13. Commit Eventを起点に必要なRECONCILEを非同期起動
+
+順序依存がある場合は、各段階の出力をProposalとして保持し、同一Transaction内で整合性を検証する。
+
+### 11.2 RECONCILE処理
+
+1. root changeとbase versionを確定
+2. Dependency GraphからImpact Setを算出
+3. SCC/循環グループを特定
+4. 再評価順序を構築
+5. 各対象を同じgeneration内で一度評価
+6. 意味状態の変化を比較
+7. 新たなImpactがあればキューへ追加
+8. 固定点または停止条件まで繰り返す
+9. Question/Interest/Focusへの派生影響を評価
+10. 一貫したState Deltaとして検証・Commit
+11. 停止理由・未解決範囲・再開条件を記録
+
+---
+
+## 12. 共通Proposal契約
+
+Recognition Engine/LLMからCoreへ返すProposalは、少なくとも以下を持つ。
+
+- proposal_id
+- producer_id
+- producer_version
+- input_event_refs
+- context_snapshot_version
+- candidate_objects
+- candidate_relations
+- candidate_questions
+- candidate_interests
+- candidate_focus_transitions
+- uncertainty_annotations
+- evidence_refs
+- provenance_refs
+- requested_operations
+- processing_metadata
+
+Proposalには「確定」の権限を持たせない。CoreはProposalの一部だけを採用してもよい。拒否・保留された候補も、監査要件に応じて処理履歴に残す。
+
+---
+
+## 13. 不変条件と検証ルール
+
+以下を実装時の機械検証可能なInvariantとして扱う。
+
+| ID | 不変条件 | 検証 |
+|---|---|---|
+| D-01 | Evidenceは上書きされない | update/delete禁止、digest照合 |
+| D-02 | Committed StateはEvidence/Provenanceへ追跡可能 | 参照閉包検証 |
+| D-03 | Interpretationの変更は履歴化 | supersedes/created event検証 |
+| D-04 | 未確定Entityは自動統合されない | identity_status検証 |
+| D-05 | RelationとDependencyは別型 | schema/type検証 |
+| D-06 | Questionの状態遷移は許可表に従う | transition validator |
+| D-07 | Question解消にはresolution_basisがある | commit validation |
+| D-08 | Interest単独で確定状態を変更しない | write-set policy |
+| D-09 | 明示Focus指示をヒステリシスで阻害しない | transition test |
+| D-10 | Trustは独立したEvidenceを根拠に評価 | lineage audit |
+| D-11 | Unknown lineageを独立根拠に加算しない | trust validation |
+| D-12 | 同一generationの同一対象を重複評価しない | evaluation key |
+| D-13 | 循環依存は収束条件または停止理由を持つ | reconciliation audit |
+| D-14 | 古いBase VersionのDeltaを無条件Commitしない | version check |
+| D-15 | Event重複で二重Commitしない | idempotency check |
+| D-16 | SnapshotはEvent Offset/Version/Digestを持つ | recovery validation |
+| D-17 | 暫定結果と確定結果を区別する | provisional marker |
+| D-18 | 遅着情報の順序不明を捏造しない | causal/order validation |
+| D-19 | Question統合・置換で履歴を失わない | lineage validation |
+| D-20 | Focus変更はCluster構造を暗黙変更しない | write-set validation |
+
+---
+
+## 14. 障害・例外処理
+
+| 状況 | 処理 |
+|---|---|
+| Recognition Engine失敗 | Event/Evidenceを保持し、認識を再試行可能にする |
+| Proposal形式不正 | Proposalを拒否し、理由を記録 |
+| Evidence参照欠落 | Commit保留 |
+| Entity同一性競合 | 未解決候補として保持、統合しない |
+| Question重複判定が曖昧 | 統合せず関連付け |
+| Dependency循環非収束 | 対象SCCを保留し、Question/停止理由を記録 |
+| Commit Version競合 | Deltaを再生成または保留 |
+| Snapshot破損 | 直近の検証可能Snapshotへ戻りEvent Logから再生 |
+| Event順序不明 | 順序不確実性を保持 |
+| Trustデータ不足 | UNKNOWNと低い評価確度を保持 |
+| Model Version変更 | 過去Proposalを上書きせず、必要範囲を新規再評価 |
+| 部分入力の撤回 | 新Eventで訂正・撤回を表し履歴を保持 |
+
+---
+
+## 15. 性能・スケーラビリティ設計
+
+本設計では性能数値を未確定とする。初期実装では次の測定点を必須とする。
+
+- Event受信からEvidence登録までの遅延
+- Event受信からProvisional State生成までの遅延
+- Commit遅延と競合率
+- Impact Setサイズ
+- Dependency再評価ノード数・世代数
+- SCCあたりの反復回数
+- Question重複統合率
+- Focus切替頻度と誤切替率
+- Repository読み書き量
+- Snapshot生成時間・Recovery時間
+- 入力粒度別の最終Semantic Convergence
+
+大規模再評価は優先度キューと影響範囲分割を利用できる。ただし、優先度の低い再評価を永久に飢餓状態にしないため、滞留時間を監視する。再評価が遅延している対象は状態上でRECONCILIATION_PENDINGとして識別可能にする。
+
+---
+
+## 16. 実装段階と完了条件
+
+### Stage A: Event/Evidence/Transaction Foundation
+- Event正規化
+- Evidence不変性
+- Event Log
+- State Delta
+- Versioned Commit
+- Idempotency
+- Snapshot/Recoveryの最小実装
+
+**完了条件:** 重複イベント、並行更新、Commit障害から状態を破壊せず復旧できる。
+
+### Stage B: Semantic Context
+- Interpretation
+- Semantic Unit/Claim
+- Entity
+- Cluster
+- Relation
+- Reference Resolution
+
+**完了条件:** 根拠追跡可能な意味構造を構築し、未確定Entityを保持できる。
+
+### Stage C: Question/Dependency
+- Contradiction Classification
+- Question Lifecycle
+- Deduplication/Merge/Parent-Child
+- Dependency Impact Analysis
+- SCC/Convergence
+
+**完了条件:** Questionの重複増殖を抑え、依存再評価が停止条件を満たす。
+
+### Stage D: Interest/Focus
+- Interest component vector
+- Scope policy
+- Focus transition
+- Hysteresis
+- Reactivation
+
+**完了条件:** InterestとFocusを分離し、明示指示・複数Scope・再活性化を正しく処理できる。
+
+### Stage E: Trust/Lineage
+- Source Lineage
+- Evidence Independence
+- Contextual Trust
+- Trust calibration/history
+
+**完了条件:** 転載の重複計上を避け、未知のソースを未知として保持できる。
+
+### Stage F: Streaming Convergence
+- Partial/final event
+- Late arrival
+- Granularity test harness
+- Cross-adapter integration
+
+**完了条件:** 同等の情報列で、分割方法に依存しない意味的最終状態への収束を確認できる。
+
+---
+
+## 17. 必須テストシナリオ
+
+1. 同一Claimへの支持Evidence追加
+2. 同一Claimへの反証Evidence追加
+3. 同一発言者の意見変更
+4. 異なる発言者の意見相違
+5. 時間範囲の異なる主張
+6. Scopeの異なる主張
+7. 参照先が後続入力で確定
+8. Entity候補の誤統合防止
+9. Questionの重複候補統合
+10. Questionの親子分割
+11. 解消済みQuestionの再オープン
+12. Interest競合とScope分離
+13. 明示Focus指示とヒステリシス
+14. 複数FocusとDormant再活性化
+15. Dependencyの単純連鎖
+16. Dependencyの循環SCC
+17. Dependencyの非収束・上限到達
+18. 同一イベントの重複配送
+19. Eventの順序逆転・遅着
+20. Commit時のVersion競合
+21. Commit途中障害とRecovery
+22. Snapshot破損
+23. 転載・引用・共通起源Evidence
+24. 新規ソースのTrust評価
+25. 高Trustソースの反証
+26. 部分入力の暫定解釈と確定化
+27. 文字単位と文単位の収束比較
+28. Model Version変更による再評価
+29. 大規模Impact Setの分割処理
+30. Trust評価の自己参照ループ防止
+
+各テストは入力イベント、期待Proposal、許容される中間状態、期待最終状態、必須Invariantを定義する。期待結果は単一の文章出力ではなく、状態グラフの意味的条件で判定する。
+
+---
+
+## 18. 未確定事項と設計判断の保留
+
+以下は本書で数値・実装方式を固定しない。
+
+- Interest componentの正規化・重み・閾値
+- Focus切替の具体的ヒステリシス値
+- Question類似度のモデルと閾値
+- Source Trustの統計モデル・校正方式
+- Evidence独立性の推定器
+- Dependency再評価上限とスケジューリング値
+- Event Log/Repositoryの物理DB
+- Snapshot間隔と保持期間
+- LLM/Recognition Engineの具体的構成
+- 初期性能目標
+
+これらは代表データセット、50事例の再現テスト、追加の異常系テストを用いて測定・比較した後に決定する。未確定値を便宜的に固定し、基礎仕様上の必須要件として扱ってはならない。
+
+---
+
+## 19. 基礎仕様との整合性
+
+本書はSURGE v0.3の以下の原則を維持する。
+
+- Streaming-Native
+- Granularity Invariance
+- Model Independence
+- Non-destructive Context Evolution
+- Evidence-Based State Management
+- Uncertainty Preservation
+- Context Structure / Focus / Evolution Separation
+- Question -> Interest -> Focusの認知的接続
+- 外部行動を要求しないQuestion/Interest
+- Contextual Source Trust
+- Coreによる唯一のCommit権限
+- Context Integrity
+
+本書で定義した状態名・型・処理規則は実装可能な詳細化であり、基礎仕様の意味を変更するものではない。実装検証で矛盾が見つかった場合は、本書だけを暗黙に変更せず、変更理由と基礎仕様への影響を記録して改訂する。
+
+**結論:** SURGEは、Evidenceを不変の基盤とし、Interpretationと状態を非破壊的に進化させ、Question/Interest/Focusを認知制御として分離管理し、DependencyとTransactionによって文脈の再評価と確定状態の整合性を保証する。
