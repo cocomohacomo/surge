@@ -88,7 +88,7 @@ recall.
   required byte count; no partial JSON is returned.
 - Results are bounded by the caller's limit but report total_matches.
 
-## Deliberate limits / next increments
+## ContextHint and durable RetrievalTicket integration v0.1\n\n- ContextHint candidate priority is exposed through `ContextRetriever.build_hint` and mirrors the C++ `ContextHintBuilder` order: OpenScope, RequiredQuestionAspect, TriggeredDependency, RequiredLineage, ActiveFocusScope, then optional classes.\n- Mandatory overflow produces a RetrievalTicket bound to Context ID, packet reference, source-range digest, policy version, state version, and omitted-reference digest. Optional-only truncation is reported but does not create a ticket.\n- `issue_ticket` and `resolve_ticket` write typed ticket events into the same EventJournal used by packet and graph transactions. They therefore share durable state-version ordering.\n- Core startup replays ticket issue/resolution records. A resolved ticket can be queried after process restart. Re-evaluation at a newer state version requires the caller to declare the query replayable and supply freshly reevaluated references.\n- A stale result is not persisted as a terminal resolution, allowing a later replayable re-evaluation.\n\n## Deliberate limits / next increments
 
 This version does not yet implement:
 - semantic/vector retrieval, Japanese morphological analysis, BM25/IDF, or
@@ -97,7 +97,7 @@ This version does not yet implement:
   mandatory candidate ordering from ContextHint;
 - multi-hop graph expansion, contradiction-aware reranking, or dependency
   impact traversal;
-- cursor pagination or immutable RetrievalTicket persistence/resolution;
+- cursor pagination;
 - explicit Context IDs on graph records, authorization, retention policies,
   or multi-process writer coordination;
 - an incremental persistent inverted index. The journal-replayed graph is
