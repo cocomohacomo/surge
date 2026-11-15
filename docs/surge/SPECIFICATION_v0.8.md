@@ -198,3 +198,140 @@ v0.7 records remain unchanged. v0.8 packet/proposal records are additive. Existi
 7. Reproducible CPU benchmark harness and semantic projection comparison.
 
 Conclusion: v0.8 preserves the complete v0.7 context semantics while constraining only the local inference interface. A small classifier performs bounded recognition; SURGE Core maintains the continuous, evidence-grounded context.
+
+
+## 12. Real-time execution and packet scheduling contract
+
+### 12.1 RTF is an end-to-end property
+
+A model artifact of 30 MiB or less does not, by itself, establish any RTF. Model size is a storage measure; RTF depends on CPU architecture, feature extraction, packet size, invocation overhead, batching, memory movement, Core operations, and queue behavior.
+
+For each accepted source range, the implementation MUST measure and report the following separately:
+
+- Adapter and packet construction;
+- ContextHint retrieval;
+- queue wait and scheduling;
+- model preprocessing and inference;
+- proposal validation and Evidence integration;
+- synchronous Core commit work;
+- asynchronous Dependency reconciliation;
+- end-to-end settled processing.
+
+The implementation MUST NOT report model-only RTF as end-to-end RTF. If reconciliation is deferred, it MUST report both fast-path latency and settled completion latency, with outstanding work and queue depth.
+
+### 12.2 Two distinct performance objectives
+
+The profile distinguishes:
+
+1. **Streaming stability:** sustained processing throughput MUST exceed incoming source throughput, with bounded queue depth and no silent drops. For media streams, RTF below 1 is the minimum condition for keeping up in a steady state.
+2. **Ultra-low-latency target:** end-to-end RTF below 0.01 is the v0.8 optimization target for the declared benchmark profile. This is a 100x processing-speed target relative to the defined source clock, not a guarantee for every packet or device.
+
+RTF is an aggregate ratio and MUST NOT replace packet-latency reporting. A low aggregate RTF can conceal long individual stalls; p50, p95, p99 and maximum packet latency remain mandatory.
+
+### 12.3 Packet formation and micro-batching
+
+The Adapter MUST preserve semantic and structural boundaries while avoiding excessive tiny inference calls.
+
+- Packet boundaries SHOULD prefer paragraph, list item, table row, transcript turn, code statement, or equivalent source-native units.
+- A packet MUST remain within the Model Descriptor input budget.
+- Adjacent compatible packets MAY be grouped into a micro-batch for one model invocation. Each packet retains its own identity, offsets, digest, ContextHint version and idempotency key.
+- Batching MUST NOT concatenate unrelated Context IDs, security scopes, incompatible model versions, or incompatible label schemas.
+- Table cells MAY share a batch only when each cell retains its own coordinates and header/unit references.
+- Overlap is context only; it MUST NOT duplicate source coverage, Evidence, or committed Units.
+- The scheduler MUST flush on a configurable maximum batch size, maximum batch bytes, or maximum wait time. It MUST also flush at explicit finalization, revision, context-switch, or latency-deadline boundaries.
+- A batch failure MUST be attributable to individual packets; successful packets MUST NOT be replayed as new Evidence when retrying failed packets.
+
+The implementation SHOULD expose at least two policies: LOW_LATENCY (small batches and short wait bound) and THROUGHPUT (larger batches with a declared wait bound). Neither policy may alter semantic contracts.
+
+### 12.4 Incremental and event-driven Core work
+
+The Core MUST use event-driven invalidation and bounded Impact Sets. It MUST NOT rescan all prior source content for every incoming packet.
+
+- Unchanged packet/source fingerprints SHOULD reuse valid structural normalization and local feature extraction.
+- ContextHint retrieval SHOULD use indexed Scope, Focus, source linkage, active Question Aspect, and Dependency edges.
+- A state-version change invalidates only hints whose retrieval dependencies are affected; all hints remain subject to commit-time validation.
+- Dependency reconciliation SHOULD be scheduled by changed root, exact Impact Set, policy version and effective input fingerprint.
+- SCC iteration and reconciliation limits remain mandatory. A limit reached produces STALLED/DEFERRED, never false convergence.
+- Caches are accelerators only. Cache eviction MUST NOT delete authoritative Evidence, lineage or historical state.
+
+### 12.5 Backpressure and overload
+
+The input path MUST use bounded queues with explicit capacity and admission policy. When capacity is reached, the Adapter/Core MUST return BACKPRESSURE or DEFERRED with the exact unaccepted source range. It MUST NOT silently drop, reorder, or mark unprocessed ranges complete.
+
+The scheduler SHOULD prioritize causal order within a source and preserve explicit dependency priority across sources. Any priority scheduling MUST be starvation-bounded and observable. Queue depth, oldest-item age, rejected/deferred ranges and retry counts MUST be reported.
+
+### 12.6 CPU execution profile
+
+A benchmark MUST declare:
+- CPU model and microarchitecture, physical/logical cores, frequency policy and affinity;
+- operating system, compiler, runtime and library versions;
+- model architecture, quantization, artifact digest and exact byte size;
+- thread count, batch policy, packet size distribution and maximum wait;
+- warm-up policy, repetitions, corpus digest and timing boundary;
+- memory: model bytes, peak/steady RSS, adapter buffers, Core memory and cache separately.
+
+The baseline SHOULD include a single-thread CPU run to expose intrinsic efficiency, plus a deployment-thread run. Thread oversubscription MUST be avoided and reported.
+
+### 12.7 Japanese text benchmark arithmetic
+
+The benchmark-only Japanese reference clock remains:
+
+T_ref = normalized Japanese character count / 20 characters per second.
+
+Therefore, the RTF < 0.01 target implies the following maximum end-to-end processing budgets:
+
+| Normalized characters | T_ref | Maximum wall time for RTF < 0.01 |
+|---:|---:|---:|
+| 20 | 1 s | 10 ms |
+| 50 | 2.5 s | 25 ms |
+| 100 | 5 s | 50 ms |
+| 200 | 10 s | 100 ms |
+| 1,000 | 50 s | 500 ms |
+
+These are arithmetic consequences of the benchmark convention, not measured model performance or human reading-speed claims. Small packets are particularly sensitive to fixed invocation and scheduling overhead. Implementations MUST report packet-size-stratified latency and RTF; they MUST NOT infer small-packet performance from large-batch throughput.
+
+A hypothetical 9.4 ms inference time, if ever used in an example, is illustrative only. It MUST NOT be presented as a SURGE benchmark or as evidence that a 30 MiB model achieves that latency.
+
+### 12.8 Performance result classes
+
+Every result MUST be labeled as one of:
+- DESIGN_TARGET: specified but not measured;
+- ARITHMETIC_EXAMPLE: derived from a stated formula, not measured;
+- MODEL_ONLY_MEASURED: measured inference only;
+- FAST_PATH_MEASURED: measured through synchronous packet acceptance/commit boundary;
+- END_TO_END_MEASURED: includes all work required by the declared completion definition;
+- SETTLED_MEASURED: includes deferred reconciliation through a stable settled state.
+
+Only END_TO_END_MEASURED or SETTLED_MEASURED can substantiate the v0.8 end-to-end RTF target. Reports MUST include semantic coverage/abstention rate alongside speed so that excessive abstention cannot masquerade as successful acceleration.
+
+## 13. Revised acceptance gates
+
+The following gates are independent and MUST be reported separately:
+
+| Gate | Acceptance condition |
+|---|---|
+| Artifact | model artifact <= 30 MiB, exact digest and byte count recorded |
+| Semantic | v0.7 semantic projection is equivalent, or uncertainty is explicitly preserved |
+| Safety | zero violations of inherited and v0.8 invariants |
+| Throughput | sustained input rate exceeds source rate without unbounded queue growth |
+| Latency | p50/p95/p99/max packet latency reported under declared packet-size strata |
+| RTF | end-to-end RTF < 0.01 measured under a declared profile |
+| Coverage | classification coverage, abstention, deferred and unsupported rates reported |
+| Memory | peak and steady RSS plus component-wise memory accounting reported |
+
+Passing one gate MUST NOT be described as passing another. In particular, artifact size does not prove speed, speed does not prove semantic parity, and design-level thought experiments do not prove either.
+
+## 14. Revised implementation order
+
+1. Implement deterministic structural packetization and exact source anchors.
+2. Implement bounded queues, backpressure, per-packet idempotency and micro-batch scheduling.
+3. Implement ContextHint retrieval and stale-version revalidation.
+4. Implement compact classifier and explicit abstention.
+5. Implement event-driven Core integration and bounded Dependency reconciliation.
+6. Add packet-size-stratified benchmark harness with complete timing boundaries.
+7. Compare compact and reference v0.7 semantic projections on W01-W50, A-H and C01-C20.
+8. Optimize measured bottlenecks; do not optimize model inference in isolation when Adapter/Core overhead dominates.
+
+## 15. v0.8 normative conclusion
+
+The 30 MiB model profile is plausible as a bounded local recognizer, but the specification makes no empirical claim that a particular model, CPU, or implementation achieves RTF < 0.01. The design targets this through structural-first input, bounded packets, micro-batching, indexed ContextHint retrieval, incremental Core updates, and event-driven reconciliation. Full v0.7 semantic state remains authoritative in the Core. The acceptance decision is made only from reproducible end-to-end measurements and semantic regression results.
