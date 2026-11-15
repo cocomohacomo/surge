@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/context_graph.hpp"
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
