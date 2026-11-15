@@ -23,7 +23,7 @@ untrusted callers must not be given this API.
 ## Atomic admission sequence
 
 1. Require coordinator recovery to have completed.
-2. Validate trusted adapter flags and Core-level required fields.
+2. Validate Core-level required fields, UTF-8 validity, full snapshot digest and exact range digest.
 3. Check packet ID, idempotency key and per-stream source sequence uniqueness.
 4. Copy the stream's SourceSequencer and RangeLedger into staged state.
 5. Apply range/revision validation and source sequence observation to staged state.
@@ -46,7 +46,10 @@ admission event fails recovery closed.
 
 ## Event payload
 
-The journal payload uses a versioned RPA1 encoding with quoted string fields.
+The journal payload uses a versioned RPA2 encoding with quoted string fields.
+The decoder remains backward-compatible with RPA1 records created before
+independent snapshot digest verification; historical RPA1 events are trusted
+as already committed records during replay.
 The event contains packet/source identity, normalized byte range, range digest,
 canonical packet digest and revision metadata. Source text is not copied into
 the journal. EventJournal CRC protects against accidental frame corruption,
@@ -58,7 +61,9 @@ not malicious modification.
 - EventJournal flush is not an OS fsync/FlushFileBuffers power-loss guarantee.
 - The trusted adapter is currently a Python module; an actual Python-to-C++
   binding/IPC bridge is not included in this milestone.
-- C++ does not perform JSON Schema validation or SHA-256 recomputation.
+- C++ independently verifies SHA-256 but does not perform JSON Schema validation
+  or Unicode NFC normalization. The caller must provide the normalized snapshot.
+- A direct Python-to-C++ binding/IPC bridge is not included in this milestone.
 - No cross-process locking, authorization policy engine, source authenticity,
   compaction or snapshotting.
 - Journal is shared with other Core events; coordinator replay filters its
