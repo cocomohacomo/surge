@@ -87,3 +87,10 @@
 - Added D13-D20 fixtures and made D01-D12 executable-oriented JSON fixtures.
 - Updated README current-specification references.
 - No production Core implementation or measured performance claim is included.
+
+## [0.9.10] - 2026-11-16
+
+- Add a dependency-free C++ SHA-256 implementation and strict UTF-8 validation.
+- Require PacketAdmissionCoordinator to independently verify the complete NFC UTF-8 snapshot digest and exact byte-range digest before staging or committing an admission.
+- Remove caller-controlled validation flags from the PacketAdmission API.
+- Write RPA2 packet journal payloads while retaining RPA1 replay compatibility.

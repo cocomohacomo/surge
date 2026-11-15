@@ -1,4 +1,5 @@
 #include "surge/packet_admission.hpp"
+#include "surge/sha256.hpp"
 
 #include <iomanip>
 #include <limits>
@@ -33,11 +34,12 @@ std::string PacketAdmissionCoordinator::range_key(
 std::string PacketAdmissionCoordinator::encode(
     const ValidatedRecognitionPacket& p) {
   std::ostringstream out;
-  out << "RPA1 " << std::quoted(p.packet_id) << ' '
+  out << "RPA2 " << std::quoted(p.packet_id) << ' '
       << std::quoted(p.idempotency_key) << ' ' << std::quoted(p.context_id) << ' '
       << std::quoted(p.source_id) << ' ' << std::quoted(p.source_generation) << ' '
       << std::quoted(p.block_ref) << ' ' << std::quoted(p.offset_basis) << ' '
       << p.start_offset << ' ' << p.end_offset << ' ' << p.source_sequence << ' '
+      << std::quoted(p.source_snapshot_digest) << ' '
       << std::quoted(p.source_range_digest) << ' '
       << std::quoted(p.canonical_request_digest) << ' '
       << std::quoted(p.revision_of_packet_id) << ' '
@@ -50,12 +52,14 @@ bool PacketAdmissionCoordinator::decode(
   std::istringstream in(payload);
   std::string magic;
   int revision = 0;
-  if (!(in >> magic) || magic != "RPA1" ||
-      !(in >> std::quoted(p.packet_id) >> std::quoted(p.idempotency_key)
+  if (!(in >> magic) || (magic != "RPA1" && magic != "RPA2")) return false;
+  if (!(in >> std::quoted(p.packet_id) >> std::quoted(p.idempotency_key)
         >> std::quoted(p.context_id) >> std::quoted(p.source_id)
         >> std::quoted(p.source_generation) >> std::quoted(p.block_ref)
         >> std::quoted(p.offset_basis) >> p.start_offset >> p.end_offset
-        >> p.source_sequence >> std::quoted(p.source_range_digest)
+        >> p.source_sequence)) return false;
+  if (magic == "RPA2" && !(in >> std::quoted(p.source_snapshot_digest))) return false;
+  if (!(in >> std::quoted(p.source_range_digest)
         >> std::quoted(p.canonical_request_digest)
         >> std::quoted(p.revision_of_packet_id) >> revision
         >> p.revision_sequence)) return false;
@@ -63,10 +67,6 @@ bool PacketAdmissionCoordinator::decode(
   if (in >> extra) return false;
   if (revision != 0 && revision != 1) return false;
   p.revision = revision == 1;
-  // These flags record the adapter's validation at original admission. The
-  // journal is trusted on replay, so no caller-supplied flag is serialized.
-  p.source_snapshot_verified = true;
-  p.range_digest_verified = true;
   return true;
 }
 
@@ -117,21 +117,32 @@ bool PacketAdmissionCoordinator::recover() {
 }
 
 PacketAdmissionResult PacketAdmissionCoordinator::admit(
-    const ValidatedRecognitionPacket& p) {
+    const ValidatedRecognitionPacket& p,
+    const std::string& normalized_source_snapshot) {
   PacketAdmissionResult result;
   result.state_version = journal_.state_version();
   if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
-  if (!p.source_snapshot_verified || !p.range_digest_verified) {
-    result.error = "SOURCE_VALIDATION_REQUIRED"; return result;
-  }
-  if (p.packet_id.empty() || p.idempotency_key.empty() || p.context_id.empty() ||
+   if (p.packet_id.empty() || p.idempotency_key.empty() || p.context_id.empty() ||
       p.source_id.empty() || p.source_generation.empty() || p.block_ref.empty() ||
-      p.source_range_digest.size() != 64 || p.canonical_request_digest.empty() ||
+      p.source_snapshot_digest.size() != 64 || p.source_range_digest.size() != 64 || p.canonical_request_digest.empty() ||
       p.offset_basis != "UTF8_BYTE_NFC" || p.end_offset <= p.start_offset ||
       p.source_sequence == 0 || p.source_sequence == std::numeric_limits<std::uint64_t>::max() ||
       (p.revision && (p.revision_sequence == 0 || p.revision_of_packet_id.empty())) ||
       (!p.revision && (p.revision_sequence != 0 || !p.revision_of_packet_id.empty()))) {
     result.error = "PACKET_CORE_INVARIANT_FAILED"; return result;
+  }
+  if (!is_valid_utf8(normalized_source_snapshot)) {
+    result.error = "SOURCE_SNAPSHOT_INVALID_UTF8"; return result;
+  }
+  if (p.end_offset > normalized_source_snapshot.size() ||
+      sha256_hex(normalized_source_snapshot) != p.source_snapshot_digest) {
+    result.error = "SOURCE_SNAPSHOT_DIGEST_MISMATCH"; return result;
+  }
+  const auto range_bytes = normalized_source_snapshot.substr(
+      static_cast<std::size_t>(p.start_offset),
+      static_cast<std::size_t>(p.end_offset - p.start_offset));
+  if (sha256_hex(range_bytes) != p.source_range_digest) {
+    result.error = "SOURCE_RANGE_DIGEST_MISMATCH"; return result;
   }
 
   auto existing_packet = packet_digests_.find(p.packet_id);

@@ -2,6 +2,7 @@
 
 #include "surge/core.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/sha256.hpp"
 
 #include <cstdint>
 #include <map>
@@ -9,9 +10,8 @@
 
 namespace surge {
 
-// This is a typed, already-normalized envelope emitted by the trusted
-// RecognitionPacket adapter. C++ rechecks structural invariants and owns the
-// durable transaction; it does not recompute SHA-256 in this prototype.
+// Typed envelope from the adapter. Core independently verifies the exact
+// NFC UTF-8 snapshot and its source range before admission.
 struct ValidatedRecognitionPacket {
   std::string packet_id;
   std::string idempotency_key;
@@ -23,11 +23,10 @@ struct ValidatedRecognitionPacket {
   std::uint64_t start_offset{};
   std::uint64_t end_offset{};
   std::uint64_t source_sequence{};
+  std::string source_snapshot_digest;
   std::string source_range_digest;
   std::string canonical_request_digest;
   std::string revision_of_packet_id;
-  bool source_snapshot_verified{false};
-  bool range_digest_verified{false};
   bool revision{false};
   std::uint64_t revision_sequence{};
 };
@@ -47,7 +46,8 @@ class PacketAdmissionCoordinator {
  public:
   explicit PacketAdmissionCoordinator(EventJournal& journal);
   bool recover();
-  PacketAdmissionResult admit(const ValidatedRecognitionPacket& packet);
+  PacketAdmissionResult admit(const ValidatedRecognitionPacket& packet,
+                              const std::string& normalized_source_snapshot);
   std::uint64_t state_version() const;
   std::size_t packet_count() const;
 
