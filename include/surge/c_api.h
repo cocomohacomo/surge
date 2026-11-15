@@ -74,6 +74,7 @@ int surge_context_graph_apply(
 
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
+size_t surge_context_graph_scope_count(void* handle);
 #ifdef __cplusplus
 }
 #endif
