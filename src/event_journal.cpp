@@ -201,11 +201,6 @@ bool EventJournal::recover() {
     std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
     if (ec) { last_error_ = "JOURNAL_TAIL_TRUNCATE_ERROR"; return false; }
   }
-  if (truncated_tail) {
-    std::error_code ec;
-    std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
-    if (ec) { last_error_ = "JOURNAL_TAIL_TRUNCATE_ERROR"; return false; }
-  }
   return true;
 }
 
