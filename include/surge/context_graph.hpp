@@ -1,6 +1,7 @@
 #pragma once
 #include "surge/event_journal.hpp"
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -45,6 +46,7 @@ struct DeltaResult {
 class ContextGraph {
  public:
   explicit ContextGraph(std::string journal_path);
+  explicit ContextGraph(EventJournal& shared_journal);
   bool open();
   DeltaResult apply(const SemanticDelta& delta);
   std::uint64_t state_version() const { return journal_.state_version(); }
@@ -66,7 +68,8 @@ class ContextGraph {
   std::string fingerprint(const SemanticDelta& delta) const;
   std::vector<JournalEvent> encode(const SemanticDelta& delta, const std::string& fingerprint) const;
   bool replay_event(State& state, const JournalEvent& event, std::string& error) const;
-  EventJournal journal_;
+  std::unique_ptr<EventJournal> owned_journal_;
+  EventJournal* journal_{nullptr};
   State state_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
