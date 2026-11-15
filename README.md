@@ -4,6 +4,10 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
+- **Recognition Scoring v0.1:** [docs/surge/RECOGNITION_SCORING_v0.1.md](docs/surge/RECOGNITION_SCORING_v0.1.md)
+- **Recognition scoring schema:** [schemas/surge-v0.9-scoring.schema.json](schemas/surge-v0.9-scoring.schema.json)
+- **50-case Japanese scoring regression corpus:** [tests/conformance/SURGE_JA_SCORING_50_v0.1.json](tests/conformance/SURGE_JA_SCORING_50_v0.1.json)
+
 - **Foundational specification v0.9.0:** [docs/surge/SPECIFICATION_v0.9.md](docs/surge/SPECIFICATION_v0.9.md)
 - **Detailed design v0.6:** [docs/surge/DETAILED_DESIGN_v0.6.md](docs/surge/DETAILED_DESIGN_v0.6.md)
 - **Core API v0.4:** [docs/surge/CORE_API_v0.4.md](docs/surge/CORE_API_v0.4.md)
