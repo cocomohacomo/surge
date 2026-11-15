@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cocomohacomo/surge/blob/main/schemas/surge-v0.4.schema.json",
+  "$id": "urn:surge:schema:core:0.4.0",
   "title": "SURGE v0.4 Core Data Contract",
   "description": "Normative JSON Schema definitions for SURGE v0.4 records. Cross-record integrity and lifecycle rules are enforced by the Core Validator.",
   "oneOf": [
