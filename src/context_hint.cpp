@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 namespace surge {
 namespace {
@@ -109,4 +110,142 @@ TicketResolution RetrievalTicketRegistry::resolve(const std::string& id,std::uin
   TicketResolution r{TicketStatus::Resolved,current,std::move(refs)};
   resolutions_[id]=r;return r;
 }
+
+
+namespace {
+std::string encode_ticket(const RetrievalTicket& t) {
+  std::ostringstream out;
+  out << std::quoted(t.ticket_id) << ' ' << std::quoted(t.context_id) << ' '
+      << std::quoted(t.packet_ref) << ' ' << std::quoted(t.source_range_digest) << ' '
+      << std::quoted(t.omitted_digest) << ' ' << std::quoted(t.policy_version) << ' '
+      << t.state_version << ' ' << t.omitted_refs.size();
+  for (const auto& ref : t.omitted_refs) out << ' ' << std::quoted(ref);
+  return out.str();
+}
+bool decode_ticket(const std::string& payload, RetrievalTicket& t) {
+  std::istringstream in(payload);
+  std::size_t count = 0;
+  if (!(in >> std::quoted(t.ticket_id) >> std::quoted(t.context_id) >>
+        std::quoted(t.packet_ref) >> std::quoted(t.source_range_digest) >>
+        std::quoted(t.omitted_digest) >> std::quoted(t.policy_version) >>
+        t.state_version >> count) || count > 100000) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string ref;
+    if (!(in >> std::quoted(ref)) || ref.empty()) return false;
+    t.omitted_refs.push_back(std::move(ref));
+  }
+  std::string extra;
+  return !(in >> extra);
+}
+std::string encode_resolution(const std::string& id, const TicketResolution& r) {
+  std::ostringstream out;
+  out << std::quoted(id) << ' ' << static_cast<int>(r.status) << ' '
+      << r.resolved_state_version << ' ' << r.refs.size();
+  for (const auto& ref : r.refs) out << ' ' << std::quoted(ref);
+  return out.str();
+}
+bool decode_resolution(const std::string& payload, std::string& id, TicketResolution& r) {
+  std::istringstream in(payload);
+  int status = 0;
+  std::size_t count = 0;
+  if (!(in >> std::quoted(id) >> status >> r.resolved_state_version >> count) ||
+      status != static_cast<int>(TicketStatus::Resolved) || count > 100000) return false;
+  r.status = TicketStatus::Resolved;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string ref;
+    if (!(in >> std::quoted(ref)) || ref.empty()) return false;
+    r.refs.push_back(std::move(ref));
+  }
+  std::string extra;
+  return !(in >> extra);
+}
+}
+
+bool PersistentRetrievalTicketRegistry::open() { return replay(); }
+
+bool PersistentRetrievalTicketRegistry::replay() {
+  tickets_.clear();
+  resolutions_.clear();
+  for (const auto& event : journal_.committed_events()) {
+    if (event.kind == "RETRIEVAL_TICKET_ISSUED") {
+      RetrievalTicket ticket;
+      if (!decode_ticket(event.payload, ticket) || ticket.ticket_id.empty()) return false;
+      auto found = tickets_.find(ticket.ticket_id);
+      if (found != tickets_.end() && encode_ticket(found->second) != event.payload) return false;
+      tickets_[ticket.ticket_id] = std::move(ticket);
+    } else if (event.kind == "RETRIEVAL_TICKET_RESOLVED") {
+      std::string id;
+      TicketResolution resolution;
+      if (!decode_resolution(event.payload, id, resolution) || !tickets_.count(id)) return false;
+      resolutions_[id] = std::move(resolution);
+    }
+  }
+  return true;
+}
+
+bool PersistentRetrievalTicketRegistry::issue(const RetrievalTicket& ticket, std::string& error) {
+  error.clear();
+  if (ticket.ticket_id.empty() || ticket.context_id.empty() || ticket.packet_ref.empty() ||
+      ticket.source_range_digest.size() != 64 || ticket.omitted_digest.empty() ||
+      ticket.policy_version.empty() || ticket.omitted_refs.empty()) {
+    error = "RETRIEVAL_TICKET_INVALID";
+    return false;
+  }
+  const auto old = tickets_.find(ticket.ticket_id);
+  if (old != tickets_.end()) {
+    if (encode_ticket(old->second) == encode_ticket(ticket)) return true;
+    error = "RETRIEVAL_TICKET_ID_CONFLICT";
+    return false;
+  }
+  const std::string payload = encode_ticket(ticket);
+  const auto committed = journal_.commit(
+      "retrieval-ticket/issue/" + ticket.ticket_id,
+      "retrieval-ticket/issue/" + ticket.ticket_id,
+      journal_.state_version(),
+      {{"retrieval-ticket/issued/" + ticket.ticket_id, "RETRIEVAL_TICKET_ISSUED", payload}});
+  if (!committed.committed) { error = committed.error; return false; }
+  tickets_[ticket.ticket_id] = ticket;
+  return true;
+}
+
+TicketResolution PersistentRetrievalTicketRegistry::resolve(
+    const std::string& id, std::uint64_t current, bool replayable,
+    const std::vector<std::string>& reevaluated, std::string& error) {
+  error.clear();
+  const auto ticket = tickets_.find(id);
+  if (ticket == tickets_.end()) {
+    error = "RETRIEVAL_TICKET_NOT_FOUND";
+    return {TicketStatus::Stale, current, {}};
+  }
+  const auto prior = resolutions_.find(id);
+  if (prior != resolutions_.end() &&
+      prior->second.resolved_state_version == current) return prior->second;
+
+  TicketResolution result;
+  if (current == ticket->second.state_version) {
+    result = {TicketStatus::Resolved, current, ticket->second.omitted_refs};
+  } else if (!replayable) {
+    return {TicketStatus::Stale, current, {}};
+  } else {
+    std::vector<std::string> refs = reevaluated;
+    std::sort(refs.begin(), refs.end());
+    refs.erase(std::unique(refs.begin(), refs.end()), refs.end());
+    result = {TicketStatus::Resolved, current, std::move(refs)};
+  }
+  const std::string payload = encode_resolution(id, result);
+  const std::string suffix = std::to_string(current);
+  const auto committed = journal_.commit(
+      "retrieval-ticket/resolve/" + id + "/" + suffix,
+      "retrieval-ticket/resolve/" + id + "/" + suffix,
+      journal_.state_version(),
+      {{"retrieval-ticket/resolved/" + id + "/" + suffix,
+        "RETRIEVAL_TICKET_RESOLVED", payload}});
+  if (!committed.committed) {
+    error = committed.error;
+    return {TicketStatus::Stale, current, {}};
+  }
+  resolutions_[id] = result;
+  return result;
+}
+
 }  // namespace surge
