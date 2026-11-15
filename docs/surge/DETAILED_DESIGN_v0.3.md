@@ -1039,6 +1039,7 @@ v0.5レコードを原文保存しDigestを付与。Migration Eventにsource/tar
 | T-098 | v0.5 Question Migration | 各旧Aspectを変換し未解決Mappingを報告する。 |
 | T-099 | 旧RESOLVED根拠欠落 | Resolutionを捏造せずReview Aspectを生成する。 |
 | T-100 | Migration失敗時旧State保持 | 新Generationを公開せず旧Stateを保持する。 |
+| T-101 | RESOLVEDとINVALIDATEDの終端混在 | 全required Aspectが終端し少なくとも一つRESOLVEDならQuestionはRESOLVED、Aspect個別の結果は保持する。 |
 
 ## 35.1 Exit Criteria
 100ケース全てについて期待結果、適用Policy、Validator責務が一意であること。反例が見つかった場合は規則を修正し影響ケースを再検証する。実装適合を宣言するには同Catalogueを自動テスト化し、Fixture、実行ログ、Core Versionを保存する。
