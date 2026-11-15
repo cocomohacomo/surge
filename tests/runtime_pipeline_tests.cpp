@@ -4,6 +4,7 @@
 #include "surge/packet_admission.hpp"
 #include "surge/question_router.hpp"
 #include "surge/sha256.hpp"
+#include <algorithm>
 #include <cassert>
 #include <filesystem>
 #include <iostream>
@@ -107,8 +108,9 @@ int main() {
     assert(graph.state_version() == 3);
     assert(graph.nodes().count("cluster-budget") == 1);
     assert(graph.nodes().count("cluster-finance") == 1);
-    assert(graph.nodes().count("question-aspect:contradiction-1") == 1 ||
-           graph.nodes().size() >= 9);
+    assert(graph.nodes().count("question/contradiction/contradiction-1") == 1);
+    assert(graph.nodes().count("aspect/contradiction/contradiction-1") == 1);
+    assert(graph.relations().count("contradiction-1") == 1);
   }
   std::filesystem::remove_all(root);
   std::cout << "SURGE end-to-end runtime pipeline passed: packet -> graph -> question/interest -> dependency -> context hint -> replay\n";
