@@ -259,7 +259,7 @@ class ContextRetriever:
         by_id = {item["id"]: item for item in items if isinstance(item.get("id"), str)}
         if len(items) >= max_nodes and snapshot.get("total_matches", len(items)) > max_nodes:
             raise PacketRejected("CONTEXT_HINT_GRAPH_SNAPSHOT_BUDGET_EXCEEDED")
-        candidates: list[dict[str, Any]] = []
+        candidate_map: dict[str, dict[str, Any]] = {}
         classes: dict[str, str] = {}
 
         def add(ref: str, kind: str, score: int = 0, depth: int = 0) -> None:
@@ -267,9 +267,9 @@ class ContextRetriever:
                 classes[ref] = kind
             else:
                 return
-            candidates.append({"ref": ref, "kind": kind,
-                               "source_overlap": max(0, int(score)),
-                               "dependency_depth": max(0, int(depth))})
+            candidate_map[ref] = {"ref": ref, "kind": kind,
+                                  "source_overlap": max(0, int(score)),
+                                  "dependency_depth": max(0, int(depth))}
 
         focus = snapshot.get("focus")
         if isinstance(focus, dict):
@@ -372,6 +372,7 @@ class ContextRetriever:
                 if target in by_id:
                     add(target, "LOW_PRIORITY", item.get("score", 0), visited[ref] + 1)
 
+        candidates = list(candidate_map.values())
         return self.build_hint(
             context_id=context_id, packet_ref=packet_ref,
             source_range_digest=source_range_digest,
