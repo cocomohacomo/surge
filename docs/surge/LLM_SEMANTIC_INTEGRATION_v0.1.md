@@ -16,7 +16,7 @@ provider and never call an external model.
 ## Execution path
 
 1. Text is normalized to NFC UTF-8 and admitted as a RecognitionPacket.
-2. The LLM emits kind, topic, proposition, polarity, conditionality and three
+2. The LLM receives the current ContextHint version, active topic, previous turn kind and up to eight recent claims. This gives short acknowledgements a bounded context window. It emits kind, topic, proposition, polarity, conditionality and three
    calibrated-input candidates (confidence, ambiguity, importance).
 3. The adapter validates the exact key set, enum values, finite [0,1] scores,
    and required claim fields.
@@ -56,5 +56,5 @@ provider and never call an external model.
 ## Test command
 
 ```sh
-python -m unittest tests.test_llm_semantic_integration -v
+python -m unittest discover -s tests -p 'test_llm_semantic_integration.py' -v
 ```
