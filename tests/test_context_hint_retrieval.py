@@ -88,7 +88,7 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
         )
         self.assertEqual(
             hint["included_refs"],
-            ["scope-open", "qa-1", "dep-1", "cluster-1", "question-1"],
+            ["scope-open", "qa-1", "dep-1", "cluster-1", "claim-1", "question-1"],
         )
         self.assertNotIn("scope-closed", hint["included_refs"])
 
