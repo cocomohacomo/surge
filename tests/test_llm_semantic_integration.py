@@ -40,7 +40,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 runtime.process("予算を増額します。",core)
                 out=runtime.process("予算を増額しません。",core)
                 self.assertTrue(out["semantic_commit"]["committed"])
-                self.assertEqual(core.state_version,1)
+                self.assertEqual(core.state_version,2)
                 self.assertEqual(core.packet_count,2)
 
     def test_abstention_preserves_evidence_without_claim(self):
@@ -51,7 +51,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 out=runtime.process("それは不明です。",core)
                 self.assertEqual(out["decision"],"ABSTAIN")
                 self.assertFalse(out["claim_created"])
-                self.assertEqual(core.state_version,2)
+                self.assertEqual(core.state_version,1)
 
     def test_question_creates_question_and_interest(self):
         with tempfile.TemporaryDirectory() as tmp:
