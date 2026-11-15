@@ -80,6 +80,33 @@ int main() {
     assert(next.admitted && next.watermark == 3);
     assert(recovered_journal.state_version() == 4);
   }
+
+  {
+    const auto revision_path = (root / "revision.sgj").string();
+    EventJournal journal(revision_path);
+    assert(journal.open());
+    PacketAdmissionCoordinator coordinator(journal);
+    assert(coordinator.recover());
+    auto original = packet("original", "rev-i1", 1, std::string(64, 'a'));
+    original.block_ref = "revision-block";
+    assert(coordinator.admit(original).admitted);
+    auto wrong_parent = packet("wrong-parent", "rev-i2", 2, std::string(64, 'b'));
+    wrong_parent.block_ref = "revision-block";
+    wrong_parent.revision = true;
+    wrong_parent.revision_sequence = 1;
+    wrong_parent.revision_of_packet_id = "not-original";
+    assert(coordinator.admit(wrong_parent).error == "REVISION_TARGET_MISMATCH");
+    auto revision = packet("revision-1", "rev-i3", 2, std::string(64, 'c'));
+    revision.block_ref = "revision-block";
+    revision.revision = true;
+    revision.revision_sequence = 1;
+    revision.revision_of_packet_id = "original";
+    assert(coordinator.admit(revision).admitted);
+    auto too_far = packet("too-far", "rev-i4", 5000, std::string(64, 'd'));
+    too_far.block_ref = "far-block";
+    assert(coordinator.admit(too_far).error == "SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
+    assert(coordinator.packet_count() == 2);
+  }
   std::filesystem::remove_all(root);
   std::cout << "SURGE PacketAdmission tests: 2 scenarios passed\n";
 }
