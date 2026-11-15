@@ -79,3 +79,14 @@ Linuxでは `build/libsurge_core.so` が生成される。Python側はこの共�
 
 実アプリケーションからは `CppCoreBridge(journal_path)` と
 `RecognitionPacketAdapter.admit_to_core(packet, source_text, core)` を利用する。
+
+
+## Recognition scoring extension v0.1
+
+The scoring extension validates six independent dimensions and applies
+ACCEPT/REVIEW/ABSTAIN gates. The 50 Japanese reference cases run through the
+Python scoring policy and Draft 2020-12 result schema. These are assistant-scored deterministic regression
+examples, not an independent gold-standard
+corpus or a model-quality claim. Importance remains separate from confidence;
+ambiguous or low-confidence cases are abstained rather than converted into
+guessed semantic state.

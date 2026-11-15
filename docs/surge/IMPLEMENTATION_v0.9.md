@@ -70,3 +70,16 @@ Dependencyノードのreferences[0]を前提、references[1]を依存先とし�
 ## ContextHint v0.1の範囲
 
 mandatory refsの優先順位とoptional refsの切り分け、budget超過時のRetrievalTicket発行を実装。Ticket Registryはprocess-local/in-memoryで、Context認可、expiry/supersede、永続化、predicate保存、実グラフ検索は未実装。FNV-1a fingerprintは暗号学的保証を持たない。
+
+
+## Recognition Scoring v0.1 (additive)
+
+The replaceable Python scoring boundary is implemented in
+surge_adapter/recognition_scoring.py. It validates six independent dimensions
+(relevance, importance, relation strength, confidence, ambiguity, novelty),
+returns ACCEPT/REVIEW/ABSTAIN, and never commits Core state. Importance is not
+confidence. The v0.1 priority score is importance-only; no composite formula
+is normative until calibration and selective-risk benchmarking exist. Fifty
+assistant-scored Japanese cases are executable regression tests. They validate
+deterministic scoring policy and schema shape, not model accuracy or full
+semantic Core integration.

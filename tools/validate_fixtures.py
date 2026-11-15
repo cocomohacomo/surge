@@ -15,8 +15,8 @@ def load(path):
 
 def main():
     schema_paths = sorted((ROOT / "schemas").glob("surge-v0.9-*.schema.json"))
-    if len(schema_paths) != 3:
-        raise AssertionError(f"expected 3 v0.9 schemas, got {len(schema_paths)}")
+    if len(schema_paths) != 4:
+        raise AssertionError(f"expected 4 v0.9 schemas, got {len(schema_paths)}")
     for path in schema_paths:
         schema = load(path)
         Draft202012Validator.check_schema(schema)

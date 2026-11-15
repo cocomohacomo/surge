@@ -1,0 +1,708 @@
+{
+  "dataset_id": "SURGE-JA-SCORING-50-v0.1",
+  "language": "ja",
+  "status": "assistant_scored_reference",
+  "score_scale": "0..1",
+  "cases": [
+    {
+      "case_id": "S01",
+      "text": "うん。",
+      "expected_label": "ACKNOWLEDGEMENT",
+      "scores": {
+        "relevance": 0.72,
+        "importance": 0.9,
+        "relation_strength": 0.55,
+        "confidence": 0.95,
+        "ambiguity": 0.1,
+        "novelty": 0.9
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S02",
+      "text": "はい。",
+      "expected_label": "AFFIRMATIVE_RESPONSE",
+      "scores": {
+        "relevance": 0.65,
+        "importance": 0.86,
+        "relation_strength": 0.5,
+        "confidence": 0.96,
+        "ambiguity": 0.08,
+        "novelty": 0.86
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S03",
+      "text": "そうですね。",
+      "expected_label": "WEAK_AGREEMENT",
+      "scores": {
+        "relevance": 0.58,
+        "importance": 0.75,
+        "relation_strength": 0.45,
+        "confidence": 0.82,
+        "ambiguity": 0.22,
+        "novelty": 0.75
+      },
+      "expected_decision": "REVIEW"
+    },
+    {
+      "case_id": "S04",
+      "text": "いや、違います。",
+      "expected_label": "NEGATION",
+      "scores": {
+        "relevance": 0.91,
+        "importance": 0.94,
+        "relation_strength": 0.85,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.94
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S05",
+      "text": "それでお願いします。",
+      "expected_label": "DECISION_ACCEPTANCE",
+      "scores": {
+        "relevance": 0.96,
+        "importance": 0.98,
+        "relation_strength": 0.92,
+        "confidence": 0.98,
+        "ambiguity": 0.02,
+        "novelty": 0.98
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S06",
+      "text": "なるほど。",
+      "expected_label": "ACKNOWLEDGEMENT",
+      "scores": {
+        "relevance": 0.42,
+        "importance": 0.5,
+        "relation_strength": 0.35,
+        "confidence": 0.86,
+        "ambiguity": 0.18,
+        "novelty": 0.5
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S07",
+      "text": "ちょっと待ってください。",
+      "expected_label": "SUSPEND_REQUEST",
+      "scores": {
+        "relevance": 0.55,
+        "importance": 0.62,
+        "relation_strength": 0.4,
+        "confidence": 0.96,
+        "ambiguity": 0.05,
+        "novelty": 0.62
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S08",
+      "text": "まあ、いいんじゃないですか。",
+      "expected_label": "WEAK_AGREEMENT",
+      "scores": {
+        "relevance": 0.63,
+        "importance": 0.7,
+        "relation_strength": 0.52,
+        "confidence": 0.76,
+        "ambiguity": 0.3,
+        "novelty": 0.7
+      },
+      "expected_decision": "REVIEW"
+    },
+    {
+      "case_id": "S09",
+      "text": "それは困ります。",
+      "expected_label": "NEGATIVE_EVALUATION",
+      "scores": {
+        "relevance": 0.79,
+        "importance": 0.86,
+        "relation_strength": 0.7,
+        "confidence": 0.94,
+        "ambiguity": 0.08,
+        "novelty": 0.86
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S10",
+      "text": "以上です。",
+      "expected_label": "TURN_CLOSURE",
+      "scores": {
+        "relevance": 0.2,
+        "importance": 0.24,
+        "relation_strength": 0.15,
+        "confidence": 0.98,
+        "ambiguity": 0.02,
+        "novelty": 0.24
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S11",
+      "text": "この申請は承認しない。",
+      "expected_label": "NEGATED_CLAIM",
+      "scores": {
+        "relevance": 0.91,
+        "importance": 0.95,
+        "relation_strength": 0.82,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.95
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S12",
+      "text": "この申請は承認しない場合を除き、受理する。",
+      "expected_label": "EXCEPTION_SCOPE",
+      "scores": {
+        "relevance": 0.94,
+        "importance": 0.96,
+        "relation_strength": 0.9,
+        "confidence": 0.89,
+        "ambiguity": 0.15,
+        "novelty": 0.96
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S13",
+      "text": "予算が確保できた場合に事業を開始する。",
+      "expected_label": "CONDITIONAL_CLAIM",
+      "scores": {
+        "relevance": 0.92,
+        "importance": 0.93,
+        "relation_strength": 0.9,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.93
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S14",
+      "text": "予算が確保できれば、事業を開始するかもしれない。",
+      "expected_label": "CONDITION_MODALITY",
+      "scores": {
+        "relevance": 0.87,
+        "importance": 0.88,
+        "relation_strength": 0.82,
+        "confidence": 0.98,
+        "ambiguity": 0.05,
+        "novelty": 0.88
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S15",
+      "text": "事業を開始する予定です。",
+      "expected_label": "FUTURE_INTENTION",
+      "scores": {
+        "relevance": 0.82,
+        "importance": 0.84,
+        "relation_strength": 0.68,
+        "confidence": 0.97,
+        "ambiguity": 0.05,
+        "novelty": 0.84
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S16",
+      "text": "必ずしも全員が賛成しているわけではない。",
+      "expected_label": "PARTIAL_NEGATION",
+      "scores": {
+        "relevance": 0.88,
+        "importance": 0.92,
+        "relation_strength": 0.84,
+        "confidence": 0.96,
+        "ambiguity": 0.06,
+        "novelty": 0.92
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S17",
+      "text": "予算が不足していないとは言えない。",
+      "expected_label": "DOUBLE_NEGATION",
+      "scores": {
+        "relevance": 0.83,
+        "importance": 0.78,
+        "relation_strength": 0.72,
+        "confidence": 0.84,
+        "ambiguity": 0.34,
+        "novelty": 0.78
+      },
+      "expected_decision": "REVIEW"
+    },
+    {
+      "case_id": "S18",
+      "text": "実施できる可能性はあります。",
+      "expected_label": "POSSIBILITY",
+      "scores": {
+        "relevance": 0.63,
+        "importance": 0.61,
+        "relation_strength": 0.5,
+        "confidence": 0.98,
+        "ambiguity": 0.06,
+        "novelty": 0.61
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S19",
+      "text": "原則として認めます。ただし例外があります。",
+      "expected_label": "EXCEPTION_SCOPE",
+      "scores": {
+        "relevance": 0.9,
+        "importance": 0.94,
+        "relation_strength": 0.86,
+        "confidence": 0.96,
+        "ambiguity": 0.07,
+        "novelty": 0.94
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S20",
+      "text": "もし承認されたとしても、実施するとは限らない。",
+      "expected_label": "CONDITIONAL_LIMITATION",
+      "scores": {
+        "relevance": 0.88,
+        "importance": 0.9,
+        "relation_strength": 0.84,
+        "confidence": 0.96,
+        "ambiguity": 0.08,
+        "novelty": 0.9
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S21",
+      "text": "予算を増額します。",
+      "expected_label": "CLAIM",
+      "scores": {
+        "relevance": 0.86,
+        "importance": 0.9,
+        "relation_strength": 0.75,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.9
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S22",
+      "text": "予算は増額できません。",
+      "expected_label": "CONTRADICTORY_CLAIM",
+      "scores": {
+        "relevance": 0.94,
+        "importance": 0.96,
+        "relation_strength": 0.92,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.96
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S23",
+      "text": "先ほどの説明と違いませんか。",
+      "expected_label": "QUESTION_CONTRADICTION",
+      "scores": {
+        "relevance": 0.91,
+        "importance": 0.92,
+        "relation_strength": 0.9,
+        "confidence": 0.96,
+        "ambiguity": 0.05,
+        "novelty": 0.92
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S24",
+      "text": "なぜ増額できないのでしょうか。",
+      "expected_label": "QUESTION_INTEREST",
+      "scores": {
+        "relevance": 0.88,
+        "importance": 0.9,
+        "relation_strength": 0.85,
+        "confidence": 0.98,
+        "ambiguity": 0.04,
+        "novelty": 0.9
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S25",
+      "text": "どちらが正しいのですか。",
+      "expected_label": "QUESTION_CONFLICT",
+      "scores": {
+        "relevance": 0.95,
+        "importance": 0.96,
+        "relation_strength": 0.94,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.96
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S26",
+      "text": "A案は採用するが、B案は採用しない。",
+      "expected_label": "CONTRAST_DECISION",
+      "scores": {
+        "relevance": 0.94,
+        "importance": 0.96,
+        "relation_strength": 0.92,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.96
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S27",
+      "text": "財源は確保済みです。",
+      "expected_label": "CLAIM",
+      "scores": {
+        "relevance": 0.9,
+        "importance": 0.92,
+        "relation_strength": 0.82,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.92
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S28",
+      "text": "財源はまだ確保できていません。",
+      "expected_label": "CONTRADICTORY_CLAIM",
+      "scores": {
+        "relevance": 0.97,
+        "importance": 0.98,
+        "relation_strength": 0.96,
+        "confidence": 0.99,
+        "ambiguity": 0.01,
+        "novelty": 0.98
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S29",
+      "text": "それは本当ですか。",
+      "expected_label": "QUESTION",
+      "scores": {
+        "relevance": 0.79,
+        "importance": 0.78,
+        "relation_strength": 0.7,
+        "confidence": 0.96,
+        "ambiguity": 0.08,
+        "novelty": 0.78
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S30",
+      "text": "もう一度確認しましょう。",
+      "expected_label": "RECHECK_REQUEST",
+      "scores": {
+        "relevance": 0.68,
+        "importance": 0.72,
+        "relation_strength": 0.56,
+        "confidence": 0.97,
+        "ambiguity": 0.05,
+        "novelty": 0.72
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S31",
+      "text": "先ほどの金額は100万円です。",
+      "expected_label": "CLAIM",
+      "scores": {
+        "relevance": 0.86,
+        "importance": 0.88,
+        "relation_strength": 0.76,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.88
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S32",
+      "text": "訂正します。100万円ではなく120万円です。",
+      "expected_label": "REVISION",
+      "scores": {
+        "relevance": 0.99,
+        "importance": 0.99,
+        "relation_strength": 0.98,
+        "confidence": 0.99,
+        "ambiguity": 0.01,
+        "novelty": 0.99
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S33",
+      "text": "昨年度は実施しました。",
+      "expected_label": "PAST_FACT",
+      "scores": {
+        "relevance": 0.8,
+        "importance": 0.82,
+        "relation_strength": 0.7,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.82
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S34",
+      "text": "今年度は実施していません。",
+      "expected_label": "TEMPORAL_CLAIM",
+      "scores": {
+        "relevance": 0.88,
+        "importance": 0.9,
+        "relation_strength": 0.82,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.9
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S35",
+      "text": "来年度から開始する予定です。",
+      "expected_label": "FUTURE_INTENTION",
+      "scores": {
+        "relevance": 0.86,
+        "importance": 0.87,
+        "relation_strength": 0.78,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.87
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S36",
+      "text": "その判断は財源の確保に依存します。",
+      "expected_label": "DEPENDENCY",
+      "scores": {
+        "relevance": 0.95,
+        "importance": 0.96,
+        "relation_strength": 0.95,
+        "confidence": 0.99,
+        "ambiguity": 0.01,
+        "novelty": 0.96
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S37",
+      "text": "財源が確保されれば、計画を変更します。",
+      "expected_label": "CONDITIONAL_DEPENDENCY",
+      "scores": {
+        "relevance": 0.93,
+        "importance": 0.94,
+        "relation_strength": 0.92,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.94
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S38",
+      "text": "先ほどの案に戻しましょう。",
+      "expected_label": "FOCUS_REACTIVATION",
+      "scores": {
+        "relevance": 0.83,
+        "importance": 0.85,
+        "relation_strength": 0.78,
+        "confidence": 0.93,
+        "ambiguity": 0.1,
+        "novelty": 0.85
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S39",
+      "text": "それは前回の会議で決定済みです。",
+      "expected_label": "HISTORICAL_DECISION_REFERENCE",
+      "scores": {
+        "relevance": 0.92,
+        "importance": 0.93,
+        "relation_strength": 0.88,
+        "confidence": 0.94,
+        "ambiguity": 0.08,
+        "novelty": 0.93
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S40",
+      "text": "まだ決定していません。",
+      "expected_label": "UNRESOLVED_DECISION",
+      "scores": {
+        "relevance": 0.93,
+        "importance": 0.94,
+        "relation_strength": 0.9,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.94
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S41",
+      "text": "部長は「予算を増やす」と発言した。",
+      "expected_label": "QUOTED_CLAIM",
+      "scores": {
+        "relevance": 0.89,
+        "importance": 0.91,
+        "relation_strength": 0.86,
+        "confidence": 0.98,
+        "ambiguity": 0.03,
+        "novelty": 0.91
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S42",
+      "text": "予算を増やすべきだという意見もある。",
+      "expected_label": "ATTRIBUTED_OPINION",
+      "scores": {
+        "relevance": 0.72,
+        "importance": 0.74,
+        "relation_strength": 0.62,
+        "confidence": 0.97,
+        "ambiguity": 0.05,
+        "novelty": 0.74
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S43",
+      "text": "それは難しいですね。",
+      "expected_label": "AMBIGUOUS_REFERENCE",
+      "scores": {
+        "relevance": 0.55,
+        "importance": 0.55,
+        "relation_strength": 0.4,
+        "confidence": 0.65,
+        "ambiguity": 0.72,
+        "novelty": 0.55
+      },
+      "expected_decision": "ABSTAIN"
+    },
+    {
+      "case_id": "S44",
+      "text": "これについては、後で検討します。",
+      "expected_label": "UNRESOLVED_REFERENCE",
+      "scores": {
+        "relevance": 0.7,
+        "importance": 0.7,
+        "relation_strength": 0.55,
+        "confidence": 0.88,
+        "ambiguity": 0.42,
+        "novelty": 0.7
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S45",
+      "text": "えー、あの、その、ですね。",
+      "expected_label": "FILLER",
+      "scores": {
+        "relevance": 0.05,
+        "importance": 0.05,
+        "relation_strength": 0.02,
+        "confidence": 0.98,
+        "ambiguity": 0.01,
+        "novelty": 0.05
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S46",
+      "text": "予算額は100、120、150万円です。",
+      "expected_label": "LIST",
+      "scores": {
+        "relevance": 0.78,
+        "importance": 0.8,
+        "relation_strength": 0.7,
+        "confidence": 0.98,
+        "ambiguity": 0.04,
+        "novelty": 0.8
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S47",
+      "text": "表の単位は千円です。",
+      "expected_label": "TABLE_HEADER_SCOPE",
+      "scores": {
+        "relevance": 0.94,
+        "importance": 0.95,
+        "relation_strength": 0.9,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.95
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S48",
+      "text": "A案：100万円、B案：120万円。",
+      "expected_label": "KEY_VALUE_STRUCTURE",
+      "scores": {
+        "relevance": 0.91,
+        "importance": 0.92,
+        "relation_strength": 0.88,
+        "confidence": 0.99,
+        "ambiguity": 0.02,
+        "novelty": 0.92
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S49",
+      "text": "予算増額について、予算増額の予算増額を検討する。",
+      "expected_label": "REDUNDANT_TEXT",
+      "scores": {
+        "relevance": 0.35,
+        "importance": 0.3,
+        "relation_strength": 0.2,
+        "confidence": 0.95,
+        "ambiguity": 0.05,
+        "novelty": 0.3
+      },
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "case_id": "S50",
+      "text": "予算増額は行いません。なお、これは仮の文章です。",
+      "expected_label": "NEGATION_WITH_EXAMPLE_SCOPE",
+      "scores": {
+        "relevance": 0.76,
+        "importance": 0.78,
+        "relation_strength": 0.65,
+        "confidence": 0.84,
+        "ambiguity": 0.35,
+        "novelty": 0.78
+      },
+      "expected_decision": "REVIEW"
+    }
+  ]
+}
