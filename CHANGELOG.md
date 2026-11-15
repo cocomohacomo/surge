@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.8
+
+- Add Python RecognitionPacket admission adapter with Draft 2020-12 schema validation.
+- Verify NFC UTF-8 snapshot digest, half-open byte ranges and exact source-range SHA-256.
+- Enforce packet identity, idempotency, per-generation sequence uniqueness and append-only chained revision lineage.
+- Add 11 focused adapter conformance tests to the standard fixture-validation command.
+- Document that adapter admission remains process-local and is not yet atomically integrated with the C++ Core/EventJournal.
+
+
 ## 0.9.7
 
 - Add deterministic ContextHint candidate priority, deduplication and bounded reference selection.

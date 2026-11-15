@@ -3,6 +3,8 @@
 import hashlib
 import json
 import pathlib
+import subprocess
+import sys
 import unicodedata
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -83,6 +85,13 @@ def main():
     print(f"Conformance fixture inventory: {len(cases)}/20 cases valid")
     print(f"D01-D12 exact NFC UTF-8 ranges and SHA-256 digests derived: {packet_count} packets")
     print(f"D01-D20 fixture contract assertions: 20/20 structurally consistent")
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "tests"),
+         "-p", "test_packet_adapter.py", "-v"],
+        cwd=ROOT, check=False)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    print("RecognitionPacket adapter conformance: 12/12 tests passed")
     print("NOTE: fixture consistency and primitive tests do not establish full semantic Core conformance.")
 
 if __name__ == "__main__":
