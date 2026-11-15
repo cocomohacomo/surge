@@ -256,4 +256,7 @@ uint64_t surge_packet_core_state_version(void* opaque) {
 size_t surge_packet_core_packet_count(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.packet_count():0;
 }
+size_t surge_context_graph_scope_count(void* opaque) {
+  return opaque?static_cast<Handle*>(opaque)->graph.scope_spans().size():0;
+}
 }
