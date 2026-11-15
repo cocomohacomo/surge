@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "surge/event_journal.hpp"
 
 namespace surge {
 enum class HintClass {
@@ -64,5 +65,23 @@ class RetrievalTicketRegistry {
  private:
   std::map<std::string,RetrievalTicket> tickets_;
   std::map<std::string,TicketResolution> resolutions_;
+};
+
+// Journal-backed ticket registry. The EventJournal is shared with the Core so
+// ticket issue/resolve operations participate in the same durable version order.
+class PersistentRetrievalTicketRegistry {
+ public:
+  explicit PersistentRetrievalTicketRegistry(EventJournal& journal) : journal_(journal) {}
+  bool open();
+  bool issue(const RetrievalTicket& ticket, std::string& error);
+  TicketResolution resolve(const std::string& ticket_id, std::uint64_t current_state_version,
+      bool query_replayable, const std::vector<std::string>& reevaluated_refs,
+      std::string& error);
+  std::size_t size() const { return tickets_.size(); }
+ private:
+  bool replay();
+  EventJournal& journal_;
+  std::map<std::string, RetrievalTicket> tickets_;
+  std::map<std::string, TicketResolution> resolutions_;
 };
 }  // namespace surge
