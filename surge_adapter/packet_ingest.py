@@ -6,7 +6,9 @@ or authorize a state commit.
 """
 from __future__ import annotations
 
+import ctypes
 import hashlib
+import os
 import json
 import pathlib
 import unicodedata
@@ -63,6 +65,41 @@ class RecognitionPacketAdapter:
         self._ranges: dict[str, tuple[str, str, int]] = {}
         self._sequences: dict[tuple[str, str, str, int], str] = {}
         self._packets: dict[str, Admission] = {}
+
+    def admit_to_core(self, packet: dict[str, Any], source_snapshot: str,
+                      core: "CppCoreBridge") -> Admission:
+        """Validate at the Python boundary, then commit through the C++ Core.
+
+        Unlike admit(), this method does not mutate the adapter's process-local
+        ledger. The journal-backed C++ coordinator is the sole admission authority.
+        """
+        errors = sorted(self._validator.iter_errors(packet),
+                        key=lambda e: (list(map(str, e.absolute_path)), e.message))
+        if errors:
+            first = errors[0]
+            path = "/".join(map(str, first.absolute_path)) or "$"
+            raise PacketRejected(f"SCHEMA_INVALID:{path}:{first.message}")
+        pos = packet["source_position"]
+        source = normalize_source(source_snapshot)
+        start, end = pos["start_offset"], pos["end_offset"]
+        if end <= start or end > len(source):
+            raise PacketRejected("SOURCE_RANGE_OUT_OF_BOUNDS")
+        snapshot_digest = hashlib.sha256(source).hexdigest()
+        if packet["content"].get("normalized_digest") != snapshot_digest:
+            raise PacketRejected("SOURCE_SNAPSHOT_DIGEST_MISMATCH")
+        range_digest = hashlib.sha256(source[start:end]).hexdigest()
+        if range_digest.lower() != pos["source_range_digest"].lower():
+            raise PacketRejected("SOURCE_RANGE_DIGEST_MISMATCH")
+        revision = packet["finalization"] == "REVISION"
+        revision_seq = pos.get("source_revision_sequence", 0)
+        revision_ref = pos.get("revision_of_ref", "")
+        if revision and (not revision_seq or not revision_ref):
+            raise PacketRejected("REVISION_LINEAGE_REQUIRED")
+        if not revision and (revision_seq or revision_ref):
+            raise PacketRejected("REVISION_FIELDS_REQUIRE_REVISION_PACKET")
+        return core.admit(packet, source, snapshot_digest, range_digest,
+                          canonical_digest(packet), revision, revision_seq,
+                          revision_ref)
 
     def admit(self, packet: dict[str, Any], source_snapshot: str) -> Admission:
         errors = sorted(self._validator.iter_errors(packet),
@@ -149,3 +186,118 @@ class RecognitionPacketAdapter:
         self._sequences[stream_key] = packet_id
         self._packets[packet_id] = admission
         return admission
+
+
+class CppCoreBridge:
+    """ctypes bridge to the journal-backed C++ PacketAdmissionCoordinator."""
+
+    def __init__(self, journal_path: str | pathlib.Path,
+                 library_path: str | pathlib.Path | None = None):
+        import platform
+        if library_path is None:
+            configured = os.environ.get("SURGE_CORE_LIBRARY")
+            candidates = ([pathlib.Path(configured)] if configured else []) + [
+                ROOT / "build" / "libsurge_core.so",
+                ROOT / "build" / "libsurge_core.dylib",
+                ROOT / "build" / "surge_core.dll",
+                ROOT / "build" / "Release" / "surge_core.dll",
+            ]
+            library = next((p for p in candidates if p.is_file()), None)
+            if library is None:
+                raise FileNotFoundError(
+                    "SURGE C++ shared library not found; build it with CMake "
+                    "or set SURGE_CORE_LIBRARY")
+        else:
+            library = pathlib.Path(library_path)
+        self._lib = ctypes.CDLL(str(library))
+        charp = ctypes.POINTER(ctypes.c_char)
+        self._lib.surge_packet_core_open.argtypes = [
+            ctypes.c_char_p, charp, ctypes.c_size_t]
+        self._lib.surge_packet_core_open.restype = ctypes.c_void_p
+        self._lib.surge_packet_core_close.argtypes = [ctypes.c_void_p]
+        self._lib.surge_packet_core_close.restype = None
+        self._lib.surge_packet_core_admit.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_int, ctypes.c_uint64,
+            ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_uint64), charp, ctypes.c_size_t,
+            charp, ctypes.c_size_t]
+        self._lib.surge_packet_core_admit.restype = ctypes.c_int
+        self._lib.surge_packet_core_state_version.argtypes = [ctypes.c_void_p]
+        self._lib.surge_packet_core_state_version.restype = ctypes.c_uint64
+        self._lib.surge_packet_core_packet_count.argtypes = [ctypes.c_void_p]
+        self._lib.surge_packet_core_packet_count.restype = ctypes.c_size_t
+        error = ctypes.create_string_buffer(1024)
+        self._handle = self._lib.surge_packet_core_open(
+            str(pathlib.Path(journal_path)).encode("utf-8"), error, len(error))
+        if not self._handle:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CORE_OPEN_FAILED")
+
+    def close(self) -> None:
+        if getattr(self, "_handle", None):
+            self._lib.surge_packet_core_close(self._handle)
+            self._handle = None
+
+    def __enter__(self) -> "CppCoreBridge":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    @property
+    def state_version(self) -> int:
+        return int(self._lib.surge_packet_core_state_version(self._handle))
+
+    @property
+    def packet_count(self) -> int:
+        return int(self._lib.surge_packet_core_packet_count(self._handle))
+
+    def admit(self, packet: dict[str, Any], source: bytes,
+              snapshot_digest: str, range_digest: str,
+              request_digest: str, revision: bool = False,
+              revision_sequence: int = 0,
+              revision_of_ref: str = "") -> Admission:
+        pos = packet["source_position"]
+        strings = [
+            packet["packet_id"], packet["idempotency_key"], packet["context_id"],
+            packet["source_id"], pos["source_generation"], pos["block_ref"],
+            pos["offset_basis"], snapshot_digest, range_digest, request_digest,
+            revision_of_ref]
+        if any("\\x00" in value for value in strings):
+            raise PacketRejected("C_API_STRING_CONTAINS_NUL")
+        encoded = [value.encode("utf-8") for value in strings]
+        snapshot_buffer = (ctypes.c_ubyte * len(source)).from_buffer_copy(source)
+        duplicate = ctypes.c_int(0)
+        version = ctypes.c_uint64(0)
+        watermark = ctypes.c_uint64(0)
+        status = ctypes.create_string_buffer(128)
+        error = ctypes.create_string_buffer(1024)
+        result = self._lib.surge_packet_core_admit(
+            self._handle, *encoded[:7],
+            int(pos["start_offset"]), int(pos["end_offset"]),
+            int(pos["source_sequence"]), encoded[7], encoded[8], encoded[9],
+            encoded[10], int(revision), int(revision_sequence),
+            snapshot_buffer, len(source), ctypes.byref(duplicate),
+            ctypes.byref(version), ctypes.byref(watermark),
+            status, len(status), error, len(error))
+        if not result:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CORE_ADMISSION_FAILED")
+        range_key = "|".join((packet["context_id"], packet["source_id"],
+                              pos["source_generation"], pos["block_ref"],
+                              pos["offset_basis"], str(pos["start_offset"]),
+                              str(pos["end_offset"])))
+        return Admission(
+            status=status.value.decode("utf-8") or "DUPLICATE",
+            packet_id=packet["packet_id"], context_id=packet["context_id"],
+            source_id=packet["source_id"],
+            source_generation=pos["source_generation"],
+            source_sequence=int(pos["source_sequence"]),
+            range_key=range_key, range_digest=range_digest,
+            canonical_request_digest=request_digest)

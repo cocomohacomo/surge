@@ -1,5 +1,6 @@
 #include "surge/context_graph.hpp"
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <utility>
 
@@ -87,8 +88,12 @@ std::string hash_text(const std::string& text) {
 }
 }  // namespace
 
-ContextGraph::ContextGraph(std::string path) : journal_(std::move(path)) {}
-bool ContextGraph::open() { if(!journal_.open()) return false; return replay(); }
+ContextGraph::ContextGraph(std::string path)
+    : owned_journal_(std::make_unique<EventJournal>(std::move(path))),
+      journal_(owned_journal_.get()) {}
+ContextGraph::ContextGraph(EventJournal& shared_journal)
+    : journal_(&shared_journal) {}
+bool ContextGraph::open() { if(!journal_ || !journal_->open()) return false; return replay(); }
 
 bool ContextGraph::apply_node(State& state,const GraphNode& node,std::string& error) const {
   if(node.id.empty() || node.content.empty() || state.nodes.count(node.id)) {
@@ -178,9 +183,14 @@ bool ContextGraph::replay() {
   std::string current_key;
   std::uint64_t replay_version=0;
   bool have_meta=false;
-  for(const auto& e:journal_.committed_events()){
+  for(const auto& e:journal_->committed_events()){
+    if(e.kind=="RECOGNITION_PACKET_ADMITTED"){
+      if(have_meta){++replay_version;have_meta=false;}
+      ++replay_version;
+      continue;
+    }
     if(e.kind=="DELTA_META"){
-      if(have_meta) ++replay_version;
+      if(have_meta){++replay_version;have_meta=false;}
       std::istringstream in(e.payload);
       std::string delta_id, fingerprint;
       std::uint64_t expected=0;
@@ -191,12 +201,15 @@ bool ContextGraph::replay() {
       have_meta=true;
       continue;
     }
-    if(!have_meta || !replay_event(rebuilt,e,last_error_))return false;
+    if(e.kind=="NODE_ADD" || e.kind=="RELATION_ADD" || e.kind=="FOCUS_SET"){
+      if(!have_meta || !replay_event(rebuilt,e,last_error_))return false;
+    }
   }
   if(have_meta) ++replay_version;
-  if(replay_version!=journal_.state_version()) { last_error_="GRAPH_REPLAY_VERSION_MISMATCH"; return false; }
+  if(replay_version!=journal_->state_version()) { last_error_="GRAPH_REPLAY_VERSION_MISMATCH"; return false; }
   state_=std::move(rebuilt);return true;
 }
+
 DeltaResult ContextGraph::apply(const SemanticDelta& d) {
   if(d.delta_id.empty() || d.idempotency_key.empty() ||
      (d.nodes.empty() && d.relations.empty() && !d.focus))
@@ -212,7 +225,7 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d) {
   for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return {false,false,state_version(),error};
   for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return {false,false,state_version(),error};
   if(d.focus && !apply_focus(staged,d.focus->focus,error))return {false,false,state_version(),error};
-  auto committed=journal_.commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
+  auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
   if(!committed.committed)return {false,false,state_version(),committed.error};
   state_=std::move(staged);idempotency_[d.idempotency_key]=fp;
   return {true,committed.duplicate,state_version(),{}};
