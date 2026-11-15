@@ -9,16 +9,15 @@ leaves staged in-memory state unpublished.
 
 ## Authority boundary
 
-The Python adapter validates the Draft 2020-12 packet schema, NFC-normalized
-source snapshot digest and exact UTF-8 byte-range SHA-256. It emits a typed
-ValidatedRecognitionPacket with both validation flags set. The C++ API rejects
-an envelope without both flags and independently checks required identities,
-offset basis, range bounds shape, sequence and revision metadata.
-
-The C++ prototype does not recompute SHA-256 and cannot cryptographically prove
-that a caller did not forge the validation flags. The coordinator API must
-therefore only be called by the trusted in-process adapter bridge. Direct
-untrusted callers must not be given this API.
+The Python adapter validates the Draft 2020-12 packet schema, performs NFC
+normalization, and verifies byte-offset bounds and expected digests. It passes
+the normalized source bytes and packet metadata through a stable C ABI loaded
+by Python ctypes. The C++ Core independently validates UTF-8 and recomputes
+SHA-256 over the complete snapshot and exact half-open range before staging
+any state. The C++ coordinator is the sole durable admission authority.
+Production integration uses `RecognitionPacketAdapter.admit_to_core()`;
+the legacy in-memory `admit()` method remains available for isolated adapter
+tests and must not be treated as durable Core admission.
 
 ## Atomic admission sequence
 
@@ -59,11 +58,10 @@ not malicious modification.
 
 - Single-process only, matching EventJournal's mutex boundary.
 - EventJournal flush is not an OS fsync/FlushFileBuffers power-loss guarantee.
-- The trusted adapter is currently a Python module; an actual Python-to-C++
-  binding/IPC bridge is not included in this milestone.
-- C++ independently verifies SHA-256 but does not perform JSON Schema validation
-  or Unicode NFC normalization. The caller must provide the normalized snapshot.
-- A direct Python-to-C++ binding/IPC bridge is not included in this milestone.
+- Python-to-C++ integration uses a stable C ABI and ctypes; it is in-process
+  and single-process, not an IPC or multi-process transport.
+- C++ independently verifies SHA-256 and UTF-8 but does not perform JSON Schema
+  validation or Unicode NFC normalization. Those remain Python adapter duties.
 - No cross-process locking, authorization policy engine, source authenticity,
   compaction or snapshotting.
 - Journal is shared with other Core events; coordinator replay filters its
