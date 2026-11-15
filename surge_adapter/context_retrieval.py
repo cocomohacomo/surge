@@ -44,6 +44,11 @@ class ContextRetriever:
         self._lib.surge_retrieval_ticket_issue.restype = ctypes.c_int
         self._lib.surge_retrieval_ticket_resolve.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         self._lib.surge_retrieval_ticket_resolve.restype = ctypes.c_int
+        self._lib.surge_question_aspect_set_status.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+        ]
+        self._lib.surge_question_aspect_set_status.restype = ctypes.c_int
 
 
     @staticmethod
@@ -190,71 +195,197 @@ class ContextRetriever:
         raise PacketRejected("RETRIEVAL_RESPONSE_TOO_LARGE")
 
 
+
+    def set_question_aspect_status(self, aspect_id: str, status: str,
+                                    expected_state_version: int | None = None) -> int:
+        """Durably transition a QuestionAspect lifecycle state."""
+        if not isinstance(aspect_id, str) or not aspect_id:
+            raise ValueError("QUESTION_ASPECT_ID_INVALID")
+        if status not in {"OPEN", "RESOLVED", "DEFERRED"}:
+            raise ValueError("QUESTION_ASPECT_STATUS_INVALID")
+        expected = self._core.state_version if expected_state_version is None else int(expected_state_version)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_question_aspect_set_status(
+            self._core._handle, aspect_id.encode("utf-8"), status.encode("ascii"),
+            expected, error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace")
+                                 or "QUESTION_ASPECT_STATUS_UPDATE_FAILED")
+        return int(self._core.state_version)
+
+    @staticmethod
+    def _dependency_fires(node: dict[str, Any], prerequisite: dict[str, Any],
+                          changed: set[str]) -> bool:
+        """Evaluate explicit, deterministic dependency predicates.
+
+        Grammar: ON_CHANGE (default), PRESENT, CONTENT_EQUALS:<text>,
+        CONTENT_CONTAINS:<text>, KIND:<NODE_KIND>.
+        """
+        condition = str(node.get("content", "")).strip()
+        if not condition or condition == "ON_CHANGE":
+            return node["references"][0] in changed
+        if condition == "PRESENT":
+            return bool(prerequisite)
+        if condition.startswith("CONTENT_EQUALS:"):
+            return prerequisite.get("content", "") == condition[len("CONTENT_EQUALS:"):]
+        if condition.startswith("CONTENT_CONTAINS:"):
+            needle = condition[len("CONTENT_CONTAINS:"):]
+            return bool(needle) and needle in prerequisite.get("content", "")
+        if condition.startswith("KIND:"):
+            return prerequisite.get("kind") == condition[len("KIND:"):]
+        return False
+
     def build_hint_from_graph(self, context_id: str, packet_ref: str,
                               source_range_digest: str, policy_version: str,
                               query: str, reference_budget: int,
-                              limit: int = 100) -> dict[str, Any]:
-        """Derive ContextHint candidates from persisted graph search results.
-
-        This first automatic policy is deliberately conservative: it only
-        promotes records whose graph type/status/relation is observable in the
-        retrieval response. It does not infer focus or dependency activation
-        from text alone.
-        """
+                              limit: int = 100, changed_refs: list[str] | None = None,
+                              max_depth: int = 3, max_nodes: int = 256) -> dict[str, Any]:
+        """Build a hint from focus, lifecycle-aware graph state and bounded traversal."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("CONTEXT_HINT_GRAPH_QUERY_INVALID")
-        result = self.search(query, limit=limit)
+        if (isinstance(max_depth, bool) or not isinstance(max_depth, int)
+                or not 0 <= max_depth <= 16
+                or isinstance(max_nodes, bool) or not isinstance(max_nodes, int)
+                or not 1 <= max_nodes <= 1000):
+            raise ValueError("CONTEXT_HINT_GRAPH_BUDGET_INVALID")
+        if changed_refs is None:
+            changed_refs = []
+        if not isinstance(changed_refs, list) or any(not isinstance(x, str) or not x for x in changed_refs):
+            raise ValueError("DEPENDENCY_CHANGED_REFS_INVALID")
+
+        matched = self.search(query, limit=limit)
+        snapshot = self.search("*", limit=max_nodes)
+        items = snapshot.get("items", [])
+        by_id = {item["id"]: item for item in items if isinstance(item.get("id"), str)}
+        if len(items) >= max_nodes and snapshot.get("total_matches", len(items)) > max_nodes:
+            raise PacketRejected("CONTEXT_HINT_GRAPH_SNAPSHOT_BUDGET_EXCEEDED")
         candidates: list[dict[str, Any]] = []
-        seen: set[str] = set()
+        classes: dict[str, str] = {}
 
         def add(ref: str, kind: str, score: int = 0, depth: int = 0) -> None:
-            if not ref or ref in seen:
+            if ref not in classes or self._hint_priority(kind) < self._hint_priority(classes[ref]):
+                classes[ref] = kind
+            else:
                 return
-            seen.add(ref)
-            candidates.append({
-                "ref": ref, "kind": kind,
-                "source_overlap": max(0, int(score)),
-                "dependency_depth": max(0, int(depth)),
-            })
+            candidates.append({"ref": ref, "kind": kind,
+                               "source_overlap": max(0, int(score)),
+                               "dependency_depth": max(0, int(depth))})
 
-        for item in result.get("items", []):
+        focus = snapshot.get("focus")
+        if isinstance(focus, dict):
+            focus_cluster = focus.get("cluster_id")
+            focus_interest = focus.get("interest_id")
+            if isinstance(focus_cluster, str) and focus_cluster:
+                add(focus_cluster, "RELATED_CLUSTER", 100)
+            if isinstance(focus_interest, str) and focus_interest:
+                add(focus_interest, "ACTIVE_FOCUS_SCOPE", 100)
+
+        seeds: set[str] = set()
+        for item in matched.get("items", []):
             ref = item.get("id")
+            if isinstance(ref, str) and ref in by_id:
+                seeds.add(ref)
+        for ref, item in by_id.items():
+            if item.get("kind") == "SCOPE_SPAN" and item.get("status") == "UNRESOLVED":
+                add(ref, "OPEN_SCOPE", item.get("score", 0))
+                seeds.add(ref)
+            elif item.get("kind") == "QUESTION_ASPECT":
+                status = item.get("status", "OPEN")
+                if status == "OPEN":
+                    add(ref, "REQUIRED_QUESTION_ASPECT", item.get("score", 0))
+                    seeds.add(ref)
+                elif status == "DEFERRED":
+                    add(ref, "LOW_PRIORITY", item.get("score", 0))
+
+        # Bounded breadth-first traversal over typed references and relation edges.
+        adjacency: dict[str, set[str]] = {ref: set() for ref in by_id}
+        for ref, item in by_id.items():
+            for target in item.get("references", []):
+                if target in by_id:
+                    adjacency[ref].add(target)
+                    adjacency[target].add(ref)
+            for relation in item.get("relations", []):
+                target = relation.get("ref")
+                if target in by_id:
+                    adjacency[ref].add(target)
+                    adjacency[target].add(ref)
+        queue = [(ref, 0) for ref in sorted(seeds)]
+        visited: dict[str, int] = {}
+        cursor = 0
+        while cursor < len(queue):
+            ref, depth = queue[cursor]
+            cursor += 1
+            if ref in visited and visited[ref] <= depth:
+                continue
+            if len(visited) >= max_nodes:
+                raise PacketRejected("CONTEXT_HINT_GRAPH_TRAVERSAL_BUDGET_EXCEEDED")
+            visited[ref] = depth
+            item = by_id[ref]
             kind = item.get("kind")
             score = item.get("score", 0)
-            if not isinstance(ref, str) or not ref:
-                continue
-            if kind == "SCOPE_SPAN":
-                if item.get("status") == "UNRESOLVED":
-                    add(ref, "OPEN_SCOPE", score)
-                continue
-            if kind == "QUESTION_ASPECT":
-                add(ref, "REQUIRED_QUESTION_ASPECT", score)
-            elif kind == "DEPENDENCY":
-                relations = item.get("relations", [])
-                if any(rel.get("kind") == "DEPENDS_ON" for rel in relations):
-                    add(ref, "TRIGGERED_DEPENDENCY", score)
-                else:
-                    add(ref, "LOW_PRIORITY", score)
-            elif kind in {"CLAIM", "EVIDENCE"}:
-                relations = item.get("relations", [])
-                lineage = {"SUPPORTS", "CONTRADICTS", "AGREES_WITH", "CONFLICTS_WITH"}
-                if any(rel.get("kind") in lineage for rel in relations):
-                    add(ref, "REQUIRED_LINEAGE", score)
-                else:
-                    add(ref, "LOW_PRIORITY", score)
+            if kind in {"CLAIM", "EVIDENCE"}:
+                rel_kinds = {r.get("kind") for r in item.get("relations", [])}
+                add(ref, "REQUIRED_LINEAGE" if rel_kinds & {
+                    "SUPPORTS", "CONTRADICTS", "AGREES_WITH", "CONFLICTS_WITH"
+                } else "LOW_PRIORITY", score, depth)
             elif kind == "CLUSTER":
-                add(ref, "RELATED_CLUSTER", score)
-            else:
-                add(ref, "LOW_PRIORITY", score)
+                add(ref, "RELATED_CLUSTER", score, depth)
+            elif kind == "QUESTION_ASPECT":
+                if item.get("status", "OPEN") == "OPEN":
+                    add(ref, "REQUIRED_QUESTION_ASPECT", score, depth)
+            elif kind == "SCOPE_SPAN" and item.get("status") == "UNRESOLVED":
+                add(ref, "OPEN_SCOPE", score, depth)
+            elif kind not in {"DEPENDENCY"}:
+                add(ref, "LOW_PRIORITY", score, depth)
+            if depth < max_depth:
+                for target in sorted(adjacency.get(ref, ())):
+                    if target not in visited:
+                        queue.append((target, depth + 1))
+
+        # Dependencies fire only when their explicit predicate evaluates true.
+        changed = set(changed_refs)
+        fired: set[str] = set()
+        for _ in range(max_depth + 1):
+            newly_fired = []
+            for dep_id, dep in by_id.items():
+                if dep.get("kind") != "DEPENDENCY" or dep_id in fired:
+                    continue
+                refs = dep.get("references", [])
+                if len(refs) != 2 or refs[0] not in by_id or refs[1] not in by_id:
+                    continue
+                if self._dependency_fires(dep, by_id[refs[0]], changed):
+                    newly_fired.append((dep_id, refs[1]))
+            if not newly_fired:
+                break
+            for dep_id, dependent in newly_fired:
+                fired.add(dep_id)
+                changed.add(dependent)
+                add(dep_id, "TRIGGERED_DEPENDENCY", 100)
+                add(dependent, "REQUIRED_LINEAGE", 100)
+                seeds.add(dependent)
+
+        # Preserve direct relation endpoints even when traversal did not classify them.
+        for ref in list(visited):
+            item = by_id[ref]
             for relation in item.get("relations", []):
-                related_ref = relation.get("ref")
-                if isinstance(related_ref, str):
-                    add(related_ref, "LOW_PRIORITY", score)
+                target = relation.get("ref")
+                if target in by_id:
+                    add(target, "LOW_PRIORITY", item.get("score", 0), visited[ref] + 1)
 
         return self.build_hint(
             context_id=context_id, packet_ref=packet_ref,
             source_range_digest=source_range_digest,
             policy_version=policy_version,
-            state_version=int(result.get("state_version", self._core.state_version)),
+            state_version=int(snapshot.get("state_version", self._core.state_version)),
             candidates=candidates, reference_budget=reference_budget,
         )
+
+    @staticmethod
+    def _hint_priority(kind: str) -> int:
+        return {
+            "OPEN_SCOPE": 0, "REQUIRED_QUESTION_ASPECT": 1,
+            "TRIGGERED_DEPENDENCY": 2, "REQUIRED_LINEAGE": 3,
+            "ACTIVE_FOCUS_SCOPE": 4, "RELATED_CLUSTER": 5,
+            "HISTORICAL_ANALOGUE": 6, "LOW_PRIORITY": 7,
+        }.get(kind, 99)
+
