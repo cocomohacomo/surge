@@ -4,6 +4,8 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
+- **Streaming Text Runtime v0.1:** [docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md](docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md)
+
 - **ClassificationProposal Builder v0.1:** [docs/surge/PROPOSAL_BUILDER_v0.1.md](docs/surge/PROPOSAL_BUILDER_v0.1.md)
 
 - **Recognition Scoring v0.1:** [docs/surge/RECOGNITION_SCORING_v0.1.md](docs/surge/RECOGNITION_SCORING_v0.1.md)

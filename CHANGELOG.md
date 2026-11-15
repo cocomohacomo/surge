@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.14] - 2026-11-16
+
+- Add a Japanese-first streaming text runtime with replaceable Recognizer protocol.
+- Build in-memory topic clusters, typed claim candidates, contradiction questions and interest routing.
+- Preserve ambiguous references as unresolved and attach short acknowledgements to active context.
+- Add deterministic runtime regression tests; explicitly document non-persistent prototype boundary.
+
 ## [0.9.13] - 2026-11-16
 
 - Add pure ClassificationProposal Builder mapping typed candidates and six-axis scoring into the v0.9 proposal contract.
