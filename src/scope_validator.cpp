@@ -1,4 +1,5 @@
 #include "surge/scope_validator.hpp"
+#include "surge/sha256.hpp"
 #include <algorithm>
 #include <cctype>
 
@@ -40,6 +41,8 @@ ScopeValidationResult ScopeSpanValidator::validate(
     std::all_of(s.source_digest.begin(),s.source_digest.end(),[](unsigned char c){return std::isxdigit(c)!=0;});
   if(s.span_id.empty()||!digest_hex||s.offset_basis!="UTF8_BYTE_NFC"||
      s.packet_refs.empty())return reject("SCOPE_SOURCE_IDENTITY_INVALID");
+  if(!is_valid_utf8(source)||sha256_hex(source)!=s.source_digest)
+    return reject("SCOPE_SOURCE_DIGEST_MISMATCH");
   if(!anchor_valid(s.opener,s,source)||!has_packet(s,s.opener.packet_ref))
     return reject("SCOPE_OPENER_ANCHOR_INVALID");
   if(s.closer){
