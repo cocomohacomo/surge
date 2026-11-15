@@ -67,7 +67,8 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
  for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
  for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
- if(d.focus)o<<"F "<<encode_focus(d.focus->focus)<<'\n';return hash_text(o.str());
+ if(d.focus) { o<<"F "<<encode_focus(d.focus->focus)<<'\n'; }
+ return hash_text(o.str());
 }
 std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std::string& fp)const{
  std::vector<JournalEvent> out;std::ostringstream m;m<<std::quoted(d.delta_id)<<' '<<std::quoted(d.idempotency_key)<<' '<<d.expected_state_version<<' '<<std::quoted(fp);
@@ -75,7 +76,8 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
  i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
- if(d.focus)out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)});return out;
+ if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
+ return out;
 }
 bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
  if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(s,n,error);}
@@ -92,7 +94,10 @@ bool ContextGraph::replay(){
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;continue;}
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
- if(have_meta)++version;if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}state_=std::move(rebuilt);return true;
+ if(have_meta) { ++version; }
+ if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}
+ state_=std::move(rebuilt);
+ return true;
 }
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
  if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus))return {false,false,state_version(),"DELTA_EMPTY_OR_ID_INVALID"};
