@@ -94,3 +94,10 @@
 - Require PacketAdmissionCoordinator to independently verify the complete NFC UTF-8 snapshot digest and exact byte-range digest before staging or committing an admission.
 - Remove caller-controlled validation flags from the PacketAdmission API.
 - Write RPA2 packet journal payloads while retaining RPA1 replay compatibility.
+
+## [0.9.11] - 2026-11-16
+
+- Build the C++ Core as a shared library and expose a stable C ABI for journal-backed RecognitionPacket admission.
+- Add Python ctypes `CppCoreBridge` and `RecognitionPacketAdapter.admit_to_core()`; C++ is the durable admission authority.
+- Add end-to-end integration coverage for NFC normalization, schema rejection, durable commit, duplicate retry and restart replay.
+- Run the Python/C++ integration suite in GitHub Actions after building the shared Core.
