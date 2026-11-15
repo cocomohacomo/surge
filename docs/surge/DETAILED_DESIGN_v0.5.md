@@ -184,3 +184,103 @@ All inherited invariants I-01 through I-50 remain in force. New v0.8 invariants:
 ## 12. Completion criteria
 
 C01-C20 and v0.7 W01-W50/A-H are mandatory fixtures. All semantic/invariant checks must pass; unsupported inferences must abstain explicitly. Runtime performance is independently measured. No claim of 30MB/RTF<0.01 is allowed without artifact and benchmark evidence.
+
+
+## 13. Scheduler and packet aggregation design
+
+### 13.1 Separate source units from inference batches
+
+A RecognitionPacket is the semantic/source unit. An inference batch is only an execution optimization. One batch may contain multiple packets, but it MUST return packet-indexed proposals with independent packet refs, spans, state versions and idempotency keys. The model MUST NOT be allowed to merge packet identity or source provenance.
+
+Batch compatibility key:
+`(context_id, model_descriptor, label_schema_version, language_profile, security_scope, runtime_profile)`.
+
+Packets with different compatibility keys MUST NOT share a batch.
+
+### 13.2 Flush policy
+
+The scheduler flushes when the first applicable condition occurs:
+- max_packets reached;
+- max_batch_bytes reached;
+- max_wait_ms reached;
+- explicit FINAL or REVISION boundary;
+- latency deadline or priority boundary;
+- context/security scope switch.
+
+All thresholds are deployment parameters recorded in Benchmark Profile. A packet that cannot fit the remaining batch capacity is queued for the next batch, not truncated silently.
+
+LOW_LATENCY and THROUGHPUT are scheduling profiles, not semantic modes. Both MUST produce equivalent semantic projections for the same complete input and policy.
+
+### 13.3 Recommended measurement matrix
+
+Test at least:
+- packet sizes: 1-20, 21-50, 51-100, 101-200, 201-500, and >500 normalized Japanese characters;
+- batch sizes: 1, 2, 4, 8, 16 where memory permits;
+- scheduler modes: LOW_LATENCY and THROUGHPUT;
+- concurrency: one source and interleaved independent sources;
+- stream duration: short burst and sustained replay;
+- Core state: empty, medium graph, large graph, and dependency-heavy graph;
+- state change: no reconciliation, local dependency impact, and SCC-triggering impact.
+
+Report p50/p95/p99/max packet latency, source throughput, packets/s, characters/s, queue depth/age, RTF, abstention, semantic coverage and peak RSS for every cell.
+
+## 14. End-to-end timing decomposition
+
+For each packet or batch, record monotonic timestamps at:
+`t0=source_available`,
+`t1=packet_ready`,
+`t2=hint_ready`,
+`t3=inference_start`,
+`t4=inference_end`,
+`t5=proposal_validated`,
+`t6=fast_path_commit`,
+`t7=reconciliation_settled`.
+
+Derived durations:
+- adapter = t1 - t0;
+- hint = t2 - t1;
+- queue/scheduling = t3 - t2;
+- model = t4 - t3;
+- validation/integration = t6 - t4;
+- fast-path end-to-end = t6 - t0;
+- settled end-to-end = t7 - t0.
+
+If a stage is asynchronous, timestamps MUST retain causal correlation IDs and the report MUST include its queue wait. If no reconciliation is required, t7 equals the recorded settled completion after the Core marks the packet settled; it MUST NOT be fabricated by omitting required work.
+
+For a stream, aggregate RTF is total measured wall time divided by source duration under the declared timing boundary. Overlapping parallel work MUST be measured as wall-clock makespan for end-to-end RTF, while per-stage CPU time may be reported separately. Summing parallel stage durations and calling it wall time is invalid.
+
+## 15. Throughput and queue stability
+
+Let `lambda_in` be the sustained incoming packet rate and `mu_done` the sustained settled processing rate. Stable operation requires `mu_done > lambda_in` for the declared workload, with a safety margin specified by the deployment. The queue must be bounded even during bursts.
+
+A benchmark passes queue stability only if:
+- queue depth does not exhibit positive long-run drift;
+- every accepted source range reaches a terminal status (COMMITTED, DUPLICATE, DEFERRED, or REJECTED with reason);
+- deferred work is visible and retryable;
+- no source order or causal dependency is silently lost;
+- the oldest queue-item age remains within the declared operational bound.
+
+An RTF result without queue stability is not a successful streaming result.
+
+## 16. Work reduction rules
+
+The implementation SHOULD reduce repeated work in this order:
+1. reuse immutable structural parse results by snapshot digest and adapter version;
+2. reuse normalized source slices and feature vectors by content digest and feature-extractor version;
+3. retrieve ContextHint from indexed Core views rather than scanning the full graph;
+4. batch compatible packets to amortize invocation overhead;
+5. apply only local graph updates on the fast path;
+6. schedule only the exact Dependency Impact Set for reconciliation;
+7. cache model/runtime allocations across packets.
+
+Every cache entry MUST carry the versions/digests that make it valid. Cache misses affect performance only; they MUST NOT change semantics. Cache hits MUST NOT bypass provenance, state-version, or commit validation.
+
+## 17. Benchmark interpretation and reporting
+
+A 30 MiB artifact target and RTF < 0.01 are independent gates. The first constrains serialized model storage. The second is an end-to-end workload result. Neither can be inferred from the other.
+
+For the Japanese text reference clock (20 normalized characters/s), the RTF < 0.01 budget is 0.5 ms per normalized character on average. This is an aggregate budget; fixed per-call overhead makes tiny one-packet calls harder than micro-batched streams. Consequently, reports MUST show both packet-size strata and batch-size strata.
+
+Any third-party or hypothetical inference latency may be included only as an explicitly labeled external reference. It MUST NOT be substituted for a local measurement or generalized to another model artifact, CPU, runtime, quantization or packet distribution.
+
+The compact profile is useful only if speed and semantic coverage are reported together. A system that abstains on most inputs may show excellent RTF while failing the intended recognition workload. Reports MUST therefore include per-label precision/recall or an equivalent task-specific quality measure, selective risk at each coverage level, and the v0.7 semantic projection comparison.
