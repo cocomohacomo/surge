@@ -77,7 +77,7 @@ int main() {
     auto p6 = packet("p6", "i6", 2, std::string(64, 'f'));
     p6.block_ref = "b4";
     auto next = recovered.admit(p6);
-    assert(next.admitted && next.watermark == 3);
+    assert(next.admitted && next.watermark == 4);
     assert(recovered_journal.state_version() == 4);
   }
 
@@ -108,5 +108,5 @@ int main() {
     assert(coordinator.packet_count() == 2);
   }
   std::filesystem::remove_all(root);
-  std::cout << "SURGE PacketAdmission tests: 2 scenarios passed\n";
+  std::cout << "SURGE PacketAdmission tests: 3 scenarios passed\n";
 }
