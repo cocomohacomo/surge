@@ -60,7 +60,7 @@ class RecognitionPacketAdapter:
         Draft202012Validator.check_schema(schema)
         self._validator = Draft202012Validator(schema, format_checker=FormatChecker())
         self._idempotency: dict[str, str] = {}
-        self._ranges: dict[str, tuple[str, str]] = {}
+        self._ranges: dict[str, tuple[str, str, int]] = {}
         self._sequences: dict[tuple[str, str, str, int], str] = {}
         self._packets: dict[str, Admission] = {}
 
@@ -114,26 +114,21 @@ class RecognitionPacketAdapter:
 
         prior_range = self._ranges.get(range_key)
         if prior_range is not None:
-            prior_digest, prior_packet_id = prior_range
+            prior_digest, prior_packet_id, prior_revision_seq = prior_range
             if not revision:
                 if prior_digest != actual_range_digest:
                     raise PacketRejected("RANGE_CONTENT_CONFLICT")
                 if previous_request == request_digest and prior_packet_id == packet_id:
                     return self._packets[packet_id]
                 raise PacketRejected("RANGE_ALREADY_ADMITTED")
-
             if revision_ref != prior_packet_id:
                 raise PacketRejected("REVISION_TARGET_MISMATCH")
-            prior_revision_seq = self._packets[prior_packet_id]
-            del prior_revision_seq  # The immutable predecessor remains indexed below.
-            revision_key = range_key + "|revision|" + str(revision_seq)
-            if revision_key in self._ranges:
-                raise PacketRejected("SOURCE_REVISION_SEQUENCE_REUSED")
-            self._ranges[revision_key] = (actual_range_digest, packet_id)
-        else:
-            if revision:
-                raise PacketRejected("REVISION_TARGET_NOT_FOUND")
-            self._ranges[range_key] = (actual_range_digest, packet_id)
+            if revision_seq <= prior_revision_seq:
+                raise PacketRejected("SOURCE_REVISION_SEQUENCE_NOT_MONOTONIC")
+            if prior_digest == actual_range_digest:
+                raise PacketRejected("SOURCE_REVISION_UNCHANGED")
+        elif revision:
+            raise PacketRejected("REVISION_TARGET_NOT_FOUND")
 
         if packet_id in self._packets:
             existing = self._packets[packet_id]
@@ -141,8 +136,10 @@ class RecognitionPacketAdapter:
                 raise PacketRejected("PACKET_ID_REUSED")
             return existing
 
+        self._ranges[range_key] = (actual_range_digest, packet_id,
+                                   revision_seq if revision else 0)
         admission = Admission(
-            status="ADMITTED", packet_id=packet_id, context_id=context_id,
+            status="REVISION_ADMITTED" if revision else "ADMITTED", packet_id=packet_id, context_id=context_id,
             source_id=source_id, source_generation=generation,
             source_sequence=sequence, range_key=range_key,
             range_digest=actual_range_digest,
