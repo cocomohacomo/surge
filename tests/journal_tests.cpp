@@ -47,14 +47,34 @@ int main() {
   }
   {
     std::ofstream out(path, std::ios::binary | std::ios::app);
-    out.put('\x10'); out.put('\x00'); // deliberately truncated frame length
+    out.put('\\x10'); out.put('\\x00'); // deliberately truncated frame length
   }
   {
     EventJournal recovered(path);
     assert(recovered.open());
     assert(recovered.state_version() == 2);
     assert(recovered.committed_events().size() == 3);
+    auto after_tail = recovered.commit("tx-3", "idem-3", 2, {{"ev-4","CLUSTER_UPDATED","post recovery append"}});
+    assert(after_tail.committed && after_tail.state_version == 3);
+  }
+  {
+    EventJournal recovered(path);
+    assert(recovered.open());
+    assert(recovered.state_version() == 3);
+    assert(recovered.committed_events().size() == 4);
+  }
+  const auto corrupt_path = (root / "corrupt.sgj").string();
+  std::filesystem::copy_file(path, corrupt_path);
+  {
+    std::fstream io(corrupt_path, std::ios::binary | std::ios::in | std::ios::out);
+    io.seekg(12); char byte = 0; io.read(&byte, 1); byte ^= 0x01;
+    io.seekp(12); io.write(&byte, 1);
+  }
+  {
+    EventJournal corrupt(corrupt_path);
+    assert(!corrupt.open());
+    assert(corrupt.last_error().find("JOURNAL_CHECKSUM_MISMATCH") == 0);
   }
   std::filesystem::remove_all(root);
-  std::cout << "SURGE EventJournal tests: 3 groups passed\n";
+  std::cout << "SURGE EventJournal tests: 5 groups passed\n";
 }
