@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.3
+
+- Add typed ContextGraph nodes (Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest) and relations.
+- Add staged SemanticDelta validation and atomic EventJournal commit/publish semantics.
+- Add cluster Focus and Interest-to-QuestionAspect/Cluster binding with append-only focus history.
+- Add committed-event replay and idempotency restoration across restart.
+- Add ContextGraph conformance tests for type constraints, stale versions, idempotent retry and multi-transaction recovery.
+
+
 ## 0.9.2
 
 - Add an append-only framed event journal with commit markers, state-version checks, event-ID uniqueness and idempotent transactions.
