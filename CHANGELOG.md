@@ -5,7 +5,7 @@
 - Add replaceable RecognitionScorer boundary with separate relevance, importance, relation strength, confidence, ambiguity and novelty dimensions.
 - Prohibit collapsing importance and confidence into one score; priority_score remains an uncalibrated importance-only review priority.
 - Add ACCEPT/REVIEW/ABSTAIN gating and explicit ambiguity/low-confidence abstention.
-- Add 50 manually scored Japanese regression cases and executable score/schema tests.
+- Add 50 assistant-scored Japanese regression cases and executable score/schema tests.
 - Feed back scope, quotation, temporal, contradiction, correction, acknowledgement, filler and structure findings into Recognition Scoring v0.1.
 - Scoring results remain untrusted and cannot commit Core state.
 
