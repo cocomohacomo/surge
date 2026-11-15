@@ -31,6 +31,8 @@ struct ScopeSpanProposal {
   std::string attribution_ref, modality_kind, temporal_role, parent_ref;
   std::vector<std::string> packet_refs;
 };
+struct ScopeValidationResult { bool accepted{false}; ScopeStatus status{ScopeStatus::Unresolved}; ScopeEffect effect{ScopeEffect::ReferenceCandidate}; bool may_emit_unconditional_claim{false}; std::string error; };
+struct ScopeSpanRecord { ScopeSpanProposal proposal; ScopeStatus status{ScopeStatus::Unresolved}; ScopeEffect effect{ScopeEffect::ReferenceCandidate}; bool may_emit_unconditional_claim{false}; };
 struct AddNode { GraphNode node; };
 struct AddRelation { GraphRelation relation; };
 struct AddScopeSpan { ScopeSpanProposal span; std::string source_snapshot; };
@@ -53,14 +55,14 @@ class ContextGraph {
   std::uint64_t state_version() const { return journal_->state_version(); }
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
-  const std::map<std::string, ScopeSpanProposal>& scope_spans() const { return state_.scope_spans; }
+  const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
   const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
  private:
   struct State {
     std::map<std::string, GraphNode> nodes;
     std::map<std::string, GraphRelation> relations;
-    std::map<std::string, ScopeSpanProposal> scope_spans;
+    std::map<std::string, ScopeSpanRecord> scope_spans;
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
   };
