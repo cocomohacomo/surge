@@ -6,6 +6,8 @@
 
 ## 実装済みプリミティブ
 
+- ScopeSpanValidator: 11種の型別検証、UTF-8 byte anchor一致、packet lineage、target binding、未解決保持、否定・条件・法性・引用の過剰解釈防止
+
 - QuestionRouter: 明示的なClaim間CONTRADICTSからQuestion/QuestionAspectを生成し、ABOUT関係からInterestを各対象Clusterへ向ける。対象Clusterが一意の場合のみFocusを設定し、複数候補ではFocusを推測しない
 
 - DependencyEngine: prerequisite→dependentの推移的Impact Set、上限検査、Tarjan SCC検出、安定ソート、budget超過時のpartial扱い
@@ -33,7 +35,7 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査とD01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性を検査する。
 
 fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
@@ -52,3 +54,7 @@ Dependencyノードのreferences[0]を前提、references[1]を依存先とし�
 ## QuestionRouter v0.1の範囲
 
 テキストから矛盾を自動発見する機能ではなく、検証済みのClaim間CONTRADICTS Relationを入力として受け取る。矛盾をQuestion/QuestionAspectに変換し、関係するClusterへInterestを向ける。複数Clusterがある場合はFocusを選ばず、既存Focusを維持する。信頼度・成長度・時間・重要度による候補順位付けは未実装。
+
+## ScopeSpanValidator v0.1の範囲
+
+11種のScopeSpanについて型別のanchor/target条件を検証する。anchor digestはtrusted Adapterから渡されたimmutable source digestとの整合性を確認し、C++側でdigest値そのものを再計算しない。複数source digestをまたぐanchor、ScopeSpanの永続revision、ContextGraphとの原子統合は次段階。
