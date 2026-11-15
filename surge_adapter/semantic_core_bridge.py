@@ -2,7 +2,17 @@
 from __future__ import annotations
 import ctypes
 from typing import Any
-from surge_adapter.packet_ingest import CppCoreBridge, PacketRejected, normalize_source
+from surge_adapter.packet_ingest import Admission, CppCoreBridge, PacketRejected, normalize_source
+
+class _Packet(ctypes.Structure):
+    _fields_ = [("packet_id", ctypes.c_char_p), ("idempotency_key", ctypes.c_char_p),
+                ("context_id", ctypes.c_char_p), ("source_id", ctypes.c_char_p),
+                ("source_generation", ctypes.c_char_p), ("block_ref", ctypes.c_char_p),
+                ("offset_basis", ctypes.c_char_p), ("start_offset", ctypes.c_uint64),
+                ("end_offset", ctypes.c_uint64), ("source_sequence", ctypes.c_uint64),
+                ("source_snapshot_digest", ctypes.c_char_p), ("source_range_digest", ctypes.c_char_p),
+                ("canonical_request_digest", ctypes.c_char_p), ("revision_of_packet_id", ctypes.c_char_p),
+                ("revision", ctypes.c_int), ("revision_sequence", ctypes.c_uint64)]
 
 class _Node(ctypes.Structure):
     _fields_ = [("id", ctypes.c_char_p), ("kind", ctypes.c_char_p),
@@ -36,6 +46,16 @@ class SemanticCoreBridge(CppCoreBridge):
     def __init__(self, journal_path, library_path=None):
         super().__init__(journal_path, library_path)
         lib = self._lib
+        lib.surge_packet_core_admit_and_apply.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.POINTER(_Node), ctypes.c_size_t,
+            ctypes.POINTER(_Relation), ctypes.c_size_t,
+            ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_packet_core_admit_and_apply.restype = ctypes.c_int
         lib.surge_context_graph_apply_scoped.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
@@ -59,6 +79,58 @@ class SemanticCoreBridge(CppCoreBridge):
     @property
     def scope_count(self) -> int:
         return int(self._lib.surge_context_graph_scope_count(self._handle))
+
+
+    def admit_and_apply(self, packet, source, snapshot_digest, range_digest,
+                        request_digest, revision, revision_sequence, revision_ref,
+                        delta):
+        pos = packet["source_position"]
+        packet_input = _Packet(
+            packet["packet_id"].encode(), packet["idempotency_key"].encode(),
+            packet["context_id"].encode(), packet["source_id"].encode(),
+            pos["source_generation"].encode(), pos["block_ref"].encode(),
+            pos["offset_basis"].encode(), int(pos["start_offset"]),
+            int(pos["end_offset"]), int(pos["source_sequence"]),
+            snapshot_digest.encode(), range_digest.encode(), request_digest.encode(),
+            (revision_ref or "").encode(), 1 if revision else 0, int(revision_sequence))
+        keepalive = []
+        nodes = []
+        for item in delta["nodes"]:
+            refs = [str(v).encode() for v in item.get("references", [])]
+            ref_array = (ctypes.c_char_p * len(refs))(*refs) if refs else None
+            if ref_array is not None:
+                keepalive.append(ref_array)
+            nodes.append(_Node(str(item["id"]).encode(), str(item["kind"]).encode(),
+                str(item["content"]).encode(),
+                ctypes.cast(ref_array, ctypes.POINTER(ctypes.c_char_p)) if ref_array is not None else None,
+                len(refs)))
+        node_array = (_Node * len(nodes))(*nodes) if nodes else None
+        relations = [_Relation(str(r["id"]).encode(), str(r["kind"]).encode(),
+                               str(r["from"]).encode(), str(r["to"]).encode())
+                     for r in delta["relations"]]
+        relation_array = (_Relation * len(relations))(*relations) if relations else None
+        snapshot_buffer = (ctypes.c_ubyte * len(source)).from_buffer_copy(source)
+        duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
+        status, error = ctypes.create_string_buffer(128), ctypes.create_string_buffer(1024)
+        ok = self._lib.surge_packet_core_admit_and_apply(
+            self._handle, ctypes.byref(packet_input), snapshot_buffer, len(source),
+            str(delta["delta_id"]).encode(), str(delta["idempotency_key"]).encode(),
+            int(delta["expected_state_version"]), node_array, len(nodes),
+            relation_array, len(relations), None, None, ctypes.byref(duplicate),
+            ctypes.byref(version), status, len(status), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "ATOMIC_SEMANTIC_COMMIT_FAILED")
+        range_key = "|".join((packet["context_id"], packet["source_id"],
+            pos["source_generation"], pos["block_ref"], pos["offset_basis"],
+            str(pos["start_offset"]), str(pos["end_offset"])))
+        admission = Admission(status=status.value.decode("utf-8") or "DUPLICATE",
+            packet_id=packet["packet_id"], context_id=packet["context_id"],
+            source_id=packet["source_id"], source_generation=pos["source_generation"],
+            source_sequence=int(pos["source_sequence"]), range_key=range_key,
+            range_digest=range_digest, canonical_request_digest=request_digest)
+        return admission, {"committed": True, "duplicate": bool(duplicate.value),
+                           "state_version": int(version.value)}
 
     def apply_semantic_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         required = {"delta_id", "idempotency_key", "expected_state_version",

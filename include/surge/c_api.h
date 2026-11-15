@@ -5,6 +5,25 @@
 extern "C" {
 #endif
 
+typedef struct SurgeRecognitionPacketInput {
+  const char* packet_id;
+  const char* idempotency_key;
+  const char* context_id;
+  const char* source_id;
+  const char* source_generation;
+  const char* block_ref;
+  const char* offset_basis;
+  uint64_t start_offset;
+  uint64_t end_offset;
+  uint64_t source_sequence;
+  const char* source_snapshot_digest;
+  const char* source_range_digest;
+  const char* canonical_request_digest;
+  const char* revision_of_packet_id;
+  int revision;
+  uint64_t revision_sequence;
+} SurgeRecognitionPacketInput;
+
 typedef struct SurgeGraphNodeInput {
   const char* id;
   const char* kind;       // CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST
@@ -75,6 +94,19 @@ int surge_context_graph_apply(
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
 size_t surge_context_graph_scope_count(void* handle);
+
+// One durable transaction for RecognitionPacket admission and SemanticDelta.
+int surge_packet_core_admit_and_apply(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const char* delta_id, const char* semantic_idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeGraphRelationInput* relations, size_t relation_count,
+    const char* focus_cluster_id, const char* focus_interest_id,
+    int* duplicate, uint64_t* state_version,
+    char* packet_status, size_t status_capacity,
+    char* error, size_t error_capacity);
 #ifdef __cplusplus
 }
 #endif

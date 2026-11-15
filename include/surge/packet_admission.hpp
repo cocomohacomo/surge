@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace surge {
 
@@ -47,7 +48,8 @@ class PacketAdmissionCoordinator {
   explicit PacketAdmissionCoordinator(EventJournal& journal);
   bool recover();
   PacketAdmissionResult admit(const ValidatedRecognitionPacket& packet,
-                              const std::string& normalized_source_snapshot);
+                              const std::string& normalized_source_snapshot,
+                              const std::vector<JournalEvent>& semantic_events = {});
   std::uint64_t state_version() const;
   std::size_t packet_count() const;
 

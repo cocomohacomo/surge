@@ -99,6 +99,28 @@ bool ContextGraph::replay(){
  state_=std::move(rebuilt);
  return true;
 }
+
+bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEvent>& events,std::string& error)const{
+ events.clear();error.clear();
+ if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
+  error="DELTA_EMPTY_OR_ID_INVALID";return false;
+ }
+ const auto fp=fingerprint(d);
+ const auto old=idempotency_.find(d.idempotency_key);
+ if(old!=idempotency_.end()){
+  if(old->second==fp)return true;
+  error="IDEMPOTENCY_KEY_REUSED";return false;
+ }
+ if(d.expected_state_version!=state_version()){error="STATE_VERSION_CONFLICT";return false;}
+ State staged=state_;
+ for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
+ for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
+ for(const auto& scope:d.scope_spans)if(!apply_scope_span(staged,scope,error))return false;
+ if(d.focus&&!apply_focus(staged,d.focus->focus,error))return false;
+ events=encode(d,fp);
+ return true;
+}
+
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
  if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus))return {false,false,state_version(),"DELTA_EMPTY_OR_ID_INVALID"};
  const auto fp=fingerprint(d);auto old=idempotency_.find(d.idempotency_key);

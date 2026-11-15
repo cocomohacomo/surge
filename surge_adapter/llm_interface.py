@@ -157,7 +157,6 @@ class LLMSemanticRuntime:
             "confidence": float(candidate["confidence"]),
             "ambiguity": float(candidate["ambiguity"]),
             "novelty": 0.70 if candidate["kind"] in ("CLAIM", "QUESTION") else 0.25})
-        admission = self.packet_adapter.admit_to_core(packet, text, core)
         evidence_id = "evidence/" + packet["packet_id"]
         nodes = [{"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []}]
         relations = []
@@ -207,7 +206,7 @@ class LLMSemanticRuntime:
                  "idempotency_key": "semantic-idem/" + packet["packet_id"],
                  "expected_state_version": core.state_version,
                  "nodes": nodes, "relations": relations}
-        committed = core.apply_semantic_delta(delta)
+        admission, committed = self.packet_adapter.admit_and_apply_to_core(packet, text, core, delta)
         self.sequence = next_sequence
         if staged_claim is not None:
             self.claim_history.append(staged_claim)

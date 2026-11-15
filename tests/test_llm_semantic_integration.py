@@ -26,10 +26,10 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
             with SemanticCoreBridge(journal) as core:
                 out=runtime.process("予算を増額します。",core)
                 self.assertTrue(out["semantic_commit"]["committed"])
-                self.assertEqual(core.state_version,2)
+                self.assertEqual(core.state_version,1)
                 self.assertEqual(core.packet_count,1)
             with SemanticCoreBridge(journal) as recovered:
-                self.assertEqual(recovered.state_version,2)
+                self.assertEqual(recovered.state_version,1)
                 self.assertEqual(recovered.packet_count,1)
 
     def test_contradiction_creates_question_aspect_interest_and_relation(self):
@@ -40,7 +40,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 runtime.process("予算を増額します。",core)
                 out=runtime.process("予算を増額しません。",core)
                 self.assertTrue(out["semantic_commit"]["committed"])
-                self.assertEqual(core.state_version,4)
+                self.assertEqual(core.state_version,2)
                 self.assertEqual(core.packet_count,2)
 
     def test_abstention_preserves_evidence_without_claim(self):
@@ -51,7 +51,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 out=runtime.process("それは不明です。",core)
                 self.assertEqual(out["decision"],"ABSTAIN")
                 self.assertFalse(out["claim_created"])
-                self.assertEqual(core.state_version,2)
+                self.assertEqual(core.state_version,1)
 
     def test_question_creates_question_and_interest(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -136,10 +136,10 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                     out=runtime.process(f"予算に関する提案{n}を承認します。",core)
                     self.assertTrue(out["semantic_commit"]["committed"])
                 self.assertEqual(core.packet_count,50)
-                self.assertEqual(core.state_version,100)
+                self.assertEqual(core.state_version,50)
             with SemanticCoreBridge(journal) as recovered:
                 self.assertEqual(recovered.packet_count,50)
-                self.assertEqual(recovered.state_version,100)
+                self.assertEqual(recovered.state_version,50)
 
 if __name__=="__main__":
     unittest.main()

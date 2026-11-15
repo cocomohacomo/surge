@@ -105,7 +105,7 @@ bool PacketAdmissionCoordinator::recover() {
     return true;
   }
   for (const auto& event : journal_.committed_events()) {
-    if (event.kind != "RECOGNITION_PACKET_ADMITTED") continue;
+    if (event.kind != "RECOGNITION_PACKET_ADMITTED" && event.kind != "SEMANTIC_PACKET_ADMITTED") continue;
     ValidatedRecognitionPacket packet;
     if (!decode(event.payload, packet) || !apply_recovered(packet)) {
       recovered_ = false;
@@ -118,7 +118,8 @@ bool PacketAdmissionCoordinator::recover() {
 
 PacketAdmissionResult PacketAdmissionCoordinator::admit(
     const ValidatedRecognitionPacket& p,
-    const std::string& normalized_source_snapshot) {
+    const std::string& normalized_source_snapshot,
+    const std::vector<JournalEvent>& semantic_events) {
   PacketAdmissionResult result;
   result.state_version = journal_.state_version();
   if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
@@ -147,6 +148,10 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
 
   auto existing_packet = packet_digests_.find(p.packet_id);
   if (existing_packet != packet_digests_.end()) {
+    if (!semantic_events.empty()) {
+      result.error = "PACKET_ALREADY_ADMITTED_SEMANTIC_NOT_COMMITTED";
+      return result;
+    }
     if (existing_packet->second != p.canonical_request_digest) {
       result.error = "PACKET_ID_REUSED"; return result;
     }
@@ -197,9 +202,29 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   staged.sequencer.observe(p.source_sequence);
 
   const auto expected = journal_.state_version();
+  if (!semantic_events.empty()) {
+    if (semantic_events.front().kind != "DELTA_META") {
+      result.error = "SEMANTIC_TRANSACTION_META_REQUIRED"; return result;
+    }
+    std::istringstream meta(semantic_events.front().payload);
+    std::string delta_id, semantic_key, fingerprint;
+    std::uint64_t semantic_expected = 0;
+    if (!(meta >> std::quoted(delta_id) >> std::quoted(semantic_key) >>
+          semantic_expected >> std::quoted(fingerprint)) ||
+        delta_id.empty() || semantic_key.empty() || fingerprint.empty()) {
+      result.error = "SEMANTIC_TRANSACTION_META_INVALID"; return result;
+    }
+    if (semantic_expected != expected) {
+      result.error = "STATE_VERSION_CONFLICT"; return result;
+    }
+  }
   const std::string tx = "recognition-packet-tx:" + p.packet_id;
-  const auto committed = journal_.commit(tx, p.idempotency_key, expected,
-      {{packet_event_id(p.packet_id), "RECOGNITION_PACKET_ADMITTED", encode(p)}});
+  std::vector<JournalEvent> transaction_events;
+  transaction_events.push_back({packet_event_id(p.packet_id),
+      semantic_events.empty() ? "RECOGNITION_PACKET_ADMITTED" : "SEMANTIC_PACKET_ADMITTED",
+      encode(p)});
+  transaction_events.insert(transaction_events.end(), semantic_events.begin(), semantic_events.end());
+  const auto committed = journal_.commit(tx, p.idempotency_key, expected, transaction_events);
   if (!committed.committed) {
     result.error = committed.error;
     result.state_version = committed.state_version;
