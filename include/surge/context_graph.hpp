@@ -48,10 +48,10 @@ class ContextGraph {
   bool open();
   DeltaResult apply(const SemanticDelta& delta);
   std::uint64_t state_version() const { return journal_.state_version(); }
-  const std::map<std::string, GraphNode>& nodes() const { return nodes_; }
-  const std::map<std::string, GraphRelation>& relations() const { return relations_; }
-  const std::optional<FocusRecord>& focus() const { return focus_; }
-  const std::vector<FocusRecord>& focus_history() const { return focus_history_; }
+  const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
+  const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
+  const std::optional<FocusRecord>& focus() const { return state_.focus; }
+  const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
  private:
   struct State {
     std::map<std::string, GraphNode> nodes;
@@ -69,5 +69,6 @@ class ContextGraph {
   EventJournal journal_;
   State state_;
   std::map<std::string, std::string> idempotency_;
+  std::string last_error_;
 };
 }  // namespace surge
