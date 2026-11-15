@@ -8,6 +8,9 @@
 
 ---
 
+**Normative precedence:** 本書のv0.6 API追加規定（第13章以降）は、継承したv0.2 APIのQuestion/時間/同期契約と異なる場合に優先する。
+
+
 ## 1. Purpose
 
 This document defines the language- and transport-independent contract between Input Adapters, Recognition Engines, and SURGE Core.
