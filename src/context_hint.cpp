@@ -72,7 +72,9 @@ HintBuildResult ContextHintBuilder::build(const std::string& context,const std::
     result.ticket.context_id=context;result.ticket.packet_ref=packet;
     result.ticket.source_range_digest=range_digest;result.ticket.omitted_digest=result.hint.omitted_digest;
     result.ticket.policy_version=policy;result.ticket.state_version=version;
-    result.ticket.omitted_refs=result.hint.omitted_refs;
+    for(std::size_t i=budget;i<mandatory_count;++i)
+      result.ticket.omitted_refs.push_back(unique[i].ref);
+    result.ticket.omitted_digest=digest_refs(result.ticket.omitted_refs);
     result.ticket.ticket_id="rt/"+digest_refs({ticket_key(result.ticket)});
     result.hint.retrieval_ticket_id=result.ticket.ticket_id;
   } else if(!result.hint.omitted_refs.empty()){
