@@ -1,7 +1,7 @@
 {
   "dataset_id": "SURGE-JA-SCORING-50-v0.1",
   "language": "ja",
-  "status": "expert_scored_reference",
+  "status": "assistant_scored_reference",
   "score_scale": "0..1",
   "cases": [
     {
