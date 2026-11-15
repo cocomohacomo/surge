@@ -51,6 +51,7 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
             ctypes.POINTER(_Relation), ctypes.c_size_t,
+            ctypes.POINTER(_Scope), ctypes.c_size_t,
             ctypes.c_char_p, ctypes.c_char_p,
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -109,14 +110,48 @@ class SemanticCoreBridge(CppCoreBridge):
                                str(r["from"]).encode(), str(r["to"]).encode())
                      for r in delta["relations"]]
         relation_array = (_Relation * len(relations))(*relations) if relations else None
+        scopes = []
+        for item in delta.get("scope_spans", []):
+            def anchor(value):
+                return _Anchor(str(value["anchor_id"]).encode(),
+                               str(value["source_digest"]).encode(),
+                               str(value["offset_basis"]).encode(),
+                               int(value["start_offset"]), int(value["end_offset"]),
+                               str(value["exact_text"]).encode(),
+                               str(value["packet_ref"]).encode())
+            opener = anchor(item["opener"])
+            closer_value = item.get("closer")
+            closer = anchor(closer_value) if closer_value else _Anchor()
+            target = [str(v).encode() for v in item.get("target_refs", [])]
+            antecedents = [str(v).encode() for v in item.get("antecedent_refs", [])]
+            packets = [str(v).encode() for v in item.get("packet_refs", [])]
+            target_array = (ctypes.c_char_p * len(target))(*target) if target else None
+            antecedent_array = (ctypes.c_char_p * len(antecedents))(*antecedents) if antecedents else None
+            packet_array = (ctypes.c_char_p * len(packets))(*packets) if packets else None
+            keepalive.extend([x for x in (target_array, antecedent_array, packet_array) if x is not None])
+            scopes.append(_Scope(str(item["span_id"]).encode(), str(item["kind"]).encode(),
+                str(item["source_digest"]).encode(), str(item["offset_basis"]).encode(),
+                opener, 1 if closer_value else 0, closer,
+                ctypes.cast(target_array, ctypes.POINTER(ctypes.c_char_p)) if target_array is not None else None,
+                len(target), ctypes.cast(antecedent_array, ctypes.POINTER(ctypes.c_char_p)) if antecedent_array is not None else None,
+                len(antecedents), str(item.get("attribution_ref", "")).encode(),
+                str(item.get("modality_kind", "")).encode(), str(item.get("temporal_role", "")).encode(),
+                str(item.get("parent_ref", "")).encode(),
+                ctypes.cast(packet_array, ctypes.POINTER(ctypes.c_char_p)) if packet_array is not None else None,
+                len(packets)))
+        scope_array = (_Scope * len(scopes))(*scopes) if scopes else None
         snapshot_buffer = (ctypes.c_ubyte * len(source)).from_buffer_copy(source)
+        focus = delta.get("focus")
+        focus_cluster = str(focus["cluster_id"]).encode() if focus else None
+        focus_interest = str(focus.get("interest_id", "")).encode() if focus else None
         duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
         status, error = ctypes.create_string_buffer(128), ctypes.create_string_buffer(1024)
         ok = self._lib.surge_packet_core_admit_and_apply(
             self._handle, ctypes.byref(packet_input), snapshot_buffer, len(source),
             str(delta["delta_id"]).encode(), str(delta["idempotency_key"]).encode(),
             int(delta["expected_state_version"]), node_array, len(nodes),
-            relation_array, len(relations), None, None, ctypes.byref(duplicate),
+            relation_array, len(relations), scope_array, len(scopes),
+            focus_cluster, focus_interest, ctypes.byref(duplicate),
             ctypes.byref(version), status, len(status), error, len(error))
         if not ok:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
