@@ -2,7 +2,7 @@
 from __future__ import annotations
 import ctypes
 from typing import Any
-from surge_adapter.packet_ingest import CppCoreBridge, PacketRejected
+from surge_adapter.packet_ingest import CppCoreBridge, PacketRejected, normalize_source
 
 class _Node(ctypes.Structure):
     _fields_ = [("id", ctypes.c_char_p), ("kind", ctypes.c_char_p),
@@ -112,7 +112,7 @@ class SemanticCoreBridge(CppCoreBridge):
                 ctypes.cast(packet_array, ctypes.POINTER(ctypes.c_char_p)) if packet_array is not None else None,
                 len(packets)))
         scope_array = (_Scope * len(scopes))(*scopes) if scopes else None
-        source_snapshot = str(delta.get("source_snapshot", "")).encode("utf-8")
+        source_snapshot = normalize_source(str(delta.get("source_snapshot", "")))
         focus = delta.get("focus")
         focus_cluster = str(focus["cluster_id"]).encode() if focus else None
         focus_interest = str(focus.get("interest_id", "")).encode() if focus else None
