@@ -1,4 +1,5 @@
 #include "surge/scope_validator.hpp"
+#include "surge/sha256.hpp"
 #include <cassert>
 #include <iostream>
 using namespace surge;
@@ -8,7 +9,7 @@ static ScopeAnchor anchor(const std::string& id,const std::string& digest,const 
 }
 int main(){
   const std::string source="not approve if funded may approve although delayed but approve he said \"yes\" in 2026 item header";
-  const std::string digest(64,'a');
+  const std::string digest=sha256_hex(source);
   std::map<std::string,GraphNode> nodes={
     {"c1",{"c1",NodeKind::Claim,"claim1",{"e1"}}},
     {"c2",{"c2",NodeKind::Claim,"claim2",{"e1"}}},
