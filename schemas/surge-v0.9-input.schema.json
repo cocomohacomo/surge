@@ -1,0 +1,527 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:recognition-packet:0.9.0",
+  "title": "SURGE v0.9 Recognition Packet",
+  "description": "Bounded, structurally anchored input packet for compact Recognition Engines. This schema validates packet shape; Core validates references, offsets, versions, capabilities and lifecycle semantics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "packet_id",
+    "idempotency_key",
+    "context_id",
+    "source_id",
+    "source_position",
+    "structural",
+    "content",
+    "context_hint",
+    "coverage",
+    "adapter",
+    "finalization"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.9.0"
+    },
+    "packet_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_document_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "page_snapshot_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block_ref",
+        "start_offset",
+        "end_offset",
+        "offset_basis",
+        "source_order",
+        "source_generation",
+        "source_sequence",
+        "source_range_digest"
+      ],
+      "properties": {
+        "block_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset_basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "continuation_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "overlap_group_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_generation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_revision_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "predecessor_packet_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "source_range_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "revision_of_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "structural": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block_type",
+        "semantic_role"
+      ],
+      "properties": {
+        "block_type": {
+          "enum": [
+            "TITLE",
+            "HEADING",
+            "PARAGRAPH",
+            "LIST",
+            "LIST_ITEM",
+            "TABLE",
+            "TABLE_ROW",
+            "TABLE_CELL",
+            "QUOTE",
+            "CODE",
+            "FIGURE",
+            "CAPTION",
+            "FOOTNOTE",
+            "LINK",
+            "METADATA",
+            "NAVIGATION",
+            "HEADER",
+            "FOOTER",
+            "FORM",
+            "TRANSCRIPT_TURN",
+            "UNKNOWN",
+            "OPAQUE"
+          ]
+        },
+        "semantic_role": {
+          "enum": [
+            "MAIN_CONTENT",
+            "SUPPORTING_CONTENT",
+            "STRUCTURAL",
+            "NAVIGATION",
+            "BOILERPLATE",
+            "METADATA",
+            "UNKNOWN"
+          ]
+        },
+        "heading_path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parent_ref": {
+          "type": "string"
+        },
+        "list_path": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "table": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "row": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "row_header_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "column_header_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unit_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "footnote_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "quote_attribution_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "code_language": {
+          "type": "string"
+        },
+        "link_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "normalized_digest",
+        "language"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "normalized_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_window_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actual_window_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "context_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_version",
+        "temporal_mode",
+        "retrieval_reason"
+      ],
+      "properties": {
+        "state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "focus_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "candidate_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "kind",
+              "reason"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "CLUSTER",
+                  "ENTITY",
+                  "CLAIM",
+                  "QUESTION_ASPECT",
+                  "DEPENDENCY"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "temporal_mode": {
+          "enum": [
+            "CURRENT",
+            "HISTORICAL",
+            "EVENT_TIME",
+            "VALIDITY_INTERVAL",
+            "UNKNOWN"
+          ]
+        },
+        "retrieval_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "omitted_candidate_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "context_complete": {
+          "type": "boolean"
+        },
+        "included_ref_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "omitted_ref_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "omitted_mandatory_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted_optional_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retrieval_ticket_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completeness"
+      ],
+      "properties": {
+        "completeness": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "UNKNOWN",
+            "UNAVAILABLE"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "omitted_ranges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start_offset",
+              "end_offset"
+            ],
+            "properties": {
+              "start_offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end_offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_id",
+        "adapter_version",
+        "capability_descriptor_ref"
+      ],
+      "properties": {
+        "adapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability_descriptor_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "finalization": {
+      "enum": [
+        "PARTIAL",
+        "FINAL",
+        "CONTINUATION",
+        "REVISION"
+      ]
+    },
+    "neighbor_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "structural": {
+            "properties": {
+              "block_type": {
+                "const": "TABLE_CELL"
+              }
+            },
+            "required": [
+              "block_type"
+            ]
+          }
+        },
+        "required": [
+          "structural"
+        ]
+      },
+      "then": {
+        "properties": {
+          "structural": {
+            "required": [
+              "table"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "coverage": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          }
+        },
+        "required": [
+          "coverage"
+        ]
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "required": [
+              "max_window_bytes",
+              "actual_window_bytes"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$comment": "v0.9: source_range_digest hashes exact normalized bytes in [start_offset,end_offset), excluding overlap context. Changed bytes require explicit revision lineage."
+}
