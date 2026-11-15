@@ -42,21 +42,26 @@ int main() {
     assert(journal.state_version() == 1);
 
     auto p2 = packet("p2", "i2", 3, std::string(64, 'b'));
+    p2.block_ref = "b2";
     auto gap = coordinator.admit(p2);
     assert(gap.admitted && gap.watermark == 1);
     assert(gap.packet_status == "READY_BUT_BLOCKED");
 
     auto conflict = packet("p3", "i3", 4, std::string(64, 'c'));
+    conflict.block_ref = "b3";
     conflict.start_offset = 0; conflict.end_offset = 3;
     assert(coordinator.admit(conflict).admitted);
     auto same_range_changed = packet("p4", "i4", 5, std::string(64, 'd'));
+    same_range_changed.block_ref = "b3";
     assert(coordinator.admit(same_range_changed).error == "RANGE_CONTENT_CONFLICT");
 
     auto untrusted = packet("p5", "i5", 6, std::string(64, 'e'));
+    untrusted.block_ref = "b5";
     untrusted.range_digest_verified = false;
     assert(coordinator.admit(untrusted).error == "SOURCE_VALIDATION_REQUIRED");
 
     auto collision = packet("p1", "i-new", 7, std::string(64, 'f'));
+    collision.block_ref = "b6";
     assert(coordinator.admit(collision).error == "PACKET_ID_REUSED");
     assert(coordinator.packet_count() == 3);
   }
@@ -69,7 +74,9 @@ int main() {
     assert(recovered.state_version() == 3);
     auto retry = recovered.admit(packet("p1", "i1", 1, std::string(64, 'a')));
     assert(retry.admitted && retry.duplicate);
-    auto next = recovered.admit(packet("p6", "i6", 2, std::string(64, 'f')));
+    auto p6 = packet("p6", "i6", 2, std::string(64, 'f'));
+    p6.block_ref = "b4";
+    auto next = recovered.admit(p6);
     assert(next.admitted && next.watermark == 3);
     assert(recovered_journal.state_version() == 4);
   }
