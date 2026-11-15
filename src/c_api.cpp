@@ -258,6 +258,7 @@ int surge_packet_core_admit_and_apply(
     const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
     const SurgeGraphNodeInput* nodes,size_t node_count,
     const SurgeGraphRelationInput* relations,size_t relation_count,
+    const SurgeScopeSpanInput* scopes,size_t scope_count,
     const char* focus_cluster_id,const char* focus_interest_id,
     int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
     char* error,size_t error_cap) {
