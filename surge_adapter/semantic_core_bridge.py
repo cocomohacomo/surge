@@ -34,8 +34,7 @@ class SemanticCoreBridge(CppCoreBridge):
                     "nodes", "relations"}
         if not isinstance(delta, dict) or not required.issubset(delta):
             raise PacketRejected("SEMANTIC_DELTA_SHAPE_INVALID")
-        if delta["expected_state_version"] != self.state_version:
-            raise PacketRejected("STATE_VERSION_CONFLICT")
+        # Core checks idempotency before version conflicts, allowing exact retries.
         keepalive: list[Any] = []
         nodes = []
         for item in delta["nodes"]:
