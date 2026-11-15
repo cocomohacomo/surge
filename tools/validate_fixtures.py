@@ -91,7 +91,7 @@ def main():
         cwd=ROOT, check=False)
     if result.returncode:
         raise SystemExit(result.returncode)
-    print("RecognitionPacket adapter conformance: 12/12 tests passed")
+    print("RecognitionPacket adapter conformance: 11/11 tests passed")
     print("NOTE: fixture consistency and primitive tests do not establish full semantic Core conformance.")
 
 if __name__ == "__main__":
