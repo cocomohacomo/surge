@@ -101,6 +101,37 @@ class RecognitionPacketAdapter:
                           canonical_digest(packet), revision, revision_seq,
                           revision_ref)
 
+
+    def admit_and_apply_to_core(self, packet: dict[str, Any], source_snapshot: str,
+                                core: "CppCoreBridge", delta: dict[str, Any]):
+        """Atomically admit a RecognitionPacket and commit its SemanticDelta."""
+        errors = sorted(self._validator.iter_errors(packet),
+                        key=lambda e: (list(map(str, e.absolute_path)), e.message))
+        if errors:
+            first = errors[0]
+            path = "/".join(map(str, first.absolute_path)) or "$"
+            raise PacketRejected(f"SCHEMA_INVALID:{path}:{first.message}")
+        pos = packet["source_position"]
+        source = normalize_source(source_snapshot)
+        start, end = pos["start_offset"], pos["end_offset"]
+        if end <= start or end > len(source):
+            raise PacketRejected("SOURCE_RANGE_OUT_OF_BOUNDS")
+        snapshot_digest = hashlib.sha256(source).hexdigest()
+        if packet["content"].get("normalized_digest") != snapshot_digest:
+            raise PacketRejected("SOURCE_SNAPSHOT_DIGEST_MISMATCH")
+        range_digest = hashlib.sha256(source[start:end]).hexdigest()
+        if range_digest.lower() != pos["source_range_digest"].lower():
+            raise PacketRejected("SOURCE_RANGE_DIGEST_MISMATCH")
+        revision = packet["finalization"] == "REVISION"
+        revision_sequence = pos.get("source_revision_sequence", 0)
+        revision_ref = pos.get("revision_of_ref", "")
+        if revision and (not revision_sequence or not revision_ref):
+            raise PacketRejected("REVISION_LINEAGE_REQUIRED")
+        if not revision and (revision_sequence or revision_ref):
+            raise PacketRejected("REVISION_FIELDS_REQUIRE_REVISION_PACKET")
+        return core.admit_and_apply(packet, source, snapshot_digest, range_digest,
+            canonical_digest(packet), revision, revision_sequence, revision_ref, delta)
+
     def admit(self, packet: dict[str, Any], source_snapshot: str) -> Admission:
         errors = sorted(self._validator.iter_errors(packet),
                         key=lambda e: (list(map(str, e.absolute_path)), e.message))
