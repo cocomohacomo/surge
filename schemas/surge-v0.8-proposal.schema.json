@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:classification-proposal:0.8.0",
+  "title": "SURGE v0.8 Classification Proposal",
+  "description": "Untrusted, non-committing output from a compact Recognition Engine. Core performs semantic validation and creates any State Delta.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "packet_ref",
+    "producer",
+    "model_descriptor",
+    "runtime_descriptor",
+    "base_state_version",
+    "labels",
+    "candidate_spans",
+    "abstention_reasons",
+    "idempotency_key"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.8.0"
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer_id",
+        "producer_version"
+      ],
+      "properties": {
+        "producer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "model_descriptor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime_descriptor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_state_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "family",
+          "label",
+          "score",
+          "score_scale"
+        ],
+        "properties": {
+          "family": {
+            "enum": [
+              "STRUCTURAL",
+              "SEMANTIC_ROLE",
+              "SPEECH_FUNCTION",
+              "CONTEXT_CUE",
+              "ROUTING"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "score_scale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "calibration_ref": {
+            "type": "string"
+          },
+          "head_version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "candidate_spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start_offset",
+          "end_offset",
+          "offset_basis",
+          "labels"
+        ],
+        "properties": {
+          "start_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset_basis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "candidate_kind": {
+            "enum": [
+              "ENTITY_MENTION",
+              "CLAIM_CUE",
+              "QUESTION_CUE",
+              "RELATION_CUE",
+              "TEMPORAL_CUE",
+              "CONDITION_CUE",
+              "NEGATION_CUE",
+              "MODALITY_CUE",
+              "REFERENCE_CUE",
+              "OTHER"
+            ]
+          }
+        }
+      }
+    },
+    "abstention_reasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "LOW_MARGIN",
+          "OUT_OF_DISTRIBUTION",
+          "UNSUPPORTED_LANGUAGE",
+          "WINDOW_TRUNCATED",
+          "STRUCTURE_MISSING",
+          "CONTEXT_HINT_STALE",
+          "LABEL_CONFLICT",
+          "MODEL_ERROR"
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$comment": "Core MUST validate packet existence, digest/offset bounds, supported label taxonomy, producer authorization, base-state version, and calibration compatibility. Scores are not truth probabilities."
+}
