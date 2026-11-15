@@ -15,10 +15,40 @@ typedef struct SurgeGraphNodeInput {
 
 typedef struct SurgeGraphRelationInput {
   const char* id;
-  const char* kind;       // SUPPORTS, CONTRADICTS, AGREES_WITH, CONFLICTS_WITH, DEPENDS_ON, ABOUT
+  const char* kind;
   const char* from_id;
   const char* to_id;
 } SurgeGraphRelationInput;
+
+typedef struct SurgeScopeAnchorInput {
+  const char* anchor_id;
+  const char* source_digest;
+  const char* offset_basis;
+  uint64_t start_offset;
+  uint64_t end_offset;
+  const char* exact_text;
+  const char* packet_ref;
+} SurgeScopeAnchorInput;
+
+typedef struct SurgeScopeSpanInput {
+  const char* span_id;
+  const char* kind;
+  const char* source_digest;
+  const char* offset_basis;
+  SurgeScopeAnchorInput opener;
+  int has_closer;
+  SurgeScopeAnchorInput closer;
+  const char* const* target_refs;
+  size_t target_count;
+  const char* const* antecedent_refs;
+  size_t antecedent_count;
+  const char* attribution_ref;
+  const char* modality_kind;
+  const char* temporal_role;
+  const char* parent_ref;
+  const char* const* packet_refs;
+  size_t packet_count;
+};
 
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
