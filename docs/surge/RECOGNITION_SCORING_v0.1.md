@@ -42,7 +42,7 @@ before commit.
 
 ## Execution contract
 RecognitionScorer validates dimensions and returns a review decision. It has
-no Core handle and cannot commit. The 50-case corpus is a assistant-scored,
+no Core handle and cannot commit. The 50-case corpus is an assistant-scored,
 deterministic regression set, not a representative gold-standard corpus or
 calibrated quality benchmark.
 
