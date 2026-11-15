@@ -162,7 +162,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
             journal = pathlib.Path(tmp) / "atomic-scope.sgj"
             with SemanticCoreBridge(journal) as core:
                 admission, committed = self._atomic_scope_case(core, "not approved", "not")
-                self.assertEqual(admission.status, "ADMITTED")
+                self.assertEqual(admission.status, "COMMITTED")
                 self.assertTrue(committed["committed"])
                 self.assertEqual(core.state_version, 1)
                 self.assertEqual(core.packet_count, 1)
