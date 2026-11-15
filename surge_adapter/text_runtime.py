@@ -106,7 +106,7 @@ class StreamingContextRuntime:
         emitted: list[dict[str, Any]] = []
         for index, candidate in enumerate(candidates):
             scores = {
-                "relevance": .85 if candidate.topic and candidate.topic == self.active_cluster else .55,
+                "relevance": .85 if candidate.topic and self.active_cluster == f"cluster:{candidate.topic}" else .55,
                 "importance": candidate.importance,
                 "relation_strength": .70 if self.claims else .25,
                 "confidence": candidate.confidence,
