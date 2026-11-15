@@ -20,7 +20,8 @@ class ProposalBuilderTests(unittest.TestCase):
    "base_state_version":4,"candidate_labels":[{"family":"SPEECH_FUNCTION","label":"DECISION_ACCEPTANCE","score_dimension":"importance"}],
    "candidate_spans":[{"start_offset":1,"end_offset":5,"offset_basis":"UTF8_BYTE_NFC","labels":["DECISION"],"candidate_kind":"CLAIM_CUE"}]}
  def test_builds_schema_valid_non_committing_proposal(self):
-  scoring=self.scorer.evaluate("p-1",{k:.9 for k in SCORE_FIELDS})
+  scores={k:.9 for k in SCORE_FIELDS}; scores["ambiguity"]=.1
+  scoring=self.scorer.evaluate("p-1",scores)
   result=build_classification_proposal(packet(),scoring,**self.base)
   self.assertEqual(list(self.schema.iter_errors(result)),[])
   self.assertEqual(result["packet_ref"],"p-1")
