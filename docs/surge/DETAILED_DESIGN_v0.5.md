@@ -284,3 +284,169 @@ For the Japanese text reference clock (20 normalized characters/s), the RTF < 0.
 Any third-party or hypothetical inference latency may be included only as an explicitly labeled external reference. It MUST NOT be substituted for a local measurement or generalized to another model artifact, CPU, runtime, quantization or packet distribution.
 
 The compact profile is useful only if speed and semantic coverage are reported together. A system that abstains on most inputs may show excellent RTF while failing the intended recognition workload. Reports MUST therefore include per-label precision/recall or an equivalent task-specific quality measure, selective risk at each coverage level, and the v0.7 semantic projection comparison.
+
+
+## 18. Cross-packet semantic scope implementation
+
+### 18.1 ScopeSpan record
+
+Core record:
+
+| Field | Type | Rule |
+|---|---|---|
+| scope_span_id | opaque ID | Immutable identity |
+| scope_kind | enum | NEGATION, CONDITION, MODALITY, CONCESSION, CONTRAST, COREFERENCE, ANAPHORA, QUOTATION, TEMPORAL, LIST_CONTINUATION, TABLE_HEADER |
+| source_ref | source/snapshot ref | Required |
+| start_offset / end_offset | integer pair | Half-open range [start,end) in declared offset_basis |
+| opener_anchor_ref | anchor ref | Required |
+| closer_anchor_ref | anchor ref/null | Null while open |
+| continuation_refs | ref array | Ordered, deduplicated |
+| target_anchor_refs | ref array | Exact affected spans only |
+| antecedent_refs | ref array | May be empty while unresolved |
+| status | enum | OPEN, CLOSED, UNRESOLVED, INVALIDATED |
+| revision_of_ref | ref/null | Corrections are append-only |
+| producer_lineage | ref array | Proposal provenance |
+| policy_version | string | Required |
+
+The Core validates 0 <= start_offset < end_offset <= source_length, source digest, offset basis, packet/source ordering and anchor existence. A zero-length marker is permitted only as an explicit boundary anchor, not as a semantic span.
+
+### 18.2 Scope state machine
+
+- OPEN -> CLOSED: a valid closer/target is observed and scope rules are satisfied.
+- OPEN -> UNRESOLVED: source boundary, truncation or missing antecedent prevents safe closure.
+- OPEN/CLOSED/UNRESOLVED -> INVALIDATED: a correction or verified source revision invalidates the prior interpretation; prior record remains immutable.
+- UNRESOLVED -> CLOSED: later evidence resolves the continuation.
+- CLOSED -> revised interpretation: create a new ScopeSpan with revision_of_ref; do not mutate the old record.
+
+No transition is inferred from packet FINAL alone. A source-final marker may close only scope kinds whose policy explicitly permits end-of-source closure.
+
+### 18.3 Typed scope algorithms
+
+1. **Negation:** bind negation cue to the nearest structurally and syntactically compatible predicate candidate within declared scope rules. If the predicate is outside the current packet, persist OPEN and continue. Do not negate following independent sentences.
+2. **Condition:** bind condition marker to its consequent candidate. If either side is missing, retain an unresolved pair; do not promote the consequent to unconditional.
+3. **Modality:** preserve possibility/necessity/permission/obligation/intent as separate modality values. Do not normalize possibility language to a factual assertion.
+4. **Concession/contrast:** preserve both propositions and the relation between them. Do not drop the conceded proposition as boilerplate.
+5. **Coreference/anaphora:** create candidate antecedent refs with source anchors and ambiguity set. Entity identity remains Core-governed; unresolved pronouns do not authorize entity merge.
+6. **Quotation:** retain quote boundary and speaker/source attribution separately from surrounding author stance.
+7. **Table header/list continuation:** carry exact parent/header refs across packet boundaries; missing parent/header means OPAQUE/UNMAPPED, not inferred structure.
+
+The compact classifier emits cue candidates only. Core applies the typed algorithm and preserves alternative parses where more than one binding is valid.
+
+## 19. Source sequencer and causal commit protocol
+
+### 19.1 Packet lifecycle
+
+RECEIVED -> ACCEPTED -> READY -> INFERENCE_RUNNING -> PROPOSED -> VALIDATED -> COMMITTED
+
+Side states: DUPLICATE, READY_BUT_BLOCKED, NEEDS_REBASE, DEFERRED, REJECTED, FAILED_RETRYABLE.
+
+A packet may be inference-complete while blocked from integration. COMMITTED means its Delta passed current Core validation and its source-order preconditions.
+
+### 19.2 Per-source sequencing
+
+Maintain (source_id, source_generation, next_expected_sequence, committed_watermark, gap_set). Sequence assignment is performed by the Adapter/source ingestion boundary and is immutable within a source generation. A source correction starts a new revision lineage or generation; it does not recycle an old sequence.
+
+A packet is integration-eligible when:
+- its source generation is current or explicitly accepted as historical;
+- all required predecessor ranges are committed, explicitly skipped by an authorized gap record, or proven commutative;
+- its source digest and offsets validate;
+- its ContextHint has been revalidated for the current Core state.
+
+### 19.3 Parallel inference
+
+The scheduler may execute packets N, N+1, N+2 concurrently. If N+2 completes first, its proposal is stored as PROPOSED/READY_BUT_BLOCKED. Core commits N, then N+1, then N+2, subject to revalidation after each state transition. This allows a later utterance to resolve a pronoun or scope in an earlier one without allowing it to become the cause of an earlier commit.
+
+Cross-source parallelism is allowed. Cross-source dependencies are handled by Dependency reconciliation and transaction version checks, not by imposing a global total order on unrelated sources.
+
+### 19.4 Rebase protocol
+
+On STATE_VERSION_CONFLICT:
+1. retain immutable proposal and original base version;
+2. fetch current State Version and required ContextHint;
+3. compare proposal read-set with intervening writes;
+4. if disjoint and policy allows, regenerate Delta and re-run validation;
+5. otherwise mark NEEDS_REBASE/DEFERRED and request new inference or Core lookup;
+6. never overwrite base_state_version without recording a rebase event.
+
+### 19.5 Deterministic tie-break
+
+For proposals with identical source sequence and overlapping source ranges, use this order: explicit source revision sequence; source-native block order; adapter-defined stable subrange order; then stable packet ID lexical order as final deterministic tie-break. This order does not resolve semantic contradictions; it only makes integration deterministic.
+
+## 20. ContextHint budget algorithm
+
+### 20.1 Candidate classes
+
+Mandatory candidate classes:
+- unresolved ScopeSpan continuation refs intersecting packet source range;
+- active Question Aspects triggered by packet source/target;
+- active Dependency prerequisites/dependents whose trigger predicate is true;
+- exact source lineage and revision refs required for provenance;
+- explicit active Focus and Scope policy refs.
+
+Optional classes:
+- related Cluster candidates;
+- historical analogues;
+- non-triggered dependencies;
+- low-priority Entity/Claim candidates.
+
+### 20.2 Selection
+
+1. Deduplicate refs by canonical record identity.
+2. Add mandatory refs in deterministic priority order: direct scope continuation; triggered Question Aspect; triggered Dependency; lineage/provenance; explicit Focus/Scope.
+3. If mandatory refs exceed budget, select only the prefix that fits and issue a RetrievalTicket for the full omitted set.
+4. Fill remaining capacity with optional refs ordered by policy score, then stable ID.
+5. Record included_ref_digest, omitted_ref_digest, omitted_mandatory_count, omitted_optional_count, truncated, retrieval_ticket_refs.
+6. A classifier must receive context_complete=false whenever a mandatory ref was omitted.
+
+No rank score may be interpreted as truth confidence. The Core retains full graph refs and exact omitted query criteria.
+
+### 20.3 RetrievalTicket lifecycle
+
+ISSUED -> RESOLVED | EXPIRED | SUPERSEDED. Resolution is idempotent and bound to Context, packet, source range, state version and policy. If state version changes, Core either re-evaluates the ticket query at the new version or returns STALE_TICKET; it never silently returns the old result as current.
+
+The proposal may request lookup by ticket and candidate span. Core returns exact refs, retrieval reasons, state version and completeness. It then validates the candidate using current authoritative state. The model cannot fetch arbitrary cross-context records through a ticket.
+
+## 21. Quality gates and selective prediction
+
+### 21.1 Required metrics
+
+For every label family and critical scope class, report:
+- precision, recall, F1 and confusion matrix;
+- macro and micro aggregate;
+- coverage = non-abstained eligible examples / all eligible examples;
+- abstention rate, plus abstention on reference-classifiable examples;
+- selective risk at fixed coverage points;
+- false-negative rate for negation, condition, modality, contrast, quote attribution, temporal role and reference binding;
+- semantic projection agreement: EXACT/EQUIVALENT divided by evaluated cases;
+- explicit DEFERRED/UNMAPPED/INCOMPARABLE/CONFLICTING counts.
+
+### 21.2 Pre-registered gates
+
+Before evaluation, the Benchmark Profile MUST declare minimum overall coverage, minimum coverage for critical labels, maximum selective risk, minimum per-label recall and acceptable semantic projection agreement. Thresholds are workload-specific; there is no universal numeric threshold in the framework specification.
+
+A benchmark cannot pass if thresholds are selected after observing test outcomes. Report both the measured result and the exact threshold profile digest.
+
+### 21.3 Independent gates
+
+- Semantic gate: zero invariant violations, no silent omission, no duplicate Evidence/Units, and all required semantic quality thresholds met.
+- Performance gate: declared end-to-end RTF, latency, throughput, queue stability and memory thresholds met.
+- Overall: both gates pass on the same immutable corpus/profile, or overall result is NOT_CONFORMANT.
+
+### 21.4 New thought-experiment fixtures
+
+| ID | Input pattern | Required result |
+|---|---|---|
+| D01 | Negation cue at end of packet, predicate in next packet | OPEN ScopeSpan; later close with exact anchors |
+| D02 | Condition marker and consequent split | no unconditional Claim before binding |
+| D03 | Modality cue separated from predicate | preserve modality; abstain if binding ambiguous |
+| D04 | Concession spans packet boundary | preserve both propositions and contrast relation |
+| D05 | Pronoun antecedent in earlier packet | candidate refs; no forced Entity merge |
+| D06 | Quote closes in next packet | attribution remains separate from author stance |
+| D07 | N+2 inference completes before N | N+2 remains READY_BUT_BLOCKED |
+| D08 | Source sequence gap with later packet ready | watermark does not advance; gap visible |
+| D09 | Mandatory ContextHint refs exceed budget | ticket created; affected labels abstain/defer |
+| D10 | State changes after RetrievalTicket issued | stale ticket re-evaluated or rejected |
+| D11 | Model abstains on nearly all inputs | quality gate fails despite low RTF |
+| D12 | Same source range delivered in overlapping micro-batches | one Evidence lineage and deterministic commit |
+
+All D01-D12 are design-level fixtures until executable tests exist.
