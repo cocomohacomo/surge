@@ -80,6 +80,6 @@ surge_adapter/recognition_scoring.py. It validates six independent dimensions
 returns ACCEPT/REVIEW/ABSTAIN, and never commits Core state. Importance is not
 confidence. The v0.1 priority score is importance-only; no composite formula
 is normative until calibration and selective-risk benchmarking exist. Fifty
-manually scored Japanese cases are executable regression tests. They validate
+assistant-scored Japanese cases are executable regression tests. They validate
 deterministic scoring policy and schema shape, not model accuracy or full
 semantic Core integration.
