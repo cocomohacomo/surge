@@ -1,0 +1,521 @@
+{
+  "suite": "SURGE-v0.9-D01-D12",
+  "schema_version": "0.9.0",
+  "test_type": "executable-oriented-conformance-fixtures",
+  "offset_basis": "UTF-8 byte offsets in immutable NFC-normalized source",
+  "digest_algorithm": "SHA-256",
+  "note": "fixture_generator MUST compute source_range_digest and exact byte offsets from source_text; expected values are normative; these fixtures are not yet executed against a Core implementation.",
+  "cases": [
+    {
+      "id": "D01",
+      "case_id": "negation_scope_cross_packet",
+      "title": "否定作用域の継続",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "OPEN"
+      },
+      "packets": [
+        {
+          "packet_id": "negation_scope_cross_packet-p1",
+          "source_sequence": 1,
+          "source_text": "この申請は、承認しない",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "negation_scope_cross_packet-p2",
+          "source_sequence": 2,
+          "source_text": "場合を除き、受理する",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "NEGATION",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "scope_closed_with_exact_target",
+        "forbidden": "SCOPE_SPAN_TRANSITION_INVALID",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D02",
+      "case_id": "condition_consequent_split",
+      "title": "条件と帰結の分割",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "UNRESOLVED"
+      },
+      "packets": [
+        {
+          "packet_id": "condition_consequent_split-p1",
+          "source_sequence": 1,
+          "source_text": "予算が確保できた場合に",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "condition_consequent_split-p2",
+          "source_sequence": 2,
+          "source_text": "事業を開始する",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "CONDITION",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "no_unconditional_claim_before_closure",
+        "forbidden": "SCOPE_CONTINUATION_UNRESOLVED",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D03",
+      "case_id": "modality_cross_packet",
+      "title": "様相の継続",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "OPEN"
+      },
+      "packets": [
+        {
+          "packet_id": "modality_cross_packet-p1",
+          "source_sequence": 1,
+          "source_text": "来年度から実施する可能性が",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "modality_cross_packet-p2",
+          "source_sequence": 2,
+          "source_text": "ある",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "MODALITY",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "modality= POSSIBILITY; factuality != FACT",
+        "forbidden": "SCOPE_SPAN_ANCHOR_INVALID",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D04",
+      "case_id": "concession_contrast_split",
+      "title": "譲歩・対比",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "OPEN"
+      },
+      "packets": [
+        {
+          "packet_id": "concession_contrast_split-p1",
+          "source_sequence": 1,
+          "source_text": "費用は増加するものの",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "concession_contrast_split-p2",
+          "source_sequence": 2,
+          "source_text": "長期的には効率化できる",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "CONCESSION",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "both_claims_preserved_and_relation_linked",
+        "forbidden": "SCOPE_SPAN_TRANSITION_INVALID",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D05",
+      "case_id": "coreference_prior_packet",
+      "title": "先行詞と照応",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "UNRESOLVED"
+      },
+      "packets": [
+        {
+          "packet_id": "coreference_prior_packet-p1",
+          "source_sequence": 1,
+          "source_text": "A社が新しいシステムを導入した",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "coreference_prior_packet-p2",
+          "source_sequence": 2,
+          "source_text": "同社は運用を開始した",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "COREFERENCE",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "antecedent_ref=A社; entity_merge_requires_separate_core_validation",
+        "forbidden": "SCOPE_CONTINUATION_UNRESOLVED",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D06",
+      "case_id": "quotation_attribution_split",
+      "title": "引用帰属の継続",
+      "preconditions": {
+        "context_state_version": 10,
+        "source_generation": "g1",
+        "source_sequences": [
+          1,
+          2
+        ],
+        "max_packet_bytes": 256,
+        "initial_state": "OPEN"
+      },
+      "packets": [
+        {
+          "packet_id": "quotation_attribution_split-p1",
+          "source_sequence": 1,
+          "source_text": "担当者は「計画を見直す",
+          "finalization": "CONTINUATION",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        },
+        {
+          "packet_id": "quotation_attribution_split-p2",
+          "source_sequence": 2,
+          "source_text": "必要がある」と述べた",
+          "finalization": "FINAL",
+          "context_hint": {
+            "state_version": 10,
+            "context_complete": true
+          }
+        }
+      ],
+      "proposal": {
+        "scope_kind": "QUOTATION",
+        "proposal_order": "source_sequence_order",
+        "producer_output": "candidate_only"
+      },
+      "expected": {
+        "final_scope_status": "CLOSED",
+        "assertion": "quoted_stance_separate_from_author_stance",
+        "forbidden": "SCOPE_SPAN_ANCHOR_INVALID",
+        "delta_atomic": true,
+        "duplicate_evidence_count": 0
+      },
+      "replay": {
+        "same_idempotency_key_same_payload": "same_logical_result",
+        "same_key_changed_payload": "IDEMPOTENCY_KEY_REUSED"
+      },
+      "verification": [
+        "scope_state_transition",
+        "anchor_bounds_and_digest",
+        "claim_projection",
+        "invariant_zero",
+        "event_log_replay_digest_equal"
+      ]
+    },
+    {
+      "id": "D07",
+      "case_id": "inference_completion_order_reversal",
+      "preconditions": {
+        "source_sequences": [
+          1,
+          2,
+          3
+        ],
+        "all_packets_received": true
+      },
+      "completion_order": [
+        3,
+        2,
+        1
+      ],
+      "expected": {
+        "integration_order": [
+          1,
+          2,
+          3
+        ],
+        "packet_3_status_before_predecessors": "READY_BUT_BLOCKED",
+        "source_order_violations": 0
+      },
+      "verification": [
+        "packet_status",
+        "commit_log_sequence",
+        "replay_digest"
+      ]
+    },
+    {
+      "id": "D08",
+      "case_id": "source_sequence_gap",
+      "preconditions": {
+        "source_sequences_received": [
+          10,
+          12
+        ],
+        "committed_watermark": 9
+      },
+      "expected": {
+        "gap_sequences": [
+          11
+        ],
+        "packet_12_status": "BLOCKED_BY_GAP",
+        "committed_watermark": 10
+      },
+      "errors": {
+        "unauthorized_skip": "GAP_SKIP_UNAUTHORIZED",
+        "skip_non_gap": "SOURCE_SEQUENCE_NOT_GAP"
+      },
+      "verification": [
+        "gap_record",
+        "watermark_contiguity",
+        "audit_log"
+      ]
+    },
+    {
+      "id": "D09",
+      "case_id": "mandatory_context_hint_overflow",
+      "preconditions": {
+        "max_candidate_refs": 2,
+        "mandatory_refs": [
+          "scope:1",
+          "question:1",
+          "dependency:1",
+          "lineage:1"
+        ]
+      },
+      "expected": {
+        "context_complete": false,
+        "omitted_mandatory_count": 2,
+        "retrieval_ticket_count": 1,
+        "affected_decision": "ABSTAIN_OR_DEFER"
+      },
+      "verification": [
+        "included_omitted_digest",
+        "ticket_query_replay",
+        "no_optional_eviction_of_mandatory"
+      ]
+    },
+    {
+      "id": "D10",
+      "case_id": "retrieval_ticket_state_version_change",
+      "preconditions": {
+        "ticket_state_version": 10,
+        "current_state_version": 11
+      },
+      "expected": {
+        "ticket_resolution": [
+          "RE_EVALUATED_AT_11",
+          "STALE"
+        ],
+        "old_result_reused": false
+      },
+      "verification": [
+        "resolved_state_version",
+        "ticket_status",
+        "authorization_scope"
+      ]
+    },
+    {
+      "id": "D11",
+      "case_id": "excessive_abstention_quality_gate",
+      "preconditions": {
+        "eligible_examples": 100,
+        "accepted_examples": 1,
+        "abstained_examples": 99,
+        "minimum_coverage": 0.5
+      },
+      "expected": {
+        "coverage": 0.01,
+        "semantic_gate": "FAIL",
+        "reason": "MINIMUM_COVERAGE_NOT_MET",
+        "abstention_is_correct_prediction": false
+      },
+      "verification": [
+        "coverage_denominator",
+        "gate_reason",
+        "profile_digest"
+      ]
+    },
+    {
+      "id": "D12",
+      "case_id": "overlapping_packet_evidence_deduplication",
+      "preconditions": {
+        "same_source_generation": "g1",
+        "overlapping_ranges": [
+          [
+            0,
+            20
+          ],
+          [
+            10,
+            30
+          ]
+        ]
+      },
+      "expected": {
+        "shared_range_evidence_count": 1,
+        "duplicate_units": 0,
+        "duplicate_commits": 0
+      },
+      "verification": [
+        "canonical_range_key",
+        "evidence_lineage",
+        "idempotent_retry",
+        "replay_digest"
+      ]
+    }
+  ]
+}

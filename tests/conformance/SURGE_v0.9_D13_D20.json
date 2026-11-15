@@ -1,0 +1,142 @@
+{
+  "suite": "SURGE-v0.9-D13-D20",
+  "schema_version": "0.9.0",
+  "test_type": "executable-oriented-conformance-fixtures",
+  "cases": [
+    {
+      "id": "D13",
+      "case_id": "authorized_gap_skip",
+      "request": {
+        "sequence": 11,
+        "reason_code": "SOURCE_CONFIRMED_LOSS",
+        "actor_capability": "SOURCE_GAP_SKIP",
+        "policy_version": "current",
+        "idempotency_key": "skip-11"
+      },
+      "expected": {
+        "gap_status": "AUTHORIZED_SKIP",
+        "watermark_advances_only_if_contiguous": true,
+        "audit_record_count": 1
+      }
+    },
+    {
+      "id": "D14",
+      "case_id": "unauthorized_gap_skip",
+      "request": {
+        "sequence": 11,
+        "reason_code": "",
+        "actor_capability": "NONE"
+      },
+      "expected": {
+        "error": "GAP_SKIP_UNAUTHORIZED",
+        "watermark_unchanged": true,
+        "audit_record_count": 0
+      }
+    },
+    {
+      "id": "D15",
+      "case_id": "late_packet_after_authorized_skip",
+      "preconditions": {
+        "sequence": 11,
+        "status": "AUTHORIZED_SKIP",
+        "later_sequence_committed": true
+      },
+      "input": {
+        "sequence": 11,
+        "source_range_digest": "computed-by-fixture-generator"
+      },
+      "expected": {
+        "packet_retained": true,
+        "skip_audit_preserved": true,
+        "gap_status": "REOPENED",
+        "bounded_reconciliation": true
+      }
+    },
+    {
+      "id": "D16",
+      "case_id": "same_range_same_digest_retry",
+      "preconditions": {
+        "range_key": "K",
+        "digest": "D",
+        "evidence_refs": [
+          "E1"
+        ]
+      },
+      "retry": {
+        "range_key": "K",
+        "digest": "D"
+      },
+      "expected": {
+        "duplicate": true,
+        "evidence_refs": [
+          "E1"
+        ],
+        "new_evidence_count": 0
+      }
+    },
+    {
+      "id": "D17",
+      "case_id": "same_range_different_digest",
+      "preconditions": {
+        "range_key": "K",
+        "digest": "D1"
+      },
+      "retry": {
+        "range_key": "K",
+        "digest": "D2"
+      },
+      "expected": {
+        "error": "RANGE_CONTENT_CONFLICT",
+        "new_evidence_count": 0
+      }
+    },
+    {
+      "id": "D18",
+      "case_id": "explicit_append_only_source_revision",
+      "preconditions": {
+        "range_key": "K",
+        "digest": "D1",
+        "revision_sequence": 1
+      },
+      "input": {
+        "range_key": "K",
+        "digest": "D2",
+        "revision_sequence": 2,
+        "revision_of_ref": "old-snapshot"
+      },
+      "expected": {
+        "old_record_mutated": false,
+        "new_revision_appended": true,
+        "impact_set_bounded": true
+      }
+    },
+    {
+      "id": "D19",
+      "case_id": "zero_denominator_quality_gate",
+      "preconditions": {
+        "critical_label": "NEGATION",
+        "eligible_count": 0
+      },
+      "expected": {
+        "gate": "INCONCLUSIVE",
+        "reason": "ZERO_ELIGIBLE_DENOMINATOR",
+        "pass": false
+      }
+    },
+    {
+      "id": "D20",
+      "case_id": "benchmark_profile_immutable",
+      "preconditions": {
+        "profile_registered": true,
+        "profile_digest": "original"
+      },
+      "mutation": {
+        "threshold": "changed-after-results"
+      },
+      "expected": {
+        "error": "BENCHMARK_PROFILE_IMMUTABLE",
+        "original_digest_unchanged": true
+      }
+    }
+  ]
+}
