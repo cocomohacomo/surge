@@ -88,6 +88,29 @@ class PacketAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(PacketRejected, "REVISION_LINEAGE_REQUIRED"):
             adapter.admit(packet, "abc")
 
+
+    def test_changed_range_content_conflicts(self):
+        adapter = RecognitionPacketAdapter()
+        adapter.admit(packet_for("abc"), "abc")
+        changed = packet_for("abd", packet_id="p2", sequence=2, idem="i2")
+        with self.assertRaisesRegex(PacketRejected, "RANGE_CONTENT_CONFLICT"):
+            adapter.admit(changed, "abd")
+
+    def test_revision_is_append_only_and_chained(self):
+        adapter = RecognitionPacketAdapter()
+        original = packet_for("abc")
+        adapter.admit(original, "abc")
+        revision = packet_for("abd", packet_id="p2", sequence=2, idem="i2")
+        revision["finalization"] = "REVISION"
+        revision["source_position"]["source_revision_sequence"] = 1
+        revision["source_position"]["revision_of_ref"] = "p1"
+        self.assertEqual(adapter.admit(revision, "abd").status, "REVISION_ADMITTED")
+        revision2 = packet_for("abe", packet_id="p3", sequence=3, idem="i3")
+        revision2["finalization"] = "REVISION"
+        revision2["source_position"]["source_revision_sequence"] = 2
+        revision2["source_position"]["revision_of_ref"] = "p2"
+        self.assertEqual(adapter.admit(revision2, "abe").status, "REVISION_ADMITTED")
+
     def test_out_of_bounds_range_rejected(self):
         adapter = RecognitionPacketAdapter()
         packet = packet_for("abc")
