@@ -48,7 +48,7 @@ typedef struct SurgeScopeSpanInput {
   const char* parent_ref;
   const char* const* packet_refs;
   size_t packet_count;
-};
+} SurgeScopeSpanInput;
 
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
