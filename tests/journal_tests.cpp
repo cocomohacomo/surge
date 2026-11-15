@@ -47,7 +47,7 @@ int main() {
   }
   {
     std::ofstream out(path, std::ios::binary | std::ios::app);
-    out.put('\\x10'); out.put('\\x00'); // deliberately truncated frame length
+    out.put(static_cast<char>(16)); out.put(static_cast<char>(0)); // deliberately truncated frame length
   }
   {
     EventJournal recovered(path);
