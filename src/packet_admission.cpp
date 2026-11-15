@@ -1,6 +1,7 @@
 #include "surge/packet_admission.hpp"
 
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -39,6 +40,7 @@ std::string PacketAdmissionCoordinator::encode(
       << p.start_offset << ' ' << p.end_offset << ' ' << p.source_sequence << ' '
       << std::quoted(p.source_range_digest) << ' '
       << std::quoted(p.canonical_request_digest) << ' '
+      << std::quoted(p.revision_of_packet_id) << ' '
       << (p.revision ? 1 : 0) << ' ' << p.revision_sequence;
   return out.str();
 }
@@ -54,7 +56,8 @@ bool PacketAdmissionCoordinator::decode(
         >> std::quoted(p.source_generation) >> std::quoted(p.block_ref)
         >> std::quoted(p.offset_basis) >> p.start_offset >> p.end_offset
         >> p.source_sequence >> std::quoted(p.source_range_digest)
-        >> std::quoted(p.canonical_request_digest) >> revision
+        >> std::quoted(p.canonical_request_digest)
+        >> std::quoted(p.revision_of_packet_id) >> revision
         >> p.revision_sequence)) return false;
   std::string extra;
   if (in >> extra) return false;
@@ -72,9 +75,17 @@ bool PacketAdmissionCoordinator::apply_recovered(
   const auto skey = stream_key(p);
   auto& state = streams_[skey];
   const auto rkey = range_key(p);
+  const auto latest = state.range_latest_packets.find(rkey);
+  if (p.revision) {
+    if (latest == state.range_latest_packets.end() ||
+        p.revision_of_packet_id != latest->second) return false;
+  } else if (!p.revision_of_packet_id.empty()) {
+    return false;
+  }
   const auto range = state.ranges.ingest(rkey, p.source_range_digest,
       p.idempotency_key, p.revision, p.revision_sequence);
   if (!range.error.empty()) return false;
+  state.range_latest_packets[rkey] = p.packet_id;
   auto seq = state.sequence_packets.find(p.source_sequence);
   if (seq != state.sequence_packets.end() && seq->second != p.packet_id)
     return false;
@@ -117,8 +128,9 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
       p.source_id.empty() || p.source_generation.empty() || p.block_ref.empty() ||
       p.source_range_digest.size() != 64 || p.canonical_request_digest.empty() ||
       p.offset_basis != "UTF8_BYTE_NFC" || p.end_offset <= p.start_offset ||
-      p.source_sequence == 0 || (p.revision && p.revision_sequence == 0) ||
-      (!p.revision && p.revision_sequence != 0)) {
+      p.source_sequence == 0 || p.source_sequence == std::numeric_limits<std::uint64_t>::max() ||
+      (p.revision && (p.revision_sequence == 0 || p.revision_of_packet_id.empty())) ||
+      (!p.revision && (p.revision_sequence != 0 || !p.revision_of_packet_id.empty()))) {
     result.error = "PACKET_CORE_INVARIANT_FAILED"; return result;
   }
 
@@ -147,13 +159,28 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   auto old_stream = streams_.find(skey);
   if (old_stream != streams_.end()) staged = old_stream->second;
 
+  if (p.source_sequence > staged.sequencer.watermark() &&
+      p.source_sequence - staged.sequencer.watermark() > 4096) {
+    result.error = "SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT"; return result;
+  }
   const auto sequence = staged.sequence_packets.find(p.source_sequence);
   if (sequence != staged.sequence_packets.end() && sequence->second != p.packet_id) {
     result.error = "SOURCE_SEQUENCE_REUSED"; return result;
   }
-  const auto range = staged.ranges.ingest(range_key(p), p.source_range_digest,
+  const auto rkey = range_key(p);
+  const auto latest = staged.range_latest_packets.find(rkey);
+  if (p.revision) {
+    if (latest == staged.range_latest_packets.end() ||
+        p.revision_of_packet_id != latest->second) {
+      result.error = "REVISION_TARGET_MISMATCH"; return result;
+    }
+  } else if (!p.revision_of_packet_id.empty()) {
+    result.error = "REVISION_FIELDS_REQUIRE_REVISION_PACKET"; return result;
+  }
+  const auto range = staged.ranges.ingest(rkey, p.source_range_digest,
       p.idempotency_key, p.revision, p.revision_sequence);
   if (!range.error.empty()) { result.error = range.error; return result; }
+  staged.range_latest_packets[rkey] = p.packet_id;
 
   staged.sequence_packets[p.source_sequence] = p.packet_id;
   staged.sequencer.observe(p.source_sequence);
