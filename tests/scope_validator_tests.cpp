@@ -25,25 +25,25 @@ int main(){
     assert(r.accepted&&r.status==ScopeStatus::Closed&&r.effect==ScopeEffect::NegatedClaim&&!r.may_emit_unconditional_claim);
   }
   {
-    auto s=make(ScopeKind::Condition,"if",14);s.target_refs={"c1","c2"};
+    auto s=make(ScopeKind::Condition,"if",12);s.target_refs={"c1","c2"};
     auto open=ScopeSpanValidator::validate(s,source,nodes);
     assert(open.accepted&&open.status==ScopeStatus::Unresolved);
-    s.closer=anchor("close",digest,"approve",22,"p2");
+    s.closer=anchor("close",digest,"approve",26,"p2");
     auto closed_result=ScopeSpanValidator::validate(s,source,nodes);
     assert(closed_result.accepted&&closed_result.status==ScopeStatus::Closed&&!closed_result.may_emit_unconditional_claim);
   }
   {
-    auto s=make(ScopeKind::Modality,"may",25);s.target_refs={"c1"};s.modality_kind="POSSIBILITY";
+    auto s=make(ScopeKind::Modality,"may",22);s.target_refs={"c1"};s.modality_kind="POSSIBILITY";
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ModalityQualified);
   }
   {
-    auto s=make(ScopeKind::Concession,"although",35);s.target_refs={"c1","c2"};
-    s.closer=anchor("close",digest,"approve",48,"p2");
+    auto s=make(ScopeKind::Concession,"although",34);s.target_refs={"c1","c2"};
+    s.closer=anchor("close",digest,"approve",55,"p2");
     assert(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Closed);
   }
   {
-    auto s=make(ScopeKind::Contrast,"but",52);s.target_refs={"c1","c2"};
-    s.closer=anchor("close",digest,"approve",56,"p2");
+    auto s=make(ScopeKind::Contrast,"but",51);s.target_refs={"c1","c2"};
+    s.closer=anchor("close",digest,"approve",55,"p2");
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ContrastRelation);
   }
   {
@@ -59,20 +59,20 @@ int main(){
   }
   {
     auto s=make(ScopeKind::Quotation,"said",66);
-    s.closer=anchor("close",digest,"yes",74,"p2");
+    s.closer=anchor("close",digest,"yes",72,"p2");
     s.attribution_ref="entity1";
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::QuotationEvidence);
   }
   {
-    auto s=make(ScopeKind::Temporal,"in",78);s.target_refs={"c1"};s.temporal_role="VALID_FROM";
+    auto s=make(ScopeKind::Temporal,"in",77);s.target_refs={"c1"};s.temporal_role="VALID_FROM";
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TemporalQualifier);
   }
   {
-    auto s=make(ScopeKind::ListContinuation,"item",87);s.parent_ref="list-1";
+    auto s=make(ScopeKind::ListContinuation,"item",85);s.parent_ref="list-1";
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::StructuralContinuation);
   }
   {
-    auto s=make(ScopeKind::TableHeader,"header",92);s.parent_ref="table-column-1";
+    auto s=make(ScopeKind::TableHeader,"header",90);s.parent_ref="table-column-1";
     assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TableHeaderScope);
   }
   {
