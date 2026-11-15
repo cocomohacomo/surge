@@ -188,3 +188,73 @@ class ContextRetriever:
                 raise PacketRejected(message or "CONTEXT_RETRIEVAL_FAILED")
             capacity = required.value
         raise PacketRejected("RETRIEVAL_RESPONSE_TOO_LARGE")
+
+
+    def build_hint_from_graph(self, context_id: str, packet_ref: str,
+                              source_range_digest: str, policy_version: str,
+                              query: str, reference_budget: int,
+                              limit: int = 100) -> dict[str, Any]:
+        """Derive ContextHint candidates from persisted graph search results.
+
+        This first automatic policy is deliberately conservative: it only
+        promotes records whose graph type/status/relation is observable in the
+        retrieval response. It does not infer focus or dependency activation
+        from text alone.
+        """
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("CONTEXT_HINT_GRAPH_QUERY_INVALID")
+        result = self.search(query, limit=limit)
+        candidates: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def add(ref: str, kind: str, score: int = 0, depth: int = 0) -> None:
+            if not ref or ref in seen:
+                return
+            seen.add(ref)
+            candidates.append({
+                "ref": ref, "kind": kind,
+                "source_overlap": max(0, int(score)),
+                "dependency_depth": max(0, int(depth)),
+            })
+
+        for item in result.get("items", []):
+            ref = item.get("id")
+            kind = item.get("kind")
+            score = item.get("score", 0)
+            if not isinstance(ref, str) or not ref:
+                continue
+            if kind == "SCOPE_SPAN":
+                if item.get("status") == "UNRESOLVED":
+                    add(ref, "OPEN_SCOPE", score)
+                continue
+            if kind == "QUESTION_ASPECT":
+                add(ref, "REQUIRED_QUESTION_ASPECT", score)
+            elif kind == "DEPENDENCY":
+                relations = item.get("relations", [])
+                if any(rel.get("kind") == "DEPENDS_ON" for rel in relations):
+                    add(ref, "TRIGGERED_DEPENDENCY", score)
+                else:
+                    add(ref, "LOW_PRIORITY", score)
+            elif kind in {"CLAIM", "EVIDENCE"}:
+                relations = item.get("relations", [])
+                lineage = {"SUPPORTS", "CONTRADICTS", "AGREES_WITH", "CONFLICTS_WITH"}
+                if any(rel.get("kind") in lineage for rel in relations):
+                    add(ref, "REQUIRED_LINEAGE", score)
+                else:
+                    add(ref, "LOW_PRIORITY", score)
+            elif kind == "CLUSTER":
+                add(ref, "RELATED_CLUSTER", score)
+            else:
+                add(ref, "LOW_PRIORITY", score)
+            for relation in item.get("relations", []):
+                related_ref = relation.get("ref")
+                if isinstance(related_ref, str):
+                    add(related_ref, "LOW_PRIORITY", score)
+
+        return self.build_hint(
+            context_id=context_id, packet_ref=packet_ref,
+            source_range_digest=source_range_digest,
+            policy_version=policy_version,
+            state_version=int(result.get("state_version", self._core.state_version)),
+            candidates=candidates, reference_budget=reference_budget,
+        )
