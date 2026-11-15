@@ -1,0 +1,2274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:core:0.6.0",
+  "title": "SURGE v0.6 Core Data Contract",
+  "description": "SURGE v0.6 JSON Schema; cross-record Aspect aggregation, clock synchronization, identity separation and lifecycle rules are enforced by Core Validator.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/inputEvent"
+    },
+    {
+      "$ref": "#/$defs/evidence"
+    },
+    {
+      "$ref": "#/$defs/interpretation"
+    },
+    {
+      "$ref": "#/$defs/semanticUnit"
+    },
+    {
+      "$ref": "#/$defs/entity"
+    },
+    {
+      "$ref": "#/$defs/cluster"
+    },
+    {
+      "$ref": "#/$defs/relation"
+    },
+    {
+      "$ref": "#/$defs/dependency"
+    },
+    {
+      "$ref": "#/$defs/question"
+    },
+    {
+      "$ref": "#/$defs/interest"
+    },
+    {
+      "$ref": "#/$defs/focus"
+    },
+    {
+      "$ref": "#/$defs/stateDelta"
+    },
+    {
+      "$ref": "#/$defs/contextState"
+    },
+    {
+      "$ref": "#/$defs/proposal"
+    },
+    {
+      "$ref": "#/$defs/sourceLineage"
+    },
+    {
+      "$ref": "#/$defs/trustAssessment"
+    },
+    {
+      "$ref": "#/$defs/reconciliationJob"
+    },
+    {
+      "$ref": "#/$defs/snapshot"
+    },
+    {
+      "$ref": "#/$defs/questionAspect"
+    },
+    {
+      "$ref": "#/$defs/observationFrame"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timeValue": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "KNOWN",
+            "UNKNOWN"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "source_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "inputEvent": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_position": {
+          "type": "string"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "event_time": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "type": "string"
+        },
+        "payload_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_status": {
+          "type": "string",
+          "enum": [
+            "PARTIAL",
+            "FINAL",
+            "REVISION",
+            "RETRACTION"
+          ]
+        },
+        "speaker_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "input_position": {
+          "type": "string"
+        },
+        "causal_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "supersedes_event_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "locale": {
+          "type": "string"
+        },
+        "adapter_metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "correction_kind": {
+          "type": "string",
+          "enum": [
+            "AMEND",
+            "SUPERSEDE",
+            "RETRACT",
+            "CLARIFY"
+          ]
+        },
+        "revision_group_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "revision_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clarifies_event_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "source_id",
+        "observed_at",
+        "content_type",
+        "idempotency_key",
+        "input_status"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "source_sequence"
+              ]
+            },
+            {
+              "required": [
+                "source_position"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "content"
+              ]
+            },
+            {
+              "required": [
+                "payload_ref"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "evidence_id": {
+          "$ref": "#/$defs/id"
+        },
+        "event_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "evidence_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_lineage_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "derived_from_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "integrity_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validity_status": {
+          "type": "string",
+          "enum": [
+            "VALID",
+            "PROVISIONAL",
+            "DISPUTED",
+            "INVALIDATED",
+            "UNKNOWN"
+          ]
+        },
+        "content_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "content": {
+          "type": "string"
+        },
+        "source_range": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "evidence_id",
+        "event_refs",
+        "evidence_kind",
+        "observed_at",
+        "integrity_digest",
+        "validity_status"
+      ],
+      "additionalProperties": false
+    },
+    "confidenceRecord": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "calibration_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "evaluated_at": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "assessment_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "scale",
+        "evaluated_at"
+      ],
+      "additionalProperties": false
+    },
+    "interpretation": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "interpretation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "hypothesis": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "interpretation_status": {
+          "type": "string",
+          "enum": [
+            "CANDIDATE",
+            "PROVISIONAL",
+            "ACCEPTED",
+            "SUPERSEDED",
+            "REJECTED",
+            "NEEDS_REEVALUATION"
+          ]
+        },
+        "confidence_record": {
+          "$ref": "#/$defs/confidenceRecord"
+        },
+        "producer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "model_or_rule_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supersedes_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "alternative_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "interpretation_id",
+        "evidence_refs",
+        "hypothesis",
+        "interpretation_status",
+        "confidence_record",
+        "producer_id",
+        "model_or_rule_version"
+      ],
+      "additionalProperties": false
+    },
+    "semanticUnit": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "unit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "semantic_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject": {
+          "$ref": "#/$defs/id"
+        },
+        "predicate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object": {},
+        "polarity": {
+          "type": "string",
+          "enum": [
+            "POSITIVE",
+            "NEGATIVE",
+            "UNKNOWN"
+          ]
+        },
+        "modality": {
+          "type": "string",
+          "enum": [
+            "FACT",
+            "PLAN",
+            "INTENTION",
+            "PREFERENCE",
+            "HYPOTHESIS",
+            "QUESTION",
+            "COUNTERFACTUAL",
+            "UNKNOWN"
+          ]
+        },
+        "temporal_scope": {
+          "$ref": "#/$defs/temporalScope"
+        },
+        "context_scope": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "interpretation_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PROPOSED",
+            "PROVISIONAL",
+            "ACTIVE",
+            "DISPUTED",
+            "SUPERSEDED",
+            "INVALIDATED",
+            "ARCHIVED"
+          ]
+        },
+        "claim_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalization_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_fingerprint": {
+          "$ref": "#/$defs/semanticFingerprint"
+        }
+      },
+      "required": [
+        "schema_version",
+        "unit_id",
+        "semantic_type",
+        "evidence_refs",
+        "interpretation_refs",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "temporalScope": {
+      "type": "object",
+      "properties": {
+        "valid_from": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "valid_until": {
+          "$ref": "#/$defs/timeValue"
+        },
+        "description": {
+          "type": "string"
+        },
+        "interval_convention": {
+          "type": "string",
+          "enum": [
+            "HALF_OPEN",
+            "POINT",
+            "UNKNOWN"
+          ]
+        },
+        "precision": {
+          "type": "string",
+          "enum": [
+            "MILLISECOND",
+            "SECOND",
+            "MINUTE",
+            "HOUR",
+            "DAY",
+            "MONTH",
+            "YEAR",
+            "UNKNOWN"
+          ]
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "entity_id": {
+          "$ref": "#/$defs/id"
+        },
+        "entity_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonical_reference": {
+          "type": "string"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "identity_status": {
+          "type": "string",
+          "enum": [
+            "UNRESOLVED",
+            "PROVISIONAL",
+            "CONFIRMED",
+            "DISTINCT",
+            "MERGED",
+            "SPLIT"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "temporal_scope": {
+          "$ref": "#/$defs/temporalScope"
+        },
+        "lineage_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "entity_id",
+        "entity_type",
+        "identity_status",
+        "evidence_refs"
+      ],
+      "additionalProperties": false
+    },
+    "cluster": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "cluster_id": {
+          "$ref": "#/$defs/id"
+        },
+        "cluster_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_cluster_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "member_unit_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "child_cluster_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "cluster_status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "DORMANT",
+            "ARCHIVED",
+            "MERGED",
+            "SPLIT"
+          ]
+        },
+        "lineage_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "merge_event_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "split_event_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "cluster_id",
+        "cluster_type",
+        "member_unit_refs",
+        "cluster_status"
+      ],
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "relation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "target_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "RELATED",
+            "DEPENDS_ON",
+            "DERIVED_FROM",
+            "REFERS_TO",
+            "CONTRADICTS",
+            "SUPERSEDES",
+            "CONTAINS",
+            "PART_OF",
+            "SAME_AS",
+            "CAUSED_BY",
+            "SUPPORTS",
+            "EXCLUDES"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "validity_status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "INACTIVE",
+            "INVALIDATED",
+            "UNKNOWN"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "relation_id",
+        "source_ref",
+        "target_ref",
+        "relation_type",
+        "evidence_refs"
+      ],
+      "additionalProperties": false
+    },
+    "dependency": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "dependency_id": {
+          "$ref": "#/$defs/id"
+        },
+        "dependent_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "prerequisite_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "dependency_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_condition": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "impact_policy": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "evaluation_policy": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "uncertainty_policy": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "validity_status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "INACTIVE",
+            "SUSPENDED",
+            "INVALIDATED"
+          ]
+        },
+        "cycle_group_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "dependency_id",
+        "dependent_ref",
+        "prerequisite_ref",
+        "dependency_type",
+        "trigger_condition",
+        "impact_policy",
+        "evaluation_policy",
+        "validity_status"
+      ],
+      "additionalProperties": false
+    },
+    "question": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "question_id": {
+          "$ref": "#/$defs/id"
+        },
+        "question_type": {
+          "type": "string",
+          "enum": [
+            "CONTRADICTION",
+            "AMBIGUITY",
+            "KNOWLEDGE_GAP",
+            "REFERENCE_UNRESOLVED",
+            "TEMPORAL_INCONSISTENCY",
+            "DEPENDENCY_INCONSISTENCY",
+            "EVIDENCE_INSUFFICIENT",
+            "SOURCE_INDEPENDENCE_UNCLEAR"
+          ]
+        },
+        "unresolved_aspects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Deprecated display projection only; derive from Question Aspect records and never use as lifecycle authority."
+        },
+        "target_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "trigger_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "INVESTIGATING",
+            "DEFERRED",
+            "PARTIALLY_RESOLVED",
+            "RESOLVED",
+            "INVALIDATED",
+            "SUPERSEDED"
+          ]
+        },
+        "deduplication_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_question_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "related_question_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "resolution_basis": {
+          "type": "object",
+          "properties": {
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "interpretation_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "temporal_scope": {
+              "$ref": "#/$defs/temporalScope"
+            },
+            "context_scope": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "supersedes_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "aspect_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "aspect_aggregation_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "question_id",
+        "question_type",
+        "target_refs",
+        "trigger_refs",
+        "status",
+        "aspect_refs"
+      ],
+      "additionalProperties": false
+    },
+    "interest": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "interest_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "scope_id": {
+          "$ref": "#/$defs/id"
+        },
+        "component_vector": {
+          "type": "object",
+          "properties": {
+            "unresolvedness": {
+              "type": "number"
+            },
+            "impact": {
+              "type": "number"
+            },
+            "dependency_reach": {
+              "type": "number"
+            },
+            "recency": {
+              "type": "number"
+            },
+            "recurrence": {
+              "type": "number"
+            },
+            "context_relevance": {
+              "type": "number"
+            },
+            "explicit_attention": {
+              "type": "number"
+            },
+            "evidence_uncertainty": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "priority_band": {
+          "type": "string",
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "NORMAL",
+            "LOW",
+            "UNRANKED"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "DECAYING",
+            "DORMANT",
+            "REACTIVATED",
+            "CLOSED"
+          ]
+        },
+        "evaluation_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evaluation_basis_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "history_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "interest_id",
+        "target_ref",
+        "scope_id",
+        "component_vector",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "focus": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "focus_id": {
+          "$ref": "#/$defs/id"
+        },
+        "scope_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "PRIMARY",
+            "SECONDARY",
+            "BACKGROUND",
+            "DORMANT"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "INACTIVE",
+            "SUSPENDED"
+          ]
+        },
+        "activation_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous_focus_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "transition_event_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "considered_candidate_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "deferred_candidate_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "focus_id",
+        "scope_id",
+        "target_ref",
+        "level",
+        "role",
+        "status",
+        "activation_reason"
+      ],
+      "additionalProperties": false
+    },
+    "stateDelta": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "delta_id": {
+          "$ref": "#/$defs/id"
+        },
+        "base_state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_event_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "read_set": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "write_set": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "ADD",
+                  "LINK",
+                  "UPDATE_STATUS",
+                  "SUPERSEDE",
+                  "MERGE",
+                  "SPLIT",
+                  "REOPEN",
+                  "ARCHIVE"
+                ]
+              },
+              "target_ref": {
+                "$ref": "#/$defs/id"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "op",
+              "target_ref"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "affected_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "dependency_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "validation_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "producer_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "delta_id",
+        "base_state_version",
+        "input_event_refs",
+        "read_set",
+        "write_set",
+        "operations",
+        "affected_refs",
+        "producer_refs",
+        "idempotency_key"
+      ],
+      "additionalProperties": false
+    },
+    "contextState": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "state_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_entity_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "active_cluster_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "semantic_unit_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "relation_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "dependency_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "focus_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "question_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "interest_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "temporal_context": {
+          "$ref": "#/$defs/temporalScope"
+        },
+        "conflict_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "updated_at": {
+          "$ref": "#/$defs/timeValue"
+        }
+      },
+      "required": [
+        "schema_version",
+        "state_id",
+        "state_version",
+        "active_entity_refs",
+        "active_cluster_refs",
+        "semantic_unit_refs",
+        "relation_refs",
+        "dependency_refs",
+        "focus_refs",
+        "question_refs",
+        "interest_refs",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "proposal": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "producer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "producer_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_event_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "context_snapshot_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidate_object_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "candidate_relation_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "candidate_question_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "candidate_interest_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "candidate_focus_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "uncertainty_annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "requested_operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "processing_metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "semantic_contract_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalization_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer_capabilities": {
+          "$ref": "#/$defs/producerCapabilities"
+        },
+        "confidence_calibration_ref": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "schema_version",
+        "proposal_id",
+        "producer_id",
+        "producer_version",
+        "input_event_refs",
+        "context_snapshot_version",
+        "evidence_refs",
+        "provenance_refs"
+      ],
+      "additionalProperties": false
+    },
+    "sourceLineage": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "lineage_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "ORIGINAL",
+            "QUOTES",
+            "REPOSTS",
+            "DERIVED_FROM",
+            "SYNDICATED_FROM",
+            "UNKNOWN_ORIGIN"
+          ]
+        },
+        "parent_lineage_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "origin_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "independence_status": {
+          "type": "string",
+          "enum": [
+            "INDEPENDENT",
+            "DEPENDENT",
+            "PARTIALLY_DEPENDENT",
+            "UNKNOWN"
+          ]
+        },
+        "independent_components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lineageComponent"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "lineage_id",
+        "source_id",
+        "relation_type",
+        "independence_status"
+      ],
+      "additionalProperties": false
+    },
+    "trustAssessment": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "trust_assessment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "domain_id": {
+          "$ref": "#/$defs/id"
+        },
+        "scope_id": {
+          "$ref": "#/$defs/id"
+        },
+        "assessment_status": {
+          "type": "string",
+          "enum": [
+            "UNKNOWN",
+            "ASSESSED"
+          ]
+        },
+        "assessment_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "assessment_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "independent_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "contradiction_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "lineage_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "assessment_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evaluated_at": {
+          "$ref": "#/$defs/timeValue"
+        }
+      },
+      "required": [
+        "schema_version",
+        "trust_assessment_id",
+        "source_id",
+        "domain_id",
+        "assessment_status",
+        "independent_evidence_refs",
+        "lineage_refs",
+        "assessment_version",
+        "evaluated_at"
+      ],
+      "additionalProperties": false
+    },
+    "reconciliationJob": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "reconciliation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "base_state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "root_change_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "scheduled_node_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "visited_node_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "cycle_group_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "iteration_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "RUNNING",
+            "CONVERGED",
+            "STALLED",
+            "CANCELLED",
+            "RESTART_REQUIRED"
+          ]
+        },
+        "stop_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "convergence_policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "last_state_fingerprint": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "reconciliation_id",
+        "base_state_version",
+        "generation",
+        "root_change_refs",
+        "scheduled_node_refs",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "schema_version_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "integrity_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state_ref": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "schema_version",
+        "snapshot_id",
+        "state_version",
+        "event_offset",
+        "schema_version_ref",
+        "integrity_digest",
+        "state_ref",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "semanticFingerprint": {
+      "type": "object",
+      "properties": {
+        "canonicalization_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projection_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "equivalence_class": {
+          "type": "string",
+          "enum": [
+            "EXACT",
+            "EQUIVALENT",
+            "COMPATIBLE",
+            "CONFLICTING",
+            "INCOMPARABLE"
+          ]
+        }
+      },
+      "required": [
+        "canonicalization_version",
+        "semantic_key",
+        "equivalence_class"
+      ],
+      "additionalProperties": false
+    },
+    "lineageComponent": {
+      "type": "object",
+      "properties": {
+        "component_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "shared_origin_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "independence_status": {
+          "type": "string",
+          "enum": [
+            "INDEPENDENT",
+            "DEPENDENT",
+            "PARTIALLY_DEPENDENT",
+            "UNKNOWN"
+          ]
+        },
+        "component_fingerprint": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "component_ref",
+        "independence_status"
+      ],
+      "additionalProperties": false
+    },
+    "producerCapabilities": {
+      "type": "object",
+      "properties": {
+        "supported_semantic_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "supported_modalities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "supported_temporal_precision": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "supported_uncertainty_dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "deterministic_mode": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "questionAspect": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "aspect_id": {
+          "$ref": "#/$defs/id"
+        },
+        "question_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "aspect_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "trigger_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "interpretation_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "dependency_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "INVESTIGATING",
+            "RESOLVED",
+            "DEFERRED",
+            "INVALIDATED"
+          ]
+        },
+        "resolution": {
+          "type": "object",
+          "properties": {
+            "resolution_kind": {
+              "type": "string",
+              "enum": [
+                "ANSWERED",
+                "DISAMBIGUATED",
+                "PARTITIONED",
+                "SCOPED",
+                "ATTRIBUTED",
+                "NO_LONGER_APPLICABLE",
+                "OTHER"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            },
+            "interpretation_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            },
+            "temporal_scope": {
+              "$ref": "#/$defs/temporalScope"
+            },
+            "context_scope": {
+              "$ref": "#/$defs/id"
+            },
+            "resolved_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "resolution_kind",
+            "reason",
+            "resolved_at"
+          ],
+          "additionalProperties": false
+        },
+        "parent_aspect_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "child_aspect_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "lineage_event_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "required_for_question": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "aspect_id",
+        "question_ref",
+        "aspect_key",
+        "description",
+        "target_refs",
+        "trigger_refs",
+        "evidence_refs",
+        "status",
+        "required_for_question",
+        "provenance_refs"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "RESOLVED"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "resolution"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "observationFrame": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.6.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observation_frame_id": {
+          "$ref": "#/$defs/id"
+        },
+        "revision_of_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "observation_refs": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "clock_domain_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "time_interval": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/timeValue"
+            },
+            "end": {
+              "$ref": "#/$defs/timeValue"
+            },
+            "interval_convention": {
+              "type": "string",
+              "enum": [
+                "HALF_OPEN",
+                "POINT",
+                "UNKNOWN"
+              ]
+            },
+            "precision": {
+              "type": "string",
+              "enum": [
+                "MILLISECOND",
+                "SECOND",
+                "MINUTE",
+                "HOUR",
+                "DAY",
+                "MONTH",
+                "YEAR",
+                "UNKNOWN"
+              ]
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "interval_convention",
+            "precision"
+          ],
+          "additionalProperties": false
+        },
+        "synchronization_uncertainty_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "synchronization_tolerance_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "spatial_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entity_hypothesis_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "alignment_status": {
+          "type": "string",
+          "enum": [
+            "ALIGNED",
+            "PARTIALLY_ALIGNED",
+            "UNALIGNED",
+            "INCOMPARABLE"
+          ]
+        },
+        "alignment_provenance_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "clock_mapping_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "uncertainty_description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "observation_frame_id",
+        "observation_refs",
+        "clock_domain_refs",
+        "time_interval",
+        "alignment_status",
+        "alignment_provenance_refs"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
