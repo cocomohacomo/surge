@@ -16,7 +16,10 @@
     "labels",
     "candidate_spans",
     "abstention_reasons",
-    "idempotency_key"
+    "idempotency_key",
+    "packet_source_generation",
+    "packet_source_sequence",
+    "context_hint_state_version"
   ],
   "properties": {
     "schema_version": {
@@ -145,7 +148,13 @@
               "NEGATION_CUE",
               "MODALITY_CUE",
               "REFERENCE_CUE",
-              "OTHER"
+              "OTHER",
+              "CONTRAST_CUE",
+              "CONCESSION_CUE",
+              "COREFERENCE_CUE",
+              "QUOTATION_CUE",
+              "LIST_CONTINUATION_CUE",
+              "TABLE_HEADER_CUE"
             ]
           }
         }
@@ -180,6 +189,51 @@
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "packet_source_generation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_source_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "context_hint_state_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retrieval_ticket_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "integration_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_predecessor_packet_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "scope_continuation_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "context_complete": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$comment": "Core MUST validate packet existence, digest/offset bounds, supported label taxonomy, producer authorization, base-state version, and calibration compatibility. Scores are not truth probabilities."
