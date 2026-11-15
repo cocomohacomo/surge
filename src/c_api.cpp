@@ -29,6 +29,34 @@ bool node_kind(const char* value, surge::NodeKind& out) {
   else return false;
   return true;
 }
+bool scope_kind(const char* value, surge::ScopeKind& out) {
+  if (!value) return false;
+  const std::string s(value);
+  if(s=="NEGATION")out=surge::ScopeKind::Negation;
+  else if(s=="CONDITION")out=surge::ScopeKind::Condition;
+  else if(s=="MODALITY")out=surge::ScopeKind::Modality;
+  else if(s=="CONCESSION")out=surge::ScopeKind::Concession;
+  else if(s=="CONTRAST")out=surge::ScopeKind::Contrast;
+  else if(s=="COREFERENCE")out=surge::ScopeKind::Coreference;
+  else if(s=="ANAPHORA")out=surge::ScopeKind::Anaphora;
+  else if(s=="QUOTATION")out=surge::ScopeKind::Quotation;
+  else if(s=="TEMPORAL")out=surge::ScopeKind::Temporal;
+  else if(s=="LIST_CONTINUATION")out=surge::ScopeKind::ListContinuation;
+  else if(s=="TABLE_HEADER")out=surge::ScopeKind::TableHeader;
+  else return false;
+  return true;
+}
+surge::ScopeAnchor scope_anchor(const SurgeScopeAnchorInput& in) {
+  surge::ScopeAnchor a;
+  a.anchor_id=in.anchor_id?in.anchor_id:"";
+  a.source_digest=in.source_digest?in.source_digest:"";
+  a.offset_basis=in.offset_basis?in.offset_basis:"";
+  a.start_offset=static_cast<size_t>(in.start_offset);
+  a.end_offset=static_cast<size_t>(in.end_offset);
+  a.exact_text=in.exact_text?in.exact_text:"";
+  a.packet_ref=in.packet_ref?in.packet_ref:"";
+  return a;
+}
 bool relation_kind(const char* value, surge::RelationKind& out) {
   if (!value) return false;
   const std::string s(value);
@@ -147,10 +175,88 @@ int surge_context_graph_apply(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_SEMANTIC_EXCEPTION");return 0;}
 }
+
+int surge_context_graph_apply_scoped(
+    void* opaque,const char* delta_id,const char* idempotency_key,uint64_t expected,
+    const SurgeGraphNodeInput* nodes,size_t node_count,
+    const SurgeGraphRelationInput* relations,size_t relation_count,
+    const SurgeScopeSpanInput* scopes,size_t scope_count,
+    const char* source_snapshot,size_t source_snapshot_size,
+    const char* focus_cluster_id,const char* focus_interest_id,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_cap) {
+  try {
+    if(!opaque||!delta_id||!idempotency_key||(node_count&&!nodes)||
+       (relation_count&&!relations)||(scope_count&&!scopes)||
+       node_count>4096||relation_count>8192||scope_count>4096||
+       (!source_snapshot&&source_snapshot_size!=0)) {
+      copy_text(error,error_cap,"C_API_SCOPED_ARGUMENT_INVALID");return 0;
+    }
+    surge::SemanticDelta delta;
+    delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    for(size_t i=0;i<node_count;++i){
+      if(!nodes[i].id||!nodes[i].kind||!nodes[i].content||
+         (nodes[i].reference_count&&!nodes[i].references)||nodes[i].reference_count>1024){
+        copy_text(error,error_cap,"C_API_NODE_ARGUMENT_INVALID");return 0;
+      }
+      surge::GraphNode node;node.id=nodes[i].id;node.content=nodes[i].content;
+      if(!node_kind(nodes[i].kind,node.kind)){copy_text(error,error_cap,"C_API_NODE_KIND_INVALID");return 0;}
+      for(size_t j=0;j<nodes[i].reference_count;++j){
+        if(!nodes[i].references[j]){copy_text(error,error_cap,"C_API_NODE_REFERENCE_INVALID");return 0;}
+        node.references.emplace_back(nodes[i].references[j]);
+      }
+      delta.nodes.push_back({std::move(node)});
+    }
+    for(size_t i=0;i<relation_count;++i){
+      if(!relations[i].id||!relations[i].kind||!relations[i].from_id||!relations[i].to_id){
+        copy_text(error,error_cap,"C_API_RELATION_ARGUMENT_INVALID");return 0;
+      }
+      surge::GraphRelation relation;relation.id=relations[i].id;
+      relation.from=relations[i].from_id;relation.to=relations[i].to_id;
+      if(!relation_kind(relations[i].kind,relation.kind)){copy_text(error,error_cap,"C_API_RELATION_KIND_INVALID");return 0;}
+      delta.relations.push_back({std::move(relation)});
+    }
+    const std::string source=source_snapshot_size?std::string(source_snapshot,source_snapshot_size):std::string();
+    for(size_t i=0;i<scope_count;++i){
+      const auto& input=scopes[i];
+      if(!input.span_id||!input.kind||!input.source_digest||!input.offset_basis||
+         (input.has_closer!=0&&input.has_closer!=1)||
+         (input.target_count&&!input.target_refs)||(input.antecedent_count&&!input.antecedent_refs)||
+         (input.packet_count&&!input.packet_refs)||input.target_count>1024||
+         input.antecedent_count>1024||input.packet_count>4096){
+        copy_text(error,error_cap,"C_API_SCOPE_ARGUMENT_INVALID");return 0;
+      }
+      surge::ScopeSpanProposal span;span.span_id=input.span_id;
+      if(!scope_kind(input.kind,span.kind)){copy_text(error,error_cap,"C_API_SCOPE_KIND_INVALID");return 0;}
+      span.source_digest=input.source_digest;span.offset_basis=input.offset_basis;
+      span.opener=scope_anchor(input.opener);
+      if(input.has_closer)span.closer=scope_anchor(input.closer);
+      for(size_t j=0;j<input.target_count;++j){if(!input.target_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_TARGET_INVALID");return 0;}span.target_refs.emplace_back(input.target_refs[j]);}
+      for(size_t j=0;j<input.antecedent_count;++j){if(!input.antecedent_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_ANTECEDENT_INVALID");return 0;}span.antecedent_refs.emplace_back(input.antecedent_refs[j]);}
+      for(size_t j=0;j<input.packet_count;++j){if(!input.packet_refs[j]){copy_text(error,error_cap,"C_API_SCOPE_PACKET_INVALID");return 0;}span.packet_refs.emplace_back(input.packet_refs[j]);}
+      span.attribution_ref=input.attribution_ref?input.attribution_ref:"";
+      span.modality_kind=input.modality_kind?input.modality_kind:"";
+      span.temporal_role=input.temporal_role?input.temporal_role:"";
+      span.parent_ref=input.parent_ref?input.parent_ref:"";
+      delta.scope_spans.push_back({std::move(span),source});
+    }
+    if(focus_cluster_id&&*focus_cluster_id)
+      delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
+    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_cap,result.error);
+    return result.committed?1:0;
+  } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
+    catch(...){copy_text(error,error_cap,"UNKNOWN_SCOPED_SEMANTIC_EXCEPTION");return 0;}
+}
 uint64_t surge_packet_core_state_version(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.state_version():0;
 }
 size_t surge_packet_core_packet_count(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->coordinator.packet_count():0;
+}
+size_t surge_context_graph_scope_count(void* opaque) {
+  return opaque?static_cast<Handle*>(opaque)->graph.scope_spans().size():0;
 }
 }

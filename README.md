@@ -4,6 +4,8 @@ Universal Context Cognition Framework.
 
 ## Current specification
 
+- **ScopeSpan ContextGraph Integration v0.1:** [docs/surge/SCOPESPAN_CONTEXT_GRAPH_v0.1.md](docs/surge/SCOPESPAN_CONTEXT_GRAPH_v0.1.md)
+
 - **LLM Semantic Core Integration v0.1:** [docs/surge/LLM_SEMANTIC_INTEGRATION_v0.1.md](docs/surge/LLM_SEMANTIC_INTEGRATION_v0.1.md)
 - **Streaming Text Runtime v0.1:** [docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md](docs/surge/STREAMING_TEXT_RUNTIME_v0.1.md)
 
@@ -98,9 +100,7 @@ structural contracts validate.
 
 This establishes execution of the implemented LLM-to-Core path, not complete
 v0.9 semantic conformance. D01-D20 are not yet all end-to-end semantic tests.
-Full typed ScopeSpan extraction/commit, cross-process cluster and contradiction
-lookup, atomic packet-plus-semantic transaction, quality metrics, RTF, p99
-latency and peak RSS remain unimplemented or unmeasured. See the runtime execution report for the exact
+Typed ScopeSpan validation, ContextGraph persistence and restart replay are now implemented. Automatic high-accuracy LLM scope extraction, cross-process cluster and contradiction lookup, atomic packet-plus-semantic transaction, quality metrics, RTF, p99 latency and peak RSS remain unimplemented or unmeasured. See the runtime execution report for the exact
 boundary and reproducible commands.
 
 ### Packet source integrity

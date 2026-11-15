@@ -1,4 +1,4 @@
-import pathlib, sys, tempfile, unittest
+import hashlib, pathlib, sys, tempfile, unittest
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from surge_adapter.llm_interface import LLMSemanticRuntime, LLMRecognizer
@@ -77,6 +77,53 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 runtime.process("うん",core)
                 self.assertEqual(provider.contexts[1]["active_topic"],"予算")
                 self.assertEqual(len(provider.contexts[1]["recent_claims"]),1)
+
+    def test_typed_scope_span_is_validated_persisted_and_replayed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source="not approved"
+            digest=hashlib.sha256(source.encode("utf-8")).hexdigest()
+            scope={"span_id":"scope/negation/1","kind":"NEGATION",
+                "source_digest":digest,"offset_basis":"UTF8_BYTE_NFC",
+                "opener":{"anchor_id":"anchor/not","source_digest":digest,
+                    "offset_basis":"UTF8_BYTE_NFC","start_offset":0,"end_offset":3,
+                    "exact_text":"not","packet_ref":"packet-1"},
+                "closer":None,"target_refs":["claim-1"],"antecedent_refs":[],
+                "attribution_ref":"","modality_kind":"","temporal_role":"",
+                "parent_ref":"","packet_refs":["packet-1"]}
+            journal=pathlib.Path(tmp)/"scopes.sgj"
+            with SemanticCoreBridge(journal) as core:
+                out=core.apply_semantic_delta({"delta_id":"scope-delta-1",
+                    "idempotency_key":"scope-idem-1","expected_state_version":0,
+                    "nodes":[{"id":"evidence-1","kind":"EVIDENCE","content":source,"references":[]},
+                             {"id":"claim-1","kind":"CLAIM","content":"approved","references":["evidence-1"]}],
+                    "relations":[],"scope_spans":[scope],"source_snapshot":source})
+                self.assertTrue(out["committed"])
+                self.assertEqual(core.scope_count,1)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.scope_count,1)
+                self.assertEqual(recovered.state_version,1)
+
+    def test_invalid_scope_anchor_rejected_without_partial_graph_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source="not approved"
+            digest=hashlib.sha256(source.encode("utf-8")).hexdigest()
+            scope={"span_id":"scope/bad/1","kind":"NEGATION",
+                "source_digest":digest,"offset_basis":"UTF8_BYTE_NFC",
+                "opener":{"anchor_id":"anchor/not","source_digest":digest,
+                    "offset_basis":"UTF8_BYTE_NFC","start_offset":0,"end_offset":3,
+                    "exact_text":"wrong","packet_ref":"packet-1"},
+                "closer":None,"target_refs":["claim-1"],"antecedent_refs":[],
+                "attribution_ref":"","modality_kind":"","temporal_role":"",
+                "parent_ref":"","packet_refs":["packet-1"]}
+            with SemanticCoreBridge(pathlib.Path(tmp)/"invalid.sgj") as core:
+                with self.assertRaisesRegex(Exception,"SCOPE_OPENER_ANCHOR_INVALID"):
+                    core.apply_semantic_delta({"delta_id":"bad-scope-delta",
+                        "idempotency_key":"bad-scope-idem","expected_state_version":0,
+                        "nodes":[{"id":"evidence-1","kind":"EVIDENCE","content":source,"references":[]},
+                                 {"id":"claim-1","kind":"CLAIM","content":"approved","references":["evidence-1"]}],
+                        "relations":[],"scope_spans":[scope],"source_snapshot":source})
+                self.assertEqual(core.state_version,0)
+                self.assertEqual(core.scope_count,0)
 
     def test_50_independent_claim_inputs_commit_and_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
