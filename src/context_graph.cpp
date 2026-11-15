@@ -1,4 +1,5 @@
 #include "surge/context_graph.hpp"
+#include "surge/scope_validator.hpp"
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -6,228 +7,105 @@
 
 namespace surge {
 namespace {
-const char* node_kind_name(NodeKind kind) {
-  switch (kind) {
-    case NodeKind::Cluster: return "CLUSTER";
-    case NodeKind::Entity: return "ENTITY";
-    case NodeKind::Evidence: return "EVIDENCE";
-    case NodeKind::Claim: return "CLAIM";
-    case NodeKind::Question: return "QUESTION";
-    case NodeKind::QuestionAspect: return "QUESTION_ASPECT";
-    case NodeKind::Dependency: return "DEPENDENCY";
-    case NodeKind::Interest: return "INTEREST";
-  }
-  return "UNKNOWN";
-}
-bool parse_node_kind(const std::string& value, NodeKind& kind) {
-  const std::pair<const char*, NodeKind> values[] = {
-    {"CLUSTER",NodeKind::Cluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},
-    {"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},
-    {"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},
-    {"INTEREST",NodeKind::Interest}};
-  for (const auto& item : values) if (value == item.first) { kind = item.second; return true; }
-  return false;
-}
-const char* relation_kind_name(RelationKind kind) {
-  switch (kind) {
-    case RelationKind::Supports: return "SUPPORTS";
-    case RelationKind::Contradicts: return "CONTRADICTS";
-    case RelationKind::AgreesWith: return "AGREES_WITH";
-    case RelationKind::ConflictsWith: return "CONFLICTS_WITH";
-    case RelationKind::DependsOn: return "DEPENDS_ON";
-    case RelationKind::About: return "ABOUT";
-  }
-  return "UNKNOWN";
-}
-bool parse_relation_kind(const std::string& value, RelationKind& kind) {
-  const std::pair<const char*, RelationKind> values[] = {
-    {"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},
-    {"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},
-    {"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About}};
-  for (const auto& item : values) if (value == item.first) { kind = item.second; return true; }
-  return false;
-}
-std::string encode_node(const GraphNode& node) {
-  std::ostringstream out;
-  out << std::quoted(node.id) << ' ' << node_kind_name(node.kind) << ' '
-      << std::quoted(node.content) << ' ' << node.references.size();
-  for (const auto& ref : node.references) out << ' ' << std::quoted(ref);
-  return out.str();
-}
-bool decode_node(const std::string& payload, GraphNode& node) {
-  std::istringstream in(payload); std::string kind; std::size_t count=0;
-  if (!(in >> std::quoted(node.id) >> kind >> std::quoted(node.content) >> count) ||
-      !parse_node_kind(kind,node.kind) || count>1024) return false;
-  for(std::size_t i=0;i<count;++i){std::string ref;if(!(in>>std::quoted(ref)))return false;node.references.push_back(ref);}
-  return true;
-}
-std::string encode_relation(const GraphRelation& relation) {
-  std::ostringstream out;
-  out << std::quoted(relation.id) << ' ' << relation_kind_name(relation.kind) << ' '
-      << std::quoted(relation.from) << ' ' << std::quoted(relation.to);
-  return out.str();
-}
-bool decode_relation(const std::string& payload, GraphRelation& relation) {
-  std::istringstream in(payload); std::string kind;
-  return static_cast<bool>(in >> std::quoted(relation.id) >> kind >>
-      std::quoted(relation.from) >> std::quoted(relation.to)) &&
-      parse_relation_kind(kind,relation.kind);
-}
-std::string encode_focus(const FocusRecord& focus) {
-  std::ostringstream out; out << std::quoted(focus.cluster_id) << ' ' << std::quoted(focus.interest_id);
-  return out.str();
-}
-bool decode_focus(const std::string& payload, FocusRecord& focus) {
-  std::istringstream in(payload);
-  return static_cast<bool>(in >> std::quoted(focus.cluster_id) >> std::quoted(focus.interest_id));
-}
-std::string hash_text(const std::string& text) {
-  std::uint64_t h=1469598103934665603ULL;
-  for(unsigned char c:text){h^=c;h*=1099511628211ULL;}
-  std::ostringstream out;out<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return out.str();
-}
-}  // namespace
+const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";}return "UNKNOWN";}
+bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";}return "UNKNOWN";}
+bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+const char* scope_kind_name(ScopeKind k){switch(k){case ScopeKind::Negation:return "NEGATION";case ScopeKind::Condition:return "CONDITION";case ScopeKind::Modality:return "MODALITY";case ScopeKind::Concession:return "CONCESSION";case ScopeKind::Contrast:return "CONTRAST";case ScopeKind::Coreference:return "COREFERENCE";case ScopeKind::Anaphora:return "ANAPHORA";case ScopeKind::Quotation:return "QUOTATION";case ScopeKind::Temporal:return "TEMPORAL";case ScopeKind::ListContinuation:return "LIST_CONTINUATION";case ScopeKind::TableHeader:return "TABLE_HEADER";}return "UNKNOWN";}
+bool parse_scope_kind(const std::string& s,ScopeKind& k){const std::pair<const char*,ScopeKind> v[]={{"NEGATION",ScopeKind::Negation},{"CONDITION",ScopeKind::Condition},{"MODALITY",ScopeKind::Modality},{"CONCESSION",ScopeKind::Concession},{"CONTRAST",ScopeKind::Contrast},{"COREFERENCE",ScopeKind::Coreference},{"ANAPHORA",ScopeKind::Anaphora},{"QUOTATION",ScopeKind::Quotation},{"TEMPORAL",ScopeKind::Temporal},{"LIST_CONTINUATION",ScopeKind::ListContinuation},{"TABLE_HEADER",ScopeKind::TableHeader}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+std::string encode_node(const GraphNode& n){std::ostringstream o;o<<std::quoted(n.id)<<' '<<node_kind_name(n.kind)<<' '<<std::quoted(n.content)<<' '<<n.references.size();for(const auto& r:n.references)o<<' '<<std::quoted(r);return o.str();}
+bool decode_node(const std::string& p,GraphNode& n){std::istringstream i(p);std::string k;std::size_t c=0;if(!(i>>std::quoted(n.id)>>k>>std::quoted(n.content)>>c)||!parse_node_kind(k,n.kind)||c>1024)return false;for(std::size_t x=0;x<c;++x){std::string r;if(!(i>>std::quoted(r)))return false;n.references.push_back(r);}std::string extra;return !(i>>extra);}
+std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to);return o.str();}
+bool decode_relation(const std::string& p,GraphRelation& r){std::istringstream i(p);std::string k,extra;if(!(i>>std::quoted(r.id)>>k>>std::quoted(r.from)>>std::quoted(r.to))||!parse_relation_kind(k,r.kind))return false;return !(i>>extra);}
+std::string encode_anchor(const ScopeAnchor& a){std::ostringstream o;o<<std::quoted(a.anchor_id)<<' '<<std::quoted(a.source_digest)<<' '<<std::quoted(a.offset_basis)<<' '<<a.start_offset<<' '<<a.end_offset<<' '<<std::quoted(a.exact_text)<<' '<<std::quoted(a.packet_ref);return o.str();}
+bool decode_anchor(std::istream& i,ScopeAnchor& a){return static_cast<bool>(i>>std::quoted(a.anchor_id)>>std::quoted(a.source_digest)>>std::quoted(a.offset_basis)>>a.start_offset>>a.end_offset>>std::quoted(a.exact_text)>>std::quoted(a.packet_ref));}
+std::string encode_scope(const AddScopeSpan& add){const auto& s=add.span;std::ostringstream o;o<<std::quoted(s.span_id)<<' '<<scope_kind_name(s.kind)<<' '<<std::quoted(s.source_digest)<<' '<<std::quoted(s.offset_basis)<<' '<<encode_anchor(s.opener)<<' '<<(s.closer?1:0);if(s.closer)o<<' '<<encode_anchor(*s.closer);o<<' '<<s.target_refs.size();for(const auto& x:s.target_refs)o<<' '<<std::quoted(x);o<<' '<<s.antecedent_refs.size();for(const auto& x:s.antecedent_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(s.attribution_ref)<<' '<<std::quoted(s.modality_kind)<<' '<<std::quoted(s.temporal_role)<<' '<<std::quoted(s.parent_ref)<<' '<<s.packet_refs.size();for(const auto& x:s.packet_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(add.source_snapshot);return o.str();}
+bool decode_scope(const std::string& p,AddScopeSpan& add){std::istringstream i(p);auto& s=add.span;std::string kind;int has_closer=0;std::size_t n=0;if(!(i>>std::quoted(s.span_id)>>kind>>std::quoted(s.source_digest)>>std::quoted(s.offset_basis))||!parse_scope_kind(kind,s.kind)||!decode_anchor(i,s.opener)||!(i>>has_closer))return false;if(has_closer!=0&&has_closer!=1)return false;if(has_closer){ScopeAnchor a;if(!decode_anchor(i,a))return false;s.closer=std::move(a);}if(!(i>>n)||n>1024)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.target_refs.push_back(v);}if(!(i>>n)||n>1024)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.antecedent_refs.push_back(v);}if(!(i>>std::quoted(s.attribution_ref)>>std::quoted(s.modality_kind)>>std::quoted(s.temporal_role)>>std::quoted(s.parent_ref)>>n)||n>4096)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.packet_refs.push_back(v);}std::string extra;if(!(i>>std::quoted(add.source_snapshot))||(i>>extra))return false;return true;}
+std::string encode_focus(const FocusRecord& f){std::ostringstream o;o<<std::quoted(f.cluster_id)<<' '<<std::quoted(f.interest_id);return o.str();}
+bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);std::string extra;if(!(i>>std::quoted(f.cluster_id)>>std::quoted(f.interest_id)))return false;return !(i>>extra);}
+std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
+} // namespace
 
-ContextGraph::ContextGraph(std::string path)
-    : owned_journal_(std::make_unique<EventJournal>(std::move(path))),
-      journal_(owned_journal_.get()) {}
-ContextGraph::ContextGraph(EventJournal& shared_journal)
-    : journal_(&shared_journal) {}
-bool ContextGraph::open() { if(!journal_ || !journal_->open()) return false; return replay(); }
+ContextGraph::ContextGraph(std::string p):owned_journal_(std::make_unique<EventJournal>(std::move(p))),journal_(owned_journal_.get()){}
+ContextGraph::ContextGraph(EventJournal& j):journal_(&j){}
+bool ContextGraph::open(){if(!journal_||!journal_->open())return false;return replay();}
 
-bool ContextGraph::apply_node(State& state,const GraphNode& node,std::string& error) const {
-  if(node.id.empty() || node.content.empty() || state.nodes.count(node.id)) {
-    error="NODE_ID_OR_CONTENT_INVALID"; return false;
-  }
-  auto ref_kind=[&](std::size_t index,NodeKind kind){
-    return index<node.references.size() && state.nodes.count(node.references[index]) &&
-      state.nodes.at(node.references[index]).kind==kind;
-  };
-  for(const auto& ref:node.references) if(!state.nodes.count(ref)){error="NODE_REFERENCE_NOT_FOUND";return false;}
-  switch(node.kind){
-    case NodeKind::Cluster: case NodeKind::Entity: case NodeKind::Evidence: case NodeKind::Question:
-      if(!node.references.empty()){error="NODE_REFERENCE_SHAPE_INVALID";return false;} break;
-    case NodeKind::Claim:
-      if(node.references.empty()){error="CLAIM_REQUIRES_EVIDENCE";return false;}
-      for(const auto& ref:node.references) if(state.nodes.at(ref).kind!=NodeKind::Evidence){error="CLAIM_EVIDENCE_REF_INVALID";return false;}
-      break;
-    case NodeKind::QuestionAspect:
-      if(node.references.size()!=1 || !ref_kind(0,NodeKind::Question)){error="QUESTION_ASPECT_PARENT_INVALID";return false;}
-      break;
-    case NodeKind::Dependency:
-      if(node.references.size()!=2 || node.references[0]==node.references[1]){error="DEPENDENCY_ENDPOINTS_INVALID";return false;}
-      break;
-    case NodeKind::Interest:
-      if(node.references.size()!=2 || !ref_kind(0,NodeKind::QuestionAspect) || !ref_kind(1,NodeKind::Cluster)){
-        error="INTEREST_TARGET_INVALID";return false;
-      } break;
-  }
-  state.nodes.emplace(node.id,node);return true;
+bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
+ if(n.id.empty()||n.content.empty()||s.nodes.count(n.id)){e="NODE_ID_OR_CONTENT_INVALID";return false;}
+ auto ref_kind=[&](std::size_t x,NodeKind k){return x<n.references.size()&&s.nodes.count(n.references[x])&&s.nodes.at(n.references[x]).kind==k;};
+ for(const auto& r:n.references)if(!s.nodes.count(r)){e="NODE_REFERENCE_NOT_FOUND";return false;}
+ switch(n.kind){
+ case NodeKind::Cluster:case NodeKind::Entity:case NodeKind::Evidence:case NodeKind::Question:if(!n.references.empty()){e="NODE_REFERENCE_SHAPE_INVALID";return false;}break;
+ case NodeKind::Claim:if(n.references.empty()){e="CLAIM_REQUIRES_EVIDENCE";return false;}for(const auto& r:n.references)if(s.nodes.at(r).kind!=NodeKind::Evidence){e="CLAIM_EVIDENCE_REF_INVALID";return false;}break;
+ case NodeKind::QuestionAspect:if(n.references.size()!=1||!ref_kind(0,NodeKind::Question)){e="QUESTION_ASPECT_PARENT_INVALID";return false;}break;
+ case NodeKind::Dependency:if(n.references.size()!=2||n.references[0]==n.references[1]){e="DEPENDENCY_ENDPOINTS_INVALID";return false;}break;
+ case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!ref_kind(1,NodeKind::Cluster)){e="INTEREST_TARGET_INVALID";return false;}break;
+ }s.nodes.emplace(n.id,n);return true;
 }
-bool ContextGraph::apply_relation(State& state,const GraphRelation& r,std::string& error) const {
-  if(r.id.empty() || state.relations.count(r.id)){error="RELATION_ID_INVALID_OR_DUPLICATE";return false;}
-  if(r.from==r.to || !state.nodes.count(r.from) || !state.nodes.count(r.to)){error="RELATION_ENDPOINT_INVALID";return false;}
-  const auto from=state.nodes.at(r.from).kind, to=state.nodes.at(r.to).kind;
-  switch(r.kind){
-    case RelationKind::Supports: case RelationKind::Contradicts:
-      if(from!=NodeKind::Claim || to!=NodeKind::Claim){error="CLAIM_RELATION_TYPE_INVALID";return false;} break;
-    case RelationKind::AgreesWith: case RelationKind::ConflictsWith:
-      if(from!=to || (from!=NodeKind::Cluster && from!=NodeKind::Claim)){error="CLUSTER_RELATION_TYPE_INVALID";return false;} break;
-    case RelationKind::About:
-      if((from!=NodeKind::Claim && from!=NodeKind::Question && from!=NodeKind::QuestionAspect) ||
-         (to!=NodeKind::Entity && to!=NodeKind::Cluster)){error="ABOUT_RELATION_TYPE_INVALID";return false;} break;
-    case RelationKind::DependsOn: break;
-  }
-  state.relations.emplace(r.id,r);return true;
+bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e)const{
+ if(r.id.empty()||s.relations.count(r.id)){e="RELATION_ID_INVALID_OR_DUPLICATE";return false;}
+ if(r.from==r.to||!s.nodes.count(r.from)||!s.nodes.count(r.to)){e="RELATION_ENDPOINT_INVALID";return false;}
+ auto a=s.nodes.at(r.from).kind,b=s.nodes.at(r.to).kind;
+ switch(r.kind){case RelationKind::Supports:case RelationKind::Contradicts:if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim)){e="CLUSTER_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;case RelationKind::DependsOn:break;}
+ s.relations.emplace(r.id,r);return true;
 }
-bool ContextGraph::apply_focus(State& state,const FocusRecord& f,std::string& error) const {
-  if(!state.nodes.count(f.cluster_id) || state.nodes.at(f.cluster_id).kind!=NodeKind::Cluster){
-    error="FOCUS_CLUSTER_INVALID";return false;
-  }
-  if(!f.interest_id.empty()){
-    if(!state.nodes.count(f.interest_id) || state.nodes.at(f.interest_id).kind!=NodeKind::Interest ||
-       state.nodes.at(f.interest_id).references[1]!=f.cluster_id){error="FOCUS_INTEREST_INVALID";return false;}
-  }
-  state.focus=f;state.focus_history.push_back(f);return true;
+bool ContextGraph::apply_scope_span(State& s,const AddScopeSpan& add,std::string& e)const{
+ if(s.scope_spans.count(add.span.span_id)){e="SCOPE_SPAN_ID_DUPLICATE";return false;}
+ const auto result=ScopeSpanValidator::validate(add.span,add.source_snapshot,s.nodes);
+ if(!result.accepted){e=result.error.empty()?"SCOPE_SPAN_REJECTED":result.error;return false;}
+ s.scope_spans.emplace(add.span.span_id,add.span);return true;
 }
-
-std::string ContextGraph::fingerprint(const SemanticDelta& d) const {
-  std::ostringstream out;
-  out<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' ';
-  for(const auto& n:d.nodes)out<<"N "<<encode_node(n.node)<<'\n';
-  for(const auto& r:d.relations)out<<"R "<<encode_relation(r.relation)<<'\n';
-  if(d.focus)out<<"F "<<encode_focus(d.focus->focus)<<'\n';
-  return hash_text(out.str());
+bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
+ if(!s.nodes.count(f.cluster_id)||s.nodes.at(f.cluster_id).kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
+ if(!f.interest_id.empty()&&(!s.nodes.count(f.interest_id)||s.nodes.at(f.interest_id).kind!=NodeKind::Interest||s.nodes.at(f.interest_id).references[1]!=f.cluster_id)){e="FOCUS_INTEREST_INVALID";return false;}
+ s.focus=f;s.focus_history.push_back(f);return true;
 }
-std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std::string& fp) const {
-  std::vector<JournalEvent> out;
-  std::ostringstream meta;meta<<std::quoted(d.delta_id)<<' '<<std::quoted(d.idempotency_key)<<' '
-      <<d.expected_state_version<<' '<<std::quoted(fp);
-  out.push_back({d.delta_id+"/meta","DELTA_META",meta.str()});
-  std::size_t i=0;
-  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
-  i=0;
-  for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
-  if(d.focus)out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)});
-  return out;
+std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
+ std::ostringstream o;o<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' ';
+ for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
+ for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
+ for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
+ if(d.focus)o<<"F "<<encode_focus(d.focus->focus)<<'\n';return hash_text(o.str());
 }
-bool ContextGraph::replay_event(State& state,const JournalEvent& e,std::string& error) const {
-  if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(state,n,error);}
-  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(state,r,error);}
-  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(state,f,error);}
-  error="JOURNAL_EVENT_KIND_UNKNOWN";return false;
+std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std::string& fp)const{
+ std::vector<JournalEvent> out;std::ostringstream m;m<<std::quoted(d.delta_id)<<' '<<std::quoted(d.idempotency_key)<<' '<<d.expected_state_version<<' '<<std::quoted(fp);
+ out.push_back({d.delta_id+"/meta","DELTA_META",m.str()});std::size_t i=0;
+ for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
+ i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
+ i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
+ if(d.focus)out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)});return out;
 }
-bool ContextGraph::replay() {
-  State rebuilt;
-  idempotency_.clear();
-  std::string current_key;
-  std::uint64_t replay_version=0;
-  bool have_meta=false;
-  for(const auto& e:journal_->committed_events()){
-    if(e.kind=="RECOGNITION_PACKET_ADMITTED"){
-      if(have_meta){++replay_version;have_meta=false;}
-      ++replay_version;
-      continue;
-    }
-    if(e.kind=="DELTA_META"){
-      if(have_meta){++replay_version;have_meta=false;}
-      std::istringstream in(e.payload);
-      std::string delta_id, fingerprint;
-      std::uint64_t expected=0;
-      if(!(in>>std::quoted(delta_id)>>std::quoted(current_key)>>expected>>std::quoted(fingerprint)) ||
-         delta_id.empty() || current_key.empty() || fingerprint.empty() || expected!=replay_version)
-        return false;
-      idempotency_[current_key]=fingerprint;
-      have_meta=true;
-      continue;
-    }
-    if(e.kind=="NODE_ADD" || e.kind=="RELATION_ADD" || e.kind=="FOCUS_SET"){
-      if(!have_meta || !replay_event(rebuilt,e,last_error_))return false;
-    }
-  }
-  if(have_meta) ++replay_version;
-  if(replay_version!=journal_->state_version()) { last_error_="GRAPH_REPLAY_VERSION_MISMATCH"; return false; }
-  state_=std::move(rebuilt);return true;
+bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
+ if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(s,n,error);}
+ if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
+ if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
+ if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
+ error="JOURNAL_EVENT_KIND_UNKNOWN";return false;
 }
-
-DeltaResult ContextGraph::apply(const SemanticDelta& d) {
-  if(d.delta_id.empty() || d.idempotency_key.empty() ||
-     (d.nodes.empty() && d.relations.empty() && !d.focus))
-    return {false,false,state_version(),"DELTA_EMPTY_OR_ID_INVALID"};
-  const auto fp=fingerprint(d);
-  auto old=idempotency_.find(d.idempotency_key);
-  if(old!=idempotency_.end()){
-    if(old->second==fp)return {true,true,state_version(),{}};
-    return {false,false,state_version(),"IDEMPOTENCY_KEY_REUSED"};
-  }
-  if(d.expected_state_version!=state_version())return {false,false,state_version(),"STATE_VERSION_CONFLICT"};
-  State staged=state_;std::string error;
-  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return {false,false,state_version(),error};
-  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return {false,false,state_version(),error};
-  if(d.focus && !apply_focus(staged,d.focus->focus,error))return {false,false,state_version(),error};
-  auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
-  if(!committed.committed)return {false,false,state_version(),committed.error};
-  state_=std::move(staged);idempotency_[d.idempotency_key]=fp;
-  return {true,committed.duplicate,state_version(),{}};
+bool ContextGraph::replay(){
+ State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
+ for(const auto& e:journal_->committed_events()){
+  if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
+  if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
+   if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;continue;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+ }
+ if(have_meta)++version;if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}state_=std::move(rebuilt);return true;
 }
-}  // namespace surge
+DeltaResult ContextGraph::apply(const SemanticDelta& d){
+ if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus))return {false,false,state_version(),"DELTA_EMPTY_OR_ID_INVALID"};
+ const auto fp=fingerprint(d);auto old=idempotency_.find(d.idempotency_key);
+ if(old!=idempotency_.end()){if(old->second==fp)return {true,true,state_version(),{}};return {false,false,state_version(),"IDEMPOTENCY_KEY_REUSED"};}
+ if(d.expected_state_version!=state_version())return {false,false,state_version(),"STATE_VERSION_CONFLICT"};
+ State staged=state_;std::string error;
+ for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return {false,false,state_version(),error};
+ for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return {false,false,state_version(),error};
+ for(const auto& s:d.scope_spans)if(!apply_scope_span(staged,s,error))return {false,false,state_version(),error};
+ if(d.focus&&!apply_focus(staged,d.focus->focus,error))return {false,false,state_version(),error};
+ auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
+ if(!committed.committed)return {false,false,state_version(),committed.error};
+ state_=std::move(staged);idempotency_[d.idempotency_key]=fp;return {true,committed.duplicate,state_version(),{}};
+}
+} // namespace surge
