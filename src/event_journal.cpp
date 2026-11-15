@@ -116,19 +116,38 @@ bool EventJournal::recover() {
     std::vector<JournalEvent> events;
   };
   std::map<std::string, Pending> pending;
+  bool truncated_tail = false;
+  std::streamoff truncate_at = 0;
   for (;;) {
-    std::uint32_t length = 0;
     const auto frame_start = in.tellg();
-    if (!get_u32(in, length)) {
-      if (in.eof()) break;
-      last_error_ = "JOURNAL_LENGTH_READ_ERROR"; return false;
+    char length_bytes[4]{};
+    in.read(length_bytes, 4);
+    const auto length_read = in.gcount();
+    if (length_read == 0 && in.eof()) break;
+    if (length_read != 4) {
+      truncated_tail = true; truncate_at = static_cast<std::streamoff>(frame_start); break;
     }
+    const auto b0 = static_cast<std::uint32_t>(static_cast<unsigned char>(length_bytes[0]));
+    const auto b1 = static_cast<std::uint32_t>(static_cast<unsigned char>(length_bytes[1]));
+    const auto b2 = static_cast<std::uint32_t>(static_cast<unsigned char>(length_bytes[2]));
+    const auto b3 = static_cast<std::uint32_t>(static_cast<unsigned char>(length_bytes[3]));
+    const std::uint32_t length = b0 | (b1 << 8U) | (b2 << 16U) | (b3 << 24U);
     if (length > kMaxFrame) { last_error_ = "JOURNAL_FRAME_LENGTH_INVALID"; return false; }
-    std::string payload(length, '\0');
+    std::string payload(length, '\\0');
     in.read(payload.data(), static_cast<std::streamsize>(length));
-    if (!in) { in.clear(); break; }  // incomplete tail: transaction cannot be committed
-    std::uint32_t stored_crc = 0;
-    if (!get_u32(in, stored_crc)) { in.clear(); break; }
+    if (in.gcount() != static_cast<std::streamsize>(length)) {
+      truncated_tail = true; truncate_at = static_cast<std::streamoff>(frame_start); break;
+    }
+    char crc_bytes[4]{};
+    in.read(crc_bytes, 4);
+    if (in.gcount() != 4) {
+      truncated_tail = true; truncate_at = static_cast<std::streamoff>(frame_start); break;
+    }
+    const auto c0 = static_cast<std::uint32_t>(static_cast<unsigned char>(crc_bytes[0]));
+    const auto c1 = static_cast<std::uint32_t>(static_cast<unsigned char>(crc_bytes[1]));
+    const auto c2 = static_cast<std::uint32_t>(static_cast<unsigned char>(crc_bytes[2]));
+    const auto c3 = static_cast<std::uint32_t>(static_cast<unsigned char>(crc_bytes[3]));
+    const std::uint32_t stored_crc = c0 | (c1 << 8U) | (c2 << 16U) | (c3 << 24U);
     if (stored_crc != crc32(payload)) {
       last_error_ = "JOURNAL_CHECKSUM_MISMATCH@" + std::to_string(static_cast<long long>(frame_start));
       return false;
@@ -176,6 +195,11 @@ bool EventJournal::recover() {
     }
   }
   in.close();
+  if (truncated_tail) {
+    std::error_code ec;
+    std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
+    if (ec) { last_error_ = "JOURNAL_TAIL_TRUNCATE_ERROR"; return false; }
+  }
   if (truncated_tail) {
     std::error_code ec;
     std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
