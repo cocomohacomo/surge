@@ -156,7 +156,8 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d) const {
 }
 std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std::string& fp) const {
   std::vector<JournalEvent> out;
-  std::ostringstream meta;meta<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' '<<std::quoted(fp);
+  std::ostringstream meta;meta<<std::quoted(d.delta_id)<<' '<<std::quoted(d.idempotency_key)<<' '
+      <<d.expected_state_version<<' '<<std::quoted(fp);
   out.push_back({d.delta_id+"/meta","DELTA_META",meta.str()});
   std::size_t i=0;
   for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n)});
@@ -173,21 +174,27 @@ bool ContextGraph::replay_event(State& state,const JournalEvent& e,std::string& 
 }
 bool ContextGraph::replay() {
   State rebuilt;
-  std::string current_key,current_delta,current_fp;
-  std::uint64_t expected=0;
+  idempotency_.clear();
+  std::string current_key;
+  std::uint64_t replay_version=0;
   bool have_meta=false;
   for(const auto& e:journal_.committed_events()){
     if(e.kind=="DELTA_META"){
+      if(have_meta) ++replay_version;
       std::istringstream in(e.payload);
-      if(!(in>>std::quoted(current_delta)>>expected>>std::quoted(current_fp)) || current_delta.empty() || current_fp.empty()){
+      std::string delta_id, fingerprint;
+      std::uint64_t expected=0;
+      if(!(in>>std::quoted(delta_id)>>std::quoted(current_key)>>expected>>std::quoted(fingerprint)) ||
+         delta_id.empty() || current_key.empty() || fingerprint.empty() || expected!=replay_version)
         return false;
-      }
-      current_key=e.event_id.substr(0,e.event_id.size()-5); // remove "/meta"
-      if(expected+1!=journal_.state_version() && expected>=journal_.state_version()) return false;
-      idempotency_[current_key]=current_fp;have_meta=true;continue;
+      idempotency_[current_key]=fingerprint;
+      have_meta=true;
+      continue;
     }
     if(!have_meta || !replay_event(rebuilt,e,last_error_))return false;
   }
+  if(have_meta) ++replay_version;
+  if(replay_version!=journal_.state_version()) { last_error_="GRAPH_REPLAY_VERSION_MISMATCH"; return false; }
   state_=std::move(rebuilt);return true;
 }
 DeltaResult ContextGraph::apply(const SemanticDelta& d) {
