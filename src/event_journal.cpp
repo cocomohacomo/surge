@@ -126,7 +126,7 @@ bool EventJournal::recover() {
     const auto b3 = static_cast<std::uint32_t>(static_cast<unsigned char>(length_bytes[3]));
     const std::uint32_t length = b0 | (b1 << 8U) | (b2 << 16U) | (b3 << 24U);
     if (length > kMaxFrame) { last_error_ = "JOURNAL_FRAME_LENGTH_INVALID"; return false; }
-    std::string payload(length, '\\0');
+    std::string payload(length, '\0');
     in.read(payload.data(), static_cast<std::streamsize>(length));
     if (in.gcount() != static_cast<std::streamsize>(length)) {
       truncated_tail = true; truncate_at = static_cast<std::streamoff>(frame_start); break;
