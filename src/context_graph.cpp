@@ -84,6 +84,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
+ if(e.kind=="QUESTION_ASPECT_STATUS_SET"){std::istringstream in(e.payload);std::string id,status,extra;if(!(in>>std::quoted(id)>>status)||(in>>extra)||!s.nodes.count(id)||s.nodes.at(id).kind!=NodeKind::QuestionAspect){error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}QuestionAspectStatus value;if(status=="OPEN")value=QuestionAspectStatus::Open;else if(status=="RESOLVED")value=QuestionAspectStatus::Resolved;else if(status=="DEFERRED")value=QuestionAspectStatus::Deferred;else{error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}s.question_aspect_statuses[id]=value;return true;}
  error="JOURNAL_EVENT_KIND_UNKNOWN";return false;
 }
 bool ContextGraph::replay(){
@@ -93,6 +94,7 @@ bool ContextGraph::replay(){
   if(e.kind=="RETRIEVAL_TICKET_ISSUED"||e.kind=="RETRIEVAL_TICKET_RESOLVED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;continue;}
+  if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(have_meta) { ++version; }
@@ -136,4 +138,31 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d){
  if(!committed.committed)return {false,false,state_version(),committed.error};
  state_=std::move(staged);idempotency_[d.idempotency_key]=fp;return {true,committed.duplicate,state_version(),{}};
 }
+
+QuestionAspectStatus ContextGraph::question_aspect_status(const std::string& id) const {
+  const auto found = state_.question_aspect_statuses.find(id);
+  return found == state_.question_aspect_statuses.end()
+      ? QuestionAspectStatus::Open : found->second;
+}
+
+bool ContextGraph::set_question_aspect_status(const std::string& id,
+    QuestionAspectStatus status, std::uint64_t expected, std::string& error) {
+  error.clear();
+  if (!state_.nodes.count(id) || state_.nodes.at(id).kind != NodeKind::QuestionAspect) {
+    error = "QUESTION_ASPECT_NOT_FOUND"; return false;
+  }
+  if (expected != state_version()) { error = "STATE_VERSION_CONFLICT"; return false; }
+  const char* name = status == QuestionAspectStatus::Open ? "OPEN" :
+      status == QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
+  if (status == QuestionAspectStatus::Resolved &&
+      question_aspect_status(id) == QuestionAspectStatus::Resolved) return true;
+  std::ostringstream payload; payload << std::quoted(id) << ' ' << name;
+  const auto key = "question-aspect/status/" + id + "/" + std::to_string(expected + 1);
+  const auto committed = journal_->commit(key, key, expected,
+      {{key + "/event", "QUESTION_ASPECT_STATUS_SET", payload.str()}});
+  if (!committed.committed) { error = committed.error; return false; }
+  state_.question_aspect_statuses[id] = status;
+  return true;
+}
+
 } // namespace surge
