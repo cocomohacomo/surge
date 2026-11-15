@@ -1,6 +1,7 @@
 #include "surge/context_hint.hpp"
 #include <cassert>
 #include <iostream>
+#include <filesystem>
 using namespace surge;
 int main(){
   const std::string digest(64,'b');
@@ -35,6 +36,47 @@ int main(){
   assert(reevaluated.status==TicketStatus::Resolved && reevaluated.refs.size()==2);
   auto repeat=registry.resolve(built.ticket.ticket_id,8,true,{"ignored"});
   assert(repeat.refs==reevaluated.refs);
+
+  const auto journal_path=(std::filesystem::temp_directory_path()/"surge-persistent-ticket-tests.sgj").string();
+  std::filesystem::remove(journal_path);
+  std::string persistent_ticket_id=built.ticket.ticket_id;
+  {
+    EventJournal journal(journal_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    PersistentRetrievalTicketRegistry durable(journal);
+    assert(durable.open());
+    auto ticket=built.ticket;
+    ticket.state_version=graph.state_version();
+    assert(durable.issue(ticket,error));
+    const auto after_issue=graph.state_version();
+    assert(after_issue==1);
+    assert(durable.issue(ticket,error));
+    assert(graph.state_version()==after_issue);
+    auto resolved=durable.resolve(ticket.ticket_id,ticket.state_version,false,{},error);
+    assert(error.empty()&&resolved.status==TicketStatus::Resolved);
+    assert(resolved.refs==ticket.omitted_refs);
+    assert(graph.state_version()==2);
+  }
+  {
+    EventJournal journal(journal_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    assert(graph.state_version()==2);
+    PersistentRetrievalTicketRegistry durable(journal);
+    assert(durable.open()&&durable.size()==1);
+    auto recovered=durable.resolve(persistent_ticket_id,0,false,{},error);
+    assert(error.empty()&&recovered.status==TicketStatus::Resolved);
+    assert(recovered.refs==built.ticket.omitted_refs);
+    auto stale=durable.resolve(persistent_ticket_id,2,false,{},error);
+    assert(error.empty()&&stale.status==TicketStatus::Stale);
+    auto reevaluated=durable.resolve(persistent_ticket_id,2,true,{"new-a","new-a","new-b"},error);
+    assert(error.empty()&&reevaluated.status==TicketStatus::Resolved&&reevaluated.refs.size()==2);
+  }
+  std::filesystem::remove(journal_path);
+
   auto invalid=ContextHintBuilder::build("","packet",digest,"p",0,candidates,1);
   assert(invalid.error=="CONTEXT_HINT_REQUEST_INVALID");
   auto optional=ContextHintBuilder::build("ctx","packet-2",digest,"policy-1",8,
