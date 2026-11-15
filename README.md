@@ -29,13 +29,17 @@ Universal Context Cognition Framework.
 
 ## Build and test
 
-C++17 Core prototype:
+C++17 shared Core and C ABI:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+python -m pip install -r requirements-dev.txt
+python tools/validate_fixtures.py
 ```
+
+The build produces `build/libsurge_core.so` on Linux (or the platform shared-library equivalent). The Python adapter loads it automatically, or accepts an explicit path through `SURGE_CORE_LIBRARY`. Use `RecognitionPacketAdapter.admit_to_core(packet, source_text, core)` with a `CppCoreBridge(journal_path)` context manager. The adapter validates the Draft 2020-12 schema and NFC byte anchors; the C++ Core independently verifies snapshot/range SHA-256 and performs the authoritative journal transaction.
 
 Schema and fixture checks:
 
@@ -67,4 +71,4 @@ The C++17 prototype currently covers selected v0.9 primitives, including atomic 
 
 ### Packet source integrity
 
-PacketAdmissionCoordinator independently recomputes SHA-256 over the caller-supplied NFC UTF-8 snapshot and its exact half-open byte range. C++ validates UTF-8 but does not normalize Unicode; NFC normalization and JSON Schema validation remain adapter responsibilities. The packet journal now writes RPA2 records and can replay earlier RPA1 records. A direct Python/C++ binding is still pending.
+PacketAdmissionCoordinator independently recomputes SHA-256 over the caller-supplied NFC UTF-8 snapshot and its exact half-open byte range. C++ validates UTF-8 but does not normalize Unicode; NFC normalization and JSON Schema validation remain adapter responsibilities. The packet journal now writes RPA2 records and can replay earlier RPA1 records. The Python Adapter now calls the C ABI through ctypes. The end-to-end test covers NFC normalization, durable admission, exact duplicate retry, and restart replay.
