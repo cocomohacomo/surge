@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.7
+
+- Add deterministic ContextHint candidate priority, deduplication and bounded reference selection.
+- Preserve mandatory-reference overflow as context_complete=false and issue idempotent RetrievalTickets.
+- Exclude optional omissions from mandatory RetrievalTicket payloads.
+- Add state-version-aware read-only ticket resolution with replay or STALE behavior.
+- Add seven C++ conformance groups.
+
+
 ## 0.9.6
 
 - Add type-specific ScopeSpan validation for all 11 v0.9 scope kinds.
