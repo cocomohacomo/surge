@@ -49,6 +49,18 @@ typedef struct SurgeScopeAnchorInput {
   const char* packet_ref;
 } SurgeScopeAnchorInput;
 
+typedef struct SurgeRetrievalTicketInput {
+  const char* ticket_id;
+  const char* context_id;
+  const char* packet_ref;
+  const char* source_range_digest;
+  const char* omitted_digest;
+  const char* policy_version;
+  uint64_t state_version;
+  const char* const* omitted_refs;
+  size_t omitted_count;
+} SurgeRetrievalTicketInput;
+
 typedef struct SurgeScopeSpanInput {
   const char* span_id;
   const char* kind;
@@ -100,6 +112,15 @@ size_t surge_context_graph_scope_count(void* handle);
 // On insufficient output capacity, required_capacity receives the needed byte count including NUL.
 int surge_context_graph_retrieve(void* handle, const char* query, const char* kinds_csv,
     size_t limit, char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
+// Durable RetrievalTicket issue/resolve operations share the Core EventJournal.
+int surge_retrieval_ticket_issue(void* handle, const SurgeRetrievalTicketInput* ticket,
+    char* error, size_t error_capacity);
+int surge_retrieval_ticket_resolve(void* handle, const char* ticket_id,
+    uint64_t current_state_version, int query_replayable,
+    const char* const* reevaluated_refs, size_t reevaluated_count,
+    char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
 // One durable transaction for RecognitionPacket admission and SemanticDelta.
