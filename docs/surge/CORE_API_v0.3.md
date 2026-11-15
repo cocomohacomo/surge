@@ -503,3 +503,87 @@ validate_delta MUST enforce I-26 through I-35 and detailed design D-21 through D
 
 ## 16. v0.6 Migration Contract
 Migration is a Core-controlled operation producing a new State Generation. Request includes source/target schema versions, migration policy version, source State Version, idempotency key, and dry-run flag. Response includes migrated refs, unresolved mappings, review items, warnings, and validation report. Migration MUST preserve source records and MUST NOT publish a partially migrated Generation.
+
+
+---
+
+# v0.8 Compact Recognition Packet Extension
+
+This section extends the existing v0.6-compatible API without changing any prior operation.
+
+## 13. New operations
+
+| Operation | Access | Effect | Purpose |
+|---|---|---|---|
+| build_context_hint | Core read | None | Return bounded, versioned context references |
+| ingest_packet | Write | Append packet/event/evidence references | Accept a bounded source slice |
+| submit_classification | Write proposal | No committed state change | Accept compact model output |
+| get_packet_status | Read | None | Read packet/continuation/overlap status |
+| benchmark_profile | Read/admin | None | Return declared benchmark configuration |
+
+The RecognitionPacket schema is defined in `schemas/surge-v0.8-input.schema.json`.
+
+## 14. build_context_hint
+
+Request: context_id, source_position or source/block refs, requested_scope_refs (optional), max_candidate_refs, expected_state_version (optional), retrieval_policy_version.
+
+Response: state_version, scope_refs, focus_refs, candidate_refs with kind and retrieval_reason, temporal_mode, omitted_candidate_count, truncated, retrieval_policy_version.
+
+The hint is a bounded routing aid, not a complete Context export. Candidate ranking is not truth confidence. The Core MUST preserve unresolved mandatory dependencies and MUST report omissions.
+
+## 15. ingest_packet
+
+Request: context_id, packet conforming to RecognitionPacket, expected_state_version (optional).
+
+Processing:
+1. validate schema, digest, offsets, window size, adapter capability and source refs;
+2. deduplicate by idempotency key and overlap/source range;
+3. append packet receipt and immutable source/Evidence refs;
+4. enqueue classification without blocking acceptance;
+5. apply backpressure when configured queue capacity is reached.
+
+Response: packet_ref, accepted_source_range, duplicate, classification_job_ref, queue_status (ACCEPTED, BACKPRESSURE, DEFERRED).
+
+No source range may be silently dropped. Overlap does not create duplicate Evidence. Packet receipt is not a semantic commit.
+
+## 16. submit_classification
+
+Request: context_id, packet_ref, producer/model/runtime descriptor refs, base_state_version, labels and candidate spans, abstention reasons, idempotency_key.
+
+Processing:
+1. authenticate producer and check capability/label schema;
+2. validate all spans against packet offsets and digest;
+3. validate producer-local score ranges and calibration declaration;
+4. reject stale ContextHint for commit purposes or schedule Core-side revalidation;
+5. store immutable proposal;
+6. generate a Core-owned Delta candidate for ordinary validation.
+
+Response: proposal_ref, proposal_status (PENDING_VALIDATION, NEEDS_REBASE, ACCEPTED_CANDIDATE, REJECTED), validation_job_ref, abstention_refs.
+
+Classification submission never changes committed Context State directly.
+
+## 17. get_packet_status
+
+Returns accepted source ranges, continuation lineage, overlap group, duplicate status, extraction coverage, classifier status, abstention status and deferred work. It MUST NOT expose a packet as complete when omitted ranges remain.
+
+## 18. Benchmark profile
+
+A benchmark profile includes CPU/runtime identity, model artifact digest/size, quantization, thread count, packet window and overlap, corpus digest, timing boundary, warmup/repetition policy, RTF definition, text reference-rate version, and memory accounting. Benchmark profile is immutable once attached to a result.
+
+## 19. Additional errors
+
+- PACKET_SCHEMA_INVALID
+- PACKET_OFFSET_INVALID
+- PACKET_WINDOW_EXCEEDED
+- PACKET_DIGEST_MISMATCH
+- OVERLAP_CONFLICT
+- CONTEXT_HINT_STALE
+- CLASSIFICATION_LABEL_UNSUPPORTED
+- CLASSIFICATION_SPAN_INVALID
+- MODEL_DESCRIPTOR_MISSING
+- QUEUE_BACKPRESSURE
+- BENCHMARK_PROFILE_INCOMPLETE
+
+## 20. Authority
+
+Only Core Transaction Coordinator commits state. Recognition Engine emits candidate labels and spans. Adapter emits structural facts and coverage. Neither can independently confirm Entity identity, source independence, Question resolution, Focus transition or Claim truth.
