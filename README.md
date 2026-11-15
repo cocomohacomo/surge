@@ -63,3 +63,8 @@ v0.9 is the current normative architecture and execution contract. v0.8 and earl
 ## Conformance status
 
 The C++17 prototype currently covers selected v0.9 primitives, including atomic RecognitionPacket admission through SourceSequencer, RangeLedger and EventJournal with restart replay, an append-only local event journal typed ContextGraph delta commits bounded dependency impact/SCC analysis contradiction-to-Question/Interest/Focus routing and type-specific ScopeSpan validation and bounded ContextHint/RetrievalTicket handling. RecognitionPacket has a Python schema/source-integrity admission adapter with 12 focused conformance tests and a C++ journal-backed atomic admission coordinator. D01-D20 are executable-oriented fixtures with structural/range checks; they are not yet all end-to-end semantic tests against the complete Core. Model accuracy, end-to-end RTF, p99 latency and peak RSS remain unmeasured.
+
+
+### Packet source integrity
+
+PacketAdmissionCoordinator independently recomputes SHA-256 over the caller-supplied NFC UTF-8 snapshot and its exact half-open byte range. C++ validates UTF-8 but does not normalize Unicode; NFC normalization and JSON Schema validation remain adapter responsibilities. The packet journal now writes RPA2 records and can replay earlier RPA1 records. A direct Python/C++ binding is still pending.
