@@ -90,7 +90,7 @@ std::string hash_text(const std::string& text) {
 
 ContextGraph::ContextGraph(std::string path)
     : owned_journal_(std::make_unique<EventJournal>(std::move(path))),
-      journal_(owned_journal_->get()) {}
+      journal_(owned_journal_.get()) {}
 ContextGraph::ContextGraph(EventJournal& shared_journal)
     : journal_(&shared_journal) {}
 bool ContextGraph::open() { if(!journal_ || !journal_->open()) return false; return replay(); }
