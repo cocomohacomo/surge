@@ -2,8 +2,8 @@
 ## Detailed Design Specification
 
 **Version:** 0.1.0  
-**基準仕様:** SURGE 基礎設計 v0.3.0  
-**Status:** Detailed Design Draft  
+**基準仕様:** SURGE 基礎設計 v0.4.0  
+**Status:** Integrated Reference (normative design promoted into SPECIFICATION_v0.4.md)  
 **設計方針:** Architecture-preserving / Streaming-native / Evidence-first / Non-destructive
 
 ---
@@ -802,3 +802,10 @@ Proposalには「確定」の権限を持たせない。CoreはProposalの一部
 本書で定義した状態名・型・処理規則は実装可能な詳細化であり、基礎仕様の意味を変更するものではない。実装検証で矛盾が見つかった場合は、本書だけを暗黙に変更せず、変更理由と基礎仕様への影響を記録して改訂する。
 
 **結論:** SURGEは、Evidenceを不変の基盤とし、Interpretationと状態を非破壊的に進化させ、Question/Interest/Focusを認知制御として分離管理し、DependencyとTransactionによって文脈の再評価と確定状態の整合性を保証する。
+
+
+---
+
+## v0.4統合記録
+
+本書のデータ契約、状態遷移、Question統合、Interest/Focus選択、Dependency収束、Source Lineage、Streaming Convergence、Transaction/Recoveryに関する規範要件は、SURGE 基礎設計 v0.4.0へ統合された。JSON構造の機械可読契約は `schemas/surge-v0.4.schema.json`、Core操作契約は `docs/surge/CORE_API_v0.1.md` を参照する。本書は詳細設計の由来と設計判断を追跡するために保持し、v0.4以降の規範的な適合判定では基礎仕様・Schema・Core APIを優先する。
