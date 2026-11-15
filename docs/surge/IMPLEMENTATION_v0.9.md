@@ -8,7 +8,8 @@
 
 - SHA-256 source verifier v0.1（C++）: SHA-256再計算と厳密なUTF-8妥当性検証を実装し、正規化済みスナップショット全体と半開区間のdigestをCore側で独立照合する。NFC変換自体はAdapter責務。
 - PacketAdmissionCoordinator v0.2（C++）: SourceSequencer/RangeLedgerのstaged validation後、単一RECOGNITION_PACKET_ADMITTEDイベントとしてEventJournalへcommitし、成功後のみメモリ状態を公開。packet ID/idempotency/source sequenceを復元し、再起動後のreplayとexact retryを検証。
-- RecognitionPacket Adapter v0.1（Python）: Draft 2020-12 schema validation、immutable NFC UTF-8 source snapshotの全体digestとrange digest検証、byte offset bounds、packet/idempotency/sequence/range identity検査、append-only revision lineage、exact retryの冪等Admission。12件の独立テストをfixture検証コマンドから実行する。
+- RecognitionPacket C ABI / Python ctypes bridge v0.1: C++ shared libraryをロードし、PythonでSchema/NFC境界検証したRecognitionPacketをC++ PacketAdmissionCoordinatorへ渡す。Journal open/replay、admit、duplicate、state version、packet countを公開。
+- RecognitionPacket Adapter v0.2（Python）: Draft 2020-12 schema validation、immutable NFC UTF-8 source snapshotの全体digestとrange digest検証、byte offset bounds、packet/idempotency/sequence/range identity検査、append-only revision lineage、exact retryの冪等Admission。12件の独立テストをfixture検証コマンドから実行する。
 
 - ContextHintBuilder / RetrievalTicketRegistry: mandatory優先順、stable dedup/sort、budget overflow、mandatory omitted digest、state-version再評価/STALE、read-only resolve
 
@@ -31,7 +32,7 @@
 ## 現段階で未実装
 
 - RecognitionPacket/ClassificationProposalのC++デコードとC++内schema validation（Python Adapterは別途実装済み）
-- Python AdapterからC++ ValidatedRecognitionPacketへの実バインディング/IPC bridge
+- Python/C ABIはin-process・single-process限定であり、IPC bridge、複数プロセス排他
 - Source/Context単位の永続ストア、OSレベルのfsync/FlushFileBuffers、複数プロセス排他、snapshot/compaction
 - ScopeSpanの全11種別に対する型別アンカー・構文検証とClaim/Relation原子更新
 - ContextHintのmandatory ref選定、digest生成、RetrievalTicket検索
@@ -42,9 +43,9 @@
 
 ## 検証
 
-ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、PacketAdmissionの3シナリオ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループ、ContextHintの7グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査、D01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性、およびRecognitionPacket Adapterの12テストを検査する。
+ローカルでC++17、CMake、CTestを用いてビルドし、既存Coreの16グループ、EventJournalの5グループ、PacketAdmissionの3シナリオ、ContextGraphの2グループ、DependencyEngineの6グループ、QuestionRouterの3グループ、ScopeSpanValidatorの12グループ、ContextHintの7グループのassertionテストを実行する。Python検証器は3つのDraft 2020-12 Schemaのメタスキーマ検査、D01-D20 fixture ID、D01-D12のUTF-8 byte range/SHA-256整合性、およびRecognitionPacket Adapter 12テストとPython-C++統合テストを検査する。
 
-Python Adapter自体のidempotency registryはprocess-localだが、C++ PacketAdmissionCoordinatorはEventJournalにcommitされたPacketAdmissionをrestart replayする。PythonからC++への実バインディングは未実装であり、C++はSHA-256を独立再計算し、全体digestとrange digestを照合する。Unicode NFC変換とJSON Schema検証はPython Adapterの責務で、Python-C++実バインディングは未実装。source snapshotの真正性は呼出元のtrusted source adapterに依存する。fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
+Python Adapter自体のidempotency registryはprocess-localだが、C++ PacketAdmissionCoordinatorはEventJournalにcommitされたPacketAdmissionをrestart replayする。PythonからC++への実バインディングは未実装であり、C++はSHA-256を独立再計算し、全体digestとrange digestを照合する。Unicode NFC変換とJSON Schema検証はPython Adapterの責務で、Python ctypesからC ABIを通じた実接続を実装し、NFC正規化、C++独立digest検証、Journal commit、重複再送、再起動replayを統合テストする。source snapshotの真正性は呼出元のtrusted source adapterに依存する。fixture整合性検査とC++プリミティブテストは、D01-D20の意味的完全適合を意味しない。CIで両者を継続実行する。モデル精度、RTF、p99 latency、peak RSSは実測値が得られるまで未評価とする。
 
 ## EventJournalの制約
 
