@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.5
+
+- Add deterministic contradiction routing from explicit Claim-to-Claim CONTRADICTS relations.
+- Create Question and QuestionAspect records and route Interest to all linked Clusters.
+- Select Focus only for a single unambiguous target Cluster; preserve ambiguity when multiple Clusters are involved.
+- Make routing idempotent by contradiction relation and add multi-cluster/single-cluster tests.
+
+
 ## 0.9.4
 
 - Add bounded transitive Dependency impact-set computation with deterministic ordering and budget enforcement.
