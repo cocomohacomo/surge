@@ -31,6 +31,7 @@ std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  std::ostringstream out;
  out << std::quoted(r.delta_id) << ' ' << r.status << ' '
      << r.iterations << ' ' << r.evaluation_cost << ' '
+     << (r.impacted_nodes_truncated ? 1 : 0) << ' '
      << std::quoted(r.diagnostic_error) << ' ' << r.triggered.size();
  for (const auto& item : r.triggered)
   out << ' ' << std::quoted(item.dependency_id) << ' '
@@ -145,10 +146,13 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
    record.status="CONVERGED";
   } else {
    record.status=status_or_legacy_count;
-   if(!(in>>record.iterations>>record.evaluation_cost>>
-        std::quoted(record.diagnostic_error)>>count)){
+   int impacted_truncated=0;
+   if(!(in>>record.iterations>>record.evaluation_cost>>impacted_truncated>>
+        std::quoted(record.diagnostic_error)>>count)||
+      (impacted_truncated!=0&&impacted_truncated!=1)){
     error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
    }
+   record.impacted_nodes_truncated=impacted_truncated!=0;
   }
   if((record.status!="CONVERGED"&&record.status!="DEFERRED"&&record.status!="INVALID")||
      count>4096){
@@ -301,6 +305,10 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
   record.iterations=evaluation.iterations;
   record.evaluation_cost=evaluation.evaluation_cost;
   record.impacted_nodes=evaluation.impacted_nodes;
+  if(record.impacted_nodes.size()>8192){
+   record.impacted_nodes.resize(8192);
+   record.impacted_nodes_truncated=true;
+  }
   record.rejected_dependencies=evaluation.rejected_dependencies;
   record.cyclic_components=evaluation.cyclic_components;
   record.diagnostic_error=evaluation.error;
