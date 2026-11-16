@@ -1,9 +1,9 @@
 name: SURGE v0.9 conformance
 on:
   push:
-    branches: [main, "spec/**", "impl/**"]
+    branches: [main, "spec/**", "impl/**", "feat/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**"]
 jobs:
   cpp-core:
     runs-on: ubuntu-latest
@@ -28,3 +28,5 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
       - run: python tools/validate_fixtures.py
+      - name: Python adapter regression tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v

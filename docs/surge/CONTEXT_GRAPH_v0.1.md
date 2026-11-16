@@ -8,10 +8,14 @@ Provide the first typed semantic state layer over EventJournal. The graph is sco
 
 Node kinds: CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST.
 
-Relation kinds: SUPPORTS, CONTRADICTS, AGREES_WITH, CONFLICTS_WITH, DEPENDS_ON, ABOUT.
+Relation kinds: SUPPORTS, CONTRADICTS, AGREES_WITH, CONFLICTS_WITH, DEPENDS_ON,
+ABOUT, EVIDENCE_FOR, PUBLISHED_BY.
 
 Typed reference rules:
 - CLAIM references one or more EVIDENCE nodes.
+- EVIDENCE has no generic references; provenance is represented by typed
+  EVIDENCE_FOR (EVIDENCE -> CLAIM) and PUBLISHED_BY (EVIDENCE -> ENTITY)
+  relations.
 - QUESTION_ASPECT references exactly one QUESTION.
 - INTEREST references exactly one QUESTION_ASPECT and one target CLUSTER.
 - DEPENDENCY references exactly two distinct existing nodes.
@@ -21,6 +25,8 @@ Relation constraints:
 - SUPPORTS/CONTRADICTS connect CLAIM to CLAIM.
 - AGREES_WITH/CONFLICTS_WITH connect CLUSTER to CLUSTER or CLAIM to CLAIM.
 - ABOUT connects CLAIM/QUESTION/QUESTION_ASPECT to ENTITY/CLUSTER.
+- EVIDENCE_FOR connects EVIDENCE to CLAIM.
+- PUBLISHED_BY connects EVIDENCE to ENTITY.
 - DEPENDS_ON connects any two distinct existing nodes.
 
 Nodes and relations are append-only. This first version does not implement merge, split, delete or tombstone semantics. Entity identity resolution remains a separate Core operation.

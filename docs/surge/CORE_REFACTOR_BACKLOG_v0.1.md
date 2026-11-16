@@ -90,67 +90,33 @@ A backlog item is complete only when its implementation, regression tests,
 documentation, and CI result are available. A PR being open or code merely
 being drafted does not count as completion.
 
+## Progress update: dependency transaction chain
 
-## Progress update
+PR #29 introduced atomic dependency trigger evaluation, PR #30 exposed durable
+evaluation records through C ABI/Python, PR #31 added typed predicate parsing,
+PR #32 added bounded SCC/fixed-point evaluation, and PR #33 added durable
+fixed-point diagnostics. These PRs remain stacked and unmerged. The user
+identified the earlier CI failures as GitHub token quota exhaustion; no source
+failure is inferred from those runs. Build/test execution remains unverified.
 
-The first P0 Core transaction increment is implemented on branch
-`feat/atomic-dependency-trigger-journal-v0.1` and proposed in PR #29.
-Dependency evaluation results are journaled atomically with SemanticDelta and
-restored on replay. Restart, idempotency, and atomic packet + semantic tests
-have been added. The current CI attempts have not produced a successful run,
-so these checklist items remain open until the test suite passes and the PR is
-merged. C ABI/Python exposure and fault-injection verification are also open.
+## Progress update: Web document recognition v0.1
 
+Branch `feat/web-document-recognition-regression-v0.1` adds
+`WebDocumentRecognitionEngine`, UTF-8/NFC-aware chunking, typed marker-based
+ScopeSpan candidates, conservative Claim applicability comparison, temporal
+lifecycle classification, publisher/Evidence provenance, URL/content revision
+indexing, and Python adapter regression tests. The engine prepares a typed
+SemanticDelta and sends it through the existing atomic Packet + SemanticDelta
+Core API. ContextGraph now has typed EVIDENCE_FOR (Evidence -> Claim) and
+PUBLISHED_BY (Evidence -> Entity) relations, with C ABI serialization and
+replay support. It does not change the production specification or the
+existing Japanese Scoring 50-case dataset.
 
-A follow-up implementation is in progress on
-`feat/dependency-evaluation-c-api-v0.1`, stacked on PR #29. It adds a
-read-only C ABI and Python `ContextRetriever` API for retrieving persisted
-dependency evaluation records by delta ID, with bounded-buffer retry and
-restart-replay conformance coverage. This work is not complete until the
-stacked PR's CI passes and both PRs are merged.
-
-
-## Progress update: typed predicates and bounded fixed-point evaluation
-
-PR #31 (`feat/typed-dependency-predicate-ast-v0.1`) introduces a typed
-predicate AST and centralized parser while preserving persisted string
-compatibility. The follow-on branch `feat/bounded-dependency-fixpoint-v0.1`
-adds deterministic SCC discovery, bounded monotonic fixed-point evaluation,
-explicit `Converged` / `Deferred` / `Invalid` outcomes, and independent
-iteration, predicate-evaluation, and impacted-node budgets. The staged
-ContextGraph transaction now persists only converged evaluation outcomes;
-budget exhaustion or invalid input aborts the whole transaction before
-journal append. Documentation and regression cases are included.
-
-These changes remain on stacked PR branches and are not merged. The user has
-identified the reported CI failures as GitHub token quota exhaustion; therefore
-the failed CI status is treated as an infrastructure/credential blocker, not
-as evidence of a source-code failure. Compilation and test execution still
-need confirmation once the GitHub Actions token quota is restored or a local
-build environment is available.
-
-Next dependency-semantics increment: persist the fixpoint diagnostics
-(iteration count, evaluation cost, SCC membership, and deferred reason) in the
-journal/read API, then add fault-injection and non-monotonic-rule admission
-guards before introducing semantic rewrite callbacks inside SCCs.
-
-
-## Progress update: durable fixed-point diagnostics
-
-The diagnostics increment is implemented on branch
-`feat/dependency-fixpoint-diagnostics-v0.1`. Successful evaluations persist
-status, iterations, predicate evaluation cost, triggered/rejected dependencies,
-impacted references, SCC membership, and diagnostic code in the SemanticDelta
-transaction. Direct `ContextGraph::apply` attempts that defer or fail also
-write a separate diagnostic-only journal transaction while leaving the
-SemanticDelta uncommitted. This audit transaction advances state_version and
-the returned result reports `committed=false`; retry callers must refresh the
-expected state version. Replay permits staged references in diagnostic-only
-records because the rejected graph was never committed. A later converged
-retry can supersede a prior non-converged diagnostic.
-
-The C ABI and Python retrieval method expose the expanded diagnostic record.
-Regression coverage includes successful diagnostic replay and an oversized
-impact set producing a durable DEFERRED diagnostic. Atomic packet preparation
-remains side-effect-free and therefore reports, but does not separately journal,
-deferred diagnostics. Build/test execution and CI remain unverified.
+The exact prior Web test's individual 50 source excerpts and expected outputs
+are not present in the retrievable conversation record. The known aggregate
+(41 ACCEPT, 8 REVIEW, 1 ABSTAIN) and source grouping (MHLW, MAFF, MOE,
+Tohoku University, MLIT/JMA) are not sufficient to reconstruct exact examples.
+Per the user's explicit constraint, no replacement or invented 50-case corpus
+is to be created. A JSON Schema for the separate Web regression dataset is
+added; the exact cases must be imported from the original source material
+before any 50-case pass rate is reported.

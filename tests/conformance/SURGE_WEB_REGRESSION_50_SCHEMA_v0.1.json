@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.local/schemas/SURGE_WEB_REGRESSION_50_SCHEMA_v0.1.json",
+  "title": "SURGE Web-derived regression case set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dataset_id",
+    "dataset_kind",
+    "separation_from_scoring",
+    "cases"
+  ],
+  "properties": {
+    "dataset_id": {
+      "const": "SURGE_WEB_REGRESSION_50_v0.1"
+    },
+    "dataset_kind": {
+      "const": "web_document_regression"
+    },
+    "separation_from_scoring": {
+      "const": "independent_from_SURGE_JA_SCORING_50_v0.1"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 50,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "source_url",
+          "publisher",
+          "acquired_at",
+          "capture_status",
+          "source_digest",
+          "source_excerpt",
+          "expected_decision",
+          "expected_claims",
+          "expected_scopes",
+          "source_group",
+          "provider_candidate"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^WEB-[0-9]{2}$"
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "publisher": {
+            "type": "string",
+            "minLength": 1
+          },
+          "acquired_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "capture_status": {
+            "enum": [
+              "FULL_TEXT",
+              "PARTIAL",
+              "PDF_TEXT"
+            ]
+          },
+          "source_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_excerpt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_decision": {
+            "enum": [
+              "ACCEPT",
+              "REVIEW",
+              "ABSTAIN"
+            ]
+          },
+          "expected_claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "proposition",
+                "polarity"
+              ],
+              "properties": {
+                "proposition": {
+                  "type": "string"
+                },
+                "polarity": {
+                  "enum": [
+                    "POSITIVE",
+                    "NEGATIVE",
+                    "UNKNOWN"
+                  ]
+                },
+                "topic": {
+                  "type": "string"
+                },
+                "temporal_state": {
+                  "type": "string"
+                },
+                "geography": {
+                  "type": "string"
+                },
+                "valid_from": {
+                  "type": "string"
+                },
+                "valid_to": {
+                  "type": "string"
+                },
+                "modality": {
+                  "type": "string"
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "expected_scopes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "kind",
+                "exact_text"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "NEGATION",
+                    "MODALITY",
+                    "TEMPORAL",
+                    "QUOTATION"
+                  ]
+                },
+                "exact_text": {
+                  "type": "string"
+                },
+                "attributed_speaker": {
+                  "type": "string"
+                },
+                "temporal_role": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "adjudication_note": {
+            "type": "string"
+          },
+          "source_group": {
+            "enum": [
+              "MHLW",
+              "MAFF",
+              "MOE",
+              "TOHOKU_UNIVERSITY",
+              "MLIT_JMA"
+            ]
+          },
+          "provider_candidate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "topic",
+              "proposition",
+              "polarity",
+              "conditional",
+              "confidence",
+              "ambiguity",
+              "importance"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "CLAIM",
+                  "QUESTION",
+                  "ACKNOWLEDGEMENT",
+                  "UNRESOLVED",
+                  "FILLER"
+                ]
+              },
+              "topic": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "proposition": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "polarity": {
+                "enum": [
+                  "POSITIVE",
+                  "NEGATIVE",
+                  "UNKNOWN"
+                ]
+              },
+              "conditional": {
+                "type": "boolean"
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "ambiguity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "importance": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "expected_relations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "CONTRADICTS",
+                    "SUPPORTS",
+                    "AGREES_WITH",
+                    "CONFLICTS_WITH",
+                    "ABOUT",
+                    "DEPENDS_ON",
+                    "EVIDENCE_FOR",
+                    "PUBLISHED_BY"
+                  ]
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

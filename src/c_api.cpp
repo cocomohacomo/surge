@@ -71,6 +71,8 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   else if(s=="CONFLICTS_WITH")out=surge::RelationKind::ConflictsWith;
   else if(s=="DEPENDS_ON")out=surge::RelationKind::DependsOn;
   else if(s=="ABOUT")out=surge::RelationKind::About;
+  else if(s=="EVIDENCE_FOR")out=surge::RelationKind::EvidenceFor;
+  else if(s=="PUBLISHED_BY")out=surge::RelationKind::PublishedBy;
   else return false;
   return true;
 }
@@ -543,6 +545,8 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
         case surge::RelationKind::ConflictsWith: return "CONFLICTS_WITH";
         case surge::RelationKind::DependsOn: return "DEPENDS_ON";
         case surge::RelationKind::About: return "ABOUT";
+        case surge::RelationKind::EvidenceFor: return "EVIDENCE_FOR";
+        case surge::RelationKind::PublishedBy: return "PUBLISHED_BY";
       }
       return "UNKNOWN";
     };
