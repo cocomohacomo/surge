@@ -97,7 +97,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(len(conflict["pending"]["candidates"]), 3)
                 resolved = core.resolve_temporal_boundary_candidate(
                     transaction_id="tb-tx-4", idempotency_key="tb-idem-4",
-                    event_id="tb-event-4", expected_state_version=4,
+                    event_id="tb-event-4", expected_state_version=5,
                     claim_id="claim/bridge", role="VALID_FROM", candidate_id="tb-event-1")
                 self.assertEqual(resolved["status"], "CONFLICT_RESOLVED_PENDING_APPROVAL")
                 self.assertEqual(resolved["pending"]["valid_from"], "2026-04-01T00:00:00+09:00")
@@ -118,7 +118,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                                  ["tb-event-1", "tb-event-2"])
                 cleared = recovered.clear_temporal_boundary(
                     transaction_id="tb-tx-5", idempotency_key="tb-idem-5",
-                    event_id="tb-event-5", expected_state_version=6,
+                    event_id="tb-event-5", expected_state_version=7,
                     claim_id="claim/bridge")
                 self.assertTrue(cleared["committed"])
                 self.assertIsNone(recovered.get_temporal_boundary("claim/bridge"))
