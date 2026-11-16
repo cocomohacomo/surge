@@ -154,9 +154,9 @@ int main(){
       EventJournal journal(legacy_path);assert(journal.open());
       const auto committed=journal.commit("legacy-delta","legacy-idem",0,{
         {"legacy-delta/meta","DELTA_META",
-         "\\"legacy-delta\\" \\"legacy-idem\\" 0 \\"legacy-fingerprint\\""},
+         "\"legacy-delta\" \"legacy-idem\" 0 \"legacy-fingerprint\""},
         {"legacy-delta/dependency-evaluation","DEPENDENCY_EVALUATION",
-         "\\"legacy-delta\\" 0 0 0"}
+         "\"legacy-delta\" 0 0 0"}
       });
       assert(committed.committed && committed.state_version==1);
     }
