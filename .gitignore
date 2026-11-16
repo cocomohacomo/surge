@@ -1,0 +1,28 @@
+# CMake and native build output
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/compile_commands.json
+/Testing/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local databases, journals, logs, and runtime state
+*.db
+*.sqlite
+*.sqlite3
+*.journal
+*.log
+
+# Local/editor/OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
