@@ -75,9 +75,22 @@ class ContextRetriever:
                     result = json.loads(output.value.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID") from exc
-                expected = {"delta_id", "triggered", "impacted_nodes", "rejected_dependencies"}
+                expected = {
+                    "delta_id", "status", "iterations", "evaluation_cost",
+                    "diagnostic_error", "triggered", "impacted_nodes",
+                    "rejected_dependencies", "cyclic_components",
+                }
                 if not isinstance(result, dict) or set(result) != expected:
                     raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_SHAPE_INVALID")
+                if (result["status"] not in {"CONVERGED", "DEFERRED", "INVALID"}
+                        or not isinstance(result["iterations"], int)
+                        or not isinstance(result["evaluation_cost"], int)
+                        or not isinstance(result["diagnostic_error"], str)
+                        or not isinstance(result["cyclic_components"], list)
+                        or not all(isinstance(component, list)
+                                   and all(isinstance(ref, str) for ref in component)
+                                   for component in result["cyclic_components"])):
+                    raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID")
                 return result
             message = error.value.decode("utf-8", errors="replace")
             if message != "RETRIEVAL_BUFFER_TOO_SMALL" or required.value <= capacity:
