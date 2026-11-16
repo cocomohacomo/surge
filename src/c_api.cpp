@@ -749,7 +749,8 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
    const double recency=0.5; // Neutral: no wall-clock or timestamp inference.
    bool protected_dependency=false;
    for(const auto& rel:graph.relations())if(rel.second.kind==surge::RelationKind::DependsOn&&(rel.second.from==node.first||rel.second.to==node.first)){protected_dependency=true;break;}
-   double reference_frequency=std::min(1.0,static_cast<double>(graph.question_reference_count(node.first))/5.0);\n   double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*reference_frequency;
+   double reference_frequency=std::min(1.0,static_cast<double>(graph.question_reference_count(node.first))/5.0);
+   double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*reference_frequency;
    if(protected_dependency)score=std::max(score,.75);
    items.push_back({node.first,score,contradiction,focus,unresolved,recency,recurrence,protected_dependency,total?(open?"OPEN":(deferred?"DEFERRED":"RESOLVED")):"UNKNOWN"});
   }
@@ -763,7 +764,7 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
    json<<"{\"question_id\":"<<quote(x.id)<<",\"retention_score\":"<<x.score<<",\"recommended_state\":"<<quote(i<max_active?"ACTIVE":"DORMANT")
        <<",\"aspect_state\":"<<quote(x.status)<<",\"protected_by_dependency\":"<<(x.protected_by_dependency?"true":"false")
        <<",\"factors\":{\"contradiction_strength\":"<<x.contradiction<<",\"focus_relevance\":"<<x.focus
-       <<",\"unresolved_importance\":"<<x.unresolved<<",\"recency\":"<<x.recency<<",\"recurrence_proxy\":"<<x.recurrence<<"}}";
+       <<",\"unresolved_importance\":"<<x.unresolved<<",\"recency\":"<<x.recency<<",\"reference_frequency\":"<<std::min(1.0,static_cast<double>(graph.question_reference_count(x.id))/5.0)<<"}}";
   }
   json<<"]}";
   const auto value=json.str();if(required)*required=value.size()+1;
