@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Verify GitHub public-release protection settings via the gh CLI.
+
+Exit codes:
+  0 = all required checks passed
+  1 = one or more required checks failed
+  2 = usage / tooling error
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from typing import Any
+
+
+def run_gh(args: list[str]) -> tuple[int, str]:
+    """Run gh and return (exit_code, stdout). Stderr is discarded unsaved."""
+    proc = subprocess.run(
+        ["gh", *args],
+        capture_output=True,
+        text=True,
+    )
+    # Intentionally ignore stderr: never retain or log process error text.
+    return proc.returncode, proc.stdout
+
+
+def gh_json(args: list[str]) -> Any:
+    code, out = run_gh(args)
+    if code != 0:
+        raise RuntimeError("gh_command_failed")
+    if not out.strip():
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("gh_json_invalid") from exc
+
+
+def check(name: str, ok: bool, detail: str, required: bool, rows: list[dict[str, Any]]) -> None:
+    rows.append({"name": name, "ok": ok, "required": required, "detail": detail})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--owner", required=True)
+    parser.add_argument("--repo", required=True)
+    parser.add_argument(
+        "--required-check",
+        action="append",
+        default=[],
+        dest="required_checks",
+        help="Exact required status-check context/job name (repeatable)",
+    )
+    parser.add_argument(
+        "--allow-extra-checks",
+        action="store_true",
+        help="Do not fail when ruleset requires checks beyond --required-check",
+    )
+    args = parser.parse_args()
+    if not args.required_checks:
+        print("error: pass at least one --required-check", file=sys.stderr)
+        return 2
+
+    slug = f"{args.owner}/{args.repo}"
+    rows: list[dict[str, Any]] = []
+
+    try:
+        repo = gh_json(["api", f"repos/{slug}"])
+    except RuntimeError:
+        print("error: cannot read repository metadata", file=sys.stderr)
+        return 2
+
+    visibility = (repo or {}).get("visibility")
+    private = bool((repo or {}).get("private"))
+    check(
+        "visibility_public",
+        (not private) and visibility == "public",
+        f"visibility={visibility} private={private}",
+        True,
+        rows,
+    )
+
+    security = (repo or {}).get("security_and_analysis") or {}
+    if not security:
+        check(
+            "security_and_analysis_readable",
+            False,
+            "security_and_analysis missing from REST payload; inspect Advanced Security UI",
+            False,
+            rows,
+        )
+    else:
+        secret_status = (security.get("secret_scanning") or {}).get("status")
+        push_status = (security.get("secret_scanning_push_protection") or {}).get("status")
+        dependabot_status = (security.get("dependabot_security_updates") or {}).get("status")
+        check("secret_scanning", secret_status == "enabled", f"status={secret_status}", True, rows)
+        check("push_protection", push_status == "enabled", f"status={push_status}", True, rows)
+        check(
+            "dependabot_security_updates",
+            dependabot_status == "enabled",
+            f"status={dependabot_status}",
+            False,
+            rows,
+        )
+
+    try:
+        pvr = gh_json(["api", f"repos/{slug}/private-vulnerability-reporting"]) or {}
+        enabled = bool(pvr.get("enabled"))
+        check("private_vulnerability_reporting", enabled, f"enabled={enabled}", True, rows)
+    except RuntimeError:
+        check("private_vulnerability_reporting", False, "api_unavailable", True, rows)
+
+    try:
+        gql = gh_json(
+            [
+                "api",
+                "graphql",
+                "-f",
+                (
+                    "query={repository(owner:\"%s\", name:\"%s\") "
+                    "{hasVulnerabilityAlertsEnabled isSecurityPolicyEnabled securityPolicyUrl}}"
+                    % (args.owner, args.repo)
+                ),
+            ]
+        )
+        node = ((gql or {}).get("data") or {}).get("repository") or {}
+        alerts = bool(node.get("hasVulnerabilityAlertsEnabled"))
+        policy = bool(node.get("isSecurityPolicyEnabled"))
+        policy_url_set = bool(node.get("securityPolicyUrl"))
+        check("vulnerability_alerts", alerts, f"enabled={alerts}", True, rows)
+        check(
+            "security_policy",
+            policy,
+            f"enabled={policy} url_set={policy_url_set}",
+            True,
+            rows,
+        )
+    except RuntimeError:
+        check("vulnerability_alerts", False, "api_unavailable", True, rows)
+        check("security_policy", False, "api_unavailable", True, rows)
+
+    default_branch = (repo or {}).get("default_branch") or "main"
+    try:
+        branch = gh_json(["api", f"repos/{slug}/branches/{default_branch}"]) or {}
+        protected = bool(branch.get("protected"))
+        check(
+            "default_branch_protected_flag",
+            protected,
+            f"branch={default_branch} protected={protected}",
+            True,
+            rows,
+        )
+    except RuntimeError:
+        check("default_branch_protected_flag", False, "api_unavailable", True, rows)
+
+    required_found: set[str] = set()
+    extra_checks: set[str] = set()
+    has_pr_rule = False
+    has_force_push_block = False
+    has_deletion_block = False
+    try:
+        rules = gh_json(["api", f"repos/{slug}/rules/branches/{default_branch}"]) or []
+        for rule in rules:
+            rtype = rule.get("type")
+            params = rule.get("parameters") or {}
+            if rtype == "pull_request":
+                has_pr_rule = True
+            elif rtype == "non_fast_forward":
+                has_force_push_block = True
+            elif rtype == "deletion":
+                has_deletion_block = True
+            elif rtype == "required_status_checks":
+                for item in params.get("required_status_checks") or []:
+                    ctx = item.get("context")
+                    if not isinstance(ctx, str) or not ctx:
+                        continue
+                    if ctx in args.required_checks:
+                        required_found.add(ctx)
+                    else:
+                        extra_checks.add(ctx)
+            elif rtype == "code_scanning":
+                tools = params.get("code_scanning_tools") or []
+                names = sorted(
+                    {
+                        str(tool.get("tool"))
+                        for tool in tools
+                        if isinstance(tool, dict) and tool.get("tool")
+                    }
+                )
+                if names:
+                    extra_checks.add("code_scanning:" + ",".join(names))
+    except RuntimeError:
+        check("ruleset_readable", False, "api_unavailable", True, rows)
+
+    check("ruleset_require_pull_request", has_pr_rule, f"present={has_pr_rule}", True, rows)
+    check("ruleset_block_force_push", has_force_push_block, f"present={has_force_push_block}", True, rows)
+    check("ruleset_block_deletion", has_deletion_block, f"present={has_deletion_block}", True, rows)
+
+    missing = [name for name in args.required_checks if name not in required_found]
+    check(
+        "ruleset_required_status_checks",
+        not missing,
+        f"found={sorted(required_found)} missing={missing} extras={sorted(extra_checks)}",
+        True,
+        rows,
+    )
+    if extra_checks and not args.allow_extra_checks:
+        check(
+            "ruleset_no_unexpected_required_checks",
+            False,
+            f"unexpected={sorted(extra_checks)}",
+            True,
+            rows,
+        )
+    elif extra_checks:
+        check(
+            "ruleset_no_unexpected_required_checks",
+            True,
+            f"allowed extras={sorted(extra_checks)}",
+            False,
+            rows,
+        )
+
+    width = max(len(r["name"]) for r in rows)
+    failed = 0
+    print(f"Repository: {slug}")
+    for row in rows:
+        mark = "PASS" if row["ok"] else ("FAIL" if row["required"] else "WARN")
+        if row["required"] and not row["ok"]:
+            failed += 1
+        # Print only untainted status labels derived from booleans/name keys.
+        # Detailed API payloads are intentionally omitted from console output.
+        print(f"[{mark}] {row['name']:<{width}}")
+
+    if failed:
+        print(f"\n{failed} required check(s) failed")
+        return 1
+    print("\nAll required checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

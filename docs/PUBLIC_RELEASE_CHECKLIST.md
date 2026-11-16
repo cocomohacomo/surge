@@ -1,42 +1,48 @@
-# Public Release Readiness Checklist
+# Public Release Readiness Checklist (SURGE)
 
-This checklist records the repository preparation state. It does not authorize or
-perform a visibility change.
+SURGE-specific completed record. For reuse on other repositories, see
+[`docs/public-release-template/`](public-release-template/README.md).
+
+This checklist does not itself change repository visibility.
 
 ## Owner-selected publication policy
 
-- Repository visibility: keep Private until the owner separately confirms Public.
+- Repository visibility: **Public** (changed by owner after audit)
 - License: none. No MIT, Apache-2.0, or other general copyright license is granted.
 - Branches: retain all branches. Do not delete or silently retarget existing branches or pull requests.
 
-## Completed in the preparation pull request
+## Completed preparation
 
-- [x] Remove the accidentally proposed MIT License.
 - [x] State the no-license policy in README and `docs/PUBLICATION_POLICY.md`.
 - [x] Add `SECURITY.md` with private vulnerability-disclosure guidance.
-- [x] Add ignore rules for local builds, caches, local databases, journals, and logs.
-- [x] Configure Actions to run on pushes to all branches, pull requests targeting any branch, and manual dispatch.
-- [x] Restrict workflow token permissions to `contents: read`.
-- [x] Pin checkout and setup-python actions to full commit SHAs.
-- [x] Add concurrency cancellation.
-- [x] Include CTest, schema/fixture validation, and Python adapter regression tests in CI.
+- [x] Add ignore rules for local builds, caches, credentials, databases, journals, and logs.
+- [x] Harden conformance CI (least privilege, pinned SHAs, concurrency, full test matrix).
+- [x] Add Dependabot for Actions and pip.
 
-## Completed in the audit follow-up
+## Completed audit
 
-- [x] Run a content-based secret scan across every reachable blob in every ref (508 blobs). Result: no common secret patterns found. Details: `docs/PUBLIC_RELEASE_AUDIT_REPORT.md`.
-- [x] Review accessible Actions logs and artifacts for accidental disclosure. Result: 8 logged runs clean; sampled runs had 0 artifacts; most recent failures never allocated a runner.
-- [x] Obtain a successful local run of the updated C++ and Python test matrix (CTest 10/10, fixtures OK, unittest 55/55). GitHub-hosted runners still fail to allocate (`runner_id: 0`).
-- [x] Review all remote branch tips for sensitive filenames (38 refs): none found.
-- [x] Expand `.gitignore` for `.env`, keys, and credential filenames.
-- [x] Add Dependabot config for Actions and pip ecosystems.
-- [x] Document owner-only GitHub UI protection steps in `docs/OWNER_PROTECTION_SETTINGS.md`.
+- [x] Full-history secret content scan (no findings). See `docs/PUBLIC_RELEASE_AUDIT_REPORT.md`.
+- [x] Branch-tip sensitive filename scan (no findings).
+- [x] Actions log sample review (no secret patterns in accessible logs).
+- [x] Local and post-public CI matrices green.
 
-## Still required (owner / GitHub UI)
+## Completed owner / GitHub UI
 
-- [ ] Configure main-branch protection: require pull requests, require the conformance checks, block force pushes, and prevent branch deletion. *Blocked for agents: administration API returns 403.*
-- [ ] Enable private vulnerability reporting, and after Public enable Secret scanning + Push protection. *GitHub Advanced Security / admin APIs unavailable to the agent token while Private.*
-- [ ] Review repository settings for Actions permissions, fork policy, webhooks, and deploy keys. *Admin APIs return 403; owner UI review required.*
-- [ ] Resolve GitHub-hosted runner allocation (`runner_id: 0`) or re-check after Public (public repos use separate Actions minute accounting).
-- [ ] Have the owner review the final public diff and explicitly confirm the visibility change.
+- [x] Default-branch ruleset active (`allow-owner-and-agent-only`):
+  deletion block, force-push block, PR required, required checks `cpp-core` + `schema-and-fixtures`
+- [x] Secret scanning enabled
+- [x] Push protection enabled
+- [x] Private vulnerability reporting enabled
+- [x] Vulnerability alerts / Dependabot security updates enabled
+- [x] Security policy URL live from `SECURITY.md` on `main`
 
-Until every owner/UI item above is completed, keep the repository Private. No automated checklist item changes repository visibility.
+## Reuse
+
+Copy and adapt:
+
+```sh
+cp docs/public-release-template/CHECKLIST.md docs/PUBLIC_RELEASE_CHECKLIST.md
+python3 tools/verify_public_release_settings.py \
+  --owner <owner> --repo <repo> \
+  --required-check <job-a> --required-check <job-b>
+```

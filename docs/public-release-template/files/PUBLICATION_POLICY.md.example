@@ -1,0 +1,18 @@
+# Publication and reuse policy
+
+## Repository visibility
+
+The repository is intended to be publicly readable when the owner changes
+visibility to Public. Publication does not mean every branch is stable.
+
+## License status
+
+State the license decision explicitly. Example (no license granted):
+
+> This project is intentionally published without an open-source license.
+> All rights are reserved by the applicable rightsholders. Public visibility
+> does not grant permission to use, modify, redistribute, sublicense, or sell
+> the code or documentation.
+
+Replace the paragraph above if you choose MIT, Apache-2.0, or another license,
+and add a root `LICENSE` file that matches that decision.
