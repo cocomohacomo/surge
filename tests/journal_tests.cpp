@@ -81,6 +81,45 @@ int main() {
     assert(!corrupt.open());
     assert(corrupt.last_error().find("JOURNAL_CHECKSUM_MISMATCH") == 0);
   }
+  // Inject failure before each transaction frame: BEGIN, EVENT 1, EVENT 2, COMMIT.
+  // Recovery must discard every incomplete transaction and permit an exact retry.
+  for (std::size_t failure_offset = 0; failure_offset < 4; ++failure_offset) {
+    const auto fault_path = (root / ("fault-" + std::to_string(failure_offset) + ".sgj")).string();
+    std::size_t fail_at = static_cast<std::size_t>(-1);
+    {
+      EventJournal journal(fault_path, [&](std::size_t frame_index) {
+        return frame_index != fail_at;
+      });
+      assert(journal.open());
+      const auto seed = journal.commit("tx-seed", "idem-seed", 0,
+          {{"ev-seed", "SEED", "committed baseline"}});
+      assert(seed.committed && seed.state_version == 1);
+      fail_at = 3 + failure_offset;
+      const auto failed = journal.commit("tx-fault", "idem-fault", 1, {
+          {"ev-fault-1", "FAULT_TEST", "first event"},
+          {"ev-fault-2", "FAULT_TEST", "second event"}});
+      assert(!failed.committed);
+      assert(failed.error == "JOURNAL_INJECTED_APPEND_FAILURE");
+      assert(journal.state_version() == 1);
+      assert(journal.committed_events().size() == 1);
+    }
+    {
+      EventJournal recovered(fault_path);
+      assert(recovered.open());
+      assert(recovered.state_version() == 1);
+      assert(recovered.committed_events().size() == 1);
+      const auto retry = recovered.commit("tx-fault", "idem-fault", 1, {
+          {"ev-fault-1", "FAULT_TEST", "first event"},
+          {"ev-fault-2", "FAULT_TEST", "second event"}});
+      assert(retry.committed && !retry.duplicate && retry.state_version == 2);
+    }
+    {
+      EventJournal recovered(fault_path);
+      assert(recovered.open());
+      assert(recovered.state_version() == 2);
+      assert(recovered.committed_events().size() == 3);
+    }
+  }
   std::filesystem::remove_all(root);
-  std::cout << "SURGE EventJournal tests: 5 groups passed\n";
+  std::cout << "SURGE EventJournal tests: 6 groups passed\n";
 }
