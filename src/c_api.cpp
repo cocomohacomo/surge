@@ -605,7 +605,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         const auto status = graph.claim_status(node.id);
         const char* status_text = status == surge::ClaimStatus::Active ? "ACTIVE" :
             status == surge::ClaimStatus::Superseded ? "SUPERSEDED" : "RETRACTED";
-        item << "\\\"claim_status\\\":" << quote(status_text) << ",";
+        item << "\"claim_status\":" << quote(status_text) << ",";
       }
       if (node.kind == surge::NodeKind::QuestionAspect) {
         const auto status = graph.question_aspect_status(node.id);
