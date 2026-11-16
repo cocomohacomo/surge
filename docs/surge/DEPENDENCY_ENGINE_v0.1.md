@@ -135,8 +135,10 @@ The engine now exposes `evaluate_fixpoint`, which combines deterministic
 impact/SCC analysis with monotonic dependency propagation over one immutable
 staged graph snapshot. Dependency IDs are visited in stable map order; a
 dependency fires at most once per evaluation, and newly impacted dependents
-become eligible in the same or a subsequent round. Cyclic strongly connected
-components are reported explicitly.
+become eligible in the same or a subsequent round. Level-triggered predicates
+(PRESENT/content/kind) contribute their matching prerequisites to the potential
+impact roots even when those prerequisites were not in the caller's changed
+set. Cyclic strongly connected components are reported explicitly.
 
 The result distinguishes `Converged`, `Deferred`, and `Invalid`. Iteration,
 predicate-evaluation, and impacted-node budgets are independently bounded.
