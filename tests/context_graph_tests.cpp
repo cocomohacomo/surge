@@ -231,6 +231,7 @@ int main(){
     }
   }
   {
+    std::filesystem::create_directories(root);
     const auto propagation_path=(root/"temporal-dependency-propagation.sgj").string();
     {
       ContextGraph graph(propagation_path);assert(graph.open());
