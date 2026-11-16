@@ -46,6 +46,13 @@ struct SemanticDelta {
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
 };
+struct DependencyTrigger { std::string dependency_id, prerequisite_id, dependent_id; };
+struct DependencyEvaluationRecord {
+  std::string delta_id;
+  std::vector<DependencyTrigger> triggered;
+  std::vector<std::string> impacted_nodes;
+  std::vector<std::string> rejected_dependencies;
+};
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraph {
  public:
@@ -60,6 +67,9 @@ class ContextGraph {
   const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
   const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
+  const std::map<std::string, DependencyEvaluationRecord>& dependency_evaluations() const {
+    return state_.dependency_evaluations;
+  }
   QuestionAspectStatus question_aspect_status(const std::string& id) const;
   bool set_question_aspect_status(const std::string& id, QuestionAspectStatus status,
                                   std::uint64_t expected_state_version, std::string& error);
@@ -71,12 +81,15 @@ class ContextGraph {
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
     std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
+    std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool replay();
+  bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
+                           std::string&) const;
   std::string fingerprint(const SemanticDelta&) const;
   std::vector<JournalEvent> encode(const SemanticDelta&, const std::string&) const;
   bool replay_event(State&, const JournalEvent&, std::string&) const;
