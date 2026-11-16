@@ -43,7 +43,7 @@ class WebDocumentRecognitionTests(unittest.TestCase):
         self.assertFalse(ClaimApplicabilityComparator.compare(a,c).conflict)
 
     def test_opposite_polarity_without_shared_scope_is_unresolved(self):
-        a=ClaimApplicability("対象を実施","POSITIVE",polarity if False else "")
+        a=ClaimApplicability("対象を実施","POSITIVE")
         b=ClaimApplicability("対象を実施","NEGATIVE")
         result=ClaimApplicabilityComparator.compare(a,b)
         self.assertFalse(result.scopes_overlap)
