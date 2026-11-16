@@ -268,8 +268,18 @@ class ContextRetriever:
         if not isinstance(changed_refs, list) or any(not isinstance(x, str) or not x for x in changed_refs):
             raise ValueError("DEPENDENCY_CHANGED_REFS_INVALID")
 
-        matched = self.search(query, limit=limit)
-        snapshot = self.search("*", limit=max_nodes)
+        # Both lexical seeds and graph expansion must describe one durable
+        # graph version. Retry a bounded number of times if a concurrent commit
+        # lands between the two read-only ABI calls.
+        matched = snapshot = None
+        for _ in range(3):
+            candidate_matches = self.search(query, limit=limit)
+            candidate_snapshot = self.search("*", limit=max_nodes)
+            if candidate_matches.get("state_version") == candidate_snapshot.get("state_version"):
+                matched, snapshot = candidate_matches, candidate_snapshot
+                break
+        if snapshot is None:
+            raise PacketRejected("CONTEXT_HINT_GRAPH_SNAPSHOT_CHANGED")
         items = snapshot.get("items", [])
         by_id = {item["id"]: item for item in items if isinstance(item.get("id"), str)}
         if len(items) >= max_nodes and snapshot.get("total_matches", len(items)) > max_nodes:
@@ -287,30 +297,32 @@ class ContextRetriever:
                                   "dependency_depth": max(0, int(depth))}
 
         focus = snapshot.get("focus")
+        seeds: set[str] = set()
         if isinstance(focus, dict):
             focus_cluster = focus.get("cluster_id")
             focus_interest = focus.get("interest_id")
             if isinstance(focus_cluster, str) and focus_cluster:
                 add(focus_cluster, "RELATED_CLUSTER", 100)
+                if focus_cluster in by_id:
+                    seeds.add(focus_cluster)
             if isinstance(focus_interest, str) and focus_interest:
                 add(focus_interest, "ACTIVE_FOCUS_SCOPE", 100)
+                if focus_interest in by_id:
+                    seeds.add(focus_interest)
 
-        seeds: set[str] = set()
         for item in matched.get("items", []):
             ref = item.get("id")
             if isinstance(ref, str) and ref in by_id:
                 seeds.add(ref)
-        for ref, item in by_id.items():
+        # Globally open records are not automatically relevant. They enter
+        # as seeds only when the lexical query matched them; otherwise they can
+        # still be discovered through a relevant Focus/query graph path.
+        for ref in sorted(seeds):
+            item = by_id[ref]
             if item.get("kind") == "SCOPE_SPAN" and item.get("status") == "UNRESOLVED":
                 add(ref, "OPEN_SCOPE", item.get("score", 0))
-                seeds.add(ref)
-            elif item.get("kind") == "QUESTION_ASPECT":
-                status = item.get("status", "OPEN")
-                if status == "OPEN":
-                    add(ref, "REQUIRED_QUESTION_ASPECT", item.get("score", 0))
-                    seeds.add(ref)
-                elif status == "DEFERRED":
-                    add(ref, "LOW_PRIORITY", item.get("score", 0))
+            elif item.get("kind") == "QUESTION_ASPECT" and item.get("status", "OPEN") == "OPEN":
+                add(ref, "REQUIRED_QUESTION_ASPECT", item.get("score", 0))
 
         # Bounded breadth-first traversal over typed references and relation edges.
         adjacency: dict[str, set[str]] = {ref: set() for ref in by_id}
@@ -356,6 +368,10 @@ class ContextRetriever:
                     add(ref, "OPEN_SCOPE", score, depth)
             elif kind not in {"DEPENDENCY"}:
                 add(ref, "LOW_PRIORITY", score, depth)
+            # A resolved QuestionAspect may be retained as historical data,
+            # but it must not act as a bridge that reintroduces stale context.
+            if kind == "QUESTION_ASPECT" and item.get("status", "OPEN") == "RESOLVED":
+                continue
             if depth < max_depth:
                 for target in sorted(adjacency.get(ref, ())):
                     if target not in visited:
@@ -382,6 +398,45 @@ class ContextRetriever:
                 add(dep_id, "TRIGGERED_DEPENDENCY", 100)
                 add(dependent, "REQUIRED_LINEAGE", 100)
                 seeds.add(dependent)
+
+        # Dependency propagation can reveal nodes after the initial BFS has
+        # completed. Re-enter the same bounded traversal from those dependents
+        # so their own lineage and multi-hop relations are not silently lost.
+        follow_queue = [(ref, 0) for ref in sorted(seeds - set(visited))]
+        follow_cursor = 0
+        while follow_cursor < len(follow_queue):
+            ref, depth = follow_queue[follow_cursor]
+            follow_cursor += 1
+            if ref in visited and visited[ref] <= depth:
+                continue
+            if ref not in by_id:
+                continue
+            if len(visited) >= max_nodes:
+                raise PacketRejected("CONTEXT_HINT_GRAPH_TRAVERSAL_BUDGET_EXCEEDED")
+            visited[ref] = depth
+            item = by_id[ref]
+            kind, score = item.get("kind"), item.get("score", 0)
+            if kind in {"CLAIM", "EVIDENCE"}:
+                rel_kinds = {r.get("kind") for r in item.get("relations", [])}
+                add(ref, "REQUIRED_LINEAGE" if rel_kinds & {
+                    "SUPPORTS", "CONTRADICTS", "AGREES_WITH", "CONFLICTS_WITH"
+                } else "LOW_PRIORITY", score, depth)
+            elif kind == "CLUSTER":
+                add(ref, "RELATED_CLUSTER", score, depth)
+            elif kind == "QUESTION_ASPECT":
+                if item.get("status", "OPEN") == "OPEN":
+                    add(ref, "REQUIRED_QUESTION_ASPECT", score, depth)
+                elif item.get("status", "OPEN") == "RESOLVED":
+                    continue
+            elif kind == "SCOPE_SPAN":
+                if item.get("status") == "UNRESOLVED":
+                    add(ref, "OPEN_SCOPE", score, depth)
+            elif kind != "DEPENDENCY":
+                add(ref, "LOW_PRIORITY", score, depth)
+            if depth < max_depth:
+                for target in sorted(adjacency.get(ref, ())):
+                    if target not in visited:
+                        follow_queue.append((target, depth + 1))
 
         # Preserve direct relation endpoints even when traversal did not classify them.
         for ref in list(visited):
