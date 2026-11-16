@@ -1,5 +1,7 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -24,7 +26,9 @@ struct JournalCommitResult {
 // corruption; it is not a cryptographic authenticity mechanism.
 class EventJournal {
  public:
+  using AppendFrameGate = std::function<bool(std::size_t frame_index)>;
   explicit EventJournal(std::string path);
+  EventJournal(std::string path, AppendFrameGate append_frame_gate);
   bool open();
   JournalCommitResult commit(const std::string& transaction_id,
                              const std::string& idempotency_key,
@@ -37,6 +41,8 @@ class EventJournal {
   bool recover();
   bool append_frame(const std::string& payload);
   std::string path_;
+  AppendFrameGate append_frame_gate_;
+  std::size_t append_frame_count_{0};
   mutable std::mutex mutex_;
   bool opened_{false};
   std::uint64_t state_version_{0};
