@@ -477,12 +477,14 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     "expected_state_version": 0, "nodes": [
                         {"id": "q/root", "kind": "QUESTION", "content": "root"},
                         {"id": "q/child", "kind": "QUESTION", "content": "child"},
+                        {"id": "q/child2", "kind": "QUESTION", "content": "child two"},
                     ], "relations": [],
                 })
                 core.apply_semantic_delta({
                     "delta_id": "dependency-limit-link", "idempotency_key": "dependency-limit-link",
                     "expected_state_version": core.state_version, "nodes": [],
-                    "relations": [{"id": "r/child-root", "kind": "DEPENDS_ON", "from": "q/child", "to": "q/root"}],
+                    "relations": [{"id": "r/child-root", "kind": "DEPENDS_ON", "from": "q/child", "to": "q/root"},
+                        {"id": "r/child2-root", "kind": "DEPENDS_ON", "from": "q/child2", "to": "q/root"}],
                 })
                 before = core.state_version
                 with self.assertRaisesRegex(PacketRejected, "QUESTION_REACTIVATION_NODE_LIMIT"):
