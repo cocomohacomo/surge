@@ -228,6 +228,49 @@ int main(){
       assert(recovered.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
     }
   }
+  {
+    const auto propagation_path=(root/"temporal-dependency-propagation.sgj").string();
+    {
+      ContextGraph graph(propagation_path);assert(graph.open());
+      SemanticDelta seed;seed.delta_id="temporal-propagation-seed";
+      seed.idempotency_key="temporal-propagation-seed";seed.expected_state_version=0;
+      seed.nodes={
+        {{"basis-1",NodeKind::Evidence,"契約書",{}}},
+        {{"claim-period",NodeKind::Claim,"契約期間",{ "basis-1" }}},
+        {{"valid-action",NodeKind::Cluster,"有効期間内の処理",{}}},
+        {{"expired-action",NodeKind::Cluster,"失効後の処理",{}}},
+        {{"dep-valid-period",NodeKind::Dependency,
+          "CLAIM_TEMPORAL_STATE:VALID@2026-02-01T00:00:00Z",
+          {"claim-period","valid-action"}}},
+        {{"dep-expired-period",NodeKind::Dependency,
+          "CLAIM_TEMPORAL_STATE:EXPIRED@2026-02-01T00:00:00Z",
+          {"claim-period","expired-action"}}}
+      };
+      seed.claim_validity_updates.push_back({"claim-period","2026-01-01T00:00:00Z",
+          "2026-04-01T00:00:00Z","basis-1",1});
+      assert(graph.apply(seed).committed && graph.state_version()==1);
+      const auto first=graph.dependency_evaluations().at("temporal-propagation-seed");
+      assert(first.triggered.size()==1 && first.triggered[0].dependency_id=="dep-valid-period");
+      SemanticDelta correction;correction.delta_id="temporal-propagation-correction";
+      correction.idempotency_key="temporal-propagation-correction";
+      correction.expected_state_version=1;
+      correction.nodes={{{"basis-2",NodeKind::Evidence,"契約期間の訂正",{}}}};
+      correction.claim_validity_updates.push_back({"claim-period","2025-12-01T00:00:00Z",
+          "2026-01-15T00:00:00Z","basis-2",2});
+      assert(graph.apply(correction).committed && graph.state_version()==2);
+      const auto second=graph.dependency_evaluations().at("temporal-propagation-correction");
+      assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
+      assert(std::find(second.impacted_nodes.begin(),second.impacted_nodes.end(),
+          "expired-action")!=second.impacted_nodes.end());
+    }
+    {
+      ContextGraph recovered(propagation_path);assert(recovered.open());
+      assert(recovered.state_version()==2);
+      const auto second=recovered.dependency_evaluations().at("temporal-propagation-correction");
+      assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
+      assert(recovered.claim_validity_history().at("claim-period").size()==2);
+    }
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 4 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 5 groups passed\n";
 }
