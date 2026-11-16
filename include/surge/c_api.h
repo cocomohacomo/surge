@@ -170,6 +170,20 @@ int surge_packet_core_admit_and_apply(
     const SurgeGraphRelationInput* relations, size_t relation_count,
     const SurgeScopeSpanInput* scopes, size_t scope_count,
     const char* focus_cluster_id, const char* focus_interest_id,
+    int* duplicate, uint64_t* state_version,
+    char* packet_status, size_t status_capacity,
+    char* error, size_t error_capacity);
+
+// Extended atomic API. The legacy entry point above remains ABI-compatible.
+int surge_packet_core_admit_and_apply_with_proposal(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const char* delta_id, const char* semantic_idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeGraphRelationInput* relations, size_t relation_count,
+    const SurgeScopeSpanInput* scopes, size_t scope_count,
+    const char* focus_cluster_id, const char* focus_interest_id,
     const SurgeClassificationProposalInput* proposal,
     int* duplicate, uint64_t* state_version,
     char* packet_status, size_t status_capacity,
