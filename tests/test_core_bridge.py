@@ -180,6 +180,46 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(questions[0]["status"], "OPEN")
                 self.assertEqual(recovered.get_question_aspect(aspect_id)["status"], "OPEN")
 
+    def test_scoped_contradiction_reopens_question_with_new_aspect_and_preserves_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "scoped-question.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "seed-scoped", "idempotency_key": "seed-scoped", "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "cluster/scoped", "kind": "CLUSTER", "content": "制度"},
+                        {"id": "evidence/scoped-a", "kind": "EVIDENCE", "content": "資料A"},
+                        {"id": "evidence/scoped-b", "kind": "EVIDENCE", "content": "資料B"},
+                        {"id": "claim/scoped-a", "kind": "CLAIM", "content": "期限は6月", "references": ["evidence/scoped-a"]},
+                        {"id": "claim/scoped-b", "kind": "CLAIM", "content": "期限は7月", "references": ["evidence/scoped-b"]},
+                    ],
+                    "relations": [
+                        {"id": "about/scoped-a", "kind": "ABOUT", "from": "claim/scoped-a", "to": "cluster/scoped"},
+                        {"id": "about/scoped-b", "kind": "ABOUT", "from": "claim/scoped-b", "to": "cluster/scoped"},
+                        {"id": "contradiction/scoped-1", "kind": "CONTRADICTS", "from": "claim/scoped-a", "to": "claim/scoped-b"},
+                    ],
+                })
+                first = core.route_contradiction_scoped("contradiction/scoped-1", "scope/2026")
+                self.assertTrue(first["committed"])
+                core.set_question_aspect_status(first["question_aspect_id"], "RESOLVED")
+                core.apply_semantic_delta({
+                    "delta_id": "add-scoped-contradiction-2", "idempotency_key": "add-scoped-contradiction-2",
+                    "expected_state_version": core.state_version,
+                    "nodes": [],
+                    "relations": [{"id": "contradiction/scoped-2", "kind": "CONTRADICTS", "from": "claim/scoped-b", "to": "claim/scoped-a"}],
+                })
+                second = core.route_contradiction_scoped("contradiction/scoped-2", "scope/2026")
+                self.assertEqual(second["question_id"], first["question_id"])
+                self.assertNotEqual(second["question_aspect_id"], first["question_aspect_id"])
+                self.assertEqual(core.get_question_aspect(first["question_aspect_id"])["status"], "RESOLVED")
+                self.assertEqual(core.get_question_aspect(second["question_aspect_id"])["status"], "OPEN")
+                duplicate = core.route_contradiction_scoped("contradiction/scoped-2", "scope/2026")
+                self.assertTrue(duplicate["duplicate"])
+                other_scope = core.route_contradiction_scoped("contradiction/scoped-2", "scope/2027")
+                self.assertNotEqual(other_scope["question_id"], first["question_id"])
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_aspect(first["question_aspect_id"])["status"], "RESOLVED")
+                self.assertEqual(recovered.get_question_aspect(second["question_aspect_id"])["status"], "OPEN")
     def test_general_contradiction_question_route_is_durable_and_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "general-question.sgj"

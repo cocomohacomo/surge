@@ -125,6 +125,9 @@ int surge_question_aspect_get_status(void* handle, const char* aspect_id,
 int surge_question_route_contradiction(void* handle, const char* relation_id,
     const char* policy_version, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity);
+int surge_question_route_contradiction_scoped(void* handle, const char* relation_id,
+    const char* policy_version, const char* scope_key, char* output,
+    size_t output_capacity, size_t* required_capacity, char* error, size_t error_capacity);
 
 // Durable, proposal-only cross-packet temporal boundary ledger.
 int surge_temporal_boundary_add(void* handle, const char* transaction_id,

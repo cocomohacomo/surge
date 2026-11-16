@@ -663,6 +663,30 @@ int surge_question_route_contradiction(void* opaque, const char* relation_id,
     catch (...) { copy_text(error, error_capacity, "QUESTION_ROUTE_UNKNOWN_EXCEPTION"); return 0; }
 }
 
+int surge_question_route_contradiction_scoped(void* opaque, const char* relation_id,
+    const char* policy_version, const char* scope_key, char* output, size_t output_capacity,
+    size_t* required_capacity, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !relation_id || !policy_version || !scope_key) { copy_text(error, error_capacity, "C_API_ARGUMENT_INVALID"); return 0; }
+    auto& graph = static_cast<Handle*>(opaque)->graph;
+    const auto routed = surge::QuestionRouter::route_scoped(graph, relation_id, policy_version, scope_key);
+    std::ostringstream json;
+    json << R"({"committed":)" << (routed.committed ? "true" : "false")
+         << R"(,"duplicate":)" << (routed.duplicate ? "true" : "false")
+         << R"(,"focus_selected":)" << (routed.focus_selected ? "true" : "false")
+         << R"(,"state_version":)" << routed.state_version
+         << R"(,"question_id":)" << json_quote(routed.question_id)
+         << R"(,"question_aspect_id":)" << json_quote(routed.question_aspect_id)
+         << R"(,"interest_ids":[)";
+    for (size_t i = 0; i < routed.interest_ids.size(); ++i) { if (i) json << ','; json << json_quote(routed.interest_ids[i]); }
+    json << R"(],"error":)" << json_quote(routed.error) << '}';
+    const auto value = json.str(); if (required_capacity) *required_capacity = value.size() + 1;
+    if (!output || output_capacity < value.size() + 1) { copy_text(error, error_capacity, "QUESTION_ROUTE_BUFFER_TOO_SMALL"); return 0; }
+    copy_text(output, output_capacity, value); copy_text(error, error_capacity, ""); return 1;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "QUESTION_ROUTE_UNKNOWN_EXCEPTION"); return 0; }
+}
+
 int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
   try {

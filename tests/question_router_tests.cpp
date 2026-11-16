@@ -20,6 +20,36 @@ static SemanticDelta base_delta(bool two_clusters){
 int main(){
   const auto root=std::filesystem::temp_directory_path()/"surge-question-router-tests";
   std::filesystem::remove_all(root);
+  std::string scoped_question, scoped_first_aspect, scoped_second_aspect;
+  {
+    ContextGraph graph((root/"scoped.sgj").string()); assert(graph.open());
+    assert(graph.apply(base_delta(false)).committed);
+    auto first=QuestionRouter::route_scoped(graph,"contradiction-1","policy-2","scope/fiscal-year-2026");
+    assert(first.committed && !first.duplicate);
+    scoped_question=first.question_id; scoped_first_aspect=first.question_aspect_id;
+    std::string error;
+    assert(graph.set_question_aspect_status(scoped_first_aspect,QuestionAspectStatus::Resolved,graph.state_version(),error));
+    SemanticDelta second; second.delta_id="second-contradiction"; second.idempotency_key=second.delta_id;
+    second.expected_state_version=graph.state_version();
+    second.relations.push_back({{"contradiction-2",RelationKind::Contradicts,"claim-b","claim-a"}});
+    assert(graph.apply(second).committed);
+    auto reopened=QuestionRouter::route_scoped(graph,"contradiction-2","policy-2","scope/fiscal-year-2026");
+    assert(reopened.committed && !reopened.duplicate);
+    assert(reopened.question_id==scoped_question && reopened.question_aspect_id!=scoped_first_aspect);
+    scoped_second_aspect=reopened.question_aspect_id;
+    assert(graph.question_aspect_status(scoped_first_aspect)==QuestionAspectStatus::Resolved);
+    assert(graph.question_aspect_status(scoped_second_aspect)==QuestionAspectStatus::Open);
+    auto duplicate=QuestionRouter::route_scoped(graph,"contradiction-2","policy-2","scope/fiscal-year-2026");
+    assert(duplicate.committed && duplicate.duplicate);
+    auto other_scope=QuestionRouter::route_scoped(graph,"contradiction-2","policy-2","scope/fiscal-year-2027");
+    assert(other_scope.committed && other_scope.question_id!=scoped_question);
+  }
+  {
+    ContextGraph recovered((root/"scoped.sgj").string()); assert(recovered.open());
+    assert(recovered.nodes().count(scoped_question)==1);
+    assert(recovered.question_aspect_status(scoped_first_aspect)==QuestionAspectStatus::Resolved);
+    assert(recovered.question_aspect_status(scoped_second_aspect)==QuestionAspectStatus::Open);
+  }
   {
     ContextGraph graph((root/"multi.sgj").string());assert(graph.open());
     assert(graph.apply(base_delta(true)).committed);
@@ -49,5 +79,5 @@ int main(){
     assert(!missing.committed && missing.error=="QUESTION_ROUTE_REQUEST_INVALID");
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE QuestionRouter tests: 3 groups passed\n";
+  std::cout<<"SURGE QuestionRouter tests: 4 groups passed\n";
 }
