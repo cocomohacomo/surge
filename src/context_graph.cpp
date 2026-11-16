@@ -323,7 +323,9 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d){
           encode_dependency_evaluation(diagnostic)}});
     if(committed.committed){
      state_.dependency_evaluations[diagnostic.delta_id]=diagnostic;
-    } else if(error.empty()) error=committed.error;
+    } else {
+     error=committed.error;
+    }
    }
   }
   return {false,false,state_version(),error};
