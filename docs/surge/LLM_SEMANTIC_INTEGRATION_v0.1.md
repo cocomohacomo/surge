@@ -1,60 +1,72 @@
-# LLM Interface and Semantic Core Integration v0.1
+# LLM Interface and Semantic Core Integration v0.2
 
 ## Boundary
 
 The LLM is an untrusted Recognition Candidate producer. It has no Core handle,
 journal credentials, tools, or commit authority. The adapter treats source text
 as data, requires a strict JSON object, rejects unknown fields and invalid
-scores, then applies the existing six-axis Recognition Scoring policy.
+scores, and applies the six-axis Recognition Scoring policy.
 
-The provider interface is a small `LLMProvider.recognize(text)` protocol.
-`OpenAICompatibleProvider` uses the Chat Completions JSON Schema response
-format over the Python standard library. It reads credentials from
-`OPENAI_API_KEY` unless explicitly injected. Tests use a deterministic stub
-provider and never call an external model.
+The provider interface is `LLMProvider.recognize(text, context)`.
+`OpenAICompatibleProvider` uses Chat Completions JSON Schema over the Python
+standard library. Tests use deterministic providers and do not call a live
+external model.
 
 ## Execution path
 
-1. Text is normalized to NFC UTF-8 and admitted as a RecognitionPacket.
-2. The LLM receives the current ContextHint version, active topic, previous turn kind and up to eight recent claims. This gives short acknowledgements a bounded context window. It emits kind, topic, proposition, polarity, conditionality and three
-   calibrated-input candidates (confidence, ambiguity, importance).
+1. Text is normalized to NFC UTF-8 and represented as a RecognitionPacket.
+2. The LLM receives the current ContextHint version, active topic, previous
+   turn kind, and up to eight recent claims. It emits kind, topic, proposition,
+   polarity, conditionality, confidence, ambiguity, and importance.
 3. The adapter validates the exact key set, enum values, finite [0,1] scores,
-   and required claim fields.
-4. RecognitionScorer combines the three LLM dimensions with explicit routing
-   defaults for relevance, relation strength and novelty.
-5. Evidence is always retained, including ABSTAIN cases. A Claim is created
-   only for a non-abstained complete claim candidate.
-6. Claim references Evidence; ABOUT connects Claim to its topic Cluster.
-   Opposite-polarity exact-proposition claims create CONTRADICTS, Question,
-   QuestionAspect and Interest nodes.
-7. A typed SemanticDelta is passed through the new C ABI to C++ ContextGraph.
+   and required Claim fields.
+4. RecognitionScorer evaluates six dimensions. Relevance, relation strength,
+   and novelty are supplied by explicit runtime rules; confidence, ambiguity,
+   and importance are supplied by the recognizer.
+5. ClassificationProposal Builder maps the Recognition Candidate and score
+   result into the v0.9 ClassificationProposal schema. Packet lineage,
+   selected score dimensions, abstention reasons, and review warnings are
+   validated before any SemanticDelta is assembled.
+6. The proposal remains untrusted and non-committing. It is returned as part
+   of the runtime result for audit and downstream review. It does not grant
+   commit authority and is not itself persisted by the current Core API.
+7. Evidence is retained, including ABSTAIN cases. A resolved Claim is created
+   only when the scoring decision is ACCEPT. REVIEW carries
+   MANUAL_REVIEW_REQUIRED and ABSTAIN carries its abstention reasons; neither
+   commits a resolved Claim.
+8. Claim references Evidence; ABOUT connects Claim to its topic Cluster.
+   Opposite-polarity exact-proposition Claims create CONTRADICTS, Question,
+   QuestionAspect, and Interest nodes.
+9. A typed SemanticDelta is passed through the C ABI to C++ ContextGraph.
    Core validates references and relation kinds, stages the graph, and commits
-   all graph events in one EventJournal transaction.
-8. C++ replays packet admission and semantic graph events from the same journal
-   after restart.
+   graph events through EventJournal.
+10. C++ replays packet admission and semantic graph events from the journal
+    after restart.
 
 ## Safety and limits
 
 - Model output never bypasses Core validation.
-- The prompt explicitly marks user text as untrusted input data; no tools are
-  exposed to the model.
-- No semantic winner is selected for contradictory claims.
-- Low-confidence/ambiguous claims are retained as Evidence but not committed
-  as resolved Claims.
-- The first interface stores topic clusters per packet and keeps contradiction
-  matching in the live Python session. Persistent graph lookup for cross-process
-  cluster reuse and contradiction matching is a follow-up.
-- ScopeSpan is not yet a first-class ContextGraph node. Conditionality is
-  retained in Claim content, but full typed scope-anchor validation and
-  atomic ScopeSpan revision are not part of this adapter stage.
+- The prompt marks user text as untrusted input data; no tools are exposed to
+  the model.
+- No semantic winner is selected for contradictory Claims.
+- REVIEW and ABSTAIN proposals are not committed as resolved Claims. Evidence
+  remains available for later review or context processing.
+- Proposal validation is a pre-Core adapter gate, not a replacement for Core
+  validation. Core remains the sole authority for SemanticDelta acceptance.
+- The current LLM response has no token-level offsets, so its proposal has
+  typed labels but no candidate spans. A span-producing recognizer may populate
+  candidate_spans only with verified packet-relative offsets.
+- The current proposal is returned to the caller but is not yet durably stored
+  in EventJournal. Durable proposal audit/replay is a separate follow-up.
+- Topic clusters are still created per packet and contradiction matching
+  remains session-local in this runtime. Persistent cross-session retrieval
+  and cluster reuse are separate follow-ups.
+- Typed ScopeSpan generation from LLM output is not yet connected here.
 - The OpenAI-compatible provider has not been exercised against a live API in
-  CI. A deterministic provider is used for reproducible integration tests.
-- Packet admission and semantic commit remain separate journal transactions.
-  If semantic commit fails after packet admission, the caller must retry the
-  same source item with the same packet identity before advancing the stream.
+  CI. Deterministic provider fixtures are used for reproducible tests.
 
 ## Test command
 
 ```sh
-python -m unittest discover -s tests -p 'test_llm_semantic_integration.py' -v
+python -m unittest discover -s tests -p 'test_llm_proposal_integration.py' -v
 ```
