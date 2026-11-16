@@ -62,3 +62,35 @@ from a valid predicate whose condition currently evaluates to false.
 Conformance tests cover all four malformed forms. This remains a pure
 snapshot evaluator; durable transaction integration is still a separate
 required refactor.
+
+
+## v0.3: transaction-bound dependency evaluation
+
+The Core transaction preparation path now stages the SemanticDelta against a
+copy of the current graph, derives changed graph-node references from added
+nodes, relation endpoints, ScopeSpan targets/antecedents, and Focus, then
+evaluates dependencies against that staged post-delta snapshot.
+
+A successful evaluation is encoded as one `DEPENDENCY_EVALUATION` journal
+event and appended to the same event vector as `DELTA_META`, node/relation/
+scope/focus events. This means standalone SemanticDelta commits and atomic
+RecognitionPacket + SemanticDelta commits both carry dependency outcomes in
+the same EventJournal transaction.
+
+The durable record contains the delta ID, triggered dependency IDs and their
+prerequisite/dependent endpoints, impacted node IDs, and rejected dependency
+IDs. Replay validates every referenced node and dependency endpoint before
+restoring the record. Dependency evaluation does not create an external action
+or choose a semantic winner.
+
+The transaction preparation logic is shared by `apply` and
+`prepare_events`; the latter is the path used by atomic packet admission.
+A bounded evaluation budget of 4096 impacted nodes is enforced. If evaluation
+fails or exceeds budget, the whole semantic transaction is rejected before
+journal commit. Duplicate idempotent deltas do not create a second evaluation
+record.
+
+Conformance coverage verifies trigger generation, malformed predicate
+rejection, idempotent retry, and restart replay. The C ABI/Python exposure of
+these records, fine-grained predicate-operation budgets, and crash/fault
+injection remain subsequent work.

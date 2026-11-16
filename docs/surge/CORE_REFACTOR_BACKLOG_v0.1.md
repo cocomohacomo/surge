@@ -89,3 +89,14 @@ ordered by dependency and risk.
 A backlog item is complete only when its implementation, regression tests,
 documentation, and CI result are available. A PR being open or code merely
 being drafted does not count as completion.
+
+
+## Progress update
+
+The first P0 Core transaction increment is implemented on branch
+`feat/atomic-dependency-trigger-journal-v0.1` and proposed in PR #29.
+Dependency evaluation results are journaled atomically with SemanticDelta and
+restored on replay. Restart, idempotency, and atomic packet + semantic tests
+have been added. The current CI attempts have not produced a successful run,
+so these checklist items remain open until the test suite passes and the PR is
+merged. C ABI/Python exposure and fault-injection verification are also open.
