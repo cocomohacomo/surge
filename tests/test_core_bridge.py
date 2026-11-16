@@ -294,6 +294,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "q/a", "kind": "QUESTION", "content": "A"},
                         {"id": "q/b", "kind": "QUESTION", "content": "B"},
                         {"id": "q/c", "kind": "QUESTION", "content": "C"},
+                        {"id": "cluster/x", "kind": "CLUSTER", "content": "cluster"},
                     ], "relations": [],
                 })
                 core.apply_semantic_delta({
@@ -316,6 +317,15 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                             {"id": "r/cycle-1", "kind": "DEPENDS_ON", "from": "q/b", "to": "q/c"},
                             {"id": "r/cycle-2", "kind": "DEPENDS_ON", "from": "q/c", "to": "q/a"},
                         ],
+                    })
+                self.assertEqual(core.state_version, before)
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_RELATION_TYPE_INVALID"):
+                    core.apply_semantic_delta({
+                        "delta_id": "question-network-invalid-endpoint",
+                        "idempotency_key": "question-network-invalid-endpoint",
+                        "expected_state_version": before, "nodes": [],
+                        "relations": [{"id": "r/invalid", "kind": "CONTAINS",
+                                       "from": "q/a", "to": "cluster/x"}],
                     })
                 self.assertEqual(core.state_version, before)
             with SemanticCoreBridge(journal) as recovered:
