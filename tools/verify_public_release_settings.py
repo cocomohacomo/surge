@@ -10,64 +10,36 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from typing import Any
 
-# Redact common credential-looking substrings before any logging.
-_SECRET_PATTERNS = (
-    re.compile(r"(?i)(gh[pousr]_|github_pat_)[A-Za-z0-9_]{10,}"),
-    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-+=/]{8,}"),
-    re.compile(r"(?i)(token[=:\s]+)[A-Za-z0-9._\-+=/]{8,}"),
-    re.compile(r"(?i)(authorization[=:\s]+)[^\s]+"),
-    re.compile(r"(?i)x-access-token:[^@\s]+"),
-)
 
-
-def _redact_match(match: re.Match[str]) -> str:
-    # Keep a short non-secret prefix when the pattern captured one; never echo the secret.
-    prefix = match.group(1) if match.lastindex else ""
-    return f"{prefix}[REDACTED]"
-
-
-def sanitize(text: str, limit: int = 240) -> str:
-    """Return a log-safe snippet with credential-like substrings redacted."""
-    cleaned = text.replace("\n", " ").strip()
-    for pattern in _SECRET_PATTERNS:
-        cleaned = pattern.sub(_redact_match, cleaned)
-    if len(cleaned) > limit:
-        cleaned = cleaned[: limit - 3] + "..."
-    return cleaned
-
-
-def run_gh(args: list[str]) -> tuple[int, str, str]:
+def run_gh(args: list[str]) -> tuple[int, str]:
+    """Run gh and return (exit_code, stdout). Stderr is discarded unsaved."""
     proc = subprocess.run(
         ["gh", *args],
         capture_output=True,
         text=True,
     )
-    return proc.returncode, proc.stdout, proc.stderr
+    # Intentionally ignore stderr: never retain or log process error text.
+    return proc.returncode, proc.stdout
 
 
 def gh_json(args: list[str]) -> Any:
-    code, out, err = run_gh(args)
+    code, out = run_gh(args)
     if code != 0:
-        # Never raise raw stderr: gh may echo auth headers or tokens.
-        safe = sanitize(err or out or f"gh failed ({code})")
-        raise RuntimeError(f"gh command failed: {safe}")
-    return json.loads(out) if out.strip() else None
+        raise RuntimeError("gh_command_failed")
+    if not out.strip():
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("gh_json_invalid") from exc
 
 
 def check(name: str, ok: bool, detail: str, required: bool, rows: list[dict[str, Any]]) -> None:
-    rows.append(
-        {
-            "name": name,
-            "ok": ok,
-            "required": required,
-            "detail": sanitize(detail),
-        }
-    )
+    rows.append({"name": name, "ok": ok, "required": required, "detail": detail})
 
 
 def main() -> int:
@@ -96,8 +68,8 @@ def main() -> int:
 
     try:
         repo = gh_json(["api", f"repos/{slug}"])
-    except RuntimeError as exc:
-        print(f"error: cannot read repository: {sanitize(str(exc))}", file=sys.stderr)
+    except RuntimeError:
+        print("error: cannot read repository metadata", file=sys.stderr)
         return 2
 
     visibility = (repo or {}).get("visibility")
@@ -135,15 +107,10 @@ def main() -> int:
 
     try:
         pvr = gh_json(["api", f"repos/{slug}/private-vulnerability-reporting"]) or {}
-        check(
-            "private_vulnerability_reporting",
-            bool(pvr.get("enabled")),
-            f"enabled={bool(pvr.get('enabled'))}",
-            True,
-            rows,
-        )
-    except RuntimeError as exc:
-        check("private_vulnerability_reporting", False, sanitize(str(exc)), True, rows)
+        enabled = bool(pvr.get("enabled"))
+        check("private_vulnerability_reporting", enabled, f"enabled={enabled}", True, rows)
+    except RuntimeError:
+        check("private_vulnerability_reporting", False, "api_unavailable", True, rows)
 
     try:
         gql = gh_json(
@@ -159,37 +126,34 @@ def main() -> int:
             ]
         )
         node = ((gql or {}).get("data") or {}).get("repository") or {}
-        check(
-            "vulnerability_alerts",
-            bool(node.get("hasVulnerabilityAlertsEnabled")),
-            f"enabled={bool(node.get('hasVulnerabilityAlertsEnabled'))}",
-            True,
-            rows,
-        )
-        policy_url = node.get("securityPolicyUrl") or ""
+        alerts = bool(node.get("hasVulnerabilityAlertsEnabled"))
+        policy = bool(node.get("isSecurityPolicyEnabled"))
+        policy_url_set = bool(node.get("securityPolicyUrl"))
+        check("vulnerability_alerts", alerts, f"enabled={alerts}", True, rows)
         check(
             "security_policy",
-            bool(node.get("isSecurityPolicyEnabled")),
-            f"enabled={bool(node.get('isSecurityPolicyEnabled'))} url_set={bool(policy_url)}",
+            policy,
+            f"enabled={policy} url_set={policy_url_set}",
             True,
             rows,
         )
-    except RuntimeError as exc:
-        check("vulnerability_alerts", False, sanitize(str(exc)), True, rows)
-        check("security_policy", False, sanitize(str(exc)), True, rows)
+    except RuntimeError:
+        check("vulnerability_alerts", False, "api_unavailable", True, rows)
+        check("security_policy", False, "api_unavailable", True, rows)
 
     default_branch = (repo or {}).get("default_branch") or "main"
     try:
         branch = gh_json(["api", f"repos/{slug}/branches/{default_branch}"]) or {}
+        protected = bool(branch.get("protected"))
         check(
             "default_branch_protected_flag",
-            bool(branch.get("protected")),
-            f"branch={default_branch} protected={branch.get('protected')}",
+            protected,
+            f"branch={default_branch} protected={protected}",
             True,
             rows,
         )
-    except RuntimeError as exc:
-        check("default_branch_protected_flag", False, sanitize(str(exc)), True, rows)
+    except RuntimeError:
+        check("default_branch_protected_flag", False, "api_unavailable", True, rows)
 
     required_found: set[str] = set()
     extra_checks: set[str] = set()
@@ -210,7 +174,7 @@ def main() -> int:
             elif rtype == "required_status_checks":
                 for item in params.get("required_status_checks") or []:
                     ctx = item.get("context")
-                    if not ctx:
+                    if not isinstance(ctx, str) or not ctx:
                         continue
                     if ctx in args.required_checks:
                         required_found.add(ctx)
@@ -225,9 +189,10 @@ def main() -> int:
                         if isinstance(tool, dict) and tool.get("tool")
                     }
                 )
-                extra_checks.add("code_scanning:" + ",".join(names))
-    except RuntimeError as exc:
-        check("ruleset_readable", False, sanitize(str(exc)), True, rows)
+                if names:
+                    extra_checks.add("code_scanning:" + ",".join(names))
+    except RuntimeError:
+        check("ruleset_readable", False, "api_unavailable", True, rows)
 
     check("ruleset_require_pull_request", has_pr_rule, f"present={has_pr_rule}", True, rows)
     check("ruleset_block_force_push", has_force_push_block, f"present={has_force_push_block}", True, rows)
@@ -265,8 +230,9 @@ def main() -> int:
         mark = "PASS" if row["ok"] else ("FAIL" if row["required"] else "WARN")
         if row["required"] and not row["ok"]:
             failed += 1
-        # detail was sanitized at check() time; print only that safe string.
-        print(f"[{mark}] {row['name']:<{width}}  {row['detail']}")
+        # Print only untainted status labels derived from booleans/name keys.
+        # Detailed API payloads are intentionally omitted from console output.
+        print(f"[{mark}] {row['name']:<{width}}")
 
     if failed:
         print(f"\n{failed} required check(s) failed")
@@ -276,8 +242,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except json.JSONDecodeError as exc:
-        print(f"error: invalid JSON from gh: {sanitize(str(exc))}", file=sys.stderr)
-        raise SystemExit(2) from exc
+    raise SystemExit(main())
