@@ -699,12 +699,12 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
       return 0;
     }
     auto quote = [](const std::string& value) {
-      std::string out = "\\\"";
+      std::string out = "\"";
       for (unsigned char c : value) {
-        if (c == '"' || c == '\\\\') { out += '\\\\'; out += static_cast<char>(c); }
-        else if (c == '\\n') out += "\\\\n";
-        else if (c == '\\r') out += "\\\\r";
-        else if (c == '\\t') out += "\\\\t";
+        if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
         else if (c < 0x20) out += ' ';
         else out += static_cast<char>(c);
       }
@@ -713,20 +713,20 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
     };
     const auto& record = found->second;
     std::ostringstream json;
-    json << "{\\\"delta_id\\\":" << quote(record.delta_id) << ",\\\"triggered\\\":[";
+    json << "{\"delta_id\":" << quote(record.delta_id) << ",\"triggered\":[";
     for (size_t i = 0; i < record.triggered.size(); ++i) {
       if (i) json << ',';
       const auto& trigger = record.triggered[i];
-      json << "{\\\"dependency_id\\\":" << quote(trigger.dependency_id)
-           << ",\\\"prerequisite_id\\\":" << quote(trigger.prerequisite_id)
-           << ",\\\"dependent_id\\\":" << quote(trigger.dependent_id) << '}';
+      json << "{\"dependency_id\":" << quote(trigger.dependency_id)
+           << ",\"prerequisite_id\":" << quote(trigger.prerequisite_id)
+           << ",\"dependent_id\":" << quote(trigger.dependent_id) << '}';
     }
-    json << "],\\\"impacted_nodes\\\":[";
+    json << "],\"impacted_nodes\":[";
     for (size_t i = 0; i < record.impacted_nodes.size(); ++i) {
       if (i) json << ',';
       json << quote(record.impacted_nodes[i]);
     }
-    json << "],\\\"rejected_dependencies\\\":[";
+    json << "],\"rejected_dependencies\":[";
     for (size_t i = 0; i < record.rejected_dependencies.size(); ++i) {
       if (i) json << ',';
       json << quote(record.rejected_dependencies[i]);
@@ -748,5 +748,4 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
     return 0;
   }
 }
-
 }
