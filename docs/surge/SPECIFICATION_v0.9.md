@@ -106,6 +106,14 @@ Gate results: PASS, FAIL, INCONCLUSIVE. Semantic gate and performance gate are e
 
 Model artifact size, peak/steady RSS, adapter memory, Core memory, cache and repository storage are reported separately. RTF is end-to-end and includes packetization, ContextHint, queue wait, inference, validation, commit and settled reconciliation. Report fast-path and settled latency/RTF separately. Include p50/p95/p99/max latency, throughput, queue depth, oldest-item age and deferred ranges. Model-only RTF MUST NOT be labeled end-to-end RTF.
 
+### 3.8 Claim correction and retraction lifecycle
+
+Claim content and Evidence references are immutable after commit. A correction creates a new Evidence-backed Claim and an append-only relation `new_claim --SUPERSEDES--> old_claim`. An explicit withdrawal uses `evidence --RETRACTS--> claim`, where the Evidence records the basis for withdrawal.
+
+Claim lifecycle states are ACTIVE, SUPERSEDED and RETRACTED. New Claims start ACTIVE. SUPERSEDES requires both Claims to be ACTIVE and transitions only the target to SUPERSEDED. RETRACTS requires an Evidence source and ACTIVE Claim target, then transitions the target to RETRACTED. Any attempt to supersede or retract a non-ACTIVE Claim is rejected. These relation and status changes are part of the same SemanticDelta transaction and are reconstructed from Journal replay.
+
+Historical Claims remain retrievable with their original Evidence and a `claim_status` field. Current-state consumers must explicitly filter ACTIVE; audit consumers retain all lifecycle states. See CLAIM_LIFECYCLE_v0.1.md.
+
 ## 4. Invariants
 
 Inherit all applicable invariants I-01 through I-70. v0.9 adds:
@@ -121,7 +129,7 @@ Inherit all applicable invariants I-01 through I-70. v0.9 adds:
 - I-80 Abstention Coverage: abstentions reduce coverage and cannot count as correct predictions.
 - I-81 Dual-Gate Acceptance: overall conformance requires semantic and performance gates.
 - I-82 Conflict Classification: same range with changed digest is conflict/revision, never duplicate.
-- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.
+- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.\n- I-84 Claim History Preservation: correction and withdrawal never overwrite or delete a committed Claim or its Evidence; lifecycle changes are append-only and replay-deterministic.
 
 ## 5. Conformance suite
 
@@ -137,7 +145,7 @@ The mandatory regression set is T-001–T-101, W01–W50, A–H, C01–C20 and D
 
 Every case declares input, preconditions, operation order, expected state, Delta, invariant checks, errors and replay behavior in tests/conformance/SURGE_v0.9_D13_D20.json. D01–D12 executable-oriented definitions are in SURGE_v0.9_D01_D12.json.
 
-A design review is DESIGN_REVIEW only. Schema validation, unit/integration execution, model accuracy and runtime measurement are separate evidence classes. Never aggregate thought-experiment PASS into executable PASS.
+Claim lifecycle conformance CL01–CL06 is exercised by the ContextGraph integration suite: initial ACTIVE state, supersession, duplicate supersession rejection, evidence-backed retraction, full-Delta atomic rejection and restart reconstruction.\n\nA design review is DESIGN_REVIEW only. Schema validation, unit/integration execution, model accuracy and runtime measurement are separate evidence classes. Never aggregate thought-experiment PASS into executable PASS.
 
 ## 6. Compatibility and migration
 
