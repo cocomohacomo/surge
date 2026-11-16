@@ -47,7 +47,7 @@ change length; it is not mislabeled as a same-range Packet REVISION. The index
 retains previous_packet_id and document revision lineage. The index is
 rebuildable and is not the Core journal. Core remains authoritative for semantic state.
 Claim signatures are deterministic over proposition, polarity, topic,
-conditions, temporal state and modality.
+conditions, geography, normalized validity dates, temporal state and modality.
 
 ## 4. Provenance and attribution
 
