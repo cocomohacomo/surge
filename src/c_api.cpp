@@ -446,7 +446,7 @@ int surge_context_graph_apply_claim_validity(void* opaque,
     surge::SemanticDelta delta;
     delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
     delta.expected_state_version=expected_state_version;
-    delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",basis_evidence_id,revision});
+    delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",basis_evidence_id,revision,"",""});
     const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
