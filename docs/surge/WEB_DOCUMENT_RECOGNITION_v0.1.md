@@ -45,7 +45,9 @@ same URL + changed digest is UPDATE; a new URL is NEW. Each changed capture gets
 a new RecognitionPacket source_generation because full-page byte ranges may
 change length; it is not mislabeled as a same-range Packet REVISION. The index
 retains previous_packet_id and document revision lineage. The index is
-rebuildable and is not the Core journal. Core remains authoritative for semantic state.
+rebuildable and is not the Core journal. One index database is bound to exactly
+one SURGE context; reusing it from another context is rejected. Core remains
+authoritative for semantic state.
 Claim signatures are deterministic over proposition, polarity, topic,
 conditions, geography, normalized validity dates, temporal state and modality.
 
