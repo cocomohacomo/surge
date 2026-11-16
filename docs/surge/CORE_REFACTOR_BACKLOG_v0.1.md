@@ -108,3 +108,28 @@ read-only C ABI and Python `ContextRetriever` API for retrieving persisted
 dependency evaluation records by delta ID, with bounded-buffer retry and
 restart-replay conformance coverage. This work is not complete until the
 stacked PR's CI passes and both PRs are merged.
+
+
+## Progress update: typed predicates and bounded fixed-point evaluation
+
+PR #31 (`feat/typed-dependency-predicate-ast-v0.1`) introduces a typed
+predicate AST and centralized parser while preserving persisted string
+compatibility. The follow-on branch `feat/bounded-dependency-fixpoint-v0.1`
+adds deterministic SCC discovery, bounded monotonic fixed-point evaluation,
+explicit `Converged` / `Deferred` / `Invalid` outcomes, and independent
+iteration, predicate-evaluation, and impacted-node budgets. The staged
+ContextGraph transaction now persists only converged evaluation outcomes;
+budget exhaustion or invalid input aborts the whole transaction before
+journal append. Documentation and regression cases are included.
+
+These changes remain on stacked PR branches and are not merged. The user has
+identified the reported CI failures as GitHub token quota exhaustion; therefore
+the failed CI status is treated as an infrastructure/credential blocker, not
+as evidence of a source-code failure. Compilation and test execution still
+need confirmation once the GitHub Actions token quota is restored or a local
+build environment is available.
+
+Next dependency-semantics increment: persist the fixpoint diagnostics
+(iteration count, evaluation cost, SCC membership, and deferred reason) in the
+journal/read API, then add fault-injection and non-monotonic-rule admission
+guards before introducing semantic rewrite callbacks inside SCCs.
