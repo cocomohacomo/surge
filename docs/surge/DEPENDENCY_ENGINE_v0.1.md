@@ -128,3 +128,31 @@ Supported variants remain `OnChange`, `Present`, `ContentEquals`,
 `ContentContains`, and `Kind`. This is an internal typed representation;
 the persisted graph format remains backward-compatible string expressions.
 Parser conformance tests cover all valid forms and malformed/unknown forms.
+
+## v0.6: SCC-aware bounded fixed-point evaluation
+
+The engine now exposes `evaluate_fixpoint`, which combines deterministic
+impact/SCC analysis with monotonic dependency propagation over one immutable
+staged graph snapshot. Dependency IDs are visited in stable map order; a
+dependency fires at most once per evaluation, and newly impacted dependents
+become eligible in the same or a subsequent round. Cyclic strongly connected
+components are reported explicitly.
+
+The result distinguishes `Converged`, `Deferred`, and `Invalid`. Iteration,
+predicate-evaluation, and impacted-node budgets are independently bounded.
+Budget exhaustion returns `Deferred`; callers must not persist the partial
+trigger set or treat it as a completed evaluation. Invalid roots or malformed
+dependency edges return `Invalid`.
+
+The ContextGraph transaction coordinator now uses this bounded evaluator
+before journal append. It persists only converged outcomes, in the same atomic
+SemanticDelta transaction. If evaluation is deferred or invalid, the staged
+transaction is rejected and no partial dependency outcome is journaled.
+The current Core policy is 4096 impacted nodes, 4096 rounds, and 1,000,000
+predicate evaluations per transaction.
+
+This implementation detects SCCs and guarantees bounded monotonic closure for
+the current predicate DSL. It does not yet run arbitrary semantic rewrite
+callbacks inside an SCC, nor does it claim convergence for future non-monotonic
+rules. Such rules must use explicit state fingerprints and a separate
+iteration protocol before being admitted to the Core transaction path.
