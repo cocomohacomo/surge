@@ -113,3 +113,14 @@ The operation appends a Claim validity revision in a SemanticDelta. Intervals ar
 Returns UNKNOWN, NOT_YET_VALID, VALID or EXPIRED. Missing validity is UNKNOWN, not implicitly valid. Claim lifecycle status remains a separate dimension.
 
 Errors: CLAIM_VALIDITY_CLAIM_INVALID, CLAIM_VALIDITY_EVIDENCE_INVALID, CLAIM_VALIDITY_TIMESTAMP_INVALID, CLAIM_VALIDITY_INTERVAL_INVALID, CLAIM_VALIDITY_REVISION_INVALID. See CLAIM_TEMPORAL_VALIDITY_v0.1.md.
+
+
+## 11. Temporal dependency predicates
+
+Dependency node content may use
+`CLAIM_TEMPORAL_STATE:<STATE>@<RFC3339>`, where STATE is UNKNOWN,
+NOT_YET_VALID, VALID or EXPIRED. The instant must carry an explicit timezone.
+The prerequisite endpoint must be a Claim. The predicate is reconsidered
+when that Claim is part of the current SemanticDelta changed-node set.
+Validity revision and triggered dependency evaluation are persisted atomically.
+Missing validity maps to UNKNOWN. Invalid predicates fail closed.

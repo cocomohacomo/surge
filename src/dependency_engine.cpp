@@ -16,6 +16,15 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     const std::map<std::string, GraphNode>& nodes,
     const std::vector<std::string>& roots, std::size_t maximum_nodes,
     std::size_t maximum_predicate_operations) {
+  return evaluate(nodes, roots, maximum_nodes, maximum_predicate_operations,
+                  std::map<std::string, ClaimValidityRecord>{});
+}
+
+DependencyEvaluationResult DependencyEngine::evaluate(
+    const std::map<std::string, GraphNode>& nodes,
+    const std::vector<std::string>& roots, std::size_t maximum_nodes,
+    std::size_t maximum_predicate_operations,
+    const std::map<std::string, ClaimValidityRecord>& claim_validity) {
   DependencyEvaluationResult result;
   if (roots.empty() || maximum_nodes == 0 || maximum_predicate_operations == 0) {
     result.error = "DEPENDENCY_EVALUATION_REQUEST_INVALID"; return result;
@@ -49,6 +58,20 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       const auto needle = expr.substr(contains.size());
       return !needle.empty() && prerequisite.content.find(needle) != std::string::npos;
     }
+    const std::string temporal = "CLAIM_TEMPORAL_STATE:";
+    if (expr.compare(0, temporal.size(), temporal) == 0) {
+      const auto separator = expr.find('@', temporal.size());
+      if (separator == std::string::npos || prerequisite.kind != NodeKind::Claim) return false;
+      const auto expected = expr.substr(temporal.size(), separator-temporal.size());
+      const auto record = claim_validity.find(prerequisite.id);
+      const auto state = record == claim_validity.end()
+          ? ClaimTemporalState::Unknown
+          : evaluate_claim_validity(record->second, expr.substr(separator+1));
+      const std::string actual = state == ClaimTemporalState::Unknown ? "UNKNOWN" :
+          state == ClaimTemporalState::NotYetValid ? "NOT_YET_VALID" :
+          state == ClaimTemporalState::Valid ? "VALID" : "EXPIRED";
+      return changed.count(prerequisite.id) != 0 && expected == actual;
+    }
     const std::string kind = "KIND:";
     if (expr.compare(0, kind.size(), kind) == 0) {
       const auto expected = expr.substr(kind.size());
@@ -67,6 +90,18 @@ DependencyEvaluationResult DependencyEngine::evaluate(
   };
   auto known = [](const std::string& expr) {
     if (expr.empty() || expr == "ON_CHANGE" || expr == "PRESENT") return true;
+    const std::string temporal = "CLAIM_TEMPORAL_STATE:";
+    if (expr.compare(0, temporal.size(), temporal) == 0) {
+      const auto separator = expr.find('@', temporal.size());
+      if (separator == std::string::npos || separator == temporal.size() ||
+          separator+1 >= expr.size()) return false;
+      const auto state = expr.substr(temporal.size(), separator-temporal.size());
+      if (state != "UNKNOWN" && state != "NOT_YET_VALID" &&
+          state != "VALID" && state != "EXPIRED") return false;
+      ClaimValidityRecord probe;
+      probe.validity.valid_from = expr.substr(separator+1);
+      return evaluate_claim_validity(probe, probe.validity.valid_from) == ClaimTemporalState::Valid;
+    }
     const std::string eq = "CONTENT_EQUALS:";
     if (expr.compare(0, eq.size(), eq) == 0) return expr.size() > eq.size();
     const std::string contains = "CONTENT_CONTAINS:";

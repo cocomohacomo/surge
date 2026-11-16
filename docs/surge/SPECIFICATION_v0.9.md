@@ -114,6 +114,8 @@ Claim lifecycle states are ACTIVE, SUPERSEDED and RETRACTED. New Claims start AC
 
 Historical Claims remain retrievable with their original Evidence and a `claim_status` field. Current-state consumers must explicitly filter ACTIVE; audit consumers retain all lifecycle states. See CLAIM_LIFECYCLE_v0.1.md.
 
+
+
 ### 3.9 Claim temporal validity
 
 Claim lifecycle and temporal validity are independent dimensions. Lifecycle states (ACTIVE, SUPERSEDED, RETRACTED) describe graph assertion status; valid time describes the interval in the modeled world. Each Claim may have append-only validity revisions with a half-open interval `[valid_from, valid_until)`, an Evidence basis, revision number and `recorded_state_version`.
@@ -121,6 +123,20 @@ Claim lifecycle and temporal validity are independent dimensions. Lifecycle stat
 Timestamps MUST be RFC3339 with an explicit timezone. Core compares normalized instants and rejects invalid dates, malformed offsets, timezone-free values and non-positive intervals. Empty `valid_until` means open-ended. Revision numbers are contiguous per Claim. A corrected interval appends a new revision and preserves the prior one.
 
 Point-in-time evaluation returns UNKNOWN, NOT_YET_VALID, VALID or EXPIRED. Missing validity is UNKNOWN, never implicitly current. Transaction time is represented by the state version at which each revision was committed. See CLAIM_TEMPORAL_VALIDITY_v0.1.md.
+
+
+### 3.10 Temporal dependency propagation
+
+Dependency predicates may explicitly route a changed Claim according to its
+latest valid-time state at a supplied RFC3339 instant:
+`CLAIM_TEMPORAL_STATE:<STATE>@<RFC3339>`. Supported states are UNKNOWN,
+NOT_YET_VALID, VALID and EXPIRED. A predicate is evaluated only when its
+prerequisite Claim is included in the current changed-node set. A validity
+revision and its resulting dependency evaluation are persisted atomically.
+The Core MUST NOT infer wall-clock time or silently treat missing validity as
+VALID. Temporal predicates on non-Claim prerequisites and malformed values
+fail closed. This mechanism routes impacted records; it does not automatically
+rewrite dependent Claims. See DEPENDENCY_ENGINE_v0.1.md.
 
 ## 4. Invariants
 
@@ -137,7 +153,10 @@ Inherit all applicable invariants I-01 through I-70. v0.9 adds:
 - I-80 Abstention Coverage: abstentions reduce coverage and cannot count as correct predictions.
 - I-81 Dual-Gate Acceptance: overall conformance requires semantic and performance gates.
 - I-82 Conflict Classification: same range with changed digest is conflict/revision, never duplicate.
-- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.\n- I-84 Claim History Preservation: correction and withdrawal never overwrite or delete a committed Claim or its Evidence; lifecycle changes are append-only and replay-deterministic.\n- I-85 Temporal Validity Separation: valid time and transaction time are stored separately; missing timezone or validity data is never inferred, and interval revisions preserve prior assertions.
+- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.
+- I-84 Claim History Preservation: correction and withdrawal never overwrite or delete a committed Claim or its Evidence; lifecycle changes are append-only and replay-deterministic.
+- I-85 Temporal Validity Separation: valid time and transaction time are stored separately; missing timezone or validity data is never inferred, and interval revisions preserve prior assertions.
+- I-86 Temporal Dependency Routing: a Claim validity revision re-evaluates state-specific dependent predicates within the same transaction; no wall-clock instant is inferred.
 
 ## 5. Conformance suite
 
@@ -153,7 +172,9 @@ The mandatory regression set is T-001–T-101, W01–W50, A–H, C01–C20 and D
 
 Every case declares input, preconditions, operation order, expected state, Delta, invariant checks, errors and replay behavior in tests/conformance/SURGE_v0.9_D13_D20.json. D01–D12 executable-oriented definitions are in SURGE_v0.9_D01_D12.json.
 
-Claim lifecycle conformance CL01–CL06 and temporal validity conformance TV01–TV06 are exercised by the ContextGraph integration suite: initial ACTIVE state, supersession, duplicate supersession rejection, evidence-backed retraction, full-Delta atomic rejection and restart reconstruction.\n\nA design review is DESIGN_REVIEW only. Schema validation, unit/integration execution, model accuracy and runtime measurement are separate evidence classes. Never aggregate thought-experiment PASS into executable PASS.
+Claim lifecycle conformance CL01–CL06 and temporal validity conformance TV01–TV06 are exercised by the ContextGraph integration suite: initial ACTIVE state, supersession, duplicate supersession rejection, evidence-backed retraction, full-Delta atomic rejection and restart reconstruction.
+
+A design review is DESIGN_REVIEW only. Schema validation, unit/integration execution, model accuracy and runtime measurement are separate evidence classes. Never aggregate thought-experiment PASS into executable PASS.
 
 ## 6. Compatibility and migration
 

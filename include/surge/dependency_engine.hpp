@@ -20,6 +20,10 @@ class DependencyEngine {
   static DependencyEvaluationResult evaluate(const std::map<std::string, GraphNode>& nodes,
       const std::vector<std::string>& changed_nodes, std::size_t maximum_nodes,
       std::size_t maximum_predicate_operations);
+  static DependencyEvaluationResult evaluate(const std::map<std::string, GraphNode>& nodes,
+      const std::vector<std::string>& changed_nodes, std::size_t maximum_nodes,
+      std::size_t maximum_predicate_operations,
+      const std::map<std::string, ClaimValidityRecord>& claim_validity);
   static ImpactResult compute(const std::map<std::string, GraphNode>& nodes,
                               const std::vector<std::string>& changed_nodes,
                               std::size_t maximum_nodes);
