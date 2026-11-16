@@ -42,6 +42,14 @@ class WebDocumentRecognitionTests(unittest.TestCase):
         c=ClaimApplicability("施設を開放","NEGATIVE","施設",("平常時",),"A市","CURRENT")
         self.assertFalse(ClaimApplicabilityComparator.compare(a,c).conflict)
 
+    def test_opposite_polarity_without_shared_scope_is_unresolved(self):
+        a=ClaimApplicability("対象を実施","POSITIVE",polarity if False else "")
+        b=ClaimApplicability("対象を実施","NEGATIVE")
+        result=ClaimApplicabilityComparator.compare(a,b)
+        self.assertFalse(result.scopes_overlap)
+        self.assertFalse(result.conflict)
+        self.assertEqual(result.reason,"SCOPE_OVERLAP_UNPROVEN")
+
     def test_reiwa_month_scope_overlaps_day_scope_but_not_next_month(self):
         month=ClaimApplicability("会議を開催","POSITIVE","会議",(),"A市","CURRENT",
             valid_from="令和8年11月")
