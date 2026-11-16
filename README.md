@@ -127,3 +127,8 @@ SURGE's completed publication record. To repeat the same process on another
 repository, use the reusable
 [public release template](docs/public-release-template/README.md) and
 `tools/verify_public_release_settings.py`.
+
+
+## Question relationship network
+
+Question nodes support durable DUPLICATES, CONTAINS, AGREES_WITH, CONFLICTS_WITH, and DEPENDS_ON relations. Question dependency cycles are rejected transactionally. See [Question Relationship Network v0.1](docs/surge/QUESTION_RELATIONSHIP_NETWORK_v0.1.md).
