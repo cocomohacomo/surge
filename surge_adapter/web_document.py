@@ -125,11 +125,11 @@ def split_document(text: str, max_chars: int = 6000, overlap_chars: int = 240) -
         hard_end = min(len(normalized), start + max_chars)
         end = hard_end
         if hard_end < len(normalized):
-            floor = start + max_chars // 2
-            candidates = [normalized.rfind(mark, floor, hard_end) for mark in ("。", "\n", "！", "？", ".", ";")]
-            boundary = max(candidates)
-            if boundary >= floor:
-                end = boundary + 1
+            floor = start + min(1000, max_chars // 2)
+            candidates = [normalized.find(mark, floor, hard_end) for mark in ("。", "\n", "！", "？", ".", ";")]
+            candidates = [value for value in candidates if value >= 0]
+            if candidates:
+                end = min(candidates) + 1
         part = normalized[start:end]
         bstart = len(normalized[:start].encode("utf-8"))
         bend = bstart + len(part.encode("utf-8"))
@@ -218,6 +218,14 @@ class WebDocumentIndex:
     def find_claim(self, signature: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT claim_id,payload FROM claims WHERE signature=?", (signature,)).fetchone()
         return {"claim_id": row[0], **json.loads(row[1])} if row else None
+
+    def claims_for_proposition(self, proposition: str) -> list[dict[str, Any]]:
+        result = []
+        for claim_id, payload in self.db.execute("SELECT claim_id,payload FROM claims"):
+            item = json.loads(payload)
+            if _normal(item.get("applicability", {}).get("proposition", "")) == _normal(proposition):
+                result.append({"claim_id": claim_id, **item})
+        return result
 
     def record(self, url: str, digest: str, packet_id: str, revision: int,
                title: str, publisher: str, claims: Iterable[dict[str, Any]]) -> None:
@@ -345,11 +353,22 @@ class WebDocumentRecognitionEngine:
                 if comparison.conflict:
                     relations.append({"id":f"contradicts/{previous_id}/{claim_id}",
                         "kind":"CONTRADICTS","from":previous_id,"to":claim_id})
+            for previous in self.index.claims_for_proposition(candidate["proposition"]):
+                if previous["claim_id"] == claim_id:
+                    continue
+                previous_app = ClaimApplicability(**previous["applicability"])
+                comparison = ClaimApplicabilityComparator.compare(previous_app,applicability)
+                if comparison.conflict:
+                    relation_id = f"contradicts/{previous['claim_id']}/{claim_id}"
+                    if not any(r["id"] == relation_id for r in relations):
+                        relations.append({"id":relation_id,"kind":"CONTRADICTS",
+                            "from":previous["claim_id"],"to":claim_id})
             prior_claims.append((applicability,claim_id))
             scopes.extend(_marker_spans(chunk.text,chunk.start_char,source_text,digest,
                                          packet_id,claim_id,chunk.index))
             extracted.append({"claim_id":claim_id,"signature":signature,
-                "applicability":asdict(applicability),"chunk_index":chunk.index})
+                "applicability":asdict(applicability),"chunk_index":chunk.index,
+                "source_url":url,"publisher":publisher,"title":title})
         # Explicit quotation attribution is separate from publisher attribution.
         attribution_entities = []
         for m in ATTRIBUTION_RE.finditer(source_text):
