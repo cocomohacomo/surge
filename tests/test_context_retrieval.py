@@ -85,6 +85,51 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(only_claims["items"][0]["kind"], "CLAIM")
                 self.assertEqual(retriever.search("unmatched-token")["items"], [])
 
+    def test_search_all_paginates_beyond_legacy_thousand_result_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "retrieval-pages.sgj"
+            nodes = [
+                {"id": f"cluster/page/{index:04d}", "kind": "CLUSTER",
+                 "content": "common topic record", "references": []}
+                for index in range(1105)
+            ]
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "delta/page-seed",
+                    "idempotency_key": "idem/page-seed",
+                    "expected_state_version": 0,
+                    "nodes": nodes,
+                    "relations": [],
+                })
+                retriever = ContextRetriever(core)
+                first = retriever.search("*", limit=1000)
+                second = retriever.search("*", limit=1000, offset=1000)
+                self.assertEqual(len(first["items"]), 1000)
+                self.assertEqual(len(second["items"]), 105)
+                self.assertIsNone(second["next_offset"])
+                complete = retriever.search_all("*", page_size=300, max_items=2000)
+                self.assertEqual(len(complete["items"]), 1105)
+                self.assertEqual(complete["total_matches"], 1105)
+                self.assertEqual(complete["state_version"], 1)
+
+    def test_japanese_bigram_fallback_matches_intervening_particle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "retrieval-ja.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "delta/ja-seed",
+                    "idempotency_key": "idem/ja-seed",
+                    "expected_state_version": 0,
+                    "nodes": [{
+                        "id": "cluster/ja-budget", "kind": "CLUSTER",
+                        "content": "予算の配分案を検討する", "references": []
+                    }],
+                    "relations": [],
+                })
+                result = ContextRetriever(core).search("予算配分")
+                self.assertEqual(result["items"][0]["id"], "cluster/ja-budget")
+                self.assertLess(result["items"][0]["score"], 65)
+
     def test_invalid_query_options_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "invalid.sgj") as core:
