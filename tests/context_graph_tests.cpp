@@ -148,6 +148,37 @@ int main(){
     assert(recovered.nodes().count("cluster-2")==1);
     assert(recovered.nodes().count("cluster-1")==1);
   }
+  {
+    const auto diagnostic_path=(root/"deferred-diagnostic.sgj").string();
+    {
+      ContextGraph graph(diagnostic_path);assert(graph.open());
+      SemanticDelta oversized;oversized.delta_id="deferred-delta";
+      oversized.idempotency_key="deferred-idem";oversized.expected_state_version=0;
+      oversized.nodes.reserve(4098);
+      for(std::size_t i=0;i<4097;++i){
+        oversized.nodes.push_back({GraphNode{"bulk-"+std::to_string(i),
+            NodeKind::Cluster,"bulk",{} }});
+      }
+      oversized.nodes.push_back({GraphNode{"bulk-dependency",NodeKind::Dependency,
+          "ON_CHANGE",{"bulk-0","bulk-1"}}});
+      const auto result=graph.apply(oversized);
+      assert(!result.committed && result.error=="IMPACT_BUDGET_EXCEEDED");
+      assert(result.state_version==1);
+      const auto found=graph.dependency_evaluations().find("deferred-delta");
+      assert(found!=graph.dependency_evaluations().end());
+      assert(found->second.status=="DEFERRED");
+      assert(found->second.diagnostic_error=="IMPACT_BUDGET_EXCEEDED");
+      assert(!found->second.impacted_nodes.empty());
+    }
+    {
+      ContextGraph recovered(diagnostic_path);assert(recovered.open());
+      assert(recovered.state_version()==1);
+      const auto found=recovered.dependency_evaluations().find("deferred-delta");
+      assert(found!=recovered.dependency_evaluations().end());
+      assert(found->second.status=="DEFERRED");
+      assert(found->second.diagnostic_error=="IMPACT_BUDGET_EXCEEDED");
+    }
+  }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: 2 groups passed\n";
 }
