@@ -13,6 +13,35 @@ int main() {
       R"({"proposal_id":"proposal-1","packet_ref":"packet-1","schema_version":"0.9.0"})";
   const auto root = std::filesystem::temp_directory_path() /
       "surge-classification-proposal-journal-tests";
+  // The original ABI remains available and commits without proposal metadata.
+  {
+    const auto legacy_path = (root / "legacy.sgj").string();
+    char error[512]{};
+    void* handle = surge_packet_core_open(legacy_path.c_str(), error, sizeof(error));
+    assert(handle != nullptr);
+    SurgeRecognitionPacketInput legacy_packet = packet;
+    legacy_packet.packet_id = "packet-legacy";
+    legacy_packet.idempotency_key = "packet-idem-legacy";
+    const std::string legacy_request_digest = sha256_hex("legacy-canonical");
+    legacy_packet.canonical_request_digest = legacy_request_digest.c_str();
+    const std::string legacy_node_id = "evidence-legacy";
+    const std::string legacy_node_content = "legacy evidence";
+    SurgeGraphNodeInput legacy_node{legacy_node_id.c_str(), node_kind.c_str(),
+                                    legacy_node_content.c_str(), nullptr, 0};
+    int duplicate = 0;
+    std::uint64_t version = 0;
+    char status[128]{};
+    const int committed = surge_packet_core_admit_and_apply(
+        handle, &legacy_packet,
+        reinterpret_cast<const unsigned char*>(source.data()), source.size(),
+        "delta-legacy", "semantic-idem-legacy", 0,
+        &legacy_node, 1, nullptr, 0, nullptr, 0, nullptr, nullptr,
+        &duplicate, &version, status, sizeof(status), error, sizeof(error));
+    assert(committed == 1);
+    assert(version == 1);
+    surge_packet_core_close(handle);
+  }
+
   std::filesystem::remove_all(root);
   const auto path = (root / "proposal.sgj").string();
 
@@ -82,7 +111,7 @@ int main() {
         handle, proposal_id.c_str(), output.data(), output.size(),
         &required, error, sizeof(error));
     assert(loaded == 1);
-    assert(output.c_str() == proposal_json);
+    assert(output == proposal_json);
     surge_packet_core_close(handle);
   }
 
