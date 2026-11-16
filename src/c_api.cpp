@@ -727,7 +727,7 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
  try{
   if(!opaque||max_active>4096){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_LIMIT");return 0;}
   const auto& graph=static_cast<Handle*>(opaque)->graph;
-  struct Item{std::string id;double score,contradiction,focus,unresolved,recency,recurrence;bool protected_by_dependency;std::string status;};
+  struct Item{std::string id;double score,contradiction,focus,unresolved,recency,reference_frequency;bool protected_by_dependency;std::string status;};
   std::vector<Item> items;
   for(const auto& node:graph.nodes()){
    if(node.second.kind!=surge::NodeKind::Question||graph.question_memory_state(node.first)!=surge::QuestionMemoryState::Active)continue;
@@ -752,7 +752,7 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
    double reference_frequency=std::min(1.0,static_cast<double>(graph.question_reference_count(node.first))/5.0);
    double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*reference_frequency;
    if(protected_dependency)score=std::max(score,.75);
-   items.push_back({node.first,score,contradiction,focus,unresolved,recency,recurrence,protected_dependency,total?(open?"OPEN":(deferred?"DEFERRED":"RESOLVED")):"UNKNOWN"});
+   items.push_back({node.first,score,contradiction,focus,unresolved,recency,reference_frequency,protected_dependency,total?(open?"OPEN":(deferred?"DEFERRED":"RESOLVED")):"UNKNOWN"});
   }
   std::sort(items.begin(),items.end(),[](const Item&a,const Item&b){return a.score!=b.score?a.score>b.score:a.id<b.id;});
   auto quote=[](const std::string& value){return json_quote(value);};
