@@ -184,6 +184,14 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             self.assertIn('"document_revision": 1',evidence["content"])
             index.close()
 
+    def test_web_index_cannot_be_shared_across_contexts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"isolation.sqlite")
+            WebDocumentRecognitionEngine(Provider([candidate()]),"context-a","web",index)
+            with self.assertRaisesRegex(ValueError,"INDEX_CONTEXT_MISMATCH"):
+                WebDocumentRecognitionEngine(Provider([candidate()]),"context-b","web",index)
+            index.close()
+
     def test_url_duplicate_and_update_classification(self):
         with tempfile.TemporaryDirectory() as tmp:
             index=WebDocumentIndex(pathlib.Path(tmp)/"web.sqlite")
