@@ -145,3 +145,34 @@ exact cutoff behavior and successful completion under a larger budget. The
 budget is independent of the impacted-node limit, so either limit can stop an
 evaluation.
 
+
+## v0.6: Claim temporal-state propagation
+
+The transaction-bound evaluator now receives the latest append-only Claim
+validity revision from the staged post-delta graph. A Claim validity update is
+already included in the changed-node roots, so its dependent predicates are
+re-evaluated in the same SemanticDelta transaction.
+
+New strict predicate grammar:
+
+`CLAIM_TEMPORAL_STATE:<STATE>@<RFC3339>`
+
+Supported states are `UNKNOWN`, `NOT_YET_VALID`, `VALID`, and `EXPIRED`.
+The timestamp must contain an explicit timezone. The prerequisite must be a
+Claim. The predicate compares the Claim's latest valid-time revision at the
+explicit instant. If no validity revision exists, the state is UNKNOWN.
+Malformed state names, malformed timestamps, missing separators, and use on
+non-Claim prerequisites fail closed and are listed as rejected dependencies.
+
+A temporal predicate is reconsidered only when its prerequisite Claim is in
+the current changed-node set. This prevents unrelated SemanticDeltas from
+re-triggering temporal dependents. When a correction moves a Claim from VALID
+to EXPIRED (or another state), separate state-specific dependency predicates
+can route the change to the corresponding dependent records. The resulting
+trigger and impact set is persisted in the same journal transaction as the
+Claim validity revision.
+
+This is state-based routing, not automatic mutation of dependent Claim text or
+lifecycle. Consumers remain responsible for interpreting the impacted
+records. The evaluation instant is explicit in each predicate; Core does not
+infer the current wall-clock time.
