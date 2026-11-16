@@ -250,6 +250,8 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 version = core.set_question_aspect_status(aspect_id, "OPEN", version)
                 self.assertEqual(core.get_question_aspect(aspect_id)["status"], "OPEN")
                 self.assertEqual(core.get_question_aspect(aspect_id)["state_version"], version)
+                with self.assertRaisesRegex(PacketRejected, "STATE_VERSION_CONFLICT"):
+                    core.set_question_aspect_status(aspect_id, "OPEN", version - 1)
             with SemanticCoreBridge(journal) as recovered:
                 self.assertEqual(recovered.get_question_aspect(aspect_id)["status"], "OPEN")
                 self.assertEqual(recovered.get_question_aspect(aspect_id)["state_version"],
