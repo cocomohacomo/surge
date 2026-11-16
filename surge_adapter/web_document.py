@@ -384,8 +384,10 @@ class WebDocumentRecognitionEngine:
                 "start_byte":chunk.start_byte,"end_byte":chunk.end_byte,
                 "capture":capture_status,"chunk_index":chunk.index}
             nodes.append({"id":evidence_id,"kind":"EVIDENCE",
-                "content":json.dumps(evidence_content,ensure_ascii=False,sort_keys=True),
-                "references":[publisher_id]})
+                "content":json.dumps({**evidence_content,"publisher_entity_id":publisher_id},
+                    ensure_ascii=False,sort_keys=True),"references":[]})
+            relations.append({"id":f"published-by/{packet_id}/{chunk.index}",
+                "kind":"PUBLISHED_BY","from":evidence_id,"to":publisher_id})
             score = self.scorer.evaluate("web/" + packet_id + "/" + str(chunk.index), {
                 "relevance":0.75 if candidate.get("topic") else 0.40,
                 "importance":float(candidate["importance"]),
@@ -439,6 +441,8 @@ class WebDocumentRecognitionEngine:
                 nodes.append({"id":claim_id,"kind":"CLAIM","content":json.dumps(
                     claim_content,ensure_ascii=False,sort_keys=True),"references":[evidence_id]})
             seen_signatures.setdefault(signature,claim_id)
+            relations.append({"id":f"evidence-for/{packet_id}/{chunk.index}",
+                "kind":"EVIDENCE_FOR","from":evidence_id,"to":claim_id})
             cluster_id = None
             if candidate.get("topic"):
                 cluster_id = "cluster/web/" + packet_id + "/" + hashlib.sha256(_normal(candidate["topic"]).encode()).hexdigest()[:12]
@@ -446,9 +450,6 @@ class WebDocumentRecognitionEngine:
                     nodes.append({"id":cluster_id,"kind":"CLUSTER","content":candidate["topic"],"references":[]})
                 relations.append({"id":f"about/{packet_id}/{chunk.index}","kind":"ABOUT",
                     "from":claim_id,"to":cluster_id})
-            if old and old["claim_id"] != claim_id:
-                relations.append({"id":f"supports/{packet_id}/{chunk.index}","kind":"SUPPORTS",
-                    "from":claim_id,"to":old["claim_id"]})
             for previous_app, previous_id in prior_claims:
                 comparison = ClaimApplicabilityComparator.compare(previous_app,applicability)
                 if comparison.conflict:
