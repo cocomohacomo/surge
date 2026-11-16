@@ -11,6 +11,7 @@ namespace surge {
 enum class NodeKind { Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
 enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts };
 enum class ClaimStatus { Active, Superseded, Retracted };
+enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
 enum class ScopeKind { Negation, Condition, Modality, Concession, Contrast, Coreference, Anaphora, Quotation, Temporal, ListContinuation, TableHeader };
 enum class ScopeStatus { Closed, Unresolved };
 enum class QuestionAspectStatus { Open, Resolved, Deferred };
@@ -38,6 +39,8 @@ struct ScopeSpanRecord { ScopeSpanProposal proposal; ScopeStatus status{ScopeSta
 struct AddNode { GraphNode node; };
 struct AddRelation { GraphRelation relation; };
 struct AddScopeSpan { ScopeSpanProposal span; std::string source_snapshot; };
+struct ClaimValidity { std::string claim_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; };
+struct ClaimValidityRecord { ClaimValidity validity; std::uint64_t recorded_state_version{0}; };
 struct SetFocus { FocusRecord focus; };
 struct SemanticDelta {
   std::string delta_id, idempotency_key;
@@ -46,6 +49,7 @@ struct SemanticDelta {
   std::vector<AddRelation> relations;
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
+  std::vector<ClaimValidity> claim_validity_updates;
 };
 struct DependencyTrigger { std::string dependency_id, prerequisite_id, dependent_id; };
 struct DependencyEvaluationRecord {
@@ -72,6 +76,13 @@ class ContextGraph {
     return state_.dependency_evaluations;
   }
   QuestionAspectStatus question_aspect_status(const std::string& id) const;
+  const std::map<std::string, std::vector<ClaimValidityRecord>>& claim_validity_history() const { return state_.claim_validity_history; }
+  std::optional<ClaimValidityRecord> latest_claim_validity(const std::string& id) const {
+    const auto it = state_.claim_validity_history.find(id);
+    if (it == state_.claim_validity_history.end() || it->second.empty()) return std::nullopt;
+    return it->second.back();
+  }
+  ClaimTemporalState claim_validity_at(const std::string& id, const std::string& instant) const;
   ClaimStatus claim_status(const std::string& id) const {
     const auto it = state_.claim_statuses.find(id);
     return it == state_.claim_statuses.end() ? ClaimStatus::Active : it->second;
@@ -87,12 +98,14 @@ class ContextGraph {
     std::vector<FocusRecord> focus_history;
     std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
     std::map<std::string, ClaimStatus> claim_statuses;
+    std::map<std::string, std::vector<ClaimValidityRecord>> claim_validity_history;
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
+  bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
   bool replay();
   bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
                            std::string&) const;

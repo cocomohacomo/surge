@@ -98,3 +98,18 @@ Claim lifecycle is committed through the existing `apply_semantic_delta` relatio
 - Retrieval of Claim nodes includes `claim_status`: ACTIVE, SUPERSEDED or RETRACTED.
 
 The original Claim text and Evidence references remain immutable and retrievable. A repeated lifecycle transition against an inactive Claim is rejected. Errors: CLAIM_SUPERSESSION_ENDPOINT_INVALID, CLAIM_NOT_ACTIVE_FOR_SUPERSESSION, CLAIM_RETRACTION_ENDPOINT_INVALID, CLAIM_NOT_ACTIVE_FOR_RETRACTION. See CLAIM_LIFECYCLE_v0.1.md.
+
+
+## 10. Claim temporal validity
+
+### apply_claim_validity(request)
+
+Required: delta_id, idempotency_key, expected_state_version, claim_id, valid_from, basis_evidence_id and contiguous revision. Optional: valid_until (empty means open-ended).
+
+The operation appends a Claim validity revision in a SemanticDelta. Intervals are half-open `[valid_from, valid_until)`; timestamps must be RFC3339 with explicit timezone. The Core records the commit's `recorded_state_version` separately from valid time. Historical revisions remain available.
+
+### claim_validity_at(claim_id, instant)
+
+Returns UNKNOWN, NOT_YET_VALID, VALID or EXPIRED. Missing validity is UNKNOWN, not implicitly valid. Claim lifecycle status remains a separate dimension.
+
+Errors: CLAIM_VALIDITY_CLAIM_INVALID, CLAIM_VALIDITY_EVIDENCE_INVALID, CLAIM_VALIDITY_TIMESTAMP_INVALID, CLAIM_VALIDITY_INTERVAL_INVALID, CLAIM_VALIDITY_REVISION_INVALID. See CLAIM_TEMPORAL_VALIDITY_v0.1.md.

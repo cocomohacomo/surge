@@ -81,6 +81,17 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_apply.restype = ctypes.c_int
+        lib.surge_context_graph_apply_claim_validity.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_apply_claim_validity.restype = ctypes.c_int
+        lib.surge_context_graph_claim_validity_at.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_claim_validity_at.restype = ctypes.c_int
 
     @property
     def scope_count(self) -> int:
@@ -198,6 +209,37 @@ class SemanticCoreBridge(CppCoreBridge):
         if not isinstance(value, dict) or value.get("delta_id") != delta_id:
             raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID")
         return value
+
+    def apply_claim_validity(self, *, delta_id: str, idempotency_key: str,
+                             expected_state_version: int, claim_id: str,
+                             valid_from: str, valid_until: str | None,
+                             basis_evidence_id: str, revision: int) -> dict[str, Any]:
+        """Append a valid-time interval revision without overwriting prior history."""
+        duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_context_graph_apply_claim_validity(
+            self._handle, delta_id.encode("utf-8"), idempotency_key.encode("utf-8"),
+            int(expected_state_version), claim_id.encode("utf-8"),
+            valid_from.encode("utf-8"), (valid_until or "").encode("utf-8"),
+            basis_evidence_id.encode("utf-8"), int(revision),
+            ctypes.byref(duplicate), ctypes.byref(version), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLAIM_VALIDITY_REJECTED")
+        return {"committed": True, "duplicate": bool(duplicate.value),
+                "state_version": int(version.value)}
+
+    def claim_validity_at(self, claim_id: str, instant: str) -> str:
+        """Evaluate the latest valid-time revision at an explicit RFC3339 instant."""
+        output = ctypes.create_string_buffer(64)
+        error = ctypes.create_string_buffer(256)
+        ok = self._lib.surge_context_graph_claim_validity_at(
+            self._handle, claim_id.encode("utf-8"), instant.encode("utf-8"),
+            output, len(output), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLAIM_VALIDITY_QUERY_FAILED")
+        return output.value.decode("ascii")
 
     def apply_semantic_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         required = {"delta_id", "idempotency_key", "expected_state_version",
