@@ -162,7 +162,8 @@ iteration protocol before being admitted to the Core transaction path.
 ## v0.7: durable fixed-point diagnostics
 
 `DependencyEvaluationRecord` now persists the evaluation status, iteration
-count, predicate evaluation cost, impacted references, triggered/rejected
+count, predicate evaluation cost, impacted references (with an explicit
+truncation flag when the diagnostic reference list exceeds 8192), triggered/rejected
 dependencies, cyclic SCC members, and a stable diagnostic error code.
 Successful `CONVERGED` records are appended atomically with their SemanticDelta.
 
