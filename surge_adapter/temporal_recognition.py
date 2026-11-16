@@ -110,7 +110,7 @@ def recognize_temporal_expressions(
     # End-of-month expiry is represented as the next month's exclusive boundary.
     for m in _MONTH_END.finditer(text):
         year_text, month_text = m.group("year"), m.group("month")
-        year, month = (int(year_text), int(month_text))
+        month = int(month_text)
         if year_text is None:
             candidates.append(TemporalCandidate(m.group(0), "VALID_UNTIL", "NEEDS_YEAR",
                 None, None, "MONTH", 0.55, "Year is absent; do not infer it"))
@@ -121,6 +121,7 @@ def recognize_temporal_expressions(
             candidates.append(TemporalCandidate(m.group(0), "VALID_UNTIL", "NEEDS_TIMEZONE",
                 None, None, "MONTH", 0.85, "Explicit timezone is required"))
         else:
+            year = int(year_text)
             next_month = date(year + (month == 12), (month % 12) + 1, 1)
             candidates.append(TemporalCandidate(m.group(0), "VALID_UNTIL", "RESOLVED",
                 None, _stamp(next_month, zone), "MONTH", 0.85,
@@ -153,7 +154,7 @@ def recognize_temporal_expressions(
             start = reference_datetime
             end = start + timedelta(days=int(m.group("days")))
             candidates.append(TemporalCandidate(m.group(0), "INTERVAL", "RESOLVED",
-                start.isoformat(timespec="seconds"), end.isoformat(timespec="seconds"),
+                start.isoformat(), end.isoformat(),
                 "RELATIVE_DAYS", 0.9, "Calculated from supplied reference_datetime"))
 
     if _CORRECTION.search(text):
