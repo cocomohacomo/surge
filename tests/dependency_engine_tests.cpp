@@ -92,7 +92,7 @@ int main(){
         "CLAIM_TEMPORAL_STATE:VALID@2026-02-01T00:00:00Z",
         {"claim-temporal","valid-dependent"}});
     temporal_nodes.emplace("dep-expired",GraphNode{"dep-expired",NodeKind::Dependency,
-        "CLAIM_TEMPORAL_STATE:EXPIRED@2026-05-01T00:00:00Z",
+        "CLAIM_TEMPORAL_STATE:EXPIRED@2026-02-01T00:00:00Z",
         {"claim-temporal","expired-dependent"}});
     temporal_nodes.emplace("dep-unknown",GraphNode{"dep-unknown",NodeKind::Dependency,
         "CLAIM_TEMPORAL_STATE:UNKNOWN@2026-02-01T00:00:00Z",
@@ -111,6 +111,12 @@ int main(){
         "valid-dependent")!=valid_state.impacted_nodes.end());
     assert(std::find(valid_state.impacted_nodes.begin(),valid_state.impacted_nodes.end(),
         "expired-dependent")==valid_state.impacted_nodes.end());
+    ClaimValidityRecord expired{{"claim-temporal","2025-12-01T00:00:00Z",
+        "2026-01-15T00:00:00Z","evidence",2},2};
+    auto expired_state=DependencyEngine::evaluate(temporal_nodes,{"claim-temporal"},4096,65536,
+        {{"claim-temporal",expired}});
+    assert(expired_state.complete);
+    assert((expired_state.triggered_dependencies==std::vector<std::string>{"dep-expired"}));
     auto no_validity=DependencyEngine::evaluate(temporal_nodes,{"claim-temporal"},4096,65536,{});
     assert(no_validity.complete);
     assert((no_validity.triggered_dependencies==std::vector<std::string>{"dep-unknown"}));
