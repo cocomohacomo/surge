@@ -83,7 +83,11 @@ int main(){
       assert(recovered.state_version()==2);
       assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
       assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
-      const auto& evaluation=recovered.dependency_evaluations().at("dependency-delta-1");
+      const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1");
+      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2");
+      assert(evaluation_it!=recovered.dependency_evaluations().end());
+      assert(evaluation2_it!=recovered.dependency_evaluations().end());
+      const auto& evaluation=evaluation_it->second;
       assert(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
