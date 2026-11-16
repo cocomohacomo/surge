@@ -104,16 +104,14 @@ This version does not yet implement:
   mandatory candidate ordering from ContextHint;
 - multi-hop graph expansion, contradiction-aware reranking, or dependency
   impact traversal;
-- semantic/vector retrieval, Japanese morphological analysis, BM25/IDF, or query expansion;
 - explicit Context IDs on graph records, authorization, retention policies,
   or multi-process writer coordination;
 - an incremental persistent inverted index. The journal-replayed graph is
   scanned deterministically on each request.
 
-The next stage should add a query AST and ContextHint-compatible candidate
-policy, then durable RetrievalTicket records bound to query digest and
-state-version semantics. An index should be introduced only as a rebuildable
-acceleration layer after correctness and conformance are established.
+The next stage should add a query AST, richer temporal/source/lineage filters,
+and a rebuildable incremental index. Any index remains an acceleration layer;
+the EventJournal and replayed ContextGraph remain authoritative.
 
 
 ## v0.2: Offset pagination and Japanese character n-grams
