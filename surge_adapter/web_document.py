@@ -363,7 +363,7 @@ class WebDocumentRecognitionEngine:
         # in-place RecognitionPacket range revision.
         packet["finalization"] = "FINAL"
         publisher = publisher.strip() or urlsplit(url).netloc
-        publisher_id = "entity/publisher/" + hashlib.sha256(publisher.encode()).hexdigest()[:16]
+        publisher_id = "entity/publisher/" + hashlib.sha256(publisher.encode()).hexdigest()[:12] + "/" + packet_id
         nodes: list[dict[str, Any]] = [{"id": publisher_id, "kind": "ENTITY",
             "content": json.dumps({"name": publisher, "role": "PUBLISHER"},ensure_ascii=False),
             "references": []}]
@@ -441,7 +441,7 @@ class WebDocumentRecognitionEngine:
             seen_signatures.setdefault(signature,claim_id)
             cluster_id = None
             if candidate.get("topic"):
-                cluster_id = "cluster/web/" + hashlib.sha256(_normal(candidate["topic"]).encode()).hexdigest()[:16]
+                cluster_id = "cluster/web/" + packet_id + "/" + hashlib.sha256(_normal(candidate["topic"]).encode()).hexdigest()[:12]
                 if not any(n["id"]==cluster_id for n in nodes):
                     nodes.append({"id":cluster_id,"kind":"CLUSTER","content":candidate["topic"],"references":[]})
                 relations.append({"id":f"about/{packet_id}/{chunk.index}","kind":"ABOUT",
@@ -481,7 +481,7 @@ class WebDocumentRecognitionEngine:
         attribution_entities = []
         for m in ATTRIBUTION_RE.finditer(source_text):
             quoted_party=m.group(1)
-            entity_id="entity/attribution/"+hashlib.sha256(quoted_party.encode()).hexdigest()[:16]
+            entity_id="entity/attribution/"+hashlib.sha256(quoted_party.encode()).hexdigest()[:12]+"/"+packet_id
             if not any(n["id"]==entity_id for n in nodes):
                 nodes.append({"id":entity_id,"kind":"ENTITY","content":json.dumps(
                     {"name":quoted_party,"role":"ATTRIBUTED_SPEAKER"},ensure_ascii=False),"references":[]})
