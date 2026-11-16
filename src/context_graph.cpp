@@ -174,7 +174,7 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
- i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record));}
+ i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record)});}
  return out;
 }
 bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
