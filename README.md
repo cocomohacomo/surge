@@ -110,3 +110,11 @@ boundary and reproducible commands.
 ### Packet source integrity
 
 PacketAdmissionCoordinator independently recomputes SHA-256 over the caller-supplied NFC UTF-8 snapshot and its exact half-open byte range. C++ validates UTF-8 but does not normalize Unicode; NFC normalization and JSON Schema validation remain adapter responsibilities. The packet journal now writes RPA2 records and can replay earlier RPA1 records. The Python Adapter now calls the C ABI through ctypes. The end-to-end test covers NFC normalization, durable admission, exact duplicate retry, and restart replay.
+
+## License and reuse
+
+SURGE is intentionally published without an open-source license. All rights are
+reserved by the applicable rightsholders. No general permission is granted to
+use, modify, redistribute, sublicense, or sell the code or documentation.
+Public visibility does not itself grant such a license. See
+[Publication and reuse policy](docs/PUBLICATION_POLICY.md).
