@@ -100,7 +100,9 @@ bool TemporalBoundaryLedger::validate_contribution(
   if (found != pending_.end()) {
     const auto& current = found->second;
     if (role == "INTERVAL" &&
-        (!current.valid_from.empty() || !current.valid_until.empty())) {
+        ((!current.valid_from.empty() || !current.valid_until.empty()) &&
+         (current.valid_from != contribution.valid_from ||
+          current.valid_until != contribution.valid_until))) {
       status = "BOUNDARY_CONFLICT_REVIEW_REQUIRED"; return false;
     }
     if (role == "VALID_FROM" && !current.valid_from.empty() &&

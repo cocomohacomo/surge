@@ -30,6 +30,22 @@ int main() {
     assert(ledger.pending_claim_count() == 1);
   }
   {
+    EventJournal journal((root / "interval-idempotency.sgj").string());
+    assert(journal.open());
+    TemporalBoundaryLedger ledger(journal);
+    assert(ledger.replay());
+    const TemporalBoundaryContribution interval{
+        "claim/interval", "INTERVAL",
+        "2026-04-01T00:00:00+09:00", "2027-04-01T00:00:00+09:00",
+        "evidence/interval", "packet/interval"};
+    auto first = ledger.add("tx-interval", "idem-interval", "event-interval", 0, interval);
+    assert(first.committed && first.status == "BOUNDARIES_COMPLETE_PENDING_REVIEW");
+    auto retry = ledger.add("tx-interval", "idem-interval", "event-interval", 0, interval);
+    assert(retry.committed && retry.duplicate);
+    assert(retry.pending.valid_from == interval.valid_from);
+    assert(retry.pending.valid_until == interval.valid_until);
+  }
+  {
     EventJournal recovered(path);
     assert(recovered.open());
     TemporalBoundaryLedger ledger(recovered);
