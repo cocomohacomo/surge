@@ -158,3 +158,31 @@ the current predicate DSL. It does not yet run arbitrary semantic rewrite
 callbacks inside an SCC, nor does it claim convergence for future non-monotonic
 rules. Such rules must use explicit state fingerprints and a separate
 iteration protocol before being admitted to the Core transaction path.
+
+## v0.7: durable fixed-point diagnostics
+
+`DependencyEvaluationRecord` now persists the evaluation status, iteration
+count, predicate evaluation cost, impacted references, triggered/rejected
+dependencies, cyclic SCC members, and a stable diagnostic error code.
+Successful `CONVERGED` records are appended atomically with their SemanticDelta.
+
+When dependency evaluation returns `DEFERRED` or `INVALID` during a direct
+`ContextGraph::apply`, the SemanticDelta is not committed. Instead, a separate
+diagnostic-only EventJournal transaction records the attempted evaluation.
+This audit transaction advances the journal state version; the returned
+`DeltaResult` remains `committed=false` and carries the diagnostic error.
+Callers must use the returned state version for any subsequent retry. The
+diagnostic can refer to staged nodes that were not committed, so replay
+validates its shape and bounds without requiring those staged references to
+exist in the durable graph.
+
+A later successful retry using the same delta ID may supersede a prior
+DEFERRED/INVALID diagnostic with a CONVERGED record. A prior CONVERGED record
+cannot be overwritten. The read-only C ABI and Python
+`ContextRetriever.dependency_evaluation` return the extended record, including
+status, iteration/cost metrics, SCCs, and error code.
+
+Atomic packet + SemanticDelta preparation still rejects a deferred evaluation
+without appending either packet or semantic state. Its caller receives the
+error, but the standalone diagnostic-only audit commit is not made from the
+preparation callback, because that callback must remain side-effect-free.
