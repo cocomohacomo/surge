@@ -1,6 +1,7 @@
 #include "surge/context_graph.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
+#include <cstdint>
 #include <iomanip>
 #include <memory>
 #include <set>
