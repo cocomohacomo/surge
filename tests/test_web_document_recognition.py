@@ -138,6 +138,25 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             self.assertFalse(any(n["kind"]=="CLAIM" for n in abstain["delta"]["nodes"]))
             index.close()
 
+    def test_changed_capture_uses_new_immutable_source_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"generation.sqlite")
+            url="https://example.jp/revised"
+            old_text="会議を開催する。"
+            old_digest=__import__("hashlib").sha256(old_text.encode()).hexdigest()
+            index.record(url,old_digest,"packet-old",0,"旧題名","機関",[])
+            engine=WebDocumentRecognitionEngine(Provider([candidate()]),"ctx","web",index)
+            new_text="会議を開催しません。"
+            result=engine.prepare(new_text,url,"機関")
+            self.assertEqual(result["status"],"UPDATE")
+            self.assertEqual(result["packet"]["finalization"],"FINAL")
+            self.assertNotEqual(result["packet"]["source_position"]["source_generation"],
+                                "web-"+old_digest[:16])
+            evidence=next(n for n in result["delta"]["nodes"] if n["kind"]=="EVIDENCE")
+            self.assertIn("packet-old",evidence["content"])
+            self.assertIn('"document_revision": 1',evidence["content"])
+            index.close()
+
     def test_url_duplicate_and_update_classification(self):
         with tempfile.TemporaryDirectory() as tmp:
             index=WebDocumentIndex(pathlib.Path(tmp)/"web.sqlite")
