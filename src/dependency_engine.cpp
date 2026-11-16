@@ -79,7 +79,11 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     progress = false;
     for (const auto* dep : dependencies) {
       if (fired.count(dep->id)) continue;
-      if (!matches(*dep, nodes.at(dep->references[0]))) continue;
+      const auto prerequisite = nodes.find(dep->references[0]);
+      if (prerequisite == nodes.end()) {
+        result.error = "DEPENDENCY_PREREQUISITE_NOT_FOUND"; return result;
+      }
+      if (!matches(*dep, prerequisite->second)) continue;
       fired.insert(dep->id);
       if (changed.insert(dep->references[1]).second) {
         if (changed.size() > maximum_nodes) {
