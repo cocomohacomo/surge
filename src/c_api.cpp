@@ -629,6 +629,57 @@ int surge_question_aspect_get_status(void* opaque, const char* aspect_id,
     catch (...) { copy_text(error, error_capacity, "QUESTION_ASPECT_GET_UNKNOWN_EXCEPTION"); return 0; }
 }
 
+
+int surge_question_get_aggregate_status(void* opaque, const char* question_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !question_id || !*question_id) {
+      copy_text(error, error_capacity, "C_API_ARGUMENT_INVALID"); return 0;
+    }
+    const auto& graph = static_cast<Handle*>(opaque)->graph;
+    const auto parent = graph.nodes().find(question_id);
+    if (parent == graph.nodes().end() || parent->second.kind != surge::NodeKind::Question) {
+      copy_text(error, error_capacity, "QUESTION_NOT_FOUND"); return 0;
+    }
+    std::vector<std::string> aspect_ids;
+    size_t open_count = 0, deferred_count = 0, resolved_count = 0;
+    for (const auto& item : graph.nodes()) {
+      const auto& node = item.second;
+      if (node.kind != surge::NodeKind::QuestionAspect ||
+          std::find(node.references.begin(), node.references.end(), question_id) == node.references.end()) continue;
+      aspect_ids.push_back(node.id);
+      const auto status = graph.question_aspect_status(node.id);
+      if (status == surge::QuestionAspectStatus::Open) ++open_count;
+      else if (status == surge::QuestionAspectStatus::Deferred) ++deferred_count;
+      else ++resolved_count;
+    }
+    const char* aggregate = aspect_ids.empty() ? "UNKNOWN" :
+        open_count ? "OPEN" : deferred_count ? "DEFERRED" : "RESOLVED";
+    std::ostringstream json;
+    json << R"({"question_id":)" << json_quote(question_id)
+         << R"(,"status":)" << json_quote(aggregate)
+         << R"(,"counts":{"OPEN":)" << open_count
+         << R"(,"DEFERRED":)" << deferred_count
+         << R"(,"RESOLVED":)" << resolved_count
+         << R"(},"aspect_ids":[)";
+    for (size_t i = 0; i < aspect_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(aspect_ids[i]);
+    }
+    json << R"(],"state_version":)" << graph.state_version() << '}';
+    const auto value = json.str();
+    if (required_capacity) *required_capacity = value.size() + 1;
+    if (!output || output_capacity < value.size() + 1) {
+      copy_text(error, error_capacity, "QUESTION_AGGREGATE_BUFFER_TOO_SMALL"); return 0;
+    }
+    copy_text(output, output_capacity, value);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "QUESTION_AGGREGATE_GET_UNKNOWN_EXCEPTION"); return 0; }
+}
+
 int surge_question_route_contradiction(void* opaque, const char* relation_id,
     const char* policy_version, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {

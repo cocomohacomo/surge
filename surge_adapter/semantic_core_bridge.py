@@ -77,6 +77,10 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_question_aspect_get_status.restype = ctypes.c_int
+        lib.surge_question_get_aggregate_status.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_get_aggregate_status.restype = ctypes.c_int
         lib.surge_question_route_contradiction.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -531,6 +535,16 @@ class SemanticCoreBridge(CppCoreBridge):
             self._lib.surge_question_aspect_get_status,
             (self._handle, aspect_id.encode()),
             "QUESTION_ASPECT_BUFFER_TOO_SMALL")
+
+
+    def get_question_aggregate(self, question_id: str) -> dict[str, Any]:
+        """Return a read-only aggregate derived from all durable QuestionAspects."""
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise PacketRejected("QUESTION_ID_REQUIRED")
+        return self._temporal_ledger_call(
+            self._lib.surge_question_get_aggregate_status,
+            (self._handle, question_id.encode()),
+            "QUESTION_AGGREGATE_BUFFER_TOO_SMALL")
 
     def set_question_aspect_status(self, aspect_id: str, status: str,
                                    expected_state_version: int | None = None) -> int:

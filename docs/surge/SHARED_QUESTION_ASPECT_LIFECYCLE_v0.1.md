@@ -52,3 +52,28 @@ QuestionAspect never approves or changes ClaimValidity.
 
 Conformance coverage exercises OPEN → RESOLVED → DEFERRED → OPEN for both
 origins, stale state-version rejection, and restart/replay persistence.
+
+
+## Aggregate Question state API v0.1
+
+A Question aggregate is derived at read time from every durable QuestionAspect
+whose references include that Question ID. It is not stored separately, so
+aspect updates cannot leave a stale denormalized Question status.
+
+Precedence:
+1. Any OPEN aspect makes the Question OPEN.
+2. Otherwise, any DEFERRED aspect makes the Question DEFERRED.
+3. If one or more aspects exist and all are RESOLVED, the Question is RESOLVED.
+4. A valid Question with no aspects is UNKNOWN. A missing or non-Question ID
+   returns QUESTION_NOT_FOUND.
+
+The read returns status, counts for OPEN/DEFERRED/RESOLVED, sorted aspect_ids,
+and the EventJournal state_version observed by the read. The getter is
+read-only and does not advance the version.
+
+- C ABI: surge_question_get_aggregate_status
+- Python: SemanticCoreBridge.get_question_aggregate(question_id)
+
+The version identifies the graph snapshot represented by the result.
+ContextGraph does not currently promise concurrent multi-threaded mutation
+safety; callers that share a handle across threads must serialize access.
