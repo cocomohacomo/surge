@@ -313,7 +313,7 @@ int surge_retrieval_ticket_resolve(void* opaque, const char* ticket_id,
     catch(...){copy_text(error,error_cap,"UNKNOWN_RETRIEVAL_TICKET_EXCEPTION");return 0;}
 }
 
-int surge_packet_core_admit_and_apply(
+int surge_packet_core_admit_and_apply_with_proposal(
     void* opaque,const SurgeRecognitionPacketInput* input,
     const unsigned char* snapshot,size_t snapshot_size,
     const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
@@ -457,6 +457,23 @@ int surge_packet_core_admit_and_apply(
     return 1;
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
+}
+
+int surge_packet_core_admit_and_apply(
+    void* opaque,const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot,size_t snapshot_size,
+    const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
+    const SurgeGraphNodeInput* nodes,size_t node_count,
+    const SurgeGraphRelationInput* relations,size_t relation_count,
+    const SurgeScopeSpanInput* scopes,size_t scope_count,
+    const char* focus_cluster_id,const char* focus_interest_id,
+    int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
+    char* error,size_t error_cap) {
+  return surge_packet_core_admit_and_apply_with_proposal(
+      opaque,input,snapshot,snapshot_size,delta_id,semantic_idempotency_key,expected,
+      nodes,node_count,relations,relation_count,scopes,scope_count,
+      focus_cluster_id,focus_interest_id,nullptr,duplicate,state_version,
+      status,status_cap,error,error_cap);
 }
 
 int surge_classification_proposal_get(void* opaque,const char* proposal_id,
