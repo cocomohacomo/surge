@@ -161,7 +161,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
    }
    record.triggered.push_back(std::move(trigger));
   }
-  if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
+  if(!(in>>count)||count>8192){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
   for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||id.empty()||
       (e.kind=="DEPENDENCY_EVALUATION"&&!s.nodes.count(id))){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
   if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
