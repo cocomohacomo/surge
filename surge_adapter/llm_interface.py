@@ -197,7 +197,12 @@ class LLMSemanticRuntime:
         temporal_spans = recognize_temporal_spans(normalized_text,
             reference_datetime=reference_datetime, timezone_offset=timezone_offset)
         # Proposal creation is isolated from Core mutation and validated first.
-        proposal_spans = [{key: span[key] for key in (\"start_offset\", \"end_offset\",\n            \"offset_basis\", \"labels\", \"candidate_kind\")} for span in temporal_spans]\n        proposal = self._build_proposal(packet, candidate, score, core, proposal_spans)
+        proposal_spans = [
+            {key: span[key] for key in ("start_offset", "end_offset",
+                "offset_basis", "labels", "candidate_kind")}
+            for span in temporal_spans
+        ]
+        proposal = self._build_proposal(packet, candidate, score, core, proposal_spans)
         evidence_id = "evidence/" + packet["packet_id"]
         nodes = [{"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []}]
         relations = []
