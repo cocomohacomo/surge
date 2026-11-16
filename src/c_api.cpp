@@ -486,6 +486,22 @@ size_t surge_context_graph_scope_count(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->graph.scope_spans().size():0;
 }
 
+int surge_context_graph_claim_validity_at(void* opaque,const char* claim_id,
+    const char* instant,char* output,size_t output_capacity,
+    char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!claim_id||!instant||!output||output_capacity==0){
+      copy_text(error,error_capacity,"CLAIM_VALIDITY_QUERY_ARGUMENT_INVALID");return 0;
+    }
+    const auto status=static_cast<Handle*>(opaque)->graph.claim_validity_at(claim_id,instant);
+    const char* value=status==surge::ClaimTemporalState::Unknown?"UNKNOWN":
+        status==surge::ClaimTemporalState::NotYetValid?"NOT_YET_VALID":
+        status==surge::ClaimTemporalState::Valid?"VALID":"EXPIRED";
+    copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+    catch(...){copy_text(error,error_capacity,"UNKNOWN_CLAIM_VALIDITY_QUERY_EXCEPTION");return 0;}
+}
+
 int surge_context_graph_retrieve_page(void* opaque, const char* query, const char* kinds_csv,
     size_t offset, size_t limit, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {
