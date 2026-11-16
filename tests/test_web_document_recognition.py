@@ -42,6 +42,16 @@ class WebDocumentRecognitionTests(unittest.TestCase):
         c=ClaimApplicability("施設を開放","NEGATIVE","施設",("平常時",),"A市","CURRENT")
         self.assertFalse(ClaimApplicabilityComparator.compare(a,c).conflict)
 
+    def test_reiwa_month_scope_overlaps_day_scope_but_not_next_month(self):
+        month=ClaimApplicability("会議を開催","POSITIVE","会議",(),"A市","CURRENT",
+            valid_from="令和8年11月")
+        day=ClaimApplicability("会議を開催","NEGATIVE","会議",(),"A市","CURRENT",
+            valid_from="令和8年11月15日")
+        next_month=ClaimApplicability("会議を開催","NEGATIVE","会議",(),"A市","CURRENT",
+            valid_from="令和8年12月")
+        self.assertTrue(ClaimApplicabilityComparator.compare(month,day).conflict)
+        self.assertFalse(ClaimApplicabilityComparator.compare(month,next_month).conflict)
+
     def test_long_document_chunks_keep_utf8_byte_offsets_and_overlap(self):
         text=("日本語の長文です。"*1800)
         chunks=split_document(text,max_chars=800,overlap_chars=80)
