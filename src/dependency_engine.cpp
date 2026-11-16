@@ -103,14 +103,13 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     }
     return false;
   };
-  std::set<std::string> fired, rejected;\n  std::map<std::string, DependencyPredicate> parsed;
+  std::set<std::string> fired, rejected;
+  std::map<std::string, DependencyPredicate> parsed;
   for (const auto* dep : dependencies) {
     auto predicate = parse_predicate(dep->content);
     if (!predicate.valid()) rejected.insert(dep->id);
     parsed.emplace(dep->id, std::move(predicate));
   }
-  std::set<std::string> fired, rejected;
-  for (const auto* dep : dependencies) if (!known(dep->content)) rejected.insert(dep->id);
   bool progress = true;
   while (progress) {
     progress = false;
