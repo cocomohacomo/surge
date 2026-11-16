@@ -120,3 +120,28 @@ malformed, or inconsistent records. The same method works after journal
 recovery, so callers can inspect the persisted result without re-evaluating
 the dependency graph.
 
+
+
+## v0.5: Predicate-operation budget
+
+The evaluator now enforces two independent resource limits:
+- maximum impacted nodes: 4,096 in the Core transaction path;
+- maximum predicate operations: 65,536 in the Core transaction path.
+
+A predicate operation is counted both when validating a dependency predicate
+against the strict grammar and when evaluating that predicate against the
+staged prerequisite snapshot. This bounds the repeated dependency scans that
+can occur while newly impacted dependents extend the evaluation frontier.
+
+When the operation count would exceed the configured maximum, evaluation
+returns complete=false with DEPENDENCY_PREDICATE_BUDGET_EXCEEDED. The Core
+transaction coordinator rejects the entire SemanticDelta before journal
+commit; partial trigger or impact diagnostics are never committed as complete
+results. The standalone evaluator exposes the operation count for deterministic
+tests and diagnostics.
+
+Conformance tests construct 100 independent predicates and verify both the
+exact cutoff behavior and successful completion under a larger budget. The
+budget is independent of the impacted-node limit, so either limit can stop an
+evaluation.
+
