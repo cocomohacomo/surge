@@ -61,6 +61,9 @@ std::string commit_frame(const std::string& tx, std::uint64_t version,
 
 EventJournal::EventJournal(std::string path) : path_(std::move(path)) {}
 
+EventJournal::EventJournal(std::string path, AppendFrameGate append_frame_gate)
+    : path_(std::move(path)), append_frame_gate_(std::move(append_frame_gate)) {}
+
 bool EventJournal::open() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (opened_) return true;
@@ -82,6 +85,17 @@ bool EventJournal::open() {
 
 bool EventJournal::append_frame(const std::string& payload) {
   if (payload.size() > kMaxFrame) { last_error_ = "JOURNAL_FRAME_TOO_LARGE"; return false; }
+  if (append_frame_gate_) {
+    try {
+      if (!append_frame_gate_(append_frame_count_)) {
+        last_error_ = "JOURNAL_INJECTED_APPEND_FAILURE";
+        return false;
+      }
+    } catch (...) {
+      last_error_ = "JOURNAL_APPEND_GATE_EXCEPTION";
+      return false;
+    }
+  }
   std::ofstream out(path_, std::ios::binary | std::ios::app);
   if (!out) { last_error_ = "JOURNAL_OPEN_APPEND_ERROR"; return false; }
   put_u32(out, static_cast<std::uint32_t>(payload.size()));
@@ -89,6 +103,7 @@ bool EventJournal::append_frame(const std::string& payload) {
   put_u32(out, crc32(payload));
   out.flush();
   if (!out) { last_error_ = "JOURNAL_WRITE_ERROR"; return false; }
+  ++append_frame_count_;
   return true;
 }
 
