@@ -23,11 +23,11 @@ from surge_adapter.llm_interface import LLMSemanticRuntime
 
 TEMPORAL_PATTERNS = (
     ("CANCELLED", r"中止|取消|撤回|取りやめ|廃止"),
-    ("COMPLETED", r"実施した|開催した|完了した|公表した|提出した|決定した"),
     ("UNDER_REVIEW", r"検討中|審議中|調整中|審査中|協議中|確認中"),
     ("FORECAST", r"見通し|予想|予報|見込み|推計"),
     ("PLANNED", r"予定|計画|開催します|実施します|募集します|公募します"),
     ("DECIDED", r"決定|承認|認定|閣議決定|公布"),
+    ("COMPLETED", r"実施した|開催した|完了した|公表した|提出した"),
     ("CURRENT", r"現在|現時点|引き続き|継続して"),
 )
 NEGATION_RE = re.compile(r"ない|ません|ず|ぬ|禁止|不可|停止|中止")
@@ -263,6 +263,7 @@ class WebDocumentRecognitionEngine:
         packet["idempotency_key"] = "idem/" + packet_id
         packet["source_id"] = url
         packet["source_position"]["block_ref"] = "document/" + hashlib.sha256(url.encode()).hexdigest()[:16]
+        packet["source_position"]["source_sequence"] = identity["revision"] + 1
         packet["source_position"]["end_offset"] = len(source)
         packet["source_position"]["source_range_digest"] = digest
         packet["content"]["normalized_digest"] = digest
@@ -284,6 +285,7 @@ class WebDocumentRecognitionEngine:
         extracted: list[dict[str, Any]] = []
         chunks = split_document(source_text, self.max_chunk_chars, self.overlap_chars)
         prior_claims: list[tuple[ClaimApplicability, str]] = []
+        seen_signatures: dict[str, str] = {}
         for chunk in chunks:
             candidate = self.recognizer.recognize(chunk.text, context or {})
             evidence_id = f"evidence/{packet_id}/{chunk.index}"
@@ -299,24 +301,35 @@ class WebDocumentRecognitionEngine:
             state = temporal_state(chunk.text)
             modality = "CONDITIONAL" if candidate["conditional"] else (
                 "MODAL" if MODALITY_RE.search(chunk.text) else "ASSERTED")
-            conditions = tuple(m.group(0) for m in CONDITION_RE.finditer(chunk.text))
+            conditions = tuple(m.group(0) for m in re.finditer(
+                r"[^。！？\n]{0,60}(?:場合|とき|限り|において|については)", chunk.text))
+            dates = [m.group(0) for m in DATE_RE.finditer(chunk.text)]
             applicability = ClaimApplicability(candidate["proposition"],candidate["polarity"],
-                candidate.get("topic") or "",conditions, "", state, "", "", modality)
+                candidate.get("topic") or "",conditions, "", state,
+                dates[0] if dates else "", dates[1] if len(dates) > 1 else "", modality)
             signature = hashlib.sha256(json.dumps({
                 "proposition":_normal(applicability.proposition),
                 "polarity":applicability.polarity,"topic":_normal(applicability.topic),
                 "conditions":sorted(_normal(x) for x in conditions),
                 "state":state,"modality":modality},ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             old = self.index.find_claim(signature)
-            claim_id = f"claim/{packet_id}/{chunk.index}"
-            claim_content = {"proposition":candidate["proposition"],"polarity":candidate["polarity"],
+            local_duplicate = seen_signatures.get(signature)
+            claim_id = old["claim_id"] if old else (local_duplicate or f"claim/{packet_id}/{chunk.index}")
+            if old:
+                nodes[-1]["references"].append(old["claim_id"])
+            elif local_duplicate:
+                nodes[-1]["references"].append(local_duplicate)
+            if not old and not local_duplicate:
+                claim_content = {"proposition":candidate["proposition"],"polarity":candidate["polarity"],
                 "topic":candidate.get("topic") or "", "conditional":candidate["conditional"],
                 "temporal_state":state,"modality":modality,"conditions":list(conditions),
                 "source_url":url,"publisher":publisher,"retrieved_at":retrieved_at,
                 "source_digest":digest,"chunk_index":chunk.index,
-                "supersedes_claim_id":old["claim_id"] if identity["status"]=="UPDATE" and old else ""}
-            nodes.append({"id":claim_id,"kind":"CLAIM","content":json.dumps(
-                claim_content,ensure_ascii=False,sort_keys=True),"references":[evidence_id]})
+                "supersedes_claim_id":old["claim_id"] if identity["status"]=="UPDATE" and old else "",
+                "canonical_signature":signature}
+                nodes.append({"id":claim_id,"kind":"CLAIM","content":json.dumps(
+                    claim_content,ensure_ascii=False,sort_keys=True),"references":[evidence_id]})
+            seen_signatures.setdefault(signature,claim_id)
             cluster_id = None
             if candidate.get("topic"):
                 cluster_id = "cluster/web/" + hashlib.sha256(_normal(candidate["topic"]).encode()).hexdigest()[:16]
@@ -338,12 +351,21 @@ class WebDocumentRecognitionEngine:
             extracted.append({"claim_id":claim_id,"signature":signature,
                 "applicability":asdict(applicability),"chunk_index":chunk.index})
         # Explicit quotation attribution is separate from publisher attribution.
+        attribution_entities = []
         for m in ATTRIBUTION_RE.finditer(source_text):
             quoted_party=m.group(1)
             entity_id="entity/attribution/"+hashlib.sha256(quoted_party.encode()).hexdigest()[:16]
             if not any(n["id"]==entity_id for n in nodes):
                 nodes.append({"id":entity_id,"kind":"ENTITY","content":json.dumps(
                     {"name":quoted_party,"role":"ATTRIBUTED_SPEAKER"},ensure_ascii=False),"references":[]})
+            attribution_entities.append((m.end(),entity_id))
+        for span in scopes:
+            if span["kind"] != "QUOTATION":
+                continue
+            prior = [(end,entity) for end,entity in attribution_entities
+                     if _byte_offset(source_text,end) <= span["opener"]["start_offset"]]
+            if prior:
+                span["attribution_ref"] = max(prior,key=lambda item:item[0])[1]
         delta={"delta_id":"semantic/"+packet_id,"idempotency_key":"semantic-idem/"+packet_id,
             "expected_state_version":0,"nodes":nodes,"relations":relations,
             "scope_spans":scopes,"source_snapshot":source_text}
