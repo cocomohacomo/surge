@@ -95,10 +95,33 @@ def main():
                             failures.append(case["case_id"] + ":CLAIM_MISMATCH")
                         if "topic" in expected and expected["topic"] != app["topic"]:
                             failures.append(case["case_id"] + ":TOPIC_MISMATCH")
+                        for field in ("temporal_state","geography","valid_from","valid_to","modality"):
+                            if field in expected and expected[field] != app[field]:
+                                failures.append(case["case_id"] + ":" + field.upper() + "_MISMATCH")
+                        if "conditions" in expected and list(expected["conditions"]) != list(app["conditions"]):
+                            failures.append(case["case_id"] + ":CONDITIONS_MISMATCH")
                 got_scopes = {(s["kind"],s["opener"]["exact_text"]) for s in result["delta"]["scope_spans"]}
                 for expected in case["expected_scopes"]:
                     if (expected["kind"],expected["exact_text"]) not in got_scopes:
                         failures.append(case["case_id"] + ":SCOPE_MISSING:" + expected["kind"])
+                        continue
+                    match = next((sp for sp in result["delta"]["scope_spans"]
+                        if sp["kind"] == expected["kind"] and
+                           sp["opener"]["exact_text"] == expected["exact_text"]),None)
+                    if match and "temporal_role" in expected and match["temporal_role"] != expected["temporal_role"]:
+                        failures.append(case["case_id"] + ":TEMPORAL_ROLE_MISMATCH")
+                    if match and "attributed_speaker" in expected:
+                        entity = next((n for n in result["delta"]["nodes"]
+                            if n["id"] == match["attribution_ref"]),None)
+                        if not entity or expected["attributed_speaker"] not in entity["content"]:
+                            failures.append(case["case_id"] + ":ATTRIBUTION_MISMATCH")
+                for expected in case.get("expected_relations",[]):
+                    found = any(rel["kind"] == expected["kind"] and
+                        (not expected.get("from") or rel["from"] == expected["from"]) and
+                        (not expected.get("to") or rel["to"] == expected["to"])
+                        for rel in result["delta"]["relations"])
+                    if not found:
+                        failures.append(case["case_id"] + ":RELATION_MISSING:" + expected["kind"])
         finally:
             index.close()
     if failures:
