@@ -50,7 +50,7 @@ int main(){
       const auto result=graph.apply(d); std::cerr<<"dep-test: first-apply\\n";
       assert(result.committed && !result.duplicate && result.state_version==1);
       assert(graph.dependency_evaluations().count("dependency-delta-1")==1);
-      const auto& evaluation=graph.dependency_evaluations().at("dependency-delta-1");
+      const auto evaluation_it=graph.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=graph.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
       assert(evaluation.triggered.size()==1);
       assert(evaluation.triggered[0].dependency_id=="dependency-good");
       assert(evaluation.triggered[0].prerequisite_id=="source-cluster");
@@ -63,7 +63,7 @@ int main(){
       ContextGraph recovered(dependency_path);assert(recovered.open()); std::cerr<<"dep-test: recovered-open\\n";
       assert(recovered.state_version()==1);
       assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
-      const auto& evaluation=recovered.dependency_evaluations().at("dependency-delta-1");
+      const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=recovered.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
       assert(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
@@ -74,8 +74,8 @@ int main(){
       const auto added=recovered.apply(new_dependency); std::cerr<<"dep-test: second-apply\\n";
       assert(added.committed&&added.state_version==2);
       assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
-      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
-      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
+      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); assert(evaluation2_it!=recovered.dependency_evaluations().end()); assert(evaluation2_it->second.triggered.size()==1);
+      assert(evaluation2_it->second.triggered[0].dependency_id==
           "dependency-on-change");
     }
     {
@@ -87,7 +87,7 @@ int main(){
       assert(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
-      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
+      assert(evaluation2_it->second.triggered[0].dependency_id==
           "dependency-on-change");
     }
   }
