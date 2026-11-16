@@ -24,6 +24,7 @@ struct ImpactResult {
 class DependencyEngine {
  public:
   // Dependency node references are [prerequisite, dependent].
+  static DependencyPredicate parse_predicate(const std::string& expression);
   static DependencyEvaluationResult evaluate(const std::map<std::string, GraphNode>& nodes, const std::vector<std::string>& changed_nodes, std::size_t maximum_nodes);
   static ImpactResult compute(const std::map<std::string, GraphNode>& nodes,
                               const std::vector<std::string>& changed_nodes,
