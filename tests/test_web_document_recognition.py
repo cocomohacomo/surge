@@ -21,6 +21,10 @@ class WebDocumentRecognitionTests(unittest.TestCase):
         self.assertEqual(temporal_state("現在検討中です"),"UNDER_REVIEW")
         self.assertEqual(temporal_state("開催しました"),"COMPLETED")
         self.assertEqual(temporal_state("計画を中止しました"),"CANCELLED")
+        self.assertEqual(temporal_state("制度の廃止を予定しています"),"PLANNED")
+        self.assertEqual(temporal_state("制度を廃止しました"),"CANCELLED")
+        self.assertEqual(temporal_state("出荷制限の解除について"),"DECIDED")
+        self.assertEqual(temporal_state("出荷制限の設定について"),"DECIDED")
 
     def test_applicability_comparator_blocks_false_conflicts(self):
         planned=ClaimApplicability("会議を開催","POSITIVE","防災",("災害時",),
