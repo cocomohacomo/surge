@@ -102,6 +102,27 @@
                 },
                 "topic": {
                   "type": "string"
+                },
+                "temporal_state": {
+                  "type": "string"
+                },
+                "geography": {
+                  "type": "string"
+                },
+                "valid_from": {
+                  "type": "string"
+                },
+                "valid_to": {
+                  "type": "string"
+                },
+                "modality": {
+                  "type": "string"
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -125,6 +146,12 @@
                   ]
                 },
                 "exact_text": {
+                  "type": "string"
+                },
+                "attributed_speaker": {
+                  "type": "string"
+                },
+                "temporal_role": {
                   "type": "string"
                 }
               }
@@ -201,6 +228,34 @@
                 "type": "number",
                 "minimum": 0,
                 "maximum": 1
+              }
+            }
+          },
+          "expected_relations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "CONTRADICTS",
+                    "SUPPORTS",
+                    "AGREES_WITH",
+                    "CONFLICTS_WITH",
+                    "ABOUT",
+                    "DEPENDS_ON"
+                  ]
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
               }
             }
           }
