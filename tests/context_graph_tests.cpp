@@ -3,6 +3,7 @@
 #include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 using namespace surge;
 int main(){
   const auto root=std::filesystem::temp_directory_path()/"surge-context-graph-tests";
@@ -249,8 +250,11 @@ int main(){
       };
       seed.claim_validity_updates.push_back({"claim-period","2026-01-01T00:00:00Z",
           "2026-04-01T00:00:00Z","basis-1",1});
-      assert(graph.apply(seed).committed && graph.state_version()==1);
-      const auto first=graph.dependency_evaluations().at("temporal-propagation-seed");
+      const auto seed_result=graph.apply(seed);
+      if(!seed_result.committed)throw std::runtime_error("temporal seed rejected: "+seed_result.error);
+      const auto first_it=graph.dependency_evaluations().find("temporal-propagation-seed");
+      if(first_it==graph.dependency_evaluations().end())throw std::runtime_error("temporal seed evaluation missing");
+      const auto& first=first_it->second;
       assert(first.triggered.size()==1 && first.triggered[0].dependency_id=="dep-valid-period");
       SemanticDelta correction;correction.delta_id="temporal-propagation-correction";
       correction.idempotency_key="temporal-propagation-correction";
@@ -258,8 +262,11 @@ int main(){
       correction.nodes={{{"basis-2",NodeKind::Evidence,"契約期間の訂正",{}}}};
       correction.claim_validity_updates.push_back({"claim-period","2025-12-01T00:00:00Z",
           "2026-01-15T00:00:00Z","basis-2",2});
-      assert(graph.apply(correction).committed && graph.state_version()==2);
-      const auto second=graph.dependency_evaluations().at("temporal-propagation-correction");
+      const auto correction_result=graph.apply(correction);
+      if(!correction_result.committed)throw std::runtime_error("temporal correction rejected: "+correction_result.error);
+      const auto second_it=graph.dependency_evaluations().find("temporal-propagation-correction");
+      if(second_it==graph.dependency_evaluations().end())throw std::runtime_error("temporal correction evaluation missing");
+      const auto& second=second_it->second;
       assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
       assert(std::find(second.impacted_nodes.begin(),second.impacted_nodes.end(),
           "expired-action")!=second.impacted_nodes.end());
@@ -267,7 +274,9 @@ int main(){
     {
       ContextGraph recovered(propagation_path);assert(recovered.open());
       assert(recovered.state_version()==2);
-      const auto second=recovered.dependency_evaluations().at("temporal-propagation-correction");
+      const auto second_it=recovered.dependency_evaluations().find("temporal-propagation-correction");
+      if(second_it==recovered.dependency_evaluations().end())throw std::runtime_error("replayed temporal evaluation missing");
+      const auto& second=second_it->second;
       assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
       assert(recovered.claim_validity_history().at("claim-period").size()==2);
     }
