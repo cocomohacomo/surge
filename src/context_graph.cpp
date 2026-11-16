@@ -28,7 +28,9 @@ bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);s
 std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
 std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  std::ostringstream out;
- out << std::quoted(r.delta_id) << ' ' << r.triggered.size();
+ out << std::quoted(r.delta_id) << ' ' << r.status << ' '
+     << r.iterations << ' ' << r.evaluation_cost << ' '
+     << std::quoted(r.diagnostic_error) << ' ' << r.triggered.size();
  for (const auto& item : r.triggered)
   out << ' ' << std::quoted(item.dependency_id) << ' '
       << std::quoted(item.prerequisite_id) << ' ' << std::quoted(item.dependent_id);
@@ -36,6 +38,11 @@ std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  for (const auto& id : r.impacted_nodes) out << ' ' << std::quoted(id);
  out << ' ' << r.rejected_dependencies.size();
  for (const auto& id : r.rejected_dependencies) out << ' ' << std::quoted(id);
+ out << ' ' << r.cyclic_components.size();
+ for (const auto& component : r.cyclic_components) {
+  out << ' ' << component.size();
+  for (const auto& id : component) out << ' ' << std::quoted(id);
+ }
  return out.str();
 }
 } // namespace
@@ -183,7 +190,8 @@ bool ContextGraph::replay(){
 }
 
 bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
-    std::vector<JournalEvent>& events, std::string& error) const {
+    std::vector<JournalEvent>& events, std::string& error,
+    DependencyEvaluationRecord* diagnostic) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
     (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
@@ -223,13 +231,21 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  if(has_dependencies&&!changed.empty()){
   const auto evaluation=DependencyEngine::evaluate_fixpoint(staged.nodes,
       std::vector<std::string>(changed.begin(),changed.end()),4096,4096,1000000);
+  DependencyEvaluationRecord record;
+  record.delta_id=d.delta_id;
+  record.status=evaluation.status==FixpointStatus::Converged?"CONVERGED":
+      evaluation.status==FixpointStatus::Deferred?"DEFERRED":"INVALID";
+  record.iterations=evaluation.iterations;
+  record.evaluation_cost=evaluation.evaluation_cost;
+  record.impacted_nodes=evaluation.impacted_nodes;
+  record.rejected_dependencies=evaluation.rejected_dependencies;
+  record.cyclic_components=evaluation.cyclic_components;
+  record.diagnostic_error=evaluation.error;
   if(evaluation.status!=FixpointStatus::Converged){
+   if(diagnostic)*diagnostic=record;
    error=evaluation.error.empty()?"DEPENDENCY_FIXPOINT_DEFERRED":evaluation.error;
    events.clear();return false;
   }
-  DependencyEvaluationRecord record;record.delta_id=d.delta_id;
-  record.impacted_nodes=evaluation.impacted_nodes;
-  record.rejected_dependencies=evaluation.rejected_dependencies;
   for(const auto& id:evaluation.triggered_dependencies){
    const auto dep_it=staged.nodes.find(id);
    if(dep_it==staged.nodes.end()||dep_it->second.kind!=NodeKind::Dependency||
@@ -253,8 +269,23 @@ bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEven
 
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
  State staged;std::vector<JournalEvent> events;std::string error;
- if(!prepare_transaction(d,staged,events,error))
+ DependencyEvaluationRecord diagnostic;
+ if(!prepare_transaction(d,staged,events,error,&diagnostic)){
+  if(!diagnostic.delta_id.empty()){
+   const auto existing=state_.dependency_evaluations.find(diagnostic.delta_id);
+   if(existing==state_.dependency_evaluations.end()){
+    const std::string txid="dependency-diagnostic/"+diagnostic.delta_id;
+    const std::string key="dependency-diagnostic/"+diagnostic.delta_id;
+    const auto committed=journal_->commit(txid,key,state_version(),
+        {{txid+"/record","DEPENDENCY_EVALUATION_DIAGNOSTIC",
+          encode_dependency_evaluation(diagnostic)}});
+    if(committed.committed){
+     state_.dependency_evaluations[diagnostic.delta_id]=diagnostic;
+    } else if(error.empty()) error=committed.error;
+   }
+  }
   return {false,false,state_version(),error};
+ }
  if(events.empty())return {true,true,state_version(),{}};
  const auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,events);
  if(!committed.committed)return {false,false,state_version(),committed.error};
