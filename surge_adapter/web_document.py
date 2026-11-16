@@ -105,8 +105,14 @@ def _date_bounds(value: str) -> tuple[str, str]:
             return value, value
         else:
             return "", ""
-    first = f"{year:04d}-{month:02d}-{int(day_text or '1'):02d}"
-    last_day = int(day_text) if day_text else calendar.monthrange(year,month)[1]
+    if year < 1 or month < 1 or month > 12:
+        return "", ""
+    month_last = calendar.monthrange(year,month)[1]
+    day = int(day_text or "1")
+    if day < 1 or day > month_last:
+        return "", ""
+    first = f"{year:04d}-{month:02d}-{day:02d}"
+    last_day = day if day_text else month_last
     last = f"{year:04d}-{month:02d}-{last_day:02d}"
     return first,last
 
