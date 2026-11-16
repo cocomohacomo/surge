@@ -717,6 +717,7 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
          << ",\"status\":" << quote(record.status)
          << ",\"iterations\":" << record.iterations
          << ",\"evaluation_cost\":" << record.evaluation_cost
+         << ",\"impacted_nodes_truncated\":" << (record.impacted_nodes_truncated ? "true" : "false")
          << ",\"diagnostic_error\":" << quote(record.diagnostic_error)
          << ",\"triggered\":[";
     for (size_t i = 0; i < record.triggered.size(); ++i) {
