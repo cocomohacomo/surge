@@ -906,6 +906,8 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::RelationKind::About: return "ABOUT";
         case surge::RelationKind::Supersedes: return "SUPERSEDES";
         case surge::RelationKind::Retracts: return "RETRACTS";
+        case surge::RelationKind::Duplicates: return "DUPLICATES";
+        case surge::RelationKind::Contains: return "CONTAINS";
       }
       return "UNKNOWN";
     };
