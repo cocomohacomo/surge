@@ -60,6 +60,22 @@ Claim retrieval includes the latest `claim_validity` object, or null when no val
 - `CLAIM_VALIDITY_INTERVAL_INVALID`: end is not later than start.
 - `CLAIM_VALIDITY_REVISION_INVALID`: revision sequence is not contiguous.
 
-## 8. Scope boundary
+## 8. Temporal dependency propagation
 
-This version implements explicit valid-time intervals, timezone-normalized comparison, append-only interval revisions, transaction-version lineage and point-in-time evaluation. It does not yet implement automatic derivation of intervals from natural-language dates, temporal dependency propagation, interval overlap resolution across separate Claims, or a bitemporal query API across arbitrary historical transaction versions.
+Dependency predicates may route a changed Claim according to its latest valid-time state at an explicit RFC3339 instant:
+`CLAIM_TEMPORAL_STATE:<STATE>@<RFC3339>`. Supported states are UNKNOWN, NOT_YET_VALID, VALID and EXPIRED. The prerequisite must be a Claim. A validity revision and its resulting dependency evaluation are persisted atomically. Core does not infer wall-clock time or treat missing validity as VALID. See DEPENDENCY_ENGINE_v0.1.md.
+
+## 9. Natural-language recognition boundary
+
+The optional Japanese adapter in
+[JAPANESE_TEMPORAL_RECOGNITION_v0.1.md](JAPANESE_TEMPORAL_RECOGNITION_v0.1.md)
+extracts untrusted temporal candidates from natural language. It requires
+caller-supplied timezone and reference time where applicable. It does not
+create Evidence, select Claims, or mutate Core state. Candidates become
+ClaimValidity revisions only after source-span/Evidence binding, review and
+Core validation. Corrections append a new revision; previous assertions are
+preserved.
+
+## 10. Scope boundary
+
+Core implements explicit valid-time intervals, timezone-normalized comparison, append-only interval revisions, transaction-version lineage, point-in-time evaluation and temporal dependency propagation. Natural-language extraction is a separate conservative adapter and does not constitute automatic high-accuracy recognition. Interval overlap resolution across separate Claims and a bitemporal query API across arbitrary historical transaction versions remain out of scope.
