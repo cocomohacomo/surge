@@ -172,7 +172,12 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
 
  std::set<std::string> changed;
  auto add_if_node=[&](const std::string& id){if(staged.nodes.count(id))changed.insert(id);};
- for(const auto& n:d.nodes)add_if_node(n.node.id);
+ for(const auto& n:d.nodes){
+  add_if_node(n.node.id);
+  // A newly introduced dependency must be evaluated against its current prerequisite.
+  if(n.node.kind==NodeKind::Dependency&&!n.node.references.empty())
+   add_if_node(n.node.references[0]);
+ }
  for(const auto& r:d.relations){add_if_node(r.relation.from);add_if_node(r.relation.to);}
  for(const auto& scope:d.scope_spans){
   for(const auto& id:scope.span.target_refs)add_if_node(id);
