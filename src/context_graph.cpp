@@ -381,8 +381,8 @@ bool ContextGraph::set_question_aspect_status(const std::string& id,
   if (aspect == state_.nodes.end() || aspect->second.kind != NodeKind::QuestionAspect) {
     error = "QUESTION_ASPECT_NOT_FOUND"; return false;
   }
-  if (question_aspect_status(id) == status) return true;
   if (expected != state_version()) { error = "STATE_VERSION_CONFLICT"; return false; }
+  if (question_aspect_status(id) == status) return true;
   const char* name = status == QuestionAspectStatus::Open ? "OPEN" :
       status == QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
   std::ostringstream payload; payload << std::quoted(id) << ' ' << name;

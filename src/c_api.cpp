@@ -598,6 +598,37 @@ int surge_context_graph_apply_claim_validity_reviewed(void* opaque,
     catch(...){copy_text(error,error_capacity,"UNKNOWN_REVIEWED_CLAIM_VALIDITY_EXCEPTION");return 0;}
 }
 
+int surge_question_aspect_get_status(void* opaque, const char* aspect_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !aspect_id || !*aspect_id) {
+      copy_text(error, error_capacity, "C_API_ARGUMENT_INVALID"); return 0;
+    }
+    const auto& graph = static_cast<Handle*>(opaque)->graph;
+    const auto found = graph.nodes().find(aspect_id);
+    if (found == graph.nodes().end() || found->second.kind != surge::NodeKind::QuestionAspect) {
+      copy_text(error, error_capacity, "QUESTION_ASPECT_NOT_FOUND"); return 0;
+    }
+    const auto status = graph.question_aspect_status(aspect_id);
+    const char* name = status == surge::QuestionAspectStatus::Open ? "OPEN" :
+        status == surge::QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
+    std::ostringstream json;
+    json << R"({"aspect_id":)" << json_quote(aspect_id)
+         << R"(,"status":)" << json_quote(name)
+         << R"(,"state_version":)" << graph.state_version() << '}';
+    const auto value = json.str();
+    if (required_capacity) *required_capacity = value.size() + 1;
+    if (!output || output_capacity < value.size() + 1) {
+      copy_text(error, error_capacity, "QUESTION_ASPECT_BUFFER_TOO_SMALL"); return 0;
+    }
+    copy_text(output, output_capacity, value);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "QUESTION_ASPECT_GET_UNKNOWN_EXCEPTION"); return 0; }
+}
+
 int surge_question_route_contradiction(void* opaque, const char* relation_id,
     const char* policy_version, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {

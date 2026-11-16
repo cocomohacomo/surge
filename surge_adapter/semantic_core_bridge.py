@@ -69,6 +69,14 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_context_graph_apply_scoped.restype = ctypes.c_int
         lib.surge_context_graph_scope_count.argtypes = [ctypes.c_void_p]
         lib.surge_context_graph_scope_count.restype = ctypes.c_size_t
+        lib.surge_question_aspect_set_status.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_aspect_set_status.restype = ctypes.c_int
+        lib.surge_question_aspect_get_status.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_aspect_get_status.restype = ctypes.c_int
         lib.surge_question_route_contradiction.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -509,6 +517,31 @@ class SemanticCoreBridge(CppCoreBridge):
     @property
     def temporal_question_count(self) -> int:
         return int(self._lib.surge_temporal_question_count(self._handle))
+
+    def get_question_aspect(self, aspect_id: str) -> dict[str, Any]:
+        """Return the durable lifecycle status for a QuestionAspect."""
+        if not isinstance(aspect_id, str) or not aspect_id.strip():
+            raise PacketRejected("QUESTION_ASPECT_ID_REQUIRED")
+        return self._temporal_ledger_call(
+            self._lib.surge_question_aspect_get_status,
+            (self._handle, aspect_id.encode()),
+            "QUESTION_ASPECT_BUFFER_TOO_SMALL")
+
+    def set_question_aspect_status(self, aspect_id: str, status: str,
+                                   expected_state_version: int | None = None) -> int:
+        """Set OPEN/RESOLVED/DEFERRED using optimistic state-version control."""
+        if not isinstance(aspect_id, str) or not aspect_id.strip():
+            raise PacketRejected("QUESTION_ASPECT_ID_REQUIRED")
+        if status not in ("OPEN", "RESOLVED", "DEFERRED"):
+            raise PacketRejected("QUESTION_ASPECT_STATUS_INVALID")
+        expected = self.state_version if expected_state_version is None else int(expected_state_version)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_question_aspect_set_status(
+            self._handle, aspect_id.encode(), status.encode(), expected, error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if not ok or detail:
+            raise PacketRejected(detail or "QUESTION_ASPECT_STATUS_UPDATE_REJECTED")
+        return self.state_version
 
     def route_contradiction(self, relation_id: str,
                             policy_version: str = "question-router-v1") -> dict[str, Any]:
