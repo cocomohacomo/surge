@@ -433,6 +433,29 @@ int surge_packet_core_admit_and_apply(
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
 }
 
+int surge_context_graph_apply_claim_validity(void* opaque,
+    const char* delta_id, const char* idempotency_key, uint64_t expected_state_version,
+    const char* claim_id, const char* valid_from, const char* valid_until,
+    const char* basis_evidence_id, uint64_t revision,
+    int* duplicate, uint64_t* state_version, char* error, size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!idempotency_key||!claim_id||!valid_from||
+       !basis_evidence_id||revision==0){
+      copy_text(error,error_capacity,"CLAIM_VALIDITY_ARGUMENT_INVALID");return 0;
+    }
+    surge::SemanticDelta delta;
+    delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected_state_version;
+    delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",basis_evidence_id,revision});
+    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);
+    return result.committed?1:0;
+  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+    catch(...){copy_text(error,error_capacity,"UNKNOWN_CLAIM_VALIDITY_EXCEPTION");return 0;}
+}
+
 int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
   try {
@@ -606,6 +629,17 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         const char* status_text = status == surge::ClaimStatus::Active ? "ACTIVE" :
             status == surge::ClaimStatus::Superseded ? "SUPERSEDED" : "RETRACTED";
         item << "\"claim_status\":" << quote(status_text) << ",";
+        const auto validity = graph.latest_claim_validity(node.id);
+        if (validity) {
+          const auto& value = validity->validity;
+          item << "\"claim_validity\":{\"revision\":" << value.revision
+               << ",\"valid_from\":" << quote(value.valid_from)
+               << ",\"valid_until\":";
+          if (value.valid_until.empty()) item << "null";
+          else item << quote(value.valid_until);
+          item << ",\"basis_evidence_id\":" << quote(value.basis_evidence_id)
+               << ",\"recorded_state_version\":" << validity->recorded_state_version << "},";
+        } else item << "\"claim_validity\":null,";
       }
       if (node.kind == surge::NodeKind::QuestionAspect) {
         const auto status = graph.question_aspect_status(node.id);
