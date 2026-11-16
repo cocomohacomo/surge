@@ -5,6 +5,7 @@ from surge_adapter.web_document import (
     ClaimApplicability, ClaimApplicabilityComparator, WebDocumentIndex,
     WebDocumentRecognitionEngine, split_document, temporal_state
 )
+from surge_adapter.packet_ingest import Admission
 
 class Provider:
     def __init__(self, values): self.values=list(values)
@@ -66,6 +67,61 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             self.assertEqual(raw[temporal["opener"]["start_offset"]:
                                  temporal["opener"]["end_offset"]].decode(),
                              temporal["opener"]["exact_text"])
+            index.close()
+
+    def test_quote_attribution_is_not_confused_with_publisher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"quote.sqlite")
+            text="気象庁によると「大雨の恐れがある」と発表した。"
+            engine=WebDocumentRecognitionEngine(Provider([candidate()]),"ctx","web",index)
+            result=engine.prepare(text,"https://example.jp/weather","報道機関")
+            quote=next(s for s in result["delta"]["scope_spans"] if s["kind"]=="QUOTATION")
+            self.assertTrue(quote["attribution_ref"])
+            entity=next(n for n in result["delta"]["nodes"] if n["id"]==quote["attribution_ref"])
+            self.assertIn("気象庁",entity["content"])
+            index.close()
+
+    def test_cross_document_opposite_claim_creates_conflict_only_for_same_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"cross.sqlite")
+            old_app=ClaimApplicability("会議を開催","POSITIVE","会議",(),"","UNKNOWN")
+            index.record("https://example.jp/old","a"*64,"old-packet",0,"old","機関",
+                [{"signature":"old-signature","claim_id":"claim/old",
+                  "applicability":__import__("dataclasses").asdict(old_app),
+                  "source_url":"https://example.jp/old"}])
+            engine=WebDocumentRecognitionEngine(Provider([
+                candidate(proposition="会議を開催",polarity="NEGATIVE")]),
+                "ctx","web",index)
+            result=engine.prepare("会議を開催する。","https://example.jp/new","機関")
+            conflicts=[r for r in result["delta"]["relations"] if r["kind"]=="CONTRADICTS"]
+            self.assertEqual(len(conflicts),1)
+            self.assertEqual(conflicts[0]["from"],"claim/old")
+            index.close()
+
+    def test_ingest_connects_packet_and_semantic_delta_atomically(self):
+        class FakeCore:
+            state_version=0
+            calls=0
+            def admit_and_apply(self,packet,source,snapshot_digest,range_digest,
+                                request_digest,revision,revision_sequence,revision_ref,delta):
+                self.calls+=1
+                admission=Admission("COMMITTED",packet["packet_id"],packet["context_id"],
+                    packet["source_id"],packet["source_position"]["source_generation"],
+                    packet["source_position"]["source_sequence"],"range",range_digest,request_digest)
+                self.state_version+=1
+                return admission,{"committed":True,"state_version":self.state_version}
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"ingest.sqlite")
+            engine=WebDocumentRecognitionEngine(Provider([candidate()]),"ctx","web",index)
+            core=FakeCore()
+            first=engine.ingest("会議を開催します。","https://example.jp/a","機関",core,
+                                "会議開催","2026-11-16T12:00:00+09:00")
+            self.assertTrue(first["semantic_commit"]["committed"])
+            self.assertEqual(core.calls,1)
+            second=engine.ingest("会議を開催します。","https://example.jp/a","機関",core,
+                                 "会議開催","2026-11-16T12:00:00+09:00")
+            self.assertEqual(second["status"],"DUPLICATE")
+            self.assertEqual(core.calls,1)
             index.close()
 
     def test_url_duplicate_and_update_classification(self):
