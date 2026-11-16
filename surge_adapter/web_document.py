@@ -405,7 +405,7 @@ class WebDocumentRecognitionEngine:
             conditions = tuple(m.group(0) for m in re.finditer(
                 r"[^。！？\n]{0,60}(?:場合|とき|限り|において|については)", chunk.text))
             dates = [m.group(0) for m in DATE_RE.finditer(chunk.text)]
-            geography = next(iter(GEO_RE.findall(chunk.text)), "")
+            geography = " ".join(dict.fromkeys(GEO_RE.findall(chunk.text)))
             applicability = ClaimApplicability(candidate["proposition"],candidate["polarity"],
                 candidate.get("topic") or "",conditions, geography, state,
                 dates[0] if dates else "", dates[1] if len(dates) > 1 else "", modality)
