@@ -1,4 +1,5 @@
 #include "surge/packet_admission.hpp"
+#include "surge/context_graph.hpp"
 #include "surge/sha256.hpp"
 #include <cassert>
 #include <filesystem>
@@ -75,6 +76,39 @@ int main() {
     auto far=packet("too-far","rev-i4",5000,"abc"); far.block_ref="far-block";
     assert(coordinator.admit(far,"abc").error=="SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
     assert(coordinator.packet_count()==2);
+  }
+  {
+    const auto atomic_path=(root/"atomic-semantic-packet.sgj").string();
+    {
+      EventJournal journal(atomic_path);assert(journal.open());
+      ContextGraph graph(journal);assert(graph.open());
+      PacketAdmissionCoordinator coordinator(journal);assert(coordinator.recover());
+      SemanticDelta delta;delta.delta_id="atomic-delta";delta.idempotency_key="atomic-semantic-key";
+      delta.expected_state_version=0;
+      delta.nodes={{{"atomic-source",NodeKind::Cluster,"approved",{}}},
+                   {{"atomic-target",NodeKind::Cluster,"target",{}}},
+                   {{"atomic-dependency",NodeKind::Dependency,"CONTENT_EQUALS:approved",
+                     {"atomic-source","atomic-target"}}}};
+      std::vector<JournalEvent> semantic_events;std::string error;
+      assert(graph.prepare_events(delta,semantic_events,error));
+      assert(semantic_events.size()==5);
+      const auto admitted=coordinator.admit(packet("atomic-packet","atomic-packet-key",1,"abc"),
+          "abc",semantic_events);
+      assert(admitted.admitted&&!admitted.duplicate&&admitted.state_version==1);
+      assert(graph.open());
+      assert(graph.state_version()==1);
+      assert(graph.dependency_evaluations().count("atomic-delta")==1);
+      assert(graph.dependency_evaluations().at("atomic-delta").triggered.size()==1);
+    }
+    {
+      EventJournal journal(atomic_path);assert(journal.open());
+      ContextGraph recovered(journal);assert(recovered.open());
+      PacketAdmissionCoordinator coordinator(journal);assert(coordinator.recover());
+      assert(journal.state_version()==1&&coordinator.packet_count()==1);
+      assert(recovered.dependency_evaluations().count("atomic-delta")==1);
+      assert(recovered.dependency_evaluations().at("atomic-delta").triggered[0].dependency_id==
+          "atomic-dependency");
+    }
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE PacketAdmission + SHA-256 tests passed\\n";
