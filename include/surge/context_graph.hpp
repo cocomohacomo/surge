@@ -40,7 +40,8 @@ struct AddNode { GraphNode node; };
 struct AddRelation { GraphRelation relation; };
 struct AddScopeSpan { ScopeSpanProposal span; std::string source_snapshot; };
 struct ClaimValidity { std::string claim_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; };
-struct ClaimValidityRecord { ClaimValidity validity; std::uint64_t recorded_state_version{0}; };\nClaimTemporalState evaluate_claim_validity(const ClaimValidityRecord& record, const std::string& instant);
+struct ClaimValidityRecord { ClaimValidity validity; std::uint64_t recorded_state_version{0}; };
+ClaimTemporalState evaluate_claim_validity(const ClaimValidityRecord& record, const std::string& instant);
 struct SetFocus { FocusRecord focus; };
 struct SemanticDelta {
   std::string delta_id, idempotency_key;
@@ -82,7 +83,8 @@ class ContextGraph {
     if (it == state_.claim_validity_history.end() || it->second.empty()) return std::nullopt;
     return it->second.back();
   }
-  ClaimTemporalState claim_validity_at(const std::string& id, const std::string& instant) const;\n
+  ClaimTemporalState claim_validity_at(const std::string& id, const std::string& instant) const;
+
   ClaimStatus claim_status(const std::string& id) const {
     const auto it = state_.claim_statuses.find(id);
     return it == state_.claim_statuses.end() ? ClaimStatus::Active : it->second;
