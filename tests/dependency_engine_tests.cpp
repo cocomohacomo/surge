@@ -99,5 +99,5 @@ int main(){
   auto invalid_fixpoint = DependencyEngine::evaluate_fixpoint(eval_nodes, {"MISSING"}, 10, 10, 100);
   assert(invalid_fixpoint.status == FixpointStatus::Invalid);
   assert(invalid_fixpoint.error == "IMPACT_ROOT_NOT_FOUND");
-  std::cout<<"SURGE DependencyEngine tests: 9 groups passed\n";
+  std::cout<<"SURGE DependencyEngine tests: 10 groups passed\n";
 }
