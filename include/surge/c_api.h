@@ -117,6 +117,12 @@ int surge_context_graph_retrieve(void* handle, const char* query, const char* ki
     size_t limit, char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+// Read a durable dependency-evaluation record by SemanticDelta ID as JSON.
+// On insufficient output capacity, required_capacity receives the needed byte count including NUL.
+int surge_context_graph_dependency_evaluation(void* handle, const char* delta_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
 // Durable RetrievalTicket issue/resolve operations share the Core EventJournal.
 int surge_retrieval_ticket_issue(void* handle, const SurgeRetrievalTicketInput* ticket,
     char* error, size_t error_capacity);
