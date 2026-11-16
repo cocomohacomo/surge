@@ -38,7 +38,7 @@ int main(){
   {
     const auto dependency_path=(root/"dependency-evaluation.sgj").string();
     {
-      ContextGraph graph(dependency_path);assert(graph.open()); std::cerr<<"dep-test: fresh-open\\n";
+      ContextGraph graph(dependency_path);assert(graph.open());
       SemanticDelta d;d.delta_id="dependency-delta-1";d.idempotency_key="dependency-key-1";
       d.expected_state_version=0;
       d.nodes={{{"source-cluster",NodeKind::Cluster,"approved",{}}},
@@ -47,7 +47,7 @@ int main(){
                   {"source-cluster","target-cluster"}}},
                {{"dependency-invalid",NodeKind::Dependency,"KIND:UNKNOWN",
                   {"source-cluster","target-cluster"}}}};
-      const auto result=graph.apply(d); std::cerr<<"dep-test: first-apply\\n";
+      const auto result=graph.apply(d);
       assert(result.committed && !result.duplicate && result.state_version==1);
       assert(graph.dependency_evaluations().count("dependency-delta-1")==1);
       const auto evaluation_it=graph.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=graph.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
@@ -60,7 +60,7 @@ int main(){
       assert(retry.committed && retry.duplicate && graph.state_version()==1);
     }
     {
-      ContextGraph recovered(dependency_path);assert(recovered.open()); std::cerr<<"dep-test: recovered-open\\n";
+      ContextGraph recovered(dependency_path);assert(recovered.open());
       assert(recovered.state_version()==1);
       assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
       const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=recovered.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
@@ -71,7 +71,7 @@ int main(){
       new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
       new_dependency.nodes={{{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
           {"source-cluster","target-cluster"}}}};
-      const auto added=recovered.apply(new_dependency); std::cerr<<"dep-test: second-apply\\n";
+      const auto added=recovered.apply(new_dependency);
       assert(added.committed&&added.state_version==2);
       assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
       const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); assert(evaluation2_it!=recovered.dependency_evaluations().end()); assert(evaluation2_it->second.triggered.size()==1);
