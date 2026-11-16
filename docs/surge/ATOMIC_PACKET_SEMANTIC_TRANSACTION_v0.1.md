@@ -69,3 +69,25 @@ SemanticDelta operations used by the LLM runtime. ScopeSpan is already a
 first-class persisted ContextGraph record, but the combined C ABI does not yet
 carry ScopeSpan arrays. A scope-bearing atomic API extension is required before
 LLM-generated ScopeSpan proposals can use this one-transaction path.
+
+
+## Fault-injection and crash-boundary conformance
+
+EventJournal provides an optional AppendFrameGate constructor overload for
+deterministic storage-failure tests. The gate receives the zero-based count of
+successfully appended frames and can reject the next frame. The default
+constructor has no gate and preserves normal production behavior.
+
+The journal test suite injects failure at each frame boundary of a two-event
+transaction:
+1. before BEGIN;
+2. after BEGIN, before the first EVENT;
+3. after the first EVENT, before the second EVENT;
+4. after both EVENT frames, before COMMIT.
+
+For each failure point, the test verifies that the in-memory committed version
+does not advance, reopening discards the incomplete transaction, previously
+committed events remain intact, and retrying the same transaction succeeds
+exactly once. This tests the transaction visibility boundary rather than
+assuming that a successful write of BEGIN or EVENT frames is a commit.
+
