@@ -62,7 +62,7 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
  case NodeKind::QuestionAspect:if(n.references.size()!=1||!ref_kind(0,NodeKind::Question)){e="QUESTION_ASPECT_PARENT_INVALID";return false;}break;
  case NodeKind::Dependency:if(n.references.size()!=2||n.references[0]==n.references[1]){e="DEPENDENCY_ENDPOINTS_INVALID";return false;}break;
  case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!ref_kind(1,NodeKind::Cluster)){e="INTEREST_TARGET_INVALID";return false;}break;
- }s.nodes.emplace(n.id,n);return true;
+ }s.nodes.emplace(n.id,n);if(n.kind==NodeKind::Claim)s.claim_statuses.emplace(n.id,ClaimStatus::Active);return true;
 }
 bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e)const{
  if(r.id.empty()||s.relations.count(r.id)){e="RELATION_ID_INVALID_OR_DUPLICATE";return false;}
