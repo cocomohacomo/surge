@@ -17,8 +17,11 @@ expected Claim/ScopeSpan, expected lifecycle state and adjudicated outcome.
 A contradiction is eligible only when normalized propositions match, topic and
 geographic scope do not conflict, no explicit exclusive condition pair applies,
 validity intervals overlap, lifecycle states match, modality matches, and
-opposite known polarities remain. The comparator returns a reason code and
-never resolves a conflict by choosing a winner. Different lifecycle states are
+opposite known polarities remain, and at least one explicit shared applicability
+anchor (topic, geography, identical condition, overlapping date interval or
+matching lifecycle state) proves overlap. Missing scope evidence produces
+SCOPE_OVERLAP_UNPROVEN, not a contradiction. The comparator returns a reason
+code and never resolves a conflict by choosing a winner. Different lifecycle states are
 treated as state transitions, not contradictory simultaneous facts.
 
 Current v0.1 scope dimensions: proposition, polarity, topic, condition markers,
