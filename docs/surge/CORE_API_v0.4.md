@@ -87,3 +87,14 @@ SOURCE_SEQUENCE_GAP, SOURCE_SEQUENCE_REUSED, SOURCE_GENERATION_MISMATCH, PACKET_
 ## 8. Transaction, replay and compatibility
 
 ScopeSpan closure, Evidence links and dependent semantic Delta are atomic. Gap skip is an audited append-only administrative event. Late packet does not erase skip history. Ticket resolution is read-only. Benchmark profile is immutable. Response-loss retries return original result by idempotency key. v0.8 packets without source range digest/sequence are LEGACY_UNVERIFIED/LEGACY_UNORDERED and cannot advance v0.9 watermark.
+
+
+## 9. Claim lifecycle operations
+
+Claim lifecycle is committed through the existing `apply_semantic_delta` relation list; no in-place Claim update is exposed.
+
+- `SUPERSEDES`: direction is new Claim to old Claim. Both endpoints must be ACTIVE Claims. The target becomes SUPERSEDED atomically.
+- `RETRACTS`: direction is Evidence to Claim. The Evidence records the withdrawal basis. The target must be ACTIVE and becomes RETRACTED atomically.
+- Retrieval of Claim nodes includes `claim_status`: ACTIVE, SUPERSEDED or RETRACTED.
+
+The original Claim text and Evidence references remain immutable and retrievable. A repeated lifecycle transition against an inactive Claim is rejected. Errors: CLAIM_SUPERSESSION_ENDPOINT_INVALID, CLAIM_NOT_ACTIVE_FOR_SUPERSESSION, CLAIM_RETRACTION_ENDPOINT_INVALID, CLAIM_NOT_ACTIVE_FOR_RETRACTION. See CLAIM_LIFECYCLE_v0.1.md.
