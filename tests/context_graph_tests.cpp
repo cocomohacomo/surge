@@ -35,6 +35,40 @@ int main(){
       assert(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Deferred);
     }
   }
+  {
+    const auto dependency_path=(root/"dependency-evaluation.sgj").string();
+    {
+      ContextGraph graph(dependency_path);assert(graph.open());
+      SemanticDelta d;d.delta_id="dependency-delta-1";d.idempotency_key="dependency-key-1";
+      d.expected_state_version=0;
+      d.nodes={{{"source-cluster",NodeKind::Cluster,"approved",{}}},
+               {{"target-cluster",NodeKind::Cluster,"target",{}}},
+               {{"dependency-good",NodeKind::Dependency,"CONTENT_EQUALS:approved",
+                  {"source-cluster","target-cluster"}}},
+               {{"dependency-invalid",NodeKind::Dependency,"KIND:UNKNOWN",
+                  {"source-cluster","target-cluster"}}}};
+      const auto result=graph.apply(d);
+      assert(result.committed && !result.duplicate && result.state_version==1);
+      assert(graph.dependency_evaluations().count("dependency-delta-1")==1);
+      const auto& evaluation=graph.dependency_evaluations().at("dependency-delta-1");
+      assert(evaluation.triggered.size()==1);
+      assert(evaluation.triggered[0].dependency_id=="dependency-good");
+      assert(evaluation.triggered[0].prerequisite_id=="source-cluster");
+      assert(evaluation.triggered[0].dependent_id=="target-cluster");
+      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      const auto retry=graph.apply(d);
+      assert(retry.committed && retry.duplicate && graph.state_version()==1);
+    }
+    {
+      ContextGraph recovered(dependency_path);assert(recovered.open());
+      assert(recovered.state_version()==1);
+      assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
+      const auto& evaluation=recovered.dependency_evaluations().at("dependency-delta-1");
+      assert(evaluation.triggered.size()==1 &&
+             evaluation.triggered[0].dependency_id=="dependency-good");
+      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+    }
+  }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);assert(graph.open());
