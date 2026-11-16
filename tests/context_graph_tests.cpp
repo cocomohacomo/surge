@@ -71,7 +71,7 @@ int main(){
       new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
       new_dependency.nodes={{{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
           {"source-cluster","target-cluster"}}}};
-      const auto added=graph.apply(new_dependency);
+      const auto added=recovered.apply(new_dependency);
       assert(added.committed&&added.state_version==2);
       assert(graph.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
       assert(graph.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
