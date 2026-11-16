@@ -240,7 +240,8 @@ class LLMSemanticRuntime:
         delta = {"delta_id": "semantic/" + packet["packet_id"],
                  "idempotency_key": "semantic-idem/" + packet["packet_id"],
                  "expected_state_version": core.state_version,
-                 "nodes": nodes, "relations": relations}
+                 "nodes": nodes, "relations": relations,
+                 "classification_proposal": proposal}
         admission, committed = self.packet_adapter.admit_and_apply_to_core(packet, text, core, delta)
         self.sequence = next_sequence
         if staged_claim is not None:
