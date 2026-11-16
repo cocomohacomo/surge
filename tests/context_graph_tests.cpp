@@ -234,7 +234,7 @@ int main(){
     std::filesystem::create_directories(root);
     const auto propagation_path=(root/"temporal-dependency-propagation.sgj").string();
     {
-      ContextGraph graph(propagation_path);assert(graph.open());
+      ContextGraph graph(propagation_path);if(!graph.open())throw std::runtime_error("temporal propagation journal open failed");
       SemanticDelta seed;seed.delta_id="temporal-propagation-seed";
       seed.idempotency_key="temporal-propagation-seed";seed.expected_state_version=0;
       seed.nodes={
@@ -273,7 +273,7 @@ int main(){
           "expired-action")!=second.impacted_nodes.end());
     }
     {
-      ContextGraph recovered(propagation_path);assert(recovered.open());
+      ContextGraph recovered(propagation_path);if(!recovered.open())throw std::runtime_error("temporal propagation replay open failed");
       assert(recovered.state_version()==2);
       const auto second_it=recovered.dependency_evaluations().find("temporal-propagation-correction");
       if(second_it==recovered.dependency_evaluations().end())throw std::runtime_error("replayed temporal evaluation missing");
