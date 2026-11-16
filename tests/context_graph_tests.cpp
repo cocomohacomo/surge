@@ -1,4 +1,5 @@
 #include "surge/context_graph.hpp"
+#include <algorithm>
 #include <cassert>
 #include <filesystem>
 #include <iostream>
