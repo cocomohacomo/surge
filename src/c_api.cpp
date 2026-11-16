@@ -1049,6 +1049,9 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
     };
     for (const auto& entry : graph.nodes()) {
       const auto& node = entry.second;
+      // Dormant and archived Questions remain durable but are hidden from ordinary retrieval.
+      if (node.kind == surge::NodeKind::Question &&
+          graph.question_memory_state(node.id) != surge::QuestionMemoryState::Active) continue;
       const std::string kind = node_kind_text(node.kind);
       if (!kind_allowed(kind)) continue;
       int score = std::max(score_text(node.content), score_text(node.id));
