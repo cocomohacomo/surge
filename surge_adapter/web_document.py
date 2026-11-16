@@ -257,7 +257,8 @@ class WebDocumentIndex:
     def claims_for_url(self, url: str) -> list[dict[str, Any]]:
         result = []
         rows = self.db.execute("""SELECT c.claim_id,c.payload FROM claims c
-            JOIN document_claims d ON d.signature=c.signature WHERE d.url=?""",(url,))
+            JOIN document_claims d ON d.signature=c.signature WHERE d.url=?
+            ORDER BY c.rowid DESC""",(url,))
         for claim_id, payload in rows:
             result.append({"claim_id": claim_id, **json.loads(payload)})
         return result
@@ -375,6 +376,9 @@ class WebDocumentRecognitionEngine:
                 "proposition":_normal(applicability.proposition),
                 "polarity":applicability.polarity,"topic":_normal(applicability.topic),
                 "conditions":sorted(_normal(x) for x in conditions),
+                "geography":_normal(geography),
+                "valid_from":_date_key(dates[0]) if dates else "",
+                "valid_to":_date_key(dates[1]) if len(dates)>1 else "",
                 "state":state,"modality":modality},ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             old = self.index.find_claim(signature)
             local_duplicate = seen_signatures.get(signature)
@@ -387,6 +391,8 @@ class WebDocumentRecognitionEngine:
                 claim_content = {"proposition":candidate["proposition"],"polarity":candidate["polarity"],
                 "topic":candidate.get("topic") or "", "conditional":candidate["conditional"],
                 "temporal_state":state,"modality":modality,"conditions":list(conditions),
+                "geography":geography,"valid_from":dates[0] if dates else "",
+                "valid_to":dates[1] if len(dates)>1 else "",
                 "recognition_decision":score.decision,"source_url":url,"publisher":publisher,"retrieved_at":retrieved_at,
                 "source_digest":digest,"chunk_index":chunk.index,
                 "supersedes_claim_id":next((p["claim_id"] for p in self.index.claims_for_url(url)
