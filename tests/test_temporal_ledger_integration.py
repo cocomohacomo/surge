@@ -46,7 +46,7 @@ class TemporalLedgerIntegrationTests(unittest.TestCase):
         self.assertFalse(result["persisted"])
         self.assertTrue(result["requires_review"])
         self.assertEqual(result["status"], "BOUNDARY_CONFLICT_REVIEW_REQUIRED")
-        self.assertFalse(result["claim_validity_write")
+        self.assertFalse(result["claim_validity_write"])
 
     def test_authority_or_role_mismatch_is_rejected(self):
         core = FakeCore()
