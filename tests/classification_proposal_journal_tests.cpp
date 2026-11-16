@@ -53,7 +53,7 @@ int main() {
     int duplicate = 0;
     std::uint64_t version = 0;
     char status[128]{};
-    const int committed = surge_packet_core_admit_and_apply(
+    const int committed = surge_packet_core_admit_and_apply_with_proposal(
         handle, &packet,
         reinterpret_cast<const unsigned char*>(source.data()), source.size(),
         "delta-1", "semantic-idem-1", 0,
@@ -97,7 +97,7 @@ int main() {
     int duplicate = 0;
     std::uint64_t version = 99;
     char status[128]{};
-    const int committed = surge_packet_core_admit_and_apply(
+    const int committed = surge_packet_core_admit_and_apply_with_proposal(
         handle, &packet,
         reinterpret_cast<const unsigned char*>(source.data()), source.size(),
         "delta-1", "semantic-idem-1", 0,
