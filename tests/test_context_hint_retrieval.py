@@ -157,5 +157,77 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
             )
 
 
+
+    def test_focus_is_a_traversal_seed_and_unrelated_open_scope_is_excluded(self):
+        class FakeCore:
+            state_version = 7
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = FakeCore()
+            def search(self, query, kinds=None, limit=20):
+                items = [
+                    {"kind": "CLUSTER", "id": "focus-cluster", "score": 90,
+                     "references": [], "relations": [{"kind": "ABOUT", "ref": "focus-claim"}]},
+                    {"kind": "CLAIM", "id": "focus-claim", "score": 80,
+                     "references": ["focus-evidence"], "relations": []},
+                    {"kind": "EVIDENCE", "id": "focus-evidence", "score": 70,
+                     "references": [], "relations": []},
+                    {"kind": "SCOPE_SPAN", "id": "unrelated-open-scope",
+                     "status": "UNRESOLVED", "score": 100, "references": [], "relations": []},
+                ]
+                return {"state_version": 7, "focus": {
+                    "cluster_id": "focus-cluster", "interest_id": None},
+                    "total_matches": len(items), "items": items if query == "*" else []}
+        hint = FakeRetriever().build_hint_from_graph(
+            context_id="ctx", packet_ref="p", source_range_digest="a" * 64,
+            policy_version="hint-v3", query="対象語", reference_budget=20,
+            max_depth=3, max_nodes=20)
+        refs = set(hint["included_refs"])
+        self.assertTrue({"focus-cluster", "focus-claim", "focus-evidence"}.issubset(refs))
+        self.assertNotIn("unrelated-open-scope", refs)
+
+    def test_dependency_dependent_restarts_bounded_multihop_traversal(self):
+        class FakeCore:
+            state_version = 8
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = FakeCore()
+            def search(self, query, kinds=None, limit=20):
+                items = [
+                    {"kind": "CLAIM", "id": "prerequisite", "content": "changed",
+                     "score": 80, "references": [], "relations": []},
+                    {"kind": "DEPENDENCY", "id": "dep", "content": "ON_CHANGE",
+                     "references": ["prerequisite", "dependent"], "relations": []},
+                    {"kind": "CLAIM", "id": "dependent", "content": "dependent claim",
+                     "score": 70, "references": [], "relations": [
+                         {"kind": "CONTRADICTS", "ref": "downstream-claim"}]},
+                    {"kind": "CLAIM", "id": "downstream-claim", "content": "downstream",
+                     "score": 60, "references": [], "relations": []},
+                ]
+                return {"state_version": 8, "focus": None, "total_matches": len(items),
+                        "items": items if query == "*" else [items[0]]}
+        hint = FakeRetriever().build_hint_from_graph(
+            context_id="ctx", packet_ref="p", source_range_digest="b" * 64,
+            policy_version="hint-v3", query="changed", reference_budget=20,
+            changed_refs=["prerequisite"], max_depth=1, max_nodes=20)
+        self.assertTrue({"dep", "dependent", "downstream-claim"}.issubset(
+            set(hint["included_refs"])))
+
+    def test_graph_hint_rejects_mixed_version_reads(self):
+        class FakeCore:
+            state_version = 9
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = FakeCore()
+                self.version = 0
+            def search(self, query, kinds=None, limit=20):
+                self.version += 1
+                return {"state_version": self.version, "focus": None,
+                        "total_matches": 0, "items": []}
+        with self.assertRaisesRegex(Exception, "CONTEXT_HINT_GRAPH_SNAPSHOT_CHANGED"):
+            FakeRetriever().build_hint_from_graph(
+                context_id="ctx", packet_ref="p", source_range_digest="c" * 64,
+                policy_version="hint-v3", query="q", reference_budget=5)
+
 if __name__ == "__main__":
     unittest.main()
