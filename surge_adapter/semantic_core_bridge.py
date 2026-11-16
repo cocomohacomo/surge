@@ -87,6 +87,13 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_uint64, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_apply_claim_validity.restype = ctypes.c_int
+        lib.surge_context_graph_apply_claim_validity_reviewed.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_apply_claim_validity_reviewed.restype = ctypes.c_int
         lib.surge_context_graph_claim_validity_at.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -228,6 +235,59 @@ class SemanticCoreBridge(CppCoreBridge):
                                  "CLAIM_VALIDITY_REJECTED")
         return {"committed": True, "duplicate": bool(duplicate.value),
                 "state_version": int(version.value)}
+
+    def apply_approved_temporal_binding(self, binding: dict[str, Any], source_text: str, *,
+                                        approved: bool, reviewer_id: str,
+                                        review_evidence_id: str, delta_id: str,
+                                        idempotency_key: str, expected_state_version: int,
+                                        revision: int) -> dict[str, Any]:
+        """Commit a reviewed temporal binding with durable review provenance."""
+        import unicodedata
+        if approved is not True:
+            raise PacketRejected("CLAIM_VALIDITY_REVIEW_NOT_APPROVED")
+        if not isinstance(binding, dict) or binding.get("binding_status") != "BOUND_PENDING_CORE_REVIEW":
+            raise PacketRejected("TEMPORAL_BINDING_NOT_ELIGIBLE")
+        if not isinstance(reviewer_id, str) or not reviewer_id.strip() or not isinstance(review_evidence_id, str) or not review_evidence_id.strip():
+            raise PacketRejected("CLAIM_VALIDITY_REVIEW_PROVENANCE_REQUIRED")
+        span = binding.get("source_span") or {}
+        normalized = unicodedata.normalize("NFC", source_text).encode("utf-8")
+        start, end = span.get("start_offset"), span.get("end_offset")
+        if (span.get("offset_basis") != "UTF8_BYTE_NFC" or
+                not isinstance(start, int) or isinstance(start, bool) or
+                not isinstance(end, int) or isinstance(end, bool) or
+                start < 0 or end <= start or end > len(normalized)):
+            raise PacketRejected("CLAIM_VALIDITY_SOURCE_SPAN_INVALID")
+        try:
+            exact = normalized[start:end].decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise PacketRejected("CLAIM_VALIDITY_SOURCE_SPAN_INVALID") from exc
+        if exact != span.get("exact_text"):
+            raise PacketRejected("CLAIM_VALIDITY_SOURCE_SPAN_MISMATCH")
+        candidate = binding.get("temporal_candidate") or {}
+        if (candidate.get("status") != "RESOLVED" or candidate.get("correction") or
+                candidate.get("role") not in ("VALID_FROM", "INTERVAL") or
+                not isinstance(candidate.get("valid_from"), str) or not candidate.get("valid_from")):
+            raise PacketRejected("CLAIM_VALIDITY_CANDIDATE_NOT_COMMITTABLE")
+        claim_id, evidence_id = binding.get("claim_ref"), binding.get("evidence_ref")
+        if not isinstance(claim_id, str) or not claim_id or not isinstance(evidence_id, str) or not evidence_id:
+            raise PacketRejected("CLAIM_VALIDITY_BINDING_REFERENCES_REQUIRED")
+        duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_context_graph_apply_claim_validity_reviewed(
+            self._handle, delta_id.encode("utf-8"), idempotency_key.encode("utf-8"),
+            int(expected_state_version), claim_id.encode("utf-8"),
+            candidate["valid_from"].encode("utf-8"),
+            (candidate.get("valid_until") or "").encode("utf-8"),
+            evidence_id.encode("utf-8"), int(revision),
+            review_evidence_id.encode("utf-8"), reviewer_id.encode("utf-8"),
+            ctypes.byref(duplicate), ctypes.byref(version), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLAIM_VALIDITY_REVIEWED_COMMIT_FAILED")
+        return {"committed": True, "duplicate": bool(duplicate.value),
+                "state_version": int(version.value), "claim_id": claim_id,
+                "revision": int(revision), "review_evidence_id": review_evidence_id,
+                "reviewer_id": reviewer_id}
 
     def claim_validity_at(self, claim_id: str, instant: str) -> str:
         """Evaluate the latest valid-time revision at an explicit RFC3339 instant."""

@@ -39,7 +39,7 @@ struct ScopeSpanRecord { ScopeSpanProposal proposal; ScopeStatus status{ScopeSta
 struct AddNode { GraphNode node; };
 struct AddRelation { GraphRelation relation; };
 struct AddScopeSpan { ScopeSpanProposal span; std::string source_snapshot; };
-struct ClaimValidity { std::string claim_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; };
+struct ClaimValidity { std::string claim_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; std::string review_evidence_id{}, reviewer_id{}; };
 struct ClaimValidityRecord { ClaimValidity validity; std::uint64_t recorded_state_version{0}; };
 ClaimTemporalState evaluate_claim_validity(const ClaimValidityRecord& record, const std::string& instant);
 struct SetFocus { FocusRecord focus; };

@@ -42,9 +42,18 @@ span, the temporal candidate, the binding basis, and an explicit
 ClassificationProposal and SemanticDelta result for downstream review.
 
 This module does not create or revise ClaimValidity, infer missing dates,
-select among multiple Claims, or alter prior validity history. A later
-Core-authorized stage must independently validate the Claim/Evidence
-relationship and append a ClaimValidity revision atomically.
+select among multiple Claims, or alter prior validity history. A later Core-authorized stage may call the reviewed-commit API only after
+explicit approval. It must supply a reviewer ID and a durable review Evidence
+ID. The adapter rechecks the exact NFC UTF-8 source span and rejects unresolved,
+corrected, non-start-boundary, or unapproved candidates. Core independently
+checks Claim/Evidence types, the direct or SUPPORTS evidence link, review
+Evidence, timezone-bearing interval syntax, and contiguous revision number.
+
+The validity revision, review provenance, and any temporal Dependency
+Evaluation are appended in one Core transaction. The operation is idempotent
+and replay-safe. Corrections append a new revision and never overwrite earlier
+history. A correction candidate is not auto-committed by this API; it requires
+a separately reviewed binding.
 
 ## Conservative limitation
 
@@ -52,3 +61,14 @@ A single clause and a single cue are necessary but not sufficient proof of
 semantic entailment. `BOUND_PENDING_CORE_REVIEW` is a high-specificity
 structural association, not an automatic approval or calibrated confidence.
 Human or separately validated semantic review remains required.
+
+
+## Reviewed commit API
+
+Python: `SemanticCoreBridge.apply_approved_temporal_binding(...)`.
+
+Required inputs include the proposal binding, exact source snapshot,
+`approved=True`, reviewer ID, review Evidence ID, delta/idempotency IDs,
+expected state version, and the next revision number. The API is not invoked
+automatically by Recognition Runtime. This keeps extraction and semantic
+recognition non-committing while providing a narrow, auditable approval path.
