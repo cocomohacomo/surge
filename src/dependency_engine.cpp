@@ -8,9 +8,10 @@
 namespace surge {
 DependencyEvaluationResult DependencyEngine::evaluate(
     const std::map<std::string, GraphNode>& nodes,
-    const std::vector<std::string>& roots, std::size_t maximum_nodes) {
+    const std::vector<std::string>& roots, std::size_t maximum_nodes,
+    std::size_t maximum_predicate_operations) {
   DependencyEvaluationResult result;
-  if (roots.empty() || maximum_nodes == 0) {
+  if (roots.empty() || maximum_nodes == 0 || maximum_predicate_operations == 0) {
     result.error = "DEPENDENCY_EVALUATION_REQUEST_INVALID"; return result;
   }
   std::set<std::string> changed;
@@ -73,12 +74,20 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       value == "DEPENDENCY" || value == "INTEREST";
   };
   std::set<std::string> fired, rejected;
-  for (const auto* dep : dependencies) if (!known(dep->content)) rejected.insert(dep->id);
+  for (const auto* dep : dependencies) {
+    if (++result.predicate_operations > maximum_predicate_operations) {
+      result.error = "DEPENDENCY_PREDICATE_BUDGET_EXCEEDED"; return result;
+    }
+    if (!known(dep->content)) rejected.insert(dep->id);
+  }
   bool progress = true;
   while (progress) {
     progress = false;
     for (const auto* dep : dependencies) {
       if (fired.count(dep->id)) continue;
+      if (++result.predicate_operations > maximum_predicate_operations) {
+        result.error = "DEPENDENCY_PREDICATE_BUDGET_EXCEEDED"; return result;
+      }
       const auto prerequisite = nodes.find(dep->references[0]);
       if (prerequisite == nodes.end()) {
         result.error = "DEPENDENCY_PREREQUISITE_NOT_FOUND"; return result;
