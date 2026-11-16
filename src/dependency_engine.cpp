@@ -119,7 +119,9 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       if (prerequisite == nodes.end()) {
         result.error = "DEPENDENCY_PREREQUISITE_NOT_FOUND"; return result;
       }
-      const auto predicate = parsed.find(dep->id);\n      if (predicate == parsed.end() || !predicate->second.valid() ||\n          !matches(predicate->second, prerequisite->second)) continue;
+      const auto predicate = parsed.find(dep->id);
+      if (predicate == parsed.end() || !predicate->second.valid() ||
+          !matches(predicate->second, prerequisite->second)) continue;
       fired.insert(dep->id);
       if (changed.insert(dep->references[1]).second) {
         if (changed.size() > maximum_nodes) {
