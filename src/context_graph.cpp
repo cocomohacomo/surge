@@ -237,6 +237,9 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="QUESTION_MEMORY_REFERENCED"){
   std::istringstream in(e.payload);std::string id,extra;std::uint64_t count=0;if(!(in>>std::quoted(id)>>count)||(in>>extra)||count==0){error="JOURNAL_QUESTION_REFERENCE_INVALID";return false;}const auto q=s.nodes.find(id);if(q==s.nodes.end()||q->second.kind!=NodeKind::Question){error="JOURNAL_QUESTION_REFERENCE_INVALID";return false;}const auto previous=s.question_reference_counts[id];if(count!=previous+1){error="JOURNAL_QUESTION_REFERENCE_SEQUENCE_INVALID";return false;}s.question_reference_counts[id]=count;if(s.question_memory_states[id]==QuestionMemoryState::Dormant)s.question_memory_states[id]=QuestionMemoryState::Active;return true;
  }
+ if(e.kind=="QUESTION_MEMORY_DEPENDENCY_REACTIVATED"){
+  std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_QUESTION_DEPENDENCY_REACTIVATION_INVALID";return false;}const auto q=s.nodes.find(id);if(q==s.nodes.end()||q->second.kind!=NodeKind::Question||s.question_memory_states[id]!=QuestionMemoryState::Dormant){error="JOURNAL_QUESTION_DEPENDENCY_REACTIVATION_INVALID";return false;}s.question_memory_states[id]=QuestionMemoryState::Active;return true;
+ }
  if(e.kind=="QUESTION_MEMORY_STATE_SET"){
   std::istringstream in(e.payload);std::string id,status,extra;if(!(in>>std::quoted(id)>>status)||(in>>extra)){error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}const auto q=s.nodes.find(id);if(q==s.nodes.end()||q->second.kind!=NodeKind::Question){error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}QuestionMemoryState v;if(status=="ACTIVE")v=QuestionMemoryState::Active;else if(status=="DORMANT")v=QuestionMemoryState::Dormant;else if(status=="ARCHIVED")v=QuestionMemoryState::Archived;else{error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}s.question_memory_states[id]=v;return true;
  }
@@ -410,6 +413,25 @@ QuestionMemoryState ContextGraph::question_memory_state(const std::string& id) c
 std::uint64_t ContextGraph::question_reference_count(const std::string& id) const {const auto it=state_.question_reference_counts.find(id);return it==state_.question_reference_counts.end()?0:it->second;}
 bool ContextGraph::record_question_reference(const std::string& id,std::uint64_t expected,bool& reactivated,std::string& error){
  error.clear();reactivated=false;const auto q=state_.nodes.find(id);if(q==state_.nodes.end()||q->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}if(question_memory_state(id)==QuestionMemoryState::Archived){error="QUESTION_ARCHIVED";return false;}const auto next=question_reference_count(id)+1;std::ostringstream payload;payload<<std::quoted(id)<<' '<<next;const auto key="question-memory/reference/"+id+"/"+std::to_string(next);const auto was_dormant=question_memory_state(id)==QuestionMemoryState::Dormant;const auto result=journal_->commit(key,key,expected,{{key+"/event","QUESTION_MEMORY_REFERENCED",payload.str()}});if(!result.committed){error=result.error;return false;}state_.question_reference_counts[id]=next;if(was_dormant)state_.question_memory_states[id]=QuestionMemoryState::Active;reactivated=was_dormant;return true;
+}
+bool ContextGraph::record_question_reference_with_dependents(const std::string& id,std::uint64_t expected,std::size_t max_depth,std::size_t max_nodes,bool& reactivated,std::size_t& reactivated_dependents,std::string& error){
+ error.clear();reactivated=false;reactivated_dependents=0;
+ if(max_depth==0||max_depth>64){error="QUESTION_REACTIVATION_DEPTH_INVALID";return false;}
+ if(max_nodes==0||max_nodes>4096){error="QUESTION_REACTIVATION_NODE_LIMIT_INVALID";return false;}
+ if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}
+ const auto root=state_.nodes.find(id);if(root==state_.nodes.end()||root->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}
+ if(question_memory_state(id)==QuestionMemoryState::Archived){error="QUESTION_ARCHIVED";return false;}
+ struct Edge{std::string dependent,relation;};
+ std::map<std::string,std::vector<Edge>> reverse;
+ for(const auto& item:state_.relations){const auto& r=item.second;if(r.kind!=RelationKind::DependsOn)continue;const auto from=state_.nodes.find(r.from),to=state_.nodes.find(r.to);if(from==state_.nodes.end()||to==state_.nodes.end()||from->second.kind!=NodeKind::Question||to->second.kind!=NodeKind::Question)continue;reverse[r.to].push_back({r.from,r.id});}
+ for(auto& item:reverse)std::sort(item.second.begin(),item.second.end(),[](const Edge&a,const Edge&b){return a.dependent<b.dependent||(a.dependent==b.dependent&&a.relation<b.relation);});
+ std::vector<std::pair<std::string,std::size_t>> queue{{id,0}};std::set<std::string> visited{id};std::vector<std::string> dormant;
+ for(std::size_t cursor=0;cursor<queue.size();++cursor){const auto current=queue[cursor];if(current.second>=max_depth)continue;const auto edges=reverse.find(current.first);if(edges==reverse.end())continue;for(const auto& edge:edges->second){if(!visited.insert(edge.dependent).second)continue;if(visited.size()-1>max_nodes){error="QUESTION_REACTIVATION_NODE_LIMIT";return false;}queue.push_back({edge.dependent,current.second+1});if(question_memory_state(edge.dependent)==QuestionMemoryState::Dormant)dormant.push_back(edge.dependent);}}
+ const auto next=question_reference_count(id)+1;std::ostringstream payload;payload<<std::quoted(id)<<' '<<next;const auto key="question-memory/reference/"+id+"/"+std::to_string(next);std::vector<JournalEvent> events{{key+"/event","QUESTION_MEMORY_REFERENCED",payload.str()}};
+ for(std::size_t i=0;i<dormant.size();++i){std::ostringstream p;p<<std::quoted(dormant[i]);events.push_back({key+"/dependent/"+std::to_string(i),"QUESTION_MEMORY_DEPENDENCY_REACTIVATED",p.str()});}
+ const bool was_dormant=question_memory_state(id)==QuestionMemoryState::Dormant;const auto result=journal_->commit(key,key,expected,events);if(!result.committed){error=result.error;return false;}
+ state_.question_reference_counts[id]=next;if(was_dormant)state_.question_memory_states[id]=QuestionMemoryState::Active;for(const auto& dependent:dormant)state_.question_memory_states[dependent]=QuestionMemoryState::Active;
+ reactivated=was_dormant;reactivated_dependents=dormant.size();return true;
 }
 bool ContextGraph::set_question_memory_state(const std::string& id,QuestionMemoryState v,std::uint64_t expected,std::string& error){
  error.clear();const auto q=state_.nodes.find(id);if(q==state_.nodes.end()||q->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}if(question_memory_state(id)==v)return true;

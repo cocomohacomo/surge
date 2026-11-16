@@ -85,6 +85,8 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_question_memory_set_state.restype=ctypes.c_int
         lib.surge_question_memory_record_reference.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_uint64,ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_uint64),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_record_reference.restype=ctypes.c_int
+        lib.surge_question_memory_record_reference_with_dependents.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_uint64,ctypes.c_size_t,ctypes.c_size_t,ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_record_reference_with_dependents.restype=ctypes.c_int
         lib.surge_question_memory_get_state.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_get_state.restype=ctypes.c_int
         lib.surge_question_memory_recommendation.argtypes=[ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
@@ -586,126 +588,6 @@ class SemanticCoreBridge(CppCoreBridge):
                 "reactivated": bool(reactivated.value), "memory_state": "ACTIVE",
                 "state_version": self.state_version}
 
-    def set_question_memory_state(self, question_id: str, state: str, expected_state_version: int | None = None) -> int:
-        if not isinstance(question_id,str) or not question_id.strip(): raise PacketRejected("QUESTION_ID_REQUIRED")
-        if state not in ("ACTIVE","DORMANT","ARCHIVED"): raise PacketRejected("QUESTION_MEMORY_STATE_INVALID")
-        expected=self.state_version if expected_state_version is None else int(expected_state_version); error=ctypes.create_string_buffer(512)
-        ok=self._lib.surge_question_memory_set_state(self._handle,question_id.encode(),state.encode(),expected,error,len(error)); detail=error.value.decode("utf-8",errors="replace")
-        if not ok or detail: raise PacketRejected(detail or "QUESTION_MEMORY_STATE_UPDATE_REJECTED")
-        return self.state_version
-
-    def recommend_question_memory(self, contradiction_strength: float, focus_relevance: float, unresolved_importance: float, recency: float, recurrence: float, dormant_threshold: float=0.35) -> dict[str,Any]:
-        values=(contradiction_strength,focus_relevance,unresolved_importance,recency,recurrence,dormant_threshold)
-        if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not 0<=v<=1 for v in values): raise PacketRejected("QUESTION_MEMORY_FACTOR_OUT_OF_RANGE")
-        return self._temporal_ledger_call(self._lib.surge_question_memory_recommendation,values,"QUESTION_MEMORY_BUFFER_TOO_SMALL")
-
-    def plan_question_memory_capacity(self, max_active: int) -> dict[str, Any]:
-        """Build a read-only, explainable retention plan from durable Core graph state."""
-        if not isinstance(max_active, int) or isinstance(max_active, bool) or not 0 <= max_active <= 4096:
-            raise PacketRejected("QUESTION_MEMORY_CAPACITY_LIMIT")
-        return self._temporal_ledger_call(
-            self._lib.surge_question_memory_plan, (self._handle, max_active),
-            "QUESTION_MEMORY_PLAN_BUFFER_TOO_SMALL")
-
-    def enforce_question_memory_capacity(self, retention_scores: dict[str,float], max_active: int, expected_state_version: int | None = None) -> dict[str,Any]:
-        if not isinstance(retention_scores,dict) or len(retention_scores)>4096: raise PacketRejected("QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID")
-        if not isinstance(max_active,int) or isinstance(max_active,bool) or not 0<=max_active<=4096: raise PacketRejected("QUESTION_MEMORY_CAPACITY_LIMIT")
-        items=sorted(retention_scores.items()); ids=[]; scores=[]
-        for question_id,score in items:
-            if not isinstance(question_id,str) or not question_id.strip() or isinstance(score,bool) or not isinstance(score,(int,float)) or not 0<=score<=1: raise PacketRejected("QUESTION_MEMORY_SCORE_INVALID")
-            ids.append(question_id.encode("utf-8"));scores.append(float(score))
-        id_array=(ctypes.c_char_p*len(ids))(*ids) if ids else None;score_array=(ctypes.c_double*len(scores))(*scores) if scores else None
-        expected=self.state_version if expected_state_version is None else int(expected_state_version)
-        output_capacity=128+sum(6*len(item)+16 for item in ids)
-        output=ctypes.create_string_buffer(output_capacity);required=ctypes.c_size_t(0);error=ctypes.create_string_buffer(512)
-        ok=self._lib.surge_question_memory_enforce_capacity(self._handle,id_array,score_array,len(ids),max_active,expected,output,len(output),ctypes.byref(required),error,len(error))
-        detail=error.value.decode("utf-8",errors="replace")
-        if not ok or detail: raise PacketRejected(detail or "QUESTION_MEMORY_CAPACITY_REJECTED")
-        return self._decode_temporal_ledger_json(output.value)
-
-    def get_question_reevaluation_candidates(self, question_id: str,
-                                             max_depth: int = 8,
-                                             max_nodes: int = 256) -> dict[str, Any]:
-        """Discover dependent Questions without changing their lifecycle state."""
-        if not isinstance(question_id, str) or not question_id.strip():
-            raise PacketRejected("QUESTION_ID_REQUIRED")
-        if not isinstance(max_depth, int) or isinstance(max_depth, bool) or not 1 <= max_depth <= 64:
-            raise PacketRejected("QUESTION_REEVALUATION_DEPTH_INVALID")
-        if not isinstance(max_nodes, int) or isinstance(max_nodes, bool) or not 1 <= max_nodes <= 4096:
-            raise PacketRejected("QUESTION_REEVALUATION_NODE_LIMIT_INVALID")
-        return self._temporal_ledger_call(
-            self._lib.surge_question_get_reevaluation_candidates,
-            (self._handle, question_id.encode(), max_depth, max_nodes),
-            "QUESTION_REEVALUATION_BUFFER_TOO_SMALL")
-
-    def set_question_aspect_status(self, aspect_id: str, status: str,
-                                   expected_state_version: int | None = None) -> int:
-        """Set OPEN/RESOLVED/DEFERRED using optimistic state-version control."""
-        if not isinstance(aspect_id, str) or not aspect_id.strip():
-            raise PacketRejected("QUESTION_ASPECT_ID_REQUIRED")
-        if status not in ("OPEN", "RESOLVED", "DEFERRED"):
-            raise PacketRejected("QUESTION_ASPECT_STATUS_INVALID")
-        expected = self.state_version if expected_state_version is None else int(expected_state_version)
-        error = ctypes.create_string_buffer(512)
-        ok = self._lib.surge_question_aspect_set_status(
-            self._handle, aspect_id.encode(), status.encode(), expected, error, len(error))
-        detail = error.value.decode("utf-8", errors="replace")
-        if not ok or detail:
-            raise PacketRejected(detail or "QUESTION_ASPECT_STATUS_UPDATE_REJECTED")
-        return self.state_version
-
-    def route_contradiction(self, relation_id: str,
-                            policy_version: str = "question-router-v1") -> dict[str, Any]:
-        """Create or retrieve the durable Question route for an accepted contradiction."""
-        if not isinstance(relation_id, str) or not relation_id.strip():
-            raise PacketRejected("CONTRADICTION_RELATION_ID_REQUIRED")
-        if not isinstance(policy_version, str) or not policy_version.strip():
-            raise PacketRejected("QUESTION_POLICY_VERSION_REQUIRED")
-        before_version = self.state_version
-        required = ctypes.c_size_t(0)
-        error = ctypes.create_string_buffer(256)
-        fn = self._lib.surge_question_route_contradiction
-        ok = fn(self._handle, relation_id.encode("utf-8"), policy_version.encode("utf-8"),
-                None, 0, ctypes.byref(required), error, len(error))
-        if ok or error.value.decode("utf-8", errors="replace") != "QUESTION_ROUTE_BUFFER_TOO_SMALL":
-            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
-                                 "QUESTION_ROUTE_READ_FAILED")
-        output = ctypes.create_string_buffer(required.value)
-        error = ctypes.create_string_buffer(256)
-        ok = fn(self._handle, relation_id.encode("utf-8"), policy_version.encode("utf-8"),
-                output, len(output), ctypes.byref(required), error, len(error))
-        if not ok:
-            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
-                                 "QUESTION_ROUTE_FAILED")
-        result = json.loads(output.value.decode("utf-8"))
-        # The sizing probe may have committed the route; report whether it
-        # existed before this method call rather than the retry's duplicate bit.
-        if int(result.get("state_version", before_version)) > before_version:
-            result["duplicate"] = False
-        return result
-
-    def route_contradiction_scoped(self, relation_id: str, scope_key: str,
-                                   policy_version: str = "question-router-v2") -> dict[str, Any]:
-        """Group contradictions by unordered Claim pair and explicit scope; retain each event as an aspect."""
-        if not isinstance(relation_id, str) or not relation_id.strip(): raise PacketRejected("CONTRADICTION_RELATION_ID_REQUIRED")
-        if not isinstance(scope_key, str) or not scope_key.strip(): raise PacketRejected("QUESTION_SCOPE_KEY_REQUIRED")
-        if not isinstance(policy_version, str) or not policy_version.strip(): raise PacketRejected("QUESTION_POLICY_VERSION_REQUIRED")
-        before_version = self.state_version; required = ctypes.c_size_t(0); error = ctypes.create_string_buffer(256)
-        fn = self._lib.surge_question_route_contradiction_scoped
-        args = (self._handle, relation_id.encode("utf-8"), policy_version.encode("utf-8"), scope_key.encode("utf-8"))
-        ok = fn(*args, None, 0, ctypes.byref(required), error, len(error))
-        if ok or error.value.decode("utf-8", errors="replace") != "QUESTION_ROUTE_BUFFER_TOO_SMALL": raise PacketRejected(error.value.decode("utf-8", errors="replace") or "QUESTION_ROUTE_READ_FAILED")
-        output = ctypes.create_string_buffer(required.value); error = ctypes.create_string_buffer(256)
-        ok = fn(*args, output, len(output), ctypes.byref(required), error, len(error))
-        if not ok: raise PacketRejected(error.value.decode("utf-8", errors="replace") or "QUESTION_ROUTE_FAILED")
-        result = json.loads(output.value.decode("utf-8"))
-        if int(result.get("state_version", before_version)) > before_version: result["duplicate"] = False
-        return result
-    def get_focus(self) -> dict[str, Any] | None:
-        result = self._temporal_ledger_call(
-            self._lib.surge_context_graph_focus_get, (self._handle,),
-            "FOCUS_BUFFER_TOO_SMALL")
-        return result if result.get("found") else None
     def record_question_reference_with_dependents(self, question_id: str,
                                                   expected_state_version: int | None = None,
                                                   max_depth: int = 8, max_nodes: int = 256) -> dict[str, Any]:
