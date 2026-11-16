@@ -113,3 +113,18 @@ triggered, impacted, rejected, and missing-record behavior.
 
 This API is read-only. Dependency evaluation remains part of the SemanticDelta
 transaction; this endpoint does not trigger reevaluation or mutate state.
+
+
+## v0.5: typed predicate AST
+
+Predicate parsing is centralized in `DependencyEngine::parse_predicate`.
+Expressions are converted into a typed `DependencyPredicate` value with an
+explicit kind and operand fields before evaluation. The evaluator now matches
+on the parsed kind rather than independently interpreting string prefixes.
+Malformed and unknown expressions carry a stable parser error and are
+fail-closed into the rejected-dependency result.
+
+Supported variants remain `OnChange`, `Present`, `ContentEquals`,
+`ContentContains`, and `Kind`. This is an internal typed representation;
+the persisted graph format remains backward-compatible string expressions.
+Parser conformance tests cover all valid forms and malformed/unknown forms.

@@ -6,6 +6,49 @@
 #include <utility>
 
 namespace surge {
+
+DependencyPredicate DependencyEngine::parse_predicate(const std::string& expression) {
+  DependencyPredicate result;
+  if (expression.empty() || expression == "ON_CHANGE") {
+    result.kind = DependencyPredicateKind::OnChange;
+    return result;
+  }
+  if (expression == "PRESENT") {
+    result.kind = DependencyPredicateKind::Present;
+    return result;
+  }
+  const std::string equals = "CONTENT_EQUALS:";
+  if (expression.compare(0, equals.size(), equals) == 0) {
+    result.operand = expression.substr(equals.size());
+    if (result.operand.empty()) { result.error = "DEPENDENCY_PREDICATE_OPERAND_EMPTY"; return result; }
+    result.kind = DependencyPredicateKind::ContentEquals;
+    return result;
+  }
+  const std::string contains = "CONTENT_CONTAINS:";
+  if (expression.compare(0, contains.size(), contains) == 0) {
+    result.operand = expression.substr(contains.size());
+    if (result.operand.empty()) { result.error = "DEPENDENCY_PREDICATE_OPERAND_EMPTY"; return result; }
+    result.kind = DependencyPredicateKind::ContentContains;
+    return result;
+  }
+  const std::string kind = "KIND:";
+  if (expression.compare(0, kind.size(), kind) == 0) {
+    result.expected_node_kind = expression.substr(kind.size());
+    static const std::set<std::string> allowed = {
+      "CLUSTER", "ENTITY", "EVIDENCE", "CLAIM", "QUESTION",
+      "QUESTION_ASPECT", "DEPENDENCY", "INTEREST"
+    };
+    if (!allowed.count(result.expected_node_kind)) {
+      result.error = "DEPENDENCY_PREDICATE_NODE_KIND_INVALID";
+      return result;
+    }
+    result.kind = DependencyPredicateKind::Kind;
+    return result;
+  }
+  result.error = "DEPENDENCY_PREDICATE_UNKNOWN";
+  return result;
+}
+
 DependencyEvaluationResult DependencyEngine::evaluate(
     const std::map<std::string, GraphNode>& nodes,
     const std::vector<std::string>& roots, std::size_t maximum_nodes) {
@@ -31,49 +74,42 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     }
     dependencies.push_back(&dep);
   }
-  auto matches = [&](const GraphNode& dep, const GraphNode& prerequisite) {
-    const auto& expr = dep.content;
-    if (expr.empty() || expr == "ON_CHANGE") return changed.count(prerequisite.id) != 0;
-    if (expr == "PRESENT") return true;
-    const std::string eq = "CONTENT_EQUALS:";
-    if (expr.compare(0, eq.size(), eq) == 0) return prerequisite.content == expr.substr(eq.size());
-    const std::string contains = "CONTENT_CONTAINS:";
-    if (expr.compare(0, contains.size(), contains) == 0) {
-      const auto needle = expr.substr(contains.size());
-      return !needle.empty() && prerequisite.content.find(needle) != std::string::npos;
-    }
-    const std::string kind = "KIND:";
-    if (expr.compare(0, kind.size(), kind) == 0) {
-      const auto expected = expr.substr(kind.size());
-      switch (prerequisite.kind) {
-        case NodeKind::Cluster: return expected == "CLUSTER";
-        case NodeKind::Entity: return expected == "ENTITY";
-        case NodeKind::Evidence: return expected == "EVIDENCE";
-        case NodeKind::Claim: return expected == "CLAIM";
-        case NodeKind::Question: return expected == "QUESTION";
-        case NodeKind::QuestionAspect: return expected == "QUESTION_ASPECT";
-        case NodeKind::Dependency: return expected == "DEPENDENCY";
-        case NodeKind::Interest: return expected == "INTEREST";
-      }
+
+  auto matches = [&](const DependencyPredicate& predicate,
+                     const GraphNode& prerequisite) {
+    switch (predicate.kind) {
+      case DependencyPredicateKind::OnChange:
+        return changed.count(prerequisite.id) != 0;
+      case DependencyPredicateKind::Present:
+        return true;
+      case DependencyPredicateKind::ContentEquals:
+        return prerequisite.content == predicate.operand;
+      case DependencyPredicateKind::ContentContains:
+        return prerequisite.content.find(predicate.operand) != std::string::npos;
+      case DependencyPredicateKind::Kind:
+        switch (prerequisite.kind) {
+          case NodeKind::Cluster: return predicate.expected_node_kind == "CLUSTER";
+          case NodeKind::Entity: return predicate.expected_node_kind == "ENTITY";
+          case NodeKind::Evidence: return predicate.expected_node_kind == "EVIDENCE";
+          case NodeKind::Claim: return predicate.expected_node_kind == "CLAIM";
+          case NodeKind::Question: return predicate.expected_node_kind == "QUESTION";
+          case NodeKind::QuestionAspect: return predicate.expected_node_kind == "QUESTION_ASPECT";
+          case NodeKind::Dependency: return predicate.expected_node_kind == "DEPENDENCY";
+          case NodeKind::Interest: return predicate.expected_node_kind == "INTEREST";
+        }
+        return false;
+      case DependencyPredicateKind::Invalid:
+        return false;
     }
     return false;
   };
-  auto known = [](const std::string& expr) {
-    if (expr.empty() || expr == "ON_CHANGE" || expr == "PRESENT") return true;
-    const std::string eq = "CONTENT_EQUALS:";
-    if (expr.compare(0, eq.size(), eq) == 0) return expr.size() > eq.size();
-    const std::string contains = "CONTENT_CONTAINS:";
-    if (expr.compare(0, contains.size(), contains) == 0)
-      return expr.size() > contains.size();
-    const std::string kind = "KIND:";
-    if (expr.compare(0, kind.size(), kind) != 0) return false;
-    const auto value = expr.substr(kind.size());
-    return value == "CLUSTER" || value == "ENTITY" || value == "EVIDENCE" ||
-      value == "CLAIM" || value == "QUESTION" || value == "QUESTION_ASPECT" ||
-      value == "DEPENDENCY" || value == "INTEREST";
-  };
   std::set<std::string> fired, rejected;
-  for (const auto* dep : dependencies) if (!known(dep->content)) rejected.insert(dep->id);
+  std::map<std::string, DependencyPredicate> parsed;
+  for (const auto* dep : dependencies) {
+    auto predicate = parse_predicate(dep->content);
+    if (!predicate.valid()) rejected.insert(dep->id);
+    parsed.emplace(dep->id, std::move(predicate));
+  }
   bool progress = true;
   while (progress) {
     progress = false;
@@ -83,7 +119,9 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       if (prerequisite == nodes.end()) {
         result.error = "DEPENDENCY_PREREQUISITE_NOT_FOUND"; return result;
       }
-      if (!matches(*dep, prerequisite->second)) continue;
+      const auto predicate = parsed.find(dep->id);
+      if (predicate == parsed.end() || !predicate->second.valid() ||
+          !matches(predicate->second, prerequisite->second)) continue;
       fired.insert(dep->id);
       if (changed.insert(dep->references[1]).second) {
         if (changed.size() > maximum_nodes) {
