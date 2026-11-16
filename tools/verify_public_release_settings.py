@@ -25,11 +25,17 @@ _SECRET_PATTERNS = (
 )
 
 
+def _redact_match(match: re.Match[str]) -> str:
+    # Keep a short non-secret prefix when the pattern captured one; never echo the secret.
+    prefix = match.group(1) if match.lastindex else ""
+    return f"{prefix}[REDACTED]"
+
+
 def sanitize(text: str, limit: int = 240) -> str:
     """Return a log-safe snippet with credential-like substrings redacted."""
     cleaned = text.replace("\n", " ").strip()
     for pattern in _SECRET_PATTERNS:
-        cleaned = pattern.sub(r"\1[REDACTED]", cleaned)
+        cleaned = pattern.sub(_redact_match, cleaned)
     if len(cleaned) > limit:
         cleaned = cleaned[: limit - 3] + "..."
     return cleaned
