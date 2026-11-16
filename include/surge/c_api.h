@@ -61,6 +61,16 @@ typedef struct SurgeRetrievalTicketInput {
   size_t omitted_count;
 } SurgeRetrievalTicketInput;
 
+typedef struct SurgeClassificationProposalInput {
+  const char* proposal_id;
+  const char* packet_ref;
+  uint64_t base_state_version;
+  uint64_t context_hint_state_version;
+  const char* packet_source_generation;
+  uint64_t packet_source_sequence;
+  const char* serialized_json;
+} SurgeClassificationProposalInput;
+
 typedef struct SurgeScopeSpanInput {
   const char* span_id;
   const char* kind;
@@ -160,8 +170,15 @@ int surge_packet_core_admit_and_apply(
     const SurgeGraphRelationInput* relations, size_t relation_count,
     const SurgeScopeSpanInput* scopes, size_t scope_count,
     const char* focus_cluster_id, const char* focus_interest_id,
+    const SurgeClassificationProposalInput* proposal,
     int* duplicate, uint64_t* state_version,
     char* packet_status, size_t status_capacity,
+    char* error, size_t error_capacity);
+
+// Retrieve the exact serialized ClassificationProposal from the committed journal.
+// On insufficient capacity, required_capacity includes the trailing NUL byte.
+int surge_classification_proposal_get(void* handle, const char* proposal_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 #ifdef __cplusplus
 }
