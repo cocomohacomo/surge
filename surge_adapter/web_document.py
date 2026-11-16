@@ -245,7 +245,19 @@ class WebDocumentIndex:
         self.db.execute("""CREATE TABLE IF NOT EXISTS document_claims(
             url TEXT NOT NULL, signature TEXT NOT NULL,
             PRIMARY KEY(url,signature))""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS metadata(
+            key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
         self.db.commit()
+
+    def bind_context(self, context_id: str) -> None:
+        if not context_id:
+            raise ValueError("INDEX_CONTEXT_ID_EMPTY")
+        row = self.db.execute("SELECT value FROM metadata WHERE key='context_id'").fetchone()
+        if row and row[0] != context_id:
+            raise ValueError("INDEX_CONTEXT_MISMATCH")
+        if not row:
+            self.db.execute("INSERT INTO metadata(key,value) VALUES('context_id',?)",(context_id,))
+            self.db.commit()
 
     def inspect(self, url: str, digest: str) -> dict[str, Any]:
         row = self.db.execute("SELECT digest,packet_id,revision,title,publisher FROM documents WHERE url=?",
@@ -301,6 +313,7 @@ class WebDocumentRecognitionEngine:
         self.recognizer = LLMRecognizer(provider)
         self.context_id, self.source_id = context_id, source_id
         self.index = index
+        self.index.bind_context(context_id)
         self.max_chunk_chars, self.overlap_chars = max_chunk_chars, overlap_chars
         self.packet_adapter = RecognitionPacketAdapter()
         self.scorer = RecognitionScorer()
