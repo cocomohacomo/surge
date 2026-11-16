@@ -82,6 +82,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_question_route_contradiction.restype = ctypes.c_int
+        lib.surge_question_route_contradiction_scoped.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_route_contradiction_scoped.restype = ctypes.c_int
         lib.surge_context_graph_dependency_evaluation.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
@@ -573,6 +578,23 @@ class SemanticCoreBridge(CppCoreBridge):
             result["duplicate"] = False
         return result
 
+    def route_contradiction_scoped(self, relation_id: str, scope_key: str,
+                                   policy_version: str = "question-router-v2") -> dict[str, Any]:
+        """Group contradictions by unordered Claim pair and explicit scope; retain each event as an aspect."""
+        if not isinstance(relation_id, str) or not relation_id.strip(): raise PacketRejected("CONTRADICTION_RELATION_ID_REQUIRED")
+        if not isinstance(scope_key, str) or not scope_key.strip(): raise PacketRejected("QUESTION_SCOPE_KEY_REQUIRED")
+        if not isinstance(policy_version, str) or not policy_version.strip(): raise PacketRejected("QUESTION_POLICY_VERSION_REQUIRED")
+        before_version = self.state_version; required = ctypes.c_size_t(0); error = ctypes.create_string_buffer(256)
+        fn = self._lib.surge_question_route_contradiction_scoped
+        args = (self._handle, relation_id.encode("utf-8"), policy_version.encode("utf-8"), scope_key.encode("utf-8"))
+        ok = fn(*args, None, 0, ctypes.byref(required), error, len(error))
+        if ok or error.value.decode("utf-8", errors="replace") != "QUESTION_ROUTE_BUFFER_TOO_SMALL": raise PacketRejected(error.value.decode("utf-8", errors="replace") or "QUESTION_ROUTE_READ_FAILED")
+        output = ctypes.create_string_buffer(required.value); error = ctypes.create_string_buffer(256)
+        ok = fn(*args, output, len(output), ctypes.byref(required), error, len(error))
+        if not ok: raise PacketRejected(error.value.decode("utf-8", errors="replace") or "QUESTION_ROUTE_FAILED")
+        result = json.loads(output.value.decode("utf-8"))
+        if int(result.get("state_version", before_version)) > before_version: result["duplicate"] = False
+        return result
     def get_focus(self) -> dict[str, Any] | None:
         result = self._temporal_ledger_call(
             self._lib.surge_context_graph_focus_get, (self._handle,),

@@ -22,5 +22,8 @@ class QuestionRouter {
   static QuestionRouteResult route(ContextGraph& graph,
                                    const std::string& contradiction_relation_id,
                                    const std::string& policy_version);
+  static QuestionRouteResult route_scoped(ContextGraph& graph,
+      const std::string& contradiction_relation_id,
+      const std::string& policy_version, const std::string& scope_key);
 };
 }  // namespace surge

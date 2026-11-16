@@ -38,3 +38,15 @@ authoritative Core graph mutation.
 The conformance suite covers a single-cluster route, ambiguous multi-cluster
 routing, duplicate idempotency, and restart/replay persistence. Existing C++
 QuestionRouter conformance tests continue to cover invalid relation handling.
+
+## Scoped re-evaluation API v0.2
+
+The additive `route_contradiction_scoped(relation_id, scope_key, policy_version=...)` API groups accepted contradiction events by the unordered pair of Claim IDs and the exact caller-supplied scope key. Scope is mandatory and is never inferred by the Core.
+
+- Question identity is stable for the normalized Claim pair plus scope key.
+- Each accepted contradiction relation receives a separate QuestionAspect under that Question. A new event therefore reopens the aggregate Question by adding a new OPEN aspect; resolved historical aspects remain intact.
+- Aspect and Interest content retain the source relation ID and scope key. Original Evidence and Packet provenance remains on its source graph records.
+- Reversing relation endpoint order yields the same Question identity; a different scope key yields a different Question.
+- Replaying the same relation/scope is idempotent.
+
+The legacy relation-ID API is unchanged. This API does not infer scope equivalence, mutate ClaimValidity or ClaimStatus, resolve an aspect, rank evidence, or trigger external actions.
