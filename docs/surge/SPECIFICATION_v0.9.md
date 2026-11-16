@@ -114,6 +114,8 @@ Claim lifecycle states are ACTIVE, SUPERSEDED and RETRACTED. New Claims start AC
 
 Historical Claims remain retrievable with their original Evidence and a `claim_status` field. Current-state consumers must explicitly filter ACTIVE; audit consumers retain all lifecycle states. See CLAIM_LIFECYCLE_v0.1.md.
 
+
+
 ### 3.10 Temporal dependency propagation
 
 Dependency predicates may explicitly route a changed Claim according to its
@@ -150,7 +152,7 @@ Inherit all applicable invariants I-01 through I-70. v0.9 adds:
 - I-80 Abstention Coverage: abstentions reduce coverage and cannot count as correct predictions.
 - I-81 Dual-Gate Acceptance: overall conformance requires semantic and performance gates.
 - I-82 Conflict Classification: same range with changed digest is conflict/revision, never duplicate.
-- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.\n- I-84 Claim History Preservation: correction and withdrawal never overwrite or delete a committed Claim or its Evidence; lifecycle changes are append-only and replay-deterministic.\n- I-85 Temporal Validity Separation: valid time and transaction time are stored separately; missing timezone or validity data is never inferred, and interval revisions preserve prior assertions.
+- I-83 Audit Completeness: gap skips, revisions, ticket resolution and rebase retain actor/policy/time lineage.\n- I-84 Claim History Preservation: correction and withdrawal never overwrite or delete a committed Claim or its Evidence; lifecycle changes are append-only and replay-deterministic.\n- I-85 Temporal Validity Separation: valid time and transaction time are stored separately; missing timezone or validity data is never inferred, and interval revisions preserve prior assertions.\n- I-86 Temporal Dependency Routing: a Claim validity revision re-evaluates state-specific dependent predicates within the same transaction; no wall-clock instant is inferred.
 
 ## 5. Conformance suite
 
