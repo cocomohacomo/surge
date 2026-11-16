@@ -73,8 +73,8 @@ int main(){
           {"source-cluster","target-cluster"}}}};
       const auto added=recovered.apply(new_dependency);
       assert(added.committed&&added.state_version==2);
-      assert(graph.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
-      assert(graph.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
+      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
+      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
           "dependency-on-change");
     }
     {
