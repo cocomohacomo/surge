@@ -101,7 +101,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(pending["status"], "CONFLICT_RESOLVED_PENDING_APPROVAL")
                 self.assertEqual(len(pending["candidates"]), 3)
                 self.assertEqual([c["candidate_id"] for c in pending["candidates"] if c["selected"]],
-                                 ["tb-event-1"])
+                                 ["tb-event-1", "tb-event-2"])
                 cleared = recovered.clear_temporal_boundary(
                     transaction_id="tb-tx-5", idempotency_key="tb-idem-5",
                     event_id="tb-event-5", expected_state_version=4,
