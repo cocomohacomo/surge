@@ -58,7 +58,10 @@ conditions, geography, normalized validity dates, temporal state and modality.
 
 Every document creates a publisher Entity and Evidence record. Evidence records
 canonical URL, title, publisher, retrieval timestamp, source digest, capture
-status and byte range. The publisher Entity is linked from Evidence. Quoted
+status and byte range. Typed PUBLISHED_BY (Evidence -> Entity) and EVIDENCE_FOR
+(Evidence -> Claim) relations preserve source attribution and connect corroborating
+documents to a canonical Claim. Evidence nodes keep their references field empty;
+Claim nodes retain their required Evidence references. Quoted
 speech is represented separately from the publisher's own assertion. The
 attribution candidate extractor creates a distinct speaker Entity and attaches
 it to a quotation ScopeSpan only when an attribution phrase precedes the quote.
@@ -99,7 +102,9 @@ subject to the existing strict LLM output validator and RecognitionScoring.
   the comparator itself is deterministic and side-effect-free. The SQLite
   document_claims mapping preserves source membership even when identical
   Claims are reused across multiple URLs.
-- The index and Core journal are separate durability domains. A failed index
-  write after Core commit is recovered by replay/reconciliation, not rollback.
+- The index and Core journal are separate durability domains. If the index
+  write fails after Core commit, retrying the same packet is idempotent and can
+  finish index recording. Automatic journal-to-index rebuild is not yet
+  implemented.
 - A Web corpus case is not counted as an executed pass unless its source text,
   expected output and actual runner result are all present.
