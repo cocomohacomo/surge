@@ -205,6 +205,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 core.apply_semantic_delta({
                     "delta_id": "add-scoped-contradiction-2", "idempotency_key": "add-scoped-contradiction-2",
                     "expected_state_version": core.state_version,
+                    "nodes": [],
                     "relations": [{"id": "contradiction/scoped-2", "kind": "CONTRADICTS", "from": "claim/scoped-b", "to": "claim/scoped-a"}],
                 })
                 second = core.route_contradiction_scoped("contradiction/scoped-2", "scope/2026")
