@@ -117,6 +117,7 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertGreaterEqual(record["iterations"], 1)
                 self.assertGreater(record["evaluation_cost"], 0)
                 self.assertEqual(record["diagnostic_error"], "")
+                self.assertFalse(record["impacted_nodes_truncated"])
                 self.assertIsInstance(record["cyclic_components"], list)
                 self.assertEqual(record["triggered"], [{
                     "dependency_id": "dependency/approval",
