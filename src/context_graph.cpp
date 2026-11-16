@@ -126,10 +126,31 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="DEPENDENCY_EVALUATION"||e.kind=="DEPENDENCY_EVALUATION_DIAGNOSTIC"){
   std::istringstream in(e.payload); DependencyEvaluationRecord record;
   std::size_t count=0;
-  if(!(in>>std::quoted(record.delta_id)>>record.status>>record.iterations>>
-       record.evaluation_cost>>std::quoted(record.diagnostic_error)>>count)||
-     record.delta_id.empty()||
-     (record.status!="CONVERGED"&&record.status!="DEFERRED"&&record.status!="INVALID")||
+  std::string status_or_legacy_count;
+  if(!(in>>std::quoted(record.delta_id)>>status_or_legacy_count)||
+     record.delta_id.empty()){
+   error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+  }
+  const bool legacy=status_or_legacy_count!="CONVERGED"&&
+      status_or_legacy_count!="DEFERRED"&&status_or_legacy_count!="INVALID";
+  if(legacy){
+   if(e.kind!="DEPENDENCY_EVALUATION"){
+    error="JOURNAL_DEPENDENCY_EVALUATION_VERSION_INVALID";return false;
+   }
+   std::istringstream legacy_count(status_or_legacy_count);
+   std::string trailing;
+   if(!(legacy_count>>count)||(legacy_count>>trailing)){
+    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+   }
+   record.status="CONVERGED";
+  } else {
+   record.status=status_or_legacy_count;
+   if(!(in>>record.iterations>>record.evaluation_cost>>
+        std::quoted(record.diagnostic_error)>>count)){
+    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+   }
+  }
+  if((record.status!="CONVERGED"&&record.status!="DEFERRED"&&record.status!="INVALID")||
      count>4096){
    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
   }
