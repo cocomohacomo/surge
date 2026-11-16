@@ -746,7 +746,7 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
       }
       json << ']';
     }
-    json << "]}";;
+    json << "]}";
     const std::string payload = json.str();
     if (required_capacity) *required_capacity = payload.size() + 1;
     if (!output || output_capacity < payload.size() + 1) {
