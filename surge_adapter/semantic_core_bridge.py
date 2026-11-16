@@ -55,7 +55,7 @@ class SemanticCoreBridge(CppCoreBridge):
     def __init__(self, journal_path, library_path=None):
         super().__init__(journal_path, library_path)
         lib = self._lib
-        lib.surge_packet_core_admit_and_apply.argtypes = [
+        lib.surge_packet_core_admit_and_apply_with_proposal.argtypes = [
             ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
@@ -65,7 +65,7 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
-        lib.surge_packet_core_admit_and_apply.restype = ctypes.c_int
+        lib.surge_packet_core_admit_and_apply_with_proposal.restype = ctypes.c_int
         lib.surge_classification_proposal_get.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
@@ -186,7 +186,7 @@ class SemanticCoreBridge(CppCoreBridge):
                 int(proposal_value["packet_source_sequence"]), proposal_json)
         duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
         status, error = ctypes.create_string_buffer(128), ctypes.create_string_buffer(1024)
-        ok = self._lib.surge_packet_core_admit_and_apply(
+        ok = self._lib.surge_packet_core_admit_and_apply_with_proposal(
             self._handle, ctypes.byref(packet_input), snapshot_buffer, len(source),
             str(delta["delta_id"]).encode(), str(delta["idempotency_key"]).encode(),
             int(delta["expected_state_version"]), node_array, len(nodes),
