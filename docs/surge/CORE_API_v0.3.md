@@ -666,3 +666,26 @@ The scheduler may parallelize inference. The Core sequencer controls commit elig
 ### 21.6 Atomicity and replay
 
 ScopeSpan closure, its supporting Evidence refs, and any Claim polarity/modality update MUST be committed in one Delta. A partial closure is forbidden. RetrievalTicket resolution is read-only; applying its result still requires ordinary proposal validation and commit. Replay preserves original proposal, rebase and commit lineage.
+
+
+## Implementation binding: dependency evaluation inspection
+
+The C ABI exposes a read-only operation for the persisted dependency evaluation
+associated with a committed SemanticDelta:
+
+- surge_context_graph_dependency_evaluation(handle, delta_id, output, output_capacity, required_capacity, error, error_capacity)
+
+delta_id is mandatory and identifies one immutable evaluation record.
+The JSON response contains delta_id, triggered (dependency/prerequisite/
+dependent IDs), impacted_nodes, and rejected_dependencies. The operation
+does not execute or refresh dependency evaluation.
+
+If the caller supplies an insufficient output buffer, the function returns
+DEPENDENCY_EVALUATION_BUFFER_TOO_SMALL and sets required_capacity to the
+number of bytes required including the NUL terminator. An unknown delta returns
+DEPENDENCY_EVALUATION_NOT_FOUND.
+
+The Python binding exposes the same operation as
+SemanticCoreBridge.dependency_evaluation(delta_id). It validates the returned
+JSON and supports records restored from the EventJournal after process restart.
+
