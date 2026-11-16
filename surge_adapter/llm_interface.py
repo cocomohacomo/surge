@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from surge_adapter.packet_ingest import RecognitionPacketAdapter, normalize_source
 from surge_adapter.recognition_scoring import RecognitionScorer
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
+from surge_adapter.proposal_builder import build_classification_proposal
 
 KINDS = {"CLAIM", "QUESTION", "ACKNOWLEDGEMENT", "UNRESOLVED", "FILLER"}
 POLARITIES = {"POSITIVE", "NEGATIVE", "UNKNOWN"}
@@ -157,6 +158,31 @@ class LLMSemanticRuntime:
             "confidence": float(candidate["confidence"]),
             "ambiguity": float(candidate["ambiguity"]),
             "novelty": 0.70 if candidate["kind"] in ("CLAIM", "QUESTION") else 0.25})
+        # Materialize the schema-validated, non-committing proposal before
+        # deriving any Core operations. The Core remains the only commit authority.
+        label = {
+            "family": "SPEECH_FUNCTION",
+            "label": candidate["kind"],
+            "score_dimension": "importance",
+        }
+        candidate_labels = [label]
+        if candidate["topic"]:
+            candidate_labels.append({
+                "family": "CONTEXT_CUE",
+                "label": "TOPIC:" + candidate["topic"],
+                "score_dimension": "relevance",
+            })
+        proposal = build_classification_proposal(
+            packet, score,
+            proposal_id="proposal/" + packet["packet_id"],
+            producer_id="surge-llm-recognizer",
+            producer_version="0.1",
+            model_descriptor=str(getattr(self.recognizer.provider, "model", "provider-neutral")),
+            runtime_descriptor="surge-llm-semantic-runtime/0.2",
+            base_state_version=core.state_version,
+            candidate_labels=candidate_labels,
+            candidate_spans=[],
+        )
         evidence_id = "evidence/" + packet["packet_id"]
         nodes = [{"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []}]
         relations = []
@@ -165,7 +191,8 @@ class LLMSemanticRuntime:
         if topic:
             cluster_id = "cluster/" + packet["packet_id"]
             nodes.append({"id": cluster_id, "kind": "CLUSTER", "content": topic, "references": []})
-        accepted_claim = candidate["kind"] == "CLAIM" and score.decision != "ABSTAIN"
+        # REVIEW and ABSTAIN remain non-committing for resolved Claims.
+        accepted_claim = candidate["kind"] == "CLAIM" and score.decision == "ACCEPT"
         claim_id = "claim/" + packet["packet_id"]
         staged_claim = None
         if accepted_claim:
@@ -216,4 +243,5 @@ class LLMSemanticRuntime:
         return {"packet_id": packet["packet_id"], "admission": admission.status,
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
-                "cluster_id": cluster_id, "evidence_id": evidence_id}
+                "cluster_id": cluster_id, "evidence_id": evidence_id,
+                "proposal": proposal, "review_required": score.decision == "REVIEW"}
