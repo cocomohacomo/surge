@@ -16,8 +16,10 @@ class DependencyEngine {
  public:
   // Dependency node references are [prerequisite, dependent].
   static DependencyEvaluationResult evaluate(const std::map<std::string, GraphNode>& nodes,
+      const std::vector<std::string>& changed_nodes, std::size_t maximum_nodes);
+  static DependencyEvaluationResult evaluate(const std::map<std::string, GraphNode>& nodes,
       const std::vector<std::string>& changed_nodes, std::size_t maximum_nodes,
-      std::size_t maximum_predicate_operations = 65536);
+      std::size_t maximum_predicate_operations);
   static ImpactResult compute(const std::map<std::string, GraphNode>& nodes,
                               const std::vector<std::string>& changed_nodes,
                               std::size_t maximum_nodes);
