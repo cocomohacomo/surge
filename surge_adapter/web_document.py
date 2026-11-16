@@ -391,8 +391,8 @@ class WebDocumentRecognitionEngine:
                 "polarity":applicability.polarity,"topic":_normal(applicability.topic),
                 "conditions":sorted(_normal(x) for x in conditions),
                 "geography":_normal(geography),
-                "valid_from":_date_key(dates[0]) if dates else "",
-                "valid_to":_date_key(dates[1]) if len(dates)>1 else "",
+                "valid_from":_date_bounds(dates[0])[0] if dates else "",
+                "valid_to":_date_bounds(dates[1])[1] if len(dates)>1 else "",
                 "state":state,"modality":modality},ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             old = self.index.find_claim(signature)
             local_duplicate = seen_signatures.get(signature)
