@@ -130,14 +130,20 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
 }
 bool ContextGraph::replay(){
  State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
+ bool semantic_packet_waiting_for_delta=false;
  for(const auto& e:journal_->committed_events()){
   if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
+  if(e.kind=="SEMANTIC_PACKET_ADMITTED"){
+   if(have_meta||semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_ORDER_INVALID";return false;}
+   semantic_packet_waiting_for_delta=true;continue;
+  }
   if(e.kind=="RETRIEVAL_TICKET_ISSUED"||e.kind=="RETRIEVAL_TICKET_RESOLVED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
-   if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;continue;}
+   if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
   if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
+ if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
  if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}
  state_=std::move(rebuilt);
