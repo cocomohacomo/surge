@@ -39,3 +39,16 @@ been approved into ClaimValidity.
 
 Tests cover OPEN → RESOLVED → DEFERRED → OPEN, state-version control,
 and restart/replay persistence for a general contradiction Question.
+
+
+## Cross-origin conformance
+
+The same QuestionAspect lifecycle API applies to Questions created by the
+temporal boundary workflow and by ordinary Claim contradictions. The workflow
+status is intentionally separate from the temporal candidate ledger status.
+A temporal candidate may remain `RESOLVED_PENDING_APPROVAL` while its
+QuestionAspect is explicitly reopened for further review. Changing the
+QuestionAspect never approves or changes ClaimValidity.
+
+Conformance coverage exercises OPEN → RESOLVED → DEFERRED → OPEN for both
+origins, stale state-version rejection, and restart/replay persistence.
