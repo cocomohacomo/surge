@@ -1,9 +1,9 @@
 name: SURGE v0.9 conformance
 on:
   push:
-    branches: [main, "spec/**", "impl/**"]
+    branches: [main, "spec/**", "impl/**", "feat/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**"]
 jobs:
   cpp-core:
     runs-on: ubuntu-latest
