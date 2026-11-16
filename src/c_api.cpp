@@ -15,6 +15,7 @@
 #include <set>
 #include <vector>
 #include <cctype>
+#include <cmath>
 
 namespace {
 std::string json_quote(const std::string& value) {
@@ -682,6 +683,11 @@ int surge_question_get_aggregate_status(void* opaque, const char* question_id,
     catch (...) { copy_text(error, error_capacity, "QUESTION_AGGREGATE_GET_UNKNOWN_EXCEPTION"); return 0; }
 }
 
+
+
+int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->graph.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_get_state(void*o,const char*id,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}const auto&g=static_cast<Handle*>(o)->graph;auto n=g.nodes().find(id);if(n==g.nodes().end()||n->second.kind!=surge::NodeKind::Question){copy_text(err,ec,"QUESTION_NOT_FOUND");return 0;}auto s=g.question_memory_state(id);const char*name=s==surge::QuestionMemoryState::Active?"ACTIVE":s==surge::QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";std::string v=std::string("{\\"question_id\\":")+json_quote(id)+",\\"memory_state\\":"+json_quote(name)+",\\"state_version\\":"+std::to_string(g.state_version())+"}";if(req)*req=v.size()+1;if(!out||cap<v.size()+1){copy_text(err,ec,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,v);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_GET_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_recommendation(double a,double b,double c,double d,double e,double t,char*out,size_t cap,size_t*req,char*err,size_t ec){try{double x[]={a,b,c,d,e,t};for(double v:x)if(!std::isfinite(v)||v<0||v>1){copy_text(err,ec,"QUESTION_MEMORY_FACTOR_OUT_OF_RANGE");return 0;}double score=.30*a+.20*b+.25*c+.10*d+.15*e;const char*s=score<t?"DORMANT":"ACTIVE";std::ostringstream j;j.precision(8);j<<"{\\"retention_score\\":"<<score<<",\\"recommended_state\\":\\""<<s<<"\\",\\"weights\\":{\\"contradiction_strength\\":0.30,\\"focus_relevance\\":0.20,\\"unresolved_importance\\":0.25,\\"recency\\":0.10,\\"recurrence\\":0.15}}";auto v=j.str();if(req)*req=v.size()+1;if(!out||cap<v.size()+1){copy_text(err,ec,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,v);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_RECOMMENDATION_UNKNOWN_EXCEPTION");return 0;}}
 
 int surge_question_get_reevaluation_candidates(void* opaque, const char* question_id,
     size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,

@@ -81,6 +81,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_question_get_aggregate_status.restype = ctypes.c_int
+        lib.surge_question_memory_set_state.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_uint64,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_set_state.restype=ctypes.c_int
+        lib.surge_question_memory_get_state.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_get_state.restype=ctypes.c_int
+        lib.surge_question_memory_recommendation.argtypes=[ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_recommendation.restype=ctypes.c_int
         lib.surge_question_get_reevaluation_candidates.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -551,6 +557,23 @@ class SemanticCoreBridge(CppCoreBridge):
             (self._handle, question_id.encode()),
             "QUESTION_AGGREGATE_BUFFER_TOO_SMALL")
 
+
+    def get_question_memory_state(self, question_id: str) -> dict[str, Any]:
+        if not isinstance(question_id,str) or not question_id.strip(): raise PacketRejected("QUESTION_ID_REQUIRED")
+        return self._temporal_ledger_call(self._lib.surge_question_memory_get_state,(self._handle,question_id.encode()),"QUESTION_MEMORY_BUFFER_TOO_SMALL")
+
+    def set_question_memory_state(self, question_id: str, state: str, expected_state_version: int | None = None) -> int:
+        if not isinstance(question_id,str) or not question_id.strip(): raise PacketRejected("QUESTION_ID_REQUIRED")
+        if state not in ("ACTIVE","DORMANT","ARCHIVED"): raise PacketRejected("QUESTION_MEMORY_STATE_INVALID")
+        expected=self.state_version if expected_state_version is None else int(expected_state_version); error=ctypes.create_string_buffer(512)
+        ok=self._lib.surge_question_memory_set_state(self._handle,question_id.encode(),state.encode(),expected,error,len(error)); detail=error.value.decode("utf-8",errors="replace")
+        if not ok or detail: raise PacketRejected(detail or "QUESTION_MEMORY_STATE_UPDATE_REJECTED")
+        return self.state_version
+
+    def recommend_question_memory(self, contradiction_strength: float, focus_relevance: float, unresolved_importance: float, recency: float, recurrence: float, dormant_threshold: float=0.35) -> dict[str,Any]:
+        values=(contradiction_strength,focus_relevance,unresolved_importance,recency,recurrence,dormant_threshold)
+        if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not 0<=v<=1 for v in values): raise PacketRejected("QUESTION_MEMORY_FACTOR_OUT_OF_RANGE")
+        return self._temporal_ledger_call(self._lib.surge_question_memory_recommendation,values,"QUESTION_MEMORY_BUFFER_TOO_SMALL")
 
     def get_question_reevaluation_candidates(self, question_id: str,
                                              max_depth: int = 8,
