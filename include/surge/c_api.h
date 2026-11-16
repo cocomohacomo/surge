@@ -136,6 +136,10 @@ int surge_temporal_boundary_clear(void* handle, const char* transaction_id,
     size_t* required_capacity, char* error, size_t error_capacity);
 int surge_temporal_boundary_resolve_candidate(void* handle,const char* transaction_id,const char* idempotency_key,const char* event_id,uint64_t expected_state_version,const char* claim_id,const char* role,const char* candidate_id,char* output,size_t output_capacity,size_t* required_capacity,char* error,size_t error_capacity);
 size_t surge_temporal_boundary_pending_count(void* handle);
+int surge_temporal_question_get(void* handle, const char* claim_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+size_t surge_temporal_question_count(void* handle);
 
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);

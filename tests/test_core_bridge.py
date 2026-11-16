@@ -86,13 +86,23 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     valid_from="2026-03-01T00:00:00+09:00",
                     evidence_id="evidence/3", packet_id="packet/3")
                 self.assertEqual(conflict["status"], "BOUNDARY_CONFLICT_REVIEW_REQUIRED")
+                self.assertEqual(core.temporal_question_count, 1)
+                questions = core.get_temporal_questions("claim/bridge")
+                self.assertEqual(len(questions), 1)
+                self.assertEqual(questions[0]["status"], "OPEN")
+                self.assertEqual(questions[0]["candidate_ids"],
+                                 ["tb-event-1", "tb-event-3"])
+                self.assertEqual(questions[0]["evidence_ids"],
+                                 ["evidence/1", "evidence/3"])
                 self.assertEqual(len(conflict["pending"]["candidates"]), 3)
                 resolved = core.resolve_temporal_boundary_candidate(
                     transaction_id="tb-tx-4", idempotency_key="tb-idem-4",
-                    event_id="tb-event-4", expected_state_version=3,
+                    event_id="tb-event-4", expected_state_version=4,
                     claim_id="claim/bridge", role="VALID_FROM", candidate_id="tb-event-1")
                 self.assertEqual(resolved["status"], "CONFLICT_RESOLVED_PENDING_APPROVAL")
                 self.assertEqual(resolved["pending"]["valid_from"], "2026-04-01T00:00:00+09:00")
+                resolved_questions = core.get_temporal_questions("claim/bridge")
+                self.assertEqual(resolved_questions[0]["status"], "RESOLVED_PENDING_APPROVAL")
             with SemanticCoreBridge(journal) as recovered:
                 pending = recovered.get_temporal_boundary("claim/bridge")
                 self.assertEqual(pending["valid_from"], "2026-04-01T00:00:00+09:00")
@@ -100,11 +110,15 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(pending["packet_ids"], ["packet/1", "packet/2", "packet/3"])
                 self.assertEqual(pending["status"], "CONFLICT_RESOLVED_PENDING_APPROVAL")
                 self.assertEqual(len(pending["candidates"]), 3)
+                restored_questions = recovered.get_temporal_questions("claim/bridge")
+                self.assertEqual(restored_questions[0]["status"], "RESOLVED_PENDING_APPROVAL")
+                self.assertEqual(len(restored_questions[0]["candidate_ids"]), 2)
+                self.assertEqual(recovered.temporal_question_count, 1)
                 self.assertEqual([c["candidate_id"] for c in pending["candidates"] if c["selected"]],
                                  ["tb-event-1", "tb-event-2"])
                 cleared = recovered.clear_temporal_boundary(
                     transaction_id="tb-tx-5", idempotency_key="tb-idem-5",
-                    event_id="tb-event-5", expected_state_version=4,
+                    event_id="tb-event-5", expected_state_version=6,
                     claim_id="claim/bridge")
                 self.assertTrue(cleared["committed"])
                 self.assertIsNone(recovered.get_temporal_boundary("claim/bridge"))
