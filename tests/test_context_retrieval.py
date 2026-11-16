@@ -113,6 +113,11 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 record = ContextRetriever(recovered).dependency_evaluation(
                     "delta/dependency-evaluation")
                 self.assertEqual(record["delta_id"], "delta/dependency-evaluation")
+                self.assertEqual(record["status"], "CONVERGED")
+                self.assertGreaterEqual(record["iterations"], 1)
+                self.assertGreater(record["evaluation_cost"], 0)
+                self.assertEqual(record["diagnostic_error"], "")
+                self.assertIsInstance(record["cyclic_components"], list)
                 self.assertEqual(record["triggered"], [{
                     "dependency_id": "dependency/approval",
                     "prerequisite_id": "cluster/source",
