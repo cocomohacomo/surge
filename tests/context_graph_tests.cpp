@@ -149,6 +149,27 @@ int main(){
     assert(recovered.nodes().count("cluster-1")==1);
   }
   {
+    const auto legacy_path=(root/"legacy-dependency-evaluation.sgj").string();
+    {
+      EventJournal journal(legacy_path);assert(journal.open());
+      const auto committed=journal.commit("legacy-delta","legacy-idem",0,{
+        {"legacy-delta/meta","DELTA_META",
+         "\\"legacy-delta\\" \\"legacy-idem\\" 0 \\"legacy-fingerprint\\""},
+        {"legacy-delta/dependency-evaluation","DEPENDENCY_EVALUATION",
+         "\\"legacy-delta\\" 0 0 0"}
+      });
+      assert(committed.committed && committed.state_version==1);
+    }
+    {
+      ContextGraph recovered(legacy_path);assert(recovered.open());
+      assert(recovered.state_version()==1);
+      const auto found=recovered.dependency_evaluations().find("legacy-delta");
+      assert(found!=recovered.dependency_evaluations().end());
+      assert(found->second.status=="CONVERGED");
+      assert(found->second.iterations==0 && found->second.evaluation_cost==0);
+    }
+  }
+  {
     const auto diagnostic_path=(root/"deferred-diagnostic.sgj").string();
     {
       ContextGraph graph(diagnostic_path);assert(graph.open());
@@ -180,5 +201,5 @@ int main(){
     }
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 3 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 4 groups passed\n";
 }
