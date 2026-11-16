@@ -139,6 +139,152 @@ DependencyEvaluationResult DependencyEngine::evaluate(
   return result;
 }
 
+FixpointEvaluationResult DependencyEngine::evaluate_fixpoint(
+    const std::map<std::string, GraphNode>& nodes,
+    const std::vector<std::string>& roots,
+    std::size_t maximum_nodes,
+    std::size_t maximum_iterations,
+    std::size_t maximum_evaluations) {
+  FixpointEvaluationResult result;
+  if (roots.empty() || maximum_nodes == 0 || maximum_iterations == 0 ||
+      maximum_evaluations == 0) {
+    result.error = "DEPENDENCY_FIXPOINT_REQUEST_INVALID";
+    return result;
+  }
+
+  std::set<std::string> changed;
+  for (const auto& id : roots) {
+    if (!nodes.count(id)) {
+      result.status = FixpointStatus::Invalid;
+      result.error = "DEPENDENCY_TRIGGER_ROOT_NOT_FOUND";
+      return result;
+    }
+    changed.insert(id);
+  }
+
+  std::vector<const GraphNode*> dependencies;
+  std::map<std::string, DependencyPredicate> parsed;
+  for (const auto& item : nodes) {
+    const auto& dep = item.second;
+    if (dep.kind != NodeKind::Dependency) continue;
+    if (dep.references.size() != 2 || dep.references[0] == dep.references[1] ||
+        !nodes.count(dep.references[0]) || !nodes.count(dep.references[1])) {
+      result.status = FixpointStatus::Invalid;
+      result.error = "DEPENDENCY_RECORD_INVALID";
+      return result;
+    }
+    dependencies.push_back(&dep);
+    auto predicate = parse_predicate(dep.content);
+    if (!predicate.valid()) result.rejected_dependencies.push_back(dep.id);
+    parsed.emplace(dep.id, std::move(predicate));
+  }
+
+  std::set<std::string> fired;
+  auto matches = [&](const DependencyPredicate& predicate,
+                     const GraphNode& prerequisite) {
+    switch (predicate.kind) {
+      case DependencyPredicateKind::OnChange:
+        return changed.count(prerequisite.id) != 0;
+      case DependencyPredicateKind::Present:
+        return true;
+      case DependencyPredicateKind::ContentEquals:
+        return prerequisite.content == predicate.operand;
+      case DependencyPredicateKind::ContentContains:
+        return prerequisite.content.find(predicate.operand) != std::string::npos;
+      case DependencyPredicateKind::Kind:
+        switch (prerequisite.kind) {
+          case NodeKind::Cluster: return predicate.expected_node_kind == "CLUSTER";
+          case NodeKind::Entity: return predicate.expected_node_kind == "ENTITY";
+          case NodeKind::Evidence: return predicate.expected_node_kind == "EVIDENCE";
+          case NodeKind::Claim: return predicate.expected_node_kind == "CLAIM";
+          case NodeKind::Question: return predicate.expected_node_kind == "QUESTION";
+          case NodeKind::QuestionAspect: return predicate.expected_node_kind == "QUESTION_ASPECT";
+          case NodeKind::Dependency: return predicate.expected_node_kind == "DEPENDENCY";
+          case NodeKind::Interest: return predicate.expected_node_kind == "INTEREST";
+        }
+        return false;
+      case DependencyPredicateKind::Invalid:
+        return false;
+    }
+    return false;
+  };
+
+  // Level-triggered predicates can activate dependencies even when their
+  // prerequisite is not one of the caller's changed roots. Include those
+  // prerequisites when computing the potential impact and SCC closure.
+  std::vector<std::string> topology_roots = roots;
+  for (const auto* dep : dependencies) {
+    const auto predicate = parsed.find(dep->id);
+    if (predicate == parsed.end() || !predicate->second.valid() ||
+        predicate->second.kind == DependencyPredicateKind::OnChange) continue;
+    const auto prerequisite = nodes.find(dep->references[0]);
+    if (prerequisite != nodes.end() &&
+        matches(predicate->second, prerequisite->second)) {
+      topology_roots.push_back(prerequisite->first);
+    }
+  }
+  const auto topology = compute(nodes, topology_roots, maximum_nodes);
+  if (!topology.complete) {
+    result.status = topology.error == "IMPACT_ROOT_NOT_FOUND"
+        ? FixpointStatus::Invalid : FixpointStatus::Deferred;
+    result.error = topology.error;
+    result.impacted_nodes = topology.impacted_nodes;
+    return result;
+  }
+  result.cyclic_components = topology.cyclic_components;
+
+  for (;;) {
+    if (result.iterations >= maximum_iterations) {
+      result.status = FixpointStatus::Deferred;
+      result.error = "DEPENDENCY_FIXPOINT_ITERATION_BUDGET_EXCEEDED";
+      break;
+    }
+    ++result.iterations;
+    bool changed_this_round = false;
+    for (const auto* dep : dependencies) {
+      if (fired.count(dep->id)) continue;
+      const auto predicate = parsed.find(dep->id);
+      if (predicate == parsed.end() || !predicate->second.valid()) continue;
+      if (result.evaluation_cost >= maximum_evaluations) {
+        result.status = FixpointStatus::Deferred;
+        result.error = "DEPENDENCY_FIXPOINT_EVALUATION_BUDGET_EXCEEDED";
+        result.impacted_nodes.assign(changed.begin(), changed.end());
+        result.triggered_dependencies.assign(fired.begin(), fired.end());
+        return result;
+      }
+      ++result.evaluation_cost;
+      const auto prerequisite = nodes.find(dep->references[0]);
+      if (prerequisite == nodes.end()) {
+        result.status = FixpointStatus::Invalid;
+        result.error = "DEPENDENCY_PREREQUISITE_NOT_FOUND";
+        return result;
+      }
+      if (!matches(predicate->second, prerequisite->second)) continue;
+      fired.insert(dep->id);
+      const auto inserted = changed.insert(dep->references[1]).second;
+      if (inserted) {
+        if (changed.size() > maximum_nodes) {
+          result.status = FixpointStatus::Deferred;
+          result.error = "DEPENDENCY_FIXPOINT_NODE_BUDGET_EXCEEDED";
+          result.impacted_nodes.assign(changed.begin(), changed.end());
+          result.triggered_dependencies.assign(fired.begin(), fired.end());
+          return result;
+        }
+        changed_this_round = true;
+      }
+    }
+    if (!changed_this_round) {
+      result.status = FixpointStatus::Converged;
+      result.error.clear();
+      break;
+    }
+  }
+
+  result.triggered_dependencies.assign(fired.begin(), fired.end());
+  result.impacted_nodes.assign(changed.begin(), changed.end());
+  return result;
+}
+
 ImpactResult DependencyEngine::compute(const std::map<std::string, GraphNode>& nodes,
                                         const std::vector<std::string>& changed,
                                         std::size_t maximum_nodes) {

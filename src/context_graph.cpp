@@ -221,9 +221,12 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  const auto fp_value=fingerprint(d);
  events=encode(d,fp_value);
  if(has_dependencies&&!changed.empty()){
-  const auto evaluation=DependencyEngine::evaluate(staged.nodes,
-      std::vector<std::string>(changed.begin(),changed.end()),4096);
-  if(!evaluation.complete){error=evaluation.error.empty()?"DEPENDENCY_EVALUATION_FAILED":evaluation.error;events.clear();return false;}
+  const auto evaluation=DependencyEngine::evaluate_fixpoint(staged.nodes,
+      std::vector<std::string>(changed.begin(),changed.end()),4096,4096,1000000);
+  if(evaluation.status!=FixpointStatus::Converged){
+   error=evaluation.error.empty()?"DEPENDENCY_FIXPOINT_DEFERRED":evaluation.error;
+   events.clear();return false;
+  }
   DependencyEvaluationRecord record;record.delta_id=d.delta_id;
   record.impacted_nodes=evaluation.impacted_nodes;
   record.rejected_dependencies=evaluation.rejected_dependencies;

@@ -80,5 +80,40 @@ int main(){
   assert(std::find(malformed.triggered_dependencies.begin(),
       malformed.triggered_dependencies.end(), "dep-empty-equals") ==
       malformed.triggered_dependencies.end());
-  std::cout<<"SURGE DependencyEngine tests: 9 groups passed\n";
+  auto fixed = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 10, 100);
+  assert(fixed.status == FixpointStatus::Converged);
+  assert(fixed.iterations >= 1 && fixed.iterations <= 10);
+  assert(fixed.evaluation_cost > 0 && fixed.evaluation_cost <= 100);
+  assert((fixed.triggered_dependencies == std::vector<std::string>{
+      "dep-1", "dep-2", "dep-3", "dep-5"}));
+  assert((fixed.cyclic_components[0] == std::vector<std::string>{"B", "C", "D"}));
+  auto level_nodes = eval_nodes;
+  level_nodes.emplace("F", GraphNode{"F", NodeKind::Cluster, "present source", {}});
+  level_nodes.emplace("G", GraphNode{"G", NodeKind::Cluster, "level target", {}});
+  level_nodes.emplace("H", GraphNode{"H", NodeKind::Claim, "cycle target", {}});
+  level_nodes.emplace("dep-level-present", GraphNode{"dep-level-present", NodeKind::Dependency,
+      "PRESENT", {"F", "G"}});
+  level_nodes.emplace("dep-level-gh", GraphNode{"dep-level-gh", NodeKind::Dependency,
+      "ON_CHANGE", {"G", "H"}});
+  level_nodes.emplace("dep-level-hg", GraphNode{"dep-level-hg", NodeKind::Dependency,
+      "ON_CHANGE", {"H", "G"}});
+  auto level_fixed = DependencyEngine::evaluate_fixpoint(level_nodes, {"A"}, 20, 10, 200);
+  assert(level_fixed.status == FixpointStatus::Converged);
+  assert(std::find(level_fixed.impacted_nodes.begin(), level_fixed.impacted_nodes.end(), "G") != level_fixed.impacted_nodes.end());
+  assert(std::find(level_fixed.impacted_nodes.begin(), level_fixed.impacted_nodes.end(), "H") != level_fixed.impacted_nodes.end());
+  assert(std::find(level_fixed.cyclic_components.begin(), level_fixed.cyclic_components.end(),
+      std::vector<std::string>{"G", "H"}) != level_fixed.cyclic_components.end());
+  auto iteration_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 1, 100);
+  assert(iteration_deferred.status == FixpointStatus::Deferred);
+  assert(iteration_deferred.error == "DEPENDENCY_FIXPOINT_ITERATION_BUDGET_EXCEEDED");
+  auto cost_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 10, 1);
+  assert(cost_deferred.status == FixpointStatus::Deferred);
+  assert(cost_deferred.error == "DEPENDENCY_FIXPOINT_EVALUATION_BUDGET_EXCEEDED");
+  auto node_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 2, 10, 100);
+  assert(node_deferred.status == FixpointStatus::Deferred);
+  assert(node_deferred.error == "IMPACT_BUDGET_EXCEEDED");
+  auto invalid_fixpoint = DependencyEngine::evaluate_fixpoint(eval_nodes, {"MISSING"}, 10, 10, 100);
+  assert(invalid_fixpoint.status == FixpointStatus::Invalid);
+  assert(invalid_fixpoint.error == "IMPACT_ROOT_NOT_FOUND");
+  std::cout<<"SURGE DependencyEngine tests: 10 groups passed\n";
 }
