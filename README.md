@@ -123,4 +123,7 @@ Public visibility does not itself grant such a license. See
 See the [public release readiness checklist](docs/PUBLIC_RELEASE_CHECKLIST.md),
 the [audit report](docs/PUBLIC_RELEASE_AUDIT_REPORT.md), and the
 [owner protection settings](docs/OWNER_PROTECTION_SETTINGS.md) for
-pre-publication security review.
+SURGE's completed publication record. To repeat the same process on another
+repository, use the reusable
+[public release template](docs/public-release-template/README.md) and
+`tools/verify_public_release_settings.py`.
