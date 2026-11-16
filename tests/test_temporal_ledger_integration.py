@@ -1,5 +1,6 @@
 import unittest
 from surge_adapter.temporal_ledger_integration import persist_temporal_binding
+from surge_adapter.packet_ingest import PacketRejected
 
 class FakeCore:
     state_version = 7
@@ -40,7 +41,7 @@ class TemporalLedgerIntegrationTests(unittest.TestCase):
     def test_core_rejection_is_reported_without_raising_or_claim_write(self):
         class RejectingCore(FakeCore):
             def add_temporal_boundary(self, **kwargs):
-                raise ValueError("BOUNDARY_CONFLICT_REVIEW_REQUIRED")
+                raise PacketRejected("BOUNDARY_CONFLICT_REVIEW_REQUIRED")
         core = RejectingCore()
         result = persist_temporal_binding(core, self.binding(), packet_id="p1")
         self.assertFalse(result["persisted"])
