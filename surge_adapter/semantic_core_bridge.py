@@ -1,6 +1,7 @@
 """ctypes access to the journal-backed C++ ContextGraph SemanticDelta API."""
 from __future__ import annotations
 import ctypes
+import json
 from typing import Any
 from surge_adapter.packet_ingest import Admission, CppCoreBridge, PacketRejected, normalize_source
 
@@ -68,6 +69,10 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_context_graph_apply_scoped.restype = ctypes.c_int
         lib.surge_context_graph_scope_count.argtypes = [ctypes.c_void_p]
         lib.surge_context_graph_scope_count.restype = ctypes.c_size_t
+        lib.surge_context_graph_dependency_evaluation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_dependency_evaluation.restype = ctypes.c_int
         lib.surge_context_graph_apply.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
@@ -166,6 +171,33 @@ class SemanticCoreBridge(CppCoreBridge):
             range_digest=range_digest, canonical_request_digest=request_digest)
         return admission, {"committed": True, "duplicate": bool(duplicate.value),
                            "state_version": int(version.value)}
+
+
+    def dependency_evaluation(self, delta_id: str) -> dict[str, Any]:
+        """Return the durable dependency evaluation for one committed SemanticDelta."""
+        required = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(256)
+        fn = self._lib.surge_context_graph_dependency_evaluation
+        ok = fn(self._handle, str(delta_id).encode("utf-8"), None, 0,
+                ctypes.byref(required), error, len(error))
+        if ok or error.value.decode("utf-8", errors="replace") != \
+                "DEPENDENCY_EVALUATION_BUFFER_TOO_SMALL":
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "DEPENDENCY_EVALUATION_READ_FAILED")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(256)
+        ok = fn(self._handle, str(delta_id).encode("utf-8"), output, len(output),
+                ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "DEPENDENCY_EVALUATION_READ_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("DEPENDENCY_EVALUATION_JSON_INVALID") from exc
+        if not isinstance(value, dict) or value.get("delta_id") != delta_id:
+            raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID")
+        return value
 
     def apply_semantic_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         required = {"delta_id", "idempotency_key", "expected_state_version",

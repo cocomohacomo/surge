@@ -89,3 +89,15 @@ ordered by dependency and risk.
 A backlog item is complete only when its implementation, regression tests,
 documentation, and CI result are available. A PR being open or code merely
 being drafted does not count as completion.
+
+
+## Progress update
+
+The first P0 Core transaction increment is carried into
+`fix/atomic-dependency-transaction-main-sync` from the earlier PR #29 work,
+rebased at the current main state. Dependency evaluation results are journaled
+atomically with SemanticDelta and restored on replay. Restart, idempotency,
+and atomic packet + semantic tests are included. Completion remains pending
+the CI result for this main-synchronized branch and merge. C ABI/Python result
+exposure, fine-grained predicate-operation budgets, and fault-injection
+verification remain open.

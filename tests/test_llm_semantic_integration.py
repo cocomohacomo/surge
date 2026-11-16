@@ -127,6 +127,39 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertEqual(core.scope_count,0)
 
 
+    def test_dependency_evaluation_is_exposed_and_replayed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "dependency-api.sgj"
+            delta = {
+                "delta_id": "dependency-api-delta",
+                "idempotency_key": "dependency-api-idem",
+                "expected_state_version": 0,
+                "nodes": [
+                    {"id": "prerequisite", "kind": "CLUSTER", "content": "ready", "references": []},
+                    {"id": "dependent", "kind": "CLUSTER", "content": "pending", "references": []},
+                    {"id": "dependency", "kind": "DEPENDENCY",
+                     "content": "CONTENT_EQUALS:ready",
+                     "references": ["prerequisite", "dependent"]}
+                ],
+                "relations": []
+            }
+            with SemanticCoreBridge(journal) as core:
+                committed = core.apply_semantic_delta(delta)
+                self.assertTrue(committed["committed"])
+                record = core.dependency_evaluation("dependency-api-delta")
+                self.assertEqual(record["delta_id"], "dependency-api-delta")
+                self.assertEqual(record["triggered"], [{
+                    "dependency_id": "dependency",
+                    "prerequisite_id": "prerequisite",
+                    "dependent_id": "dependent"
+                }])
+                self.assertIn("dependent", record["impacted_nodes"])
+                self.assertEqual(record["rejected_dependencies"], [])
+            with SemanticCoreBridge(journal) as recovered:
+                replayed = recovered.dependency_evaluation("dependency-api-delta")
+                self.assertEqual(replayed["triggered"][0]["dependency_id"], "dependency")
+                self.assertEqual(recovered.state_version, 1)
+
     def _atomic_scope_case(self, core, source, exact_text):
         packet = LLMSemanticRuntime._packet(source, "ctx-scope", "source-scope", "scope-gen", 1)
         packet_id = packet["packet_id"]

@@ -62,3 +62,61 @@ from a valid predicate whose condition currently evaluates to false.
 Conformance tests cover all four malformed forms. This remains a pure
 snapshot evaluator; durable transaction integration is still a separate
 required refactor.
+
+
+## v0.3: transaction-bound dependency evaluation
+
+The Core transaction preparation path now stages the SemanticDelta against a
+copy of the current graph, derives changed graph-node references from added
+nodes, relation endpoints, ScopeSpan targets/antecedents, and Focus, then
+evaluates dependencies against that staged post-delta snapshot.
+
+A successful evaluation is encoded as one `DEPENDENCY_EVALUATION` journal
+event and appended to the same event vector as `DELTA_META`, node/relation/
+scope/focus events. This means standalone SemanticDelta commits and atomic
+RecognitionPacket + SemanticDelta commits both carry dependency outcomes in
+the same EventJournal transaction.
+
+The durable record contains the delta ID, triggered dependency IDs and their
+prerequisite/dependent endpoints, impacted node IDs, and rejected dependency
+IDs. Replay validates every referenced node and dependency endpoint before
+restoring the record. Dependency evaluation does not create an external action
+or choose a semantic winner.
+
+The transaction preparation logic is shared by `apply` and
+`prepare_events`; the latter is the path used by atomic packet admission.
+A bounded evaluation budget of 4096 impacted nodes is enforced. If evaluation
+fails or exceeds budget, the whole semantic transaction is rejected before
+journal commit. Duplicate idempotent deltas do not create a second evaluation
+record.
+
+Conformance coverage verifies trigger generation, malformed predicate
+rejection, idempotent retry, and restart replay. The C ABI/Python exposure of
+these records, fine-grained predicate-operation budgets, and crash/fault
+injection remain subsequent work.
+
+
+## v0.4: Durable evaluation read API
+
+The C ABI now exposes a read-only lookup for a committed evaluation record:
+
+- Function: surge_context_graph_dependency_evaluation(handle, delta_id, output, output_capacity, required_capacity, error, error_capacity)
+
+The response is JSON with:
+- delta_id;
+- triggered: dependency ID plus prerequisite and dependent endpoint IDs;
+- impacted_nodes: the deterministic impacted-node set;
+- rejected_dependencies: dependency IDs rejected by strict predicate validation.
+
+The caller must provide the exact SemanticDelta ID. A missing record returns
+DEPENDENCY_EVALUATION_NOT_FOUND. If the output buffer is absent or too small,
+the function returns DEPENDENCY_EVALUATION_BUFFER_TOO_SMALL and reports the
+required capacity including the terminating NUL byte. The API is read-only and
+does not rerun evaluation.
+
+The Python SemanticCoreBridge.dependency_evaluation(delta_id) method wraps
+this API, parses the JSON response, and raises PacketRejected for missing,
+malformed, or inconsistent records. The same method works after journal
+recovery, so callers can inspect the persisted result without re-evaluating
+the dependency graph.
+

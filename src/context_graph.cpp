@@ -1,7 +1,9 @@
 #include "surge/context_graph.hpp"
 #include "surge/scope_validator.hpp"
+#include "surge/dependency_engine.hpp"
 #include <iomanip>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <utility>
 
@@ -24,6 +26,18 @@ bool decode_scope(const std::string& p,AddScopeSpan& add){std::istringstream i(p
 std::string encode_focus(const FocusRecord& f){std::ostringstream o;o<<std::quoted(f.cluster_id)<<' '<<std::quoted(f.interest_id);return o.str();}
 bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);std::string extra;if(!(i>>std::quoted(f.cluster_id)>>std::quoted(f.interest_id)))return false;return !(i>>extra);}
 std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
+std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
+ std::ostringstream out;
+ out << std::quoted(r.delta_id) << ' ' << r.triggered.size();
+ for (const auto& item : r.triggered)
+  out << ' ' << std::quoted(item.dependency_id) << ' '
+      << std::quoted(item.prerequisite_id) << ' ' << std::quoted(item.dependent_id);
+ out << ' ' << r.impacted_nodes.size();
+ for (const auto& id : r.impacted_nodes) out << ' ' << std::quoted(id);
+ out << ' ' << r.rejected_dependencies.size();
+ for (const auto& id : r.rejected_dependencies) out << ' ' << std::quoted(id);
+ return out.str();
+}
 } // namespace
 
 ContextGraph::ContextGraph(std::string p):owned_journal_(std::make_unique<EventJournal>(std::move(p))),journal_(owned_journal_.get()){}
@@ -32,11 +46,19 @@ bool ContextGraph::open(){if(!journal_||!journal_->open())return false;return re
 
 bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
  if(n.id.empty()||(n.content.empty()&&n.kind!=NodeKind::Dependency)||s.nodes.count(n.id)){e="NODE_ID_OR_CONTENT_INVALID";return false;}
- auto ref_kind=[&](std::size_t x,NodeKind k){return x<n.references.size()&&s.nodes.count(n.references[x])&&s.nodes.at(n.references[x]).kind==k;};
+ auto ref_kind=[&](std::size_t x,NodeKind k){
+  if(x>=n.references.size())return false;
+  const auto found=s.nodes.find(n.references[x]);
+  return found!=s.nodes.end()&&found->second.kind==k;
+ };
  for(const auto& r:n.references)if(!s.nodes.count(r)){e="NODE_REFERENCE_NOT_FOUND";return false;}
  switch(n.kind){
  case NodeKind::Cluster:case NodeKind::Entity:case NodeKind::Evidence:case NodeKind::Question:if(!n.references.empty()){e="NODE_REFERENCE_SHAPE_INVALID";return false;}break;
- case NodeKind::Claim:if(n.references.empty()){e="CLAIM_REQUIRES_EVIDENCE";return false;}for(const auto& r:n.references)if(s.nodes.at(r).kind!=NodeKind::Evidence){e="CLAIM_EVIDENCE_REF_INVALID";return false;}break;
+ case NodeKind::Claim:
+  if(n.references.empty()){e="CLAIM_REQUIRES_EVIDENCE";return false;}
+  for(const auto& r:n.references){const auto found=s.nodes.find(r);
+   if(found==s.nodes.end()||found->second.kind!=NodeKind::Evidence){e="CLAIM_EVIDENCE_REF_INVALID";return false;}}
+  break;
  case NodeKind::QuestionAspect:if(n.references.size()!=1||!ref_kind(0,NodeKind::Question)){e="QUESTION_ASPECT_PARENT_INVALID";return false;}break;
  case NodeKind::Dependency:if(n.references.size()!=2||n.references[0]==n.references[1]){e="DEPENDENCY_ENDPOINTS_INVALID";return false;}break;
  case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!ref_kind(1,NodeKind::Cluster)){e="INTEREST_TARGET_INVALID";return false;}break;
@@ -45,7 +67,9 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
 bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e)const{
  if(r.id.empty()||s.relations.count(r.id)){e="RELATION_ID_INVALID_OR_DUPLICATE";return false;}
  if(r.from==r.to||!s.nodes.count(r.from)||!s.nodes.count(r.to)){e="RELATION_ENDPOINT_INVALID";return false;}
- auto a=s.nodes.at(r.from).kind,b=s.nodes.at(r.to).kind;
+ const auto from=s.nodes.find(r.from),to=s.nodes.find(r.to);
+ if(from==s.nodes.end()||to==s.nodes.end()){e="RELATION_ENDPOINT_INVALID";return false;}
+ auto a=from->second.kind,b=to->second.kind;
  switch(r.kind){case RelationKind::Supports:case RelationKind::Contradicts:if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim)){e="CLUSTER_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;case RelationKind::DependsOn:break;}
@@ -58,8 +82,15 @@ bool ContextGraph::apply_scope_span(State& s,const AddScopeSpan& add,std::string
  s.scope_spans.emplace(add.span.span_id,ScopeSpanRecord{add.span,result.status,result.effect,result.may_emit_unconditional_claim});return true;
 }
 bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
- if(!s.nodes.count(f.cluster_id)||s.nodes.at(f.cluster_id).kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
- if(!f.interest_id.empty()&&(!s.nodes.count(f.interest_id)||s.nodes.at(f.interest_id).kind!=NodeKind::Interest||s.nodes.at(f.interest_id).references[1]!=f.cluster_id)){e="FOCUS_INTEREST_INVALID";return false;}
+ const auto cluster=s.nodes.find(f.cluster_id);
+ if(cluster==s.nodes.end()||cluster->second.kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
+ if(!f.interest_id.empty()){
+  const auto interest=s.nodes.find(f.interest_id);
+  if(interest==s.nodes.end()||interest->second.kind!=NodeKind::Interest||
+     interest->second.references.size()!=2||interest->second.references[1]!=f.cluster_id){
+   e="FOCUS_INTEREST_INVALID";return false;
+  }
+ }
  s.focus=f;s.focus_history.push_back(f);return true;
 }
 std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
@@ -84,59 +115,152 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
- if(e.kind=="QUESTION_ASPECT_STATUS_SET"){std::istringstream in(e.payload);std::string id,status,extra;if(!(in>>std::quoted(id)>>status)||(in>>extra)||!s.nodes.count(id)||s.nodes.at(id).kind!=NodeKind::QuestionAspect){error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}QuestionAspectStatus value;if(status=="OPEN")value=QuestionAspectStatus::Open;else if(status=="RESOLVED")value=QuestionAspectStatus::Resolved;else if(status=="DEFERRED")value=QuestionAspectStatus::Deferred;else{error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}s.question_aspect_statuses[id]=value;return true;}
+ if(e.kind=="DEPENDENCY_EVALUATION"){
+  std::istringstream in(e.payload); DependencyEvaluationRecord record;
+  std::size_t count=0;
+  if(!(in>>std::quoted(record.delta_id)>>count)||record.delta_id.empty()||
+     count>4096||s.dependency_evaluations.count(record.delta_id)){
+   error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+  }
+  for(std::size_t i=0;i<count;++i){
+   DependencyTrigger trigger;
+   if(!(in>>std::quoted(trigger.dependency_id)>>std::quoted(trigger.prerequisite_id)>>
+        std::quoted(trigger.dependent_id))||
+      !s.nodes.count(trigger.dependency_id)){
+    error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+   }
+   const auto dependency=s.nodes.find(trigger.dependency_id);
+   if(dependency->second.kind!=NodeKind::Dependency||
+      dependency->second.references.size()!=2||
+      dependency->second.references[0]!=trigger.prerequisite_id||
+      dependency->second.references[1]!=trigger.dependent_id){
+    error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+   }
+   record.triggered.push_back(std::move(trigger));
+  }
+  if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
+  for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||!s.nodes.count(id)){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
+  if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
+  for(std::size_t i=0;i<count;++i){
+   std::string id;if(!(in>>std::quoted(id))){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
+   const auto dependency=s.nodes.find(id);
+   if(dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
+   record.rejected_dependencies.push_back(std::move(id));
+  }
+  std::string extra;if(in>>extra){error="JOURNAL_DEPENDENCY_EVALUATION_TRAILING_DATA";return false;}
+  s.dependency_evaluations.emplace(record.delta_id,std::move(record));return true;
+ }
+ if(e.kind=="QUESTION_ASPECT_STATUS_SET"){
+  std::istringstream in(e.payload);std::string id,status,extra;
+  if(!(in>>std::quoted(id)>>status)||(in>>extra)){error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}
+  const auto aspect=s.nodes.find(id);
+  if(aspect==s.nodes.end()||aspect->second.kind!=NodeKind::QuestionAspect){error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}
+  QuestionAspectStatus value;if(status=="OPEN")value=QuestionAspectStatus::Open;else if(status=="RESOLVED")value=QuestionAspectStatus::Resolved;else if(status=="DEFERRED")value=QuestionAspectStatus::Deferred;else{error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}
+  s.question_aspect_statuses[id]=value;return true;
+ }
  error="JOURNAL_EVENT_KIND_UNKNOWN";return false;
 }
 bool ContextGraph::replay(){
  State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
+ bool semantic_packet_waiting_for_delta=false;
  for(const auto& e:journal_->committed_events()){
   if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
+  if(e.kind=="SEMANTIC_PACKET_ADMITTED"){
+   // A committed semantic packet closes the preceding delta transaction.
+   // Without advancing here, the next packet is incorrectly treated as
+   // overlapping the still-open DELTA_META from the previous transaction.
+   if(have_meta){++version;have_meta=false;}
+   if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_ORDER_INVALID";return false;}
+   semantic_packet_waiting_for_delta=true;continue;
+  }
   if(e.kind=="RETRIEVAL_TICKET_ISSUED"||e.kind=="RETRIEVAL_TICKET_RESOLVED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
-   if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;continue;}
+   if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
   if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
+ if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
  if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}
  state_=std::move(rebuilt);
  return true;
 }
 
-bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEvent>& events,std::string& error)const{
- events.clear();error.clear();
- if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
+bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
+    std::vector<JournalEvent>& events, std::string& error) const {
+ events.clear(); error.clear();
+ if(d.delta_id.empty()||d.idempotency_key.empty()||
+    (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
  const auto old=idempotency_.find(d.idempotency_key);
  if(old!=idempotency_.end()){
-  if(old->second==fp)return true;
+  if(old->second==fp){staged=state_;return true;}
   error="IDEMPOTENCY_KEY_REUSED";return false;
  }
  if(d.expected_state_version!=state_version()){error="STATE_VERSION_CONFLICT";return false;}
- State staged=state_;
+ staged=state_;
  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
  for(const auto& scope:d.scope_spans)if(!apply_scope_span(staged,scope,error))return false;
  if(d.focus&&!apply_focus(staged,d.focus->focus,error))return false;
- events=encode(d,fp);
+
+ std::set<std::string> changed;
+ auto add_if_node=[&](const std::string& id){if(staged.nodes.count(id))changed.insert(id);};
+ for(const auto& n:d.nodes){
+  add_if_node(n.node.id);
+  // A newly introduced dependency must be evaluated against its current prerequisite.
+  if(n.node.kind==NodeKind::Dependency&&!n.node.references.empty())
+   add_if_node(n.node.references[0]);
+ }
+ for(const auto& r:d.relations){add_if_node(r.relation.from);add_if_node(r.relation.to);}
+ for(const auto& scope:d.scope_spans){
+  for(const auto& id:scope.span.target_refs)add_if_node(id);
+  for(const auto& id:scope.span.antecedent_refs)add_if_node(id);
+ }
+ if(d.focus){add_if_node(d.focus->focus.cluster_id);add_if_node(d.focus->focus.interest_id);}
+ bool has_dependencies=false;
+ for(const auto& item:staged.nodes)if(item.second.kind==NodeKind::Dependency){has_dependencies=true;break;}
+ const auto fp_value=fingerprint(d);
+ events=encode(d,fp_value);
+ if(has_dependencies&&!changed.empty()){
+  const auto evaluation=DependencyEngine::evaluate(staged.nodes,
+      std::vector<std::string>(changed.begin(),changed.end()),4096);
+  if(!evaluation.complete){error=evaluation.error.empty()?"DEPENDENCY_EVALUATION_FAILED":evaluation.error;events.clear();return false;}
+  DependencyEvaluationRecord record;record.delta_id=d.delta_id;
+  record.impacted_nodes=evaluation.impacted_nodes;
+  record.rejected_dependencies=evaluation.rejected_dependencies;
+  for(const auto& id:evaluation.triggered_dependencies){
+   const auto dep_it=staged.nodes.find(id);
+   if(dep_it==staged.nodes.end()||dep_it->second.kind!=NodeKind::Dependency||
+      dep_it->second.references.size()!=2){
+    error="DEPENDENCY_TRIGGER_RECORD_INVALID";events.clear();return false;
+   }
+   const auto& dep=dep_it->second;
+   record.triggered.push_back({id,dep.references[0],dep.references[1]});
+  }
+  staged.dependency_evaluations[d.delta_id]=record;
+  events.push_back({d.delta_id+"/dependency-evaluation","DEPENDENCY_EVALUATION",
+      encode_dependency_evaluation(record)});
+ }
  return true;
 }
 
+bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEvent>& events,std::string& error)const{
+ State staged;
+ return prepare_transaction(d,staged,events,error);
+}
+
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
- if(d.delta_id.empty()||d.idempotency_key.empty()||(d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus))return {false,false,state_version(),"DELTA_EMPTY_OR_ID_INVALID"};
- const auto fp=fingerprint(d);auto old=idempotency_.find(d.idempotency_key);
- if(old!=idempotency_.end()){if(old->second==fp)return {true,true,state_version(),{}};return {false,false,state_version(),"IDEMPOTENCY_KEY_REUSED"};}
- if(d.expected_state_version!=state_version())return {false,false,state_version(),"STATE_VERSION_CONFLICT"};
- State staged=state_;std::string error;
- for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return {false,false,state_version(),error};
- for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return {false,false,state_version(),error};
- for(const auto& s:d.scope_spans)if(!apply_scope_span(staged,s,error))return {false,false,state_version(),error};
- if(d.focus&&!apply_focus(staged,d.focus->focus,error))return {false,false,state_version(),error};
- auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,encode(d,fp));
+ State staged;std::vector<JournalEvent> events;std::string error;
+ if(!prepare_transaction(d,staged,events,error))
+  return {false,false,state_version(),error};
+ if(events.empty())return {true,true,state_version(),{}};
+ const auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,events);
  if(!committed.committed)return {false,false,state_version(),committed.error};
- state_=std::move(staged);idempotency_[d.idempotency_key]=fp;return {true,committed.duplicate,state_version(),{}};
+ state_=std::move(staged);idempotency_[d.idempotency_key]=fingerprint(d);
+ return {true,committed.duplicate,state_version(),{}};
 }
 
 QuestionAspectStatus ContextGraph::question_aspect_status(const std::string& id) const {
@@ -148,7 +272,8 @@ QuestionAspectStatus ContextGraph::question_aspect_status(const std::string& id)
 bool ContextGraph::set_question_aspect_status(const std::string& id,
     QuestionAspectStatus status, std::uint64_t expected, std::string& error) {
   error.clear();
-  if (!state_.nodes.count(id) || state_.nodes.at(id).kind != NodeKind::QuestionAspect) {
+  const auto aspect = state_.nodes.find(id);
+  if (aspect == state_.nodes.end() || aspect->second.kind != NodeKind::QuestionAspect) {
     error = "QUESTION_ASPECT_NOT_FOUND"; return false;
   }
   if (question_aspect_status(id) == status) return true;
