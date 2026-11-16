@@ -59,10 +59,18 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     return false;
   };
   auto known = [](const std::string& expr) {
-    return expr.empty() || expr == "ON_CHANGE" || expr == "PRESENT" ||
-      expr.compare(0, 15, "CONTENT_EQUALS:") == 0 ||
-      expr.compare(0, 17, "CONTENT_CONTAINS:") == 0 ||
-      expr.compare(0, 5, "KIND:") == 0;
+    if (expr.empty() || expr == "ON_CHANGE" || expr == "PRESENT") return true;
+    const std::string eq = "CONTENT_EQUALS:";
+    if (expr.compare(0, eq.size(), eq) == 0) return expr.size() > eq.size();
+    const std::string contains = "CONTENT_CONTAINS:";
+    if (expr.compare(0, contains.size(), contains) == 0)
+      return expr.size() > contains.size();
+    const std::string kind = "KIND:";
+    if (expr.compare(0, kind.size(), kind) != 0) return false;
+    const auto value = expr.substr(kind.size());
+    return value == "CLUSTER" || value == "ENTITY" || value == "EVIDENCE" ||
+      value == "CLAIM" || value == "QUESTION" || value == "QUESTION_ASPECT" ||
+      value == "DEPENDENCY" || value == "INTEREST";
   };
   std::set<std::string> fired, rejected;
   for (const auto* dep : dependencies) if (!known(dep->content)) rejected.insert(dep->id);
