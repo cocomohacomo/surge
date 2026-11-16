@@ -118,3 +118,6 @@ reserved by the applicable rightsholders. No general permission is granted to
 use, modify, redistribute, sublicense, or sell the code or documentation.
 Public visibility does not itself grant such a license. See
 [Publication and reuse policy](docs/PUBLICATION_POLICY.md).
+
+
+See the [public release readiness checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) for the remaining pre-publication security review.
