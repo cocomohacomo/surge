@@ -66,5 +66,21 @@ int main(){
   assert(std::find(malformed.triggered_dependencies.begin(),
       malformed.triggered_dependencies.end(), "dep-empty-equals") ==
       malformed.triggered_dependencies.end());
-  std::cout<<"SURGE DependencyEngine tests: 9 groups passed\n";
+  std::map<std::string,GraphNode> budget_nodes;
+  budget_nodes.emplace("root", GraphNode{"root",NodeKind::Cluster,"root",{}});
+  for (int i=0;i<100;++i) {
+    const auto target="target-"+std::to_string(i);
+    const auto dependency="budget-dep-"+std::to_string(i);
+    budget_nodes.emplace(target,GraphNode{target,NodeKind::Cluster,"target",{}});
+    budget_nodes.emplace(dependency,GraphNode{dependency,NodeKind::Dependency,
+        "CONTENT_EQUALS:never-match",{"root",target}});
+  }
+  auto operation_limited=DependencyEngine::evaluate(budget_nodes,{"root"},4096,150);
+  assert(!operation_limited.complete);
+  assert(operation_limited.error=="DEPENDENCY_PREDICATE_BUDGET_EXCEEDED");
+  assert(operation_limited.predicate_operations==151);
+  auto operation_complete=DependencyEngine::evaluate(budget_nodes,{"root"},4096,256);
+  assert(operation_complete.complete);
+  assert(operation_complete.predicate_operations==200);
+  std::cout<<"SURGE DependencyEngine tests: 10 groups passed\n";
 }

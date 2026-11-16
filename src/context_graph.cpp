@@ -225,8 +225,11 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  const auto fp_value=fingerprint(d);
  events=encode(d,fp_value);
  if(has_dependencies&&!changed.empty()){
+  constexpr std::size_t kMaximumDependencyImpactedNodes = 4096;
+  constexpr std::size_t kMaximumDependencyPredicateOperations = 65536;
   const auto evaluation=DependencyEngine::evaluate(staged.nodes,
-      std::vector<std::string>(changed.begin(),changed.end()),4096);
+      std::vector<std::string>(changed.begin(),changed.end()),
+      kMaximumDependencyImpactedNodes, kMaximumDependencyPredicateOperations);
   if(!evaluation.complete){error=evaluation.error.empty()?"DEPENDENCY_EVALUATION_FAILED":evaluation.error;events.clear();return false;}
   DependencyEvaluationRecord record;record.delta_id=d.delta_id;
   record.impacted_nodes=evaluation.impacted_nodes;
