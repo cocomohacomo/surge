@@ -301,7 +301,7 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
         self.assertEqual(span["offset_basis"], "UTF8_BYTE_NFC")
         self.assertIn("TEMPORAL_ROLE:VALID_FROM", span["labels"])
 
-    def test_temporal_candidate_is_in_runtime_proposal_without_core_mutation(self):
+    def test_temporal_candidate_is_proposed_and_persisted_without_claim_validity_mutation(self):
         from datetime import datetime, timezone, timedelta
         with tempfile.TemporaryDirectory() as tmp:
             runtime = LLMSemanticRuntime(StubProvider([result()]), "ctx", "source")
@@ -314,7 +314,9 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertIn("TEMPORAL_STATUS:RESOLVED", spans[0]["labels"])
                 self.assertEqual(out["temporal_candidates"][0]["valid_from"], "2026-04-01T00:00:00+09:00")
                 self.assertTrue(out["semantic_commit"]["committed"])
-                self.assertEqual(core.state_version, 1)
+                self.assertEqual(core.state_version, 2)
+                self.assertEqual(core.temporal_boundary_pending_count, 1)
+                self.assertFalse(out["temporal_ledger"][0]["claim_validity_write"])
 
     def test_50_independent_claim_inputs_commit_and_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
