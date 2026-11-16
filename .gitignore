@@ -21,6 +21,20 @@ __pycache__/
 *.journal
 *.log
 
+# Secrets and local credentials (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*_secret*
+*credentials*.json
+
 # Local/editor/OS files
 .DS_Store
 Thumbs.db

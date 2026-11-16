@@ -21,3 +21,13 @@ Please include, where possible:
 
 There is currently no published response-time or remediation SLA. Please allow
 the maintainer reasonable time to investigate before public disclosure.
+
+## Repository hardening notes
+
+- Local secrets must stay out of Git. See `.gitignore` for `.env`, key material,
+  and credential filename patterns.
+- Dependabot is configured in `.github/dependabot.yml` for GitHub Actions and
+  pip dependency update PRs.
+- Branch protection, Secret scanning, and Push protection must be enabled by
+  the repository owner in GitHub Settings. See
+  `docs/OWNER_PROTECTION_SETTINGS.md`.

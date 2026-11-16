@@ -120,4 +120,7 @@ Public visibility does not itself grant such a license. See
 [Publication and reuse policy](docs/PUBLICATION_POLICY.md).
 
 
-See the [public release readiness checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) for the remaining pre-publication security review.
+See the [public release readiness checklist](docs/PUBLIC_RELEASE_CHECKLIST.md),
+the [audit report](docs/PUBLIC_RELEASE_AUDIT_REPORT.md), and the
+[owner protection settings](docs/OWNER_PROTECTION_SETTINGS.md) for
+pre-publication security review.

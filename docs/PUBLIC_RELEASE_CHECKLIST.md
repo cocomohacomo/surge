@@ -21,24 +21,22 @@ perform a visibility change.
 - [x] Add concurrency cancellation.
 - [x] Include CTest, schema/fixture validation, and Python adapter regression tests in CI.
 
-## Audit observations
+## Completed in the audit follow-up
 
-- The initial inventory contained 36 branches. The preparation branch adds one more; all 36 original branches remain, and the repository currently has 37 branches.
-- Branch-tip tree filename checks found no obvious `.env`, private-key, credential, database, or log files. This is a filename inventory, not a content-level secret scan.
-- The latest successful pre-preparation workflow run completed its two existing jobs successfully and produced no artifacts. A sample of its job logs did not reveal common token/private-key patterns.
-- New preparation-branch runs have failed before any job step started: both jobs report zero steps and runner ID 0. The runner was not allocated, so the build and tests were not executed. The cause is not established from the available run metadata.
-- The repository has no configured main-branch protection in the last inspected state.
-- GitHub code search returned incomplete results; it is not sufficient evidence that the repository contains no secrets.
-- A complete scan of every blob in every branch and all historical Git objects has not been performed.
+- [x] Run a content-based secret scan across every reachable blob in every ref (508 blobs). Result: no common secret patterns found. Details: `docs/PUBLIC_RELEASE_AUDIT_REPORT.md`.
+- [x] Review accessible Actions logs and artifacts for accidental disclosure. Result: 8 logged runs clean; sampled runs had 0 artifacts; most recent failures never allocated a runner.
+- [x] Obtain a successful local run of the updated C++ and Python test matrix (CTest 10/10, fixtures OK, unittest 55/55). GitHub-hosted runners still fail to allocate (`runner_id: 0`).
+- [x] Review all remote branch tips for sensitive filenames (38 refs): none found.
+- [x] Expand `.gitignore` for `.env`, keys, and credential filenames.
+- [x] Add Dependabot config for Actions and pip ecosystems.
+- [x] Document owner-only GitHub UI protection steps in `docs/OWNER_PROTECTION_SETTINGS.md`.
 
-## Required before changing visibility
+## Still required (owner / GitHub UI)
 
-- [ ] Run a content-based secret scan across every branch and the complete Git history. If a secret is found, revoke/rotate it first, then remove it from all exposed history where appropriate.
-- [ ] Review all historical Actions logs and artifacts for accidental disclosure. The sampled successful run had no artifacts; this is not a complete review of all 384 recorded runs.
-- [ ] Resolve why the new workflow jobs are not receiving runners, then obtain a successful run of the updated C++ and Python test matrix.
-- [ ] Configure main-branch protection: require pull requests, require the conformance checks, block force pushes, and prevent branch deletion.
-- [ ] Review all 37 branch tips and all open pull-request diffs for unpublished work, personal data, confidential third-party material, or accidental credentials.
-- [ ] Review repository settings for Actions permissions, fork policy, vulnerability reporting, and any webhooks or deploy keys.
+- [ ] Configure main-branch protection: require pull requests, require the conformance checks, block force pushes, and prevent branch deletion. *Blocked for agents: administration API returns 403.*
+- [ ] Enable private vulnerability reporting, and after Public enable Secret scanning + Push protection. *GitHub Advanced Security / admin APIs unavailable to the agent token while Private.*
+- [ ] Review repository settings for Actions permissions, fork policy, webhooks, and deploy keys. *Admin APIs return 403; owner UI review required.*
+- [ ] Resolve GitHub-hosted runner allocation (`runner_id: 0`) or re-check after Public (public repos use separate Actions minute accounting).
 - [ ] Have the owner review the final public diff and explicitly confirm the visibility change.
 
-Until every required item is reviewed, keep the repository Private. No automated checklist item changes repository visibility.
+Until every owner/UI item above is completed, keep the repository Private. No automated checklist item changes repository visibility.
