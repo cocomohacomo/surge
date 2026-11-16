@@ -126,6 +126,12 @@ int surge_retrieval_ticket_resolve(void* handle, const char* ticket_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+// Read a persisted dependency evaluation by SemanticDelta ID. JSON output uses the
+// same bounded-buffer contract as Context retrieval; missing records return NOT_FOUND.
+int surge_context_graph_dependency_evaluation(void* handle, const char* delta_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
 // One durable transaction for RecognitionPacket admission and SemanticDelta.
 int surge_packet_core_admit_and_apply(
     void* handle, const SurgeRecognitionPacketInput* packet,
