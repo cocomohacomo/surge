@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import calendar
 import sqlite3
 import time
 import unicodedata
@@ -86,26 +87,33 @@ def _normal(s: str) -> str:
     s = unicodedata.normalize("NFKC", s).casefold()
     return re.sub(r"[\s、。，．,.・:：;；「」『』（）()\[\]【】]+", "", s)
 
-def _date_key(value: str) -> str:
+def _date_bounds(value: str) -> tuple[str, str]:
     if not value:
-        return ""
+        return "", ""
     m = re.search(r"令和([元0-9０-９]+)年([0-9０-９]+)月(?:([0-9０-９]+)日)?", value)
     if m:
         year_text = unicodedata.normalize("NFKC",m.group(1))
         year = 1 if year_text == "元" else int(year_text)
+        year += 2018
         month = int(unicodedata.normalize("NFKC",m.group(2)))
-        day = int(unicodedata.normalize("NFKC",m.group(3) or "1"))
-        return f"{2018+year:04d}-{month:02d}-{day:02d}"
-    m = re.search(r"(20[0-9]{2})年([0-9]{1,2})月(?:([0-9]{1,2})日)?", value)
-    if m:
-        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3) or '1'):02d}"
-    if re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}",value):
-        return value
-    return ""
+        day_text = unicodedata.normalize("NFKC",m.group(3) or "")
+    else:
+        m = re.search(r"(20[0-9]{2})年([0-9]{1,2})月(?:([0-9]{1,2})日)?", value)
+        if m:
+            year, month, day_text = int(m.group(1)), int(m.group(2)), m.group(3) or ""
+        elif re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}",value):
+            return value, value
+        else:
+            return "", ""
+    first = f"{year:04d}-{month:02d}-{int(day_text or '1'):02d}"
+    last_day = int(day_text) if day_text else calendar.monthrange(year,month)[1]
+    last = f"{year:04d}-{month:02d}-{last_day:02d}"
+    return first,last
 
 def _date_interval(a: ClaimApplicability) -> tuple[str, str]:
-    start, end = _date_key(a.valid_from), _date_key(a.valid_to)
-    return start, end or start
+    start, start_end = _date_bounds(a.valid_from)
+    end_start, end = _date_bounds(a.valid_to)
+    return start, end or start_end
 
 class ClaimApplicabilityComparator:
     """Only reports contradiction when proposition AND applicable scope overlap."""
