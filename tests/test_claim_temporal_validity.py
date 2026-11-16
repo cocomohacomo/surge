@@ -39,6 +39,10 @@ class ClaimTemporalValidityBridgeTests(unittest.TestCase):
                     revision=1,
                 )
                 self.assertEqual(result["state_version"], 2)
+                self.assertEqual(core.claim_validity_at(
+                    "claim-1", "2025-12-31T15:00:00Z"), "VALID")
+                self.assertEqual(core.claim_validity_at(
+                    "claim-1", "2026-03-31T15:00:00Z"), "EXPIRED")
                 duplicate = core.apply_claim_validity(
                     delta_id="validity-revision-1",
                     idempotency_key="validity-revision-1",
