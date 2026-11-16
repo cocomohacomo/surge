@@ -130,8 +130,14 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
        record.evaluation_cost>>std::quoted(record.diagnostic_error)>>count)||
      record.delta_id.empty()||
      (record.status!="CONVERGED"&&record.status!="DEFERRED"&&record.status!="INVALID")||
-     count>4096||s.dependency_evaluations.count(record.delta_id)){
+     count>4096){
    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+  }
+  const auto prior=s.dependency_evaluations.find(record.delta_id);
+  if(prior!=s.dependency_evaluations.end()&&
+     !(e.kind=="DEPENDENCY_EVALUATION"&&prior->second.status!="CONVERGED"&&
+       record.status=="CONVERGED")){
+   error="JOURNAL_DEPENDENCY_EVALUATION_DUPLICATE";return false;
   }
   if((e.kind=="DEPENDENCY_EVALUATION"&&record.status!="CONVERGED")||
      (e.kind=="DEPENDENCY_EVALUATION_DIAGNOSTIC"&&record.status=="CONVERGED")){
@@ -178,7 +184,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
    record.cyclic_components.push_back(std::move(component));
   }
   std::string extra;if(in>>extra){error="JOURNAL_DEPENDENCY_EVALUATION_TRAILING_DATA";return false;}
-  s.dependency_evaluations.emplace(record.delta_id,std::move(record));return true;
+  s.dependency_evaluations[record.delta_id]=std::move(record);return true;
  }
  if(e.kind=="QUESTION_ASPECT_STATUS_SET"){
   std::istringstream in(e.payload);std::string id,status,extra;
