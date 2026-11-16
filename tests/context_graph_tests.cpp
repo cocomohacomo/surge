@@ -67,6 +67,27 @@ int main(){
       assert(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      SemanticDelta new_dependency;new_dependency.delta_id="dependency-delta-2";
+      new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
+      new_dependency.nodes={{{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
+          {"source-cluster","target-cluster"}}}};
+      const auto added=graph.apply(new_dependency);
+      assert(added.committed&&added.state_version==2);
+      assert(graph.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
+      assert(graph.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
+          "dependency-on-change");
+    }
+    {
+      ContextGraph recovered(dependency_path);assert(recovered.open());
+      assert(recovered.state_version()==2);
+      assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
+      assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
+      const auto& evaluation=recovered.dependency_evaluations().at("dependency-delta-1");
+      assert(evaluation.triggered.size()==1 &&
+             evaluation.triggered[0].dependency_id=="dependency-good");
+      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
+          "dependency-on-change");
     }
   }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
