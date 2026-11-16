@@ -107,6 +107,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_temporal_boundary_add.restype = ctypes.c_int
+        lib.surge_temporal_boundary_resolve_candidate.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_temporal_boundary_resolve_candidate.restype = ctypes.c_int
         lib.surge_temporal_boundary_get.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
@@ -443,6 +449,20 @@ class SemanticCoreBridge(CppCoreBridge):
         args = (self._handle, claim_id.encode())
         result = self._temporal_ledger_call(self._lib.surge_temporal_boundary_get, args)
         return result.get("pending") if result.get("found") else None
+
+    def resolve_temporal_boundary_candidate(self, *, transaction_id: str, idempotency_key: str,
+            event_id: str, expected_state_version: int, claim_id: str, role: str,
+            candidate_id: str) -> dict[str, Any]:
+        if any(not isinstance(v, str) or not v.strip() for v in
+               (transaction_id, idempotency_key, event_id, claim_id, role, candidate_id)):
+            raise PacketRejected("TEMPORAL_LEDGER_ARGUMENT_INVALID")
+        args = (self._handle, transaction_id.encode(), idempotency_key.encode(),
+                event_id.encode(), int(expected_state_version), claim_id.encode(),
+                role.encode(), candidate_id.encode())
+        result = self._temporal_ledger_call(self._lib.surge_temporal_boundary_resolve_candidate, args)
+        if not result.get("committed"):
+            raise PacketRejected(result.get("status") or result.get("error") or "TEMPORAL_LEDGER_RESOLUTION_REJECTED")
+        return result
 
     def clear_temporal_boundary(self, *, transaction_id: str, idempotency_key: str,
                                 event_id: str, expected_state_version: int,

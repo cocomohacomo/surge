@@ -42,6 +42,8 @@ void copy_text(char* out, size_t capacity, const std::string& value) {
   std::memcpy(out, value.data(), count);
   out[count] = '\0';
 }
+std::string temporal_pending_json(const surge::TemporalBoundaryPending&p){std::ostringstream j;j<<"{\\"claim_id\\":"<<json_quote(p.claim_id)<<",\\"valid_from\\":"<<json_quote(p.valid_from)<<",\\"valid_until\\":"<<json_quote(p.valid_until)<<",\\"status\\":"<<json_quote(p.status)<<",\\"evidence_ids\\":[";for(size_t i=0;i<p.evidence_ids.size();++i){if(i)j<<',';j<<json_quote(p.evidence_ids[i]);}j<<"],\\"packet_ids\\":[";for(size_t i=0;i<p.packet_ids.size();++i){if(i)j<<',';j<<json_quote(p.packet_ids[i]);}j<<"],\\"candidates\\":[";for(size_t i=0;i<p.candidates.size();++i){if(i)j<<',';const auto&x=p.candidates[i];j<<"{\\"candidate_id\\":"<<json_quote(x.candidate_id)<<",\\"role\\":"<<json_quote(x.role)<<",\\"valid_from\\":"<<json_quote(x.valid_from)<<",\\"valid_until\\":"<<json_quote(x.valid_until)<<",\\"evidence_id\\":"<<json_quote(x.evidence_id)<<",\\"packet_id\\":"<<json_quote(x.packet_id)<<",\\"selected\\":"<<(x.selected?"true":"false")<<"}";}j<<"]}";return j.str();}
+std::string temporal_result_json(const surge::TemporalBoundaryLedgerResult&r){std::ostringstream j;j<<"{\\"committed\\":"<<(r.committed?"true":"false")<<",\\"duplicate\\":"<<(r.duplicate?"true":"false")<<",\\"state_version\\":"<<r.state_version<<",\\"status\\":"<<json_quote(r.status)<<",\\"error\\":"<<json_quote(r.error)<<",\\"pending\\":"<<temporal_pending_json(r.pending)<<"}";return j.str();}
 bool node_kind(const char* value, surge::NodeKind& out) {
   if (!value) return false;
   const std::string s(value);
@@ -919,101 +921,10 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
 }
 
 
-int surge_temporal_boundary_add(void* opaque, const char* transaction_id,
-    const char* idempotency_key, const char* event_id, uint64_t expected_state_version,
-    const char* claim_id, const char* role, const char* valid_from, const char* valid_until,
-    const char* evidence_id, const char* packet_id,
-    char* output, size_t output_capacity, size_t* required_capacity,
-    char* error, size_t error_capacity) {
-  try {
-    if (!opaque || !transaction_id || !idempotency_key || !event_id ||
-        !claim_id || !role || !valid_from || !valid_until || !evidence_id || !packet_id) {
-      copy_text(error, error_capacity, "TEMPORAL_LEDGER_ARGUMENT_INVALID"); return 0;
-    }
-    surge::TemporalBoundaryContribution contribution;
-    contribution.claim_id=claim_id; contribution.role=role;
-    contribution.valid_from=valid_from; contribution.valid_until=valid_until;
-    contribution.evidence_id=evidence_id; contribution.packet_id=packet_id;
-    auto& ledger=static_cast<Handle*>(opaque)->temporal_ledger;
-    const auto result=ledger.add(transaction_id,idempotency_key,event_id,
-                                 expected_state_version,contribution);
-    std::ostringstream json;
-    json << R"({"committed":)" << (result.committed?"true":"false")
-         << R"(,"duplicate":)" << (result.duplicate?"true":"false")
-         << R"(,"state_version":)" << result.state_version
-         << R"(,"status":)" << json_quote(result.status)
-         << R"(,"error":)" << json_quote(result.error)
-         << R"(,"pending":{"claim_id":)" << json_quote(result.pending.claim_id)
-         << R"(,"valid_from":)" << json_quote(result.pending.valid_from)
-         << R"(,"valid_until":)" << json_quote(result.pending.valid_until)
-         << R"(,"evidence_ids":[)";
-    for(size_t i=0;i<result.pending.evidence_ids.size();++i){if(i)json<<',';json<<json_quote(result.pending.evidence_ids[i]);}
-    json << R"(],"packet_ids":[)";
-    for(size_t i=0;i<result.pending.packet_ids.size();++i){if(i)json<<',';json<<json_quote(result.pending.packet_ids[i]);}
-    json << "]}}";
-    const auto payload=json.str();
-    if(required_capacity)*required_capacity=payload.size()+1;
-    if(!output||output_capacity<payload.size()+1){
-      copy_text(error,error_capacity,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;
-    }
-    copy_text(output,output_capacity,payload);copy_text(error,error_capacity,"");
-    return result.committed?1:0;
-  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
-    catch(...){copy_text(error,error_capacity,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}
-}
-
-int surge_temporal_boundary_get(void* opaque, const char* claim_id,
-    char* output, size_t output_capacity, size_t* required_capacity,
-    char* error, size_t error_capacity) {
-  try {
-    if(!opaque||!claim_id||!*claim_id){copy_text(error,error_capacity,"CLAIM_ID_REQUIRED");return 0;}
-    surge::TemporalBoundaryPending pending;
-    const bool found=static_cast<Handle*>(opaque)->temporal_ledger.get(claim_id,pending);
-    std::ostringstream json;
-    if(!found) json << R"({"found":false,"pending":null})";
-    else {
-      json << R"({"found":true,"pending":{"claim_id":)" << json_quote(pending.claim_id)
-           << R"(,"valid_from":)" << json_quote(pending.valid_from)
-           << R"(,"valid_until":)" << json_quote(pending.valid_until) << R"(,"evidence_ids":[)";
-      for(size_t i=0;i<pending.evidence_ids.size();++i){if(i)json<<',';json<<json_quote(pending.evidence_ids[i]);}
-      json << R"(],"packet_ids":[)";
-      for(size_t i=0;i<pending.packet_ids.size();++i){if(i)json<<',';json<<json_quote(pending.packet_ids[i]);}
-      json << "]}}";
-    }
-    const auto payload=json.str();
-    if(required_capacity)*required_capacity=payload.size()+1;
-    if(!output||output_capacity<payload.size()+1){copy_text(error,error_capacity,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}
-    copy_text(output,output_capacity,payload);copy_text(error,error_capacity,"");return 1;
-  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
-    catch(...){copy_text(error,error_capacity,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}
-}
-
-int surge_temporal_boundary_clear(void* opaque, const char* transaction_id,
-    const char* idempotency_key, const char* event_id, uint64_t expected_state_version,
-    const char* claim_id, char* output, size_t output_capacity,
-    size_t* required_capacity, char* error, size_t error_capacity) {
-  try {
-    if(!opaque||!transaction_id||!idempotency_key||!event_id||!claim_id||!*claim_id){
-      copy_text(error,error_capacity,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;
-    }
-    auto& ledger=static_cast<Handle*>(opaque)->temporal_ledger;
-    const auto result=ledger.clear(transaction_id,idempotency_key,event_id,
-                                   expected_state_version,claim_id);
-    std::ostringstream json;
-    json << R"({"committed":)" << (result.committed?"true":"false")
-         << R"(,"duplicate":)" << (result.duplicate?"true":"false")
-         << R"(,"state_version":)" << result.state_version
-         << R"(,"status":)" << json_quote(result.status)
-         << R"(,"error":)" << json_quote(result.error) << "}";
-    const auto payload=json.str();
-    if(required_capacity)*required_capacity=payload.size()+1;
-    if(!output||output_capacity<payload.size()+1){copy_text(error,error_capacity,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}
-    copy_text(output,output_capacity,payload);copy_text(error,error_capacity,"");
-    return result.committed?1:0;
-  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
-    catch(...){copy_text(error,error_capacity,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}
-}
-
+int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.add(t,i,e,v,x);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_boundary_get(void*o,const char*c,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!c||!*c){copy_text(err,ec,"CLAIM_ID_REQUIRED");return 0;}surge::TemporalBoundaryPending p;bool found=static_cast<Handle*>(o)->temporal_ledger.get(c,p);auto q=found?"{\\"found\\":true,\\"pending\\":"+temporal_pending_json(p)+"}":"{\\"found\\":false,\\"pending\\":null}";if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_boundary_clear(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!*c){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.clear(t,i,e,v,c);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_boundary_resolve_candidate(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*d,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!d){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.resolve_candidate(t,i,e,v,c,r,d);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
 size_t surge_temporal_boundary_pending_count(void* opaque) {
   try { return opaque?static_cast<Handle*>(opaque)->temporal_ledger.pending_claim_count():0; }
   catch(...) { return 0; }

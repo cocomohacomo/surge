@@ -58,8 +58,13 @@ int main() {
     auto conflict = ledger.add("tx-3", "idem-3", "event-3", 2,
         {"claim/A", "VALID_FROM", "2026-03-01T00:00:00+09:00", "",
          "evidence/3", "packet/3"});
-    assert(!conflict.committed && conflict.status == "BOUNDARY_CONFLICT_REVIEW_REQUIRED");
-    auto cleared = ledger.clear("tx-3", "idem-3", "event-3", 2, "claim/A");
+    assert(conflict.committed && conflict.status == "BOUNDARY_CONFLICT_REVIEW_REQUIRED");
+    assert(conflict.pending.candidates.size() == 3);
+    auto resolved = ledger.resolve_candidate("tx-4", "idem-4", "event-4", 3,
+        "claim/A", "VALID_FROM", "event-1");
+    assert(resolved.committed && resolved.status == "CONFLICT_RESOLVED_PENDING_APPROVAL");
+    assert(resolved.pending.valid_from == "2026-04-01T00:00:00+09:00");
+    auto cleared = ledger.clear("tx-5", "idem-5", "event-5", 4, "claim/A");
     assert(cleared.committed && cleared.status == "CLEARED");
     assert(ledger.pending_claim_count() == 0);
   }
