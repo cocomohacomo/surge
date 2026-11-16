@@ -157,5 +157,47 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
             )
 
 
+    def test_semantic_delta_derives_deterministic_dependency_change_refs(self):
+        delta = {
+            "nodes": [{"id": "claim-new", "kind": "CLAIM", "content": "更新"}],
+            "relations": [{"id": "rel-1", "kind": "SUPPORTS",
+                           "from": "claim-new", "to": "claim-old"}],
+            "scope_spans": [{"span_id": "scope-1", "target_refs": ["claim-old"],
+                             "antecedent_refs": ["entity-1"]}],
+            "focus": {"cluster_id": "cluster-1", "interest_id": "interest-1"},
+        }
+        self.assertEqual(
+            ContextRetriever.changed_refs_from_semantic_delta(delta),
+            ["claim-new", "claim-old", "cluster-1", "entity-1",
+             "interest-1", "scope-1"],
+        )
+
+    def test_build_hint_after_semantic_delta_requires_current_successful_commit(self):
+        class FakeCore:
+            state_version = 8
+        class FakeRetriever(ContextRetriever):
+            def __init__(self):
+                self._core = FakeCore()
+                self.seen_changed_refs = None
+            def build_hint_from_graph(self, **kwargs):
+                self.seen_changed_refs = kwargs["changed_refs"]
+                return {"state_version": 8, "context_complete": True}
+        retriever = FakeRetriever()
+        delta = {"nodes": [{"id": "claim-1"}], "relations": [], "scope_spans": []}
+        result = retriever.build_hint_after_semantic_delta(
+            context_id="ctx", packet_ref="packet", source_range_digest="a" * 64,
+            policy_version="hint-v3", query="予算", reference_budget=20,
+            delta=delta, commit_result={"committed": True, "state_version": 8},
+        )
+        self.assertEqual(retriever.seen_changed_refs, ["claim-1"])
+        self.assertEqual(result["state_version"], 8)
+        with self.assertRaisesRegex(Exception, "SEMANTIC_DELTA_NOT_COMMITTED"):
+            retriever.build_hint_after_semantic_delta(
+                context_id="ctx", packet_ref="packet", source_range_digest="a" * 64,
+                policy_version="hint-v3", query="予算", reference_budget=20,
+                delta=delta, commit_result={"committed": False, "state_version": 8},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
