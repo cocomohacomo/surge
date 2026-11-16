@@ -115,6 +115,36 @@ class DurableContextHintRetrievalTests(unittest.TestCase):
             {"content": "CONTENT_CONTAINS:予算", "references": ["claim-a", "claim-b"]},
             prerequisite, set()))
 
+
+    def test_duplicate_candidates_merge_strongest_class_and_best_evidence(self):
+        hint = ContextRetriever.build_hint(
+            context_id="ctx", packet_ref="packet", source_range_digest="e" * 64,
+            policy_version="hint-v1", state_version=1,
+            candidates=[
+                {"ref": "same-ref", "kind": "LOW_PRIORITY",
+                 "source_overlap": 1, "dependency_depth": 5},
+                {"ref": "other-ref", "kind": "OPEN_SCOPE",
+                 "source_overlap": 50, "dependency_depth": 2},
+                {"ref": "same-ref", "kind": "OPEN_SCOPE",
+                 "source_overlap": 10, "dependency_depth": 4},
+                {"ref": "same-ref", "kind": "OPEN_SCOPE",
+                 "source_overlap": 100, "dependency_depth": 1},
+            ],
+            reference_budget=1,
+        )
+        self.assertEqual(hint["included_refs"], ["same-ref"])
+        self.assertFalse(hint["context_complete"])
+        self.assertEqual(hint["retrieval_ticket"]["omitted_refs"], ["other-ref"])
+
+    def test_duplicate_candidate_metadata_must_be_nonnegative_integers(self):
+        with self.assertRaisesRegex(ValueError, "CONTEXT_HINT_CANDIDATE_METADATA_INVALID"):
+            ContextRetriever.build_hint(
+                context_id="ctx", packet_ref="packet", source_range_digest="f" * 64,
+                policy_version="hint-v1", state_version=1,
+                candidates=[{"ref": "x", "kind": "OPEN_SCOPE", "source_overlap": True}],
+                reference_budget=1,
+            )
+
     def test_graph_derived_hint_rejects_empty_query(self):
         class FakeRetriever(ContextRetriever):
             def __init__(self):
