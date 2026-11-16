@@ -50,5 +50,21 @@ int main(){
   assert(std::find(no_change.triggered_dependencies.begin(), no_change.triggered_dependencies.end(), "dep-1") == no_change.triggered_dependencies.end());
   auto eval_limited = DependencyEngine::evaluate(eval_nodes, {"A"}, 2);
   assert(!eval_limited.complete && eval_limited.error == "DEPENDENCY_EVALUATION_BUDGET_EXCEEDED");
+  eval_nodes["dep-empty-equals"] = GraphNode{"dep-empty-equals", NodeKind::Dependency,
+      "CONTENT_EQUALS:", {"A", "E"}};
+  eval_nodes["dep-empty-contains"] = GraphNode{"dep-empty-contains", NodeKind::Dependency,
+      "CONTENT_CONTAINS:", {"A", "E"}};
+  eval_nodes["dep-empty-kind"] = GraphNode{"dep-empty-kind", NodeKind::Dependency,
+      "KIND:", {"A", "E"}};
+  eval_nodes["dep-unknown-kind"] = GraphNode{"dep-unknown-kind", NodeKind::Dependency,
+      "KIND:UNKNOWN", {"A", "E"}};
+  auto malformed = DependencyEngine::evaluate(eval_nodes, {"A"}, 10);
+  assert(malformed.complete);
+  assert((malformed.rejected_dependencies == std::vector<std::string>{
+      "dep-4", "dep-empty-contains", "dep-empty-equals", "dep-empty-kind",
+      "dep-unknown-kind"}));
+  assert(std::find(malformed.triggered_dependencies.begin(),
+      malformed.triggered_dependencies.end(), "dep-empty-equals") ==
+      malformed.triggered_dependencies.end());
   std::cout<<"SURGE DependencyEngine tests: 9 groups passed\n";
 }
