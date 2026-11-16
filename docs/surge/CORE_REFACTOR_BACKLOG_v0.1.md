@@ -9,15 +9,15 @@ ordered by dependency and risk.
 
 ## P0: transaction and state consistency
 
-- [x] Integrate `DependencyEngine::evaluate` into the staged post-SemanticDelta
+- [ ] Integrate `DependencyEngine::evaluate` into the staged post-SemanticDelta
   graph in `ContextGraph::prepare_events` and `ContextGraph::apply`.
-- [x] Persist triggered and rejected dependency outcomes in the same
+- [ ] Persist triggered and rejected dependency outcomes in the same
   EventJournal transaction as Packet + SemanticDelta.
-- [x] Replay dependency outcomes after restart without incrementing state
+- [ ] Replay dependency outcomes after restart without incrementing state
   version per trigger event.
 - [ ] Expose trigger results through C ABI and Python without a second,
   independently implemented predicate evaluator.
-- [x] Consolidate duplicated SemanticDelta validation/staging in
+- [ ] Consolidate duplicated SemanticDelta validation/staging in
   `prepare_events` and `apply` behind one transaction-preparation path.
 - [ ] Verify atomic packet admission and standalone SemanticDelta application
   have identical validation, idempotency, and replay semantics.
@@ -94,7 +94,9 @@ being drafted does not count as completion.
 ## Progress update
 
 The first P0 Core transaction increment is implemented on branch
-`feat/atomic-dependency-trigger-journal-v0.1`. Dependency evaluation results
-are now journaled atomically with SemanticDelta, restored on replay, and
-covered by restart/idempotency conformance tests. C ABI/Python exposure and
-fault-injection verification are still open.
+`feat/atomic-dependency-trigger-journal-v0.1` and proposed in PR #29.
+Dependency evaluation results are journaled atomically with SemanticDelta and
+restored on replay. Restart, idempotency, and atomic packet + semantic tests
+have been added. The current CI attempts have not produced a successful run,
+so these checklist items remain open until the test suite passes and the PR is
+merged. C ABI/Python exposure and fault-injection verification are also open.
