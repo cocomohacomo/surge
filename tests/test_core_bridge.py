@@ -349,6 +349,26 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.get_question_aspect("a/weak")["status"],"OPEN")
                 self.assertEqual(recovered.state_version,version)
 
+
+    def test_question_memory_capacity_demotes_lowest_scores_atomically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal=pathlib.Path(tmp)/"capacity.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({"delta_id":"capacity-seed","idempotency_key":"capacity-seed","expected_state_version":0,"nodes":[
+                    {"id":"q/high","kind":"QUESTION","content":"high"},{"id":"q/mid","kind":"QUESTION","content":"mid"},{"id":"q/low","kind":"QUESTION","content":"low"}],"relations":[]})
+                before=core.state_version
+                result=core.enforce_question_memory_capacity({"q/high":.9,"q/mid":.5,"q/low":.1},2,before)
+                self.assertEqual(result["demoted"],["q/low"]);self.assertEqual(result["active_after"],2)
+                self.assertEqual(core.get_question_memory_state("q/low")["memory_state"],"DORMANT")
+                self.assertEqual(core.get_question_memory_state("q/high")["memory_state"],"ACTIVE")
+                with self.assertRaisesRegex(PacketRejected,"QUESTION_MEMORY_SCORE_MISSING"):
+                    core.enforce_question_memory_capacity({"q/high":.9},1)
+                with self.assertRaisesRegex(PacketRejected,"STATE_VERSION_CONFLICT"):
+                    core.enforce_question_memory_capacity({"q/high":.9,"q/mid":.5},1,before)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_memory_state("q/low")["memory_state"],"DORMANT")
+                self.assertEqual(recovered.get_question_memory_state("q/mid")["memory_state"],"ACTIVE")
+
     def test_question_relationship_network_types_cycles_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-relations.sgj"

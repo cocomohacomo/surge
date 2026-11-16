@@ -2,6 +2,7 @@
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <memory>
@@ -406,5 +407,19 @@ QuestionMemoryState ContextGraph::question_memory_state(const std::string& id) c
 bool ContextGraph::set_question_memory_state(const std::string& id,QuestionMemoryState v,std::uint64_t expected,std::string& error){
  error.clear();const auto q=state_.nodes.find(id);if(q==state_.nodes.end()||q->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}if(question_memory_state(id)==v)return true;
  const char* name=v==QuestionMemoryState::Active?"ACTIVE":v==QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";std::ostringstream payload;payload<<std::quoted(id)<<' '<<name;const auto key="question-memory/state/"+id+"/"+std::to_string(expected+1);const auto result=journal_->commit(key,key,expected,{{key+"/event","QUESTION_MEMORY_STATE_SET",payload.str()}});if(!result.committed){error=result.error;return false;}state_.question_memory_states[id]=v;return true;
+}
+bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<std::string,double>>& scores,std::size_t max_active,std::uint64_t expected,std::vector<std::string>& demoted,std::string& error){
+ error.clear();demoted.clear();if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}if(scores.size()>4096||max_active>4096){error="QUESTION_MEMORY_CAPACITY_LIMIT";return false;}
+ std::map<std::string,double> supplied;for(const auto& item:scores){if(item.first.empty()||!std::isfinite(item.second)||item.second<0||item.second>1){error="QUESTION_MEMORY_SCORE_INVALID";return false;}if(!supplied.emplace(item.first,item.second).second){error="QUESTION_MEMORY_DUPLICATE_SCORE";return false;}auto n=state_.nodes.find(item.first);if(n==state_.nodes.end()||n->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}}
+ std::vector<std::pair<std::string,double>> active;for(const auto& n:state_.nodes){if(n.second.kind!=NodeKind::Question||question_memory_state(n.first)!=QuestionMemoryState::Active)continue;auto v=supplied.find(n.first);if(v==supplied.end()){error="QUESTION_MEMORY_SCORE_MISSING";return false;}active.emplace_back(n.first,v->second);}
+ if(active.size()!=supplied.size()){error="QUESTION_MEMORY_SCORE_NOT_ACTIVE";return false;}
+ std::sort(active.begin(),active.end(),[](const auto&a,const auto&b){return a.second!=b.second?a.second>b.second:a.first<b.first;});
+ if(active.size()<=max_active)return true;
+ for(std::size_t i=max_active;i<active.size();++i)demoted.push_back(active[i].first);
+ const std::string tx="question-memory/capacity/"+std::to_string(expected);std::vector<JournalEvent> events;events.reserve(demoted.size());
+ for(const auto&id:demoted){std::ostringstream p;p<<std::quoted(id)<<" DORMANT";events.push_back({tx+"/demote/"+id,"QUESTION_MEMORY_STATE_SET",p.str()});}
+ const auto result=journal_->commit(tx,tx,expected,events);if(!result.committed){error=result.error;demoted.clear();return false;}
+ for(const auto&id:demoted) { state_.question_memory_states[id]=QuestionMemoryState::Dormant; }
+ return true;
 }
 } // namespace surge
