@@ -427,7 +427,7 @@ int surge_packet_core_admit_and_apply_with_proposal(
          !proposal->serialized_json||!*proposal->serialized_json||
          std::string(proposal->packet_ref)!=packet.packet_id||
          proposal->base_state_version!=expected||
-         proposal->context_hint_state_version!=expected||
+         proposal->context_hint_state_version>expected||
          std::string(proposal->packet_source_generation)!=packet.source_generation||
          proposal->packet_source_sequence!=packet.source_sequence||
          std::strlen(proposal->proposal_id)>256||
@@ -494,7 +494,7 @@ int surge_classification_proposal_get(void* opaque,const char* proposal_id,
         copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_JOURNAL_RECORD_INVALID");return 0;
       }
       if(id!=proposal_id)continue;
-      if(packet_ref.empty()||generation.empty()||base!=hint||json.empty()){
+      if(packet_ref.empty()||generation.empty()||hint>base||json.empty()){
         copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_JOURNAL_LINEAGE_INVALID");return 0;
       }
       const std::size_t required=json.size()+1;
