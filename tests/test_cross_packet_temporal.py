@@ -15,7 +15,7 @@ class CrossPacketTemporalAccumulatorTests(unittest.TestCase):
         self.assertEqual(first["status"], "NEEDS_OTHER_BOUNDARY")
         second = self.acc.add("claim/A", {
             "role": "VALID_UNTIL", "status": "RESOLVED",
-            "valid_from": None, "valid_until": "2026-04-01T00:00:00+09:00",
+            "valid_from": None, "valid_until": "2026-05-01T00:00:00+09:00",
         }, evidence_id="evidence/2", packet_id="packet/2")
         self.assertEqual(second["status"], "MERGED_PROPOSAL_PENDING_REVIEW")
         self.assertEqual(second["basis_evidence_ids"], ["evidence/1", "evidence/2"])
