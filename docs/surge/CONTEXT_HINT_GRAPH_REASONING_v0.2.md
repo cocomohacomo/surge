@@ -105,3 +105,25 @@ Lexical seed discovery remains the baseline ranker. Dependency predicates are
 evaluated only when explicitly represented by the grammar above. This version
 does not provide arbitrary user-defined code execution, probabilistic
 condition inference, or automatic mutation of Focus.
+
+
+## 5. SemanticDelta-driven dependency triggers v0.3
+
+The convenience API `build_hint_after_semantic_delta` removes the need for
+callers to manually construct `changed_refs` after an accepted commit. It
+requires a successful commit result whose state version still matches the
+Core's current version, then derives a deterministic trigger set from the
+same SemanticDelta payload:
+
+- every added or updated node ID;
+- both endpoints of every changed relation;
+- ScopeSpan ID, target refs and antecedent refs;
+- Cluster and Interest IDs when Focus is explicitly updated.
+
+The derived refs are sorted and deduplicated before dependency evaluation.
+This is an adapter-level bridge, not a journal event subscription: callers
+must pass the exact delta and commit result returned by the same operation.
+It rejects failed commits and stale commit versions. Direct
+`build_hint_from_graph(changed_refs=...)` remains available for advanced
+callers and replay workflows. No inference is made from arbitrary text, and
+dependency evaluation remains read-only.
