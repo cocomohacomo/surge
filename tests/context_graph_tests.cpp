@@ -202,6 +202,36 @@ int main(){
       assert(found->second.diagnostic_error=="IMPACT_BUDGET_EXCEEDED");
     }
   }
+  {
+    const auto provenance_path=(root/"evidence-provenance.sgj").string();
+    {
+      ContextGraph graph(provenance_path);assert(graph.open());
+      SemanticDelta provenance;provenance.delta_id="provenance-1";
+      provenance.idempotency_key="provenance-key-1";provenance.expected_state_version=0;
+      provenance.nodes={{{"publisher-1",NodeKind::Entity,"発信機関",{}}},
+        {{"evidence-1",NodeKind::Evidence,"URLと取得時刻",{}}},
+        {{"claim-1",NodeKind::Claim,"公表された主張",{"evidence-1"}}}};
+      provenance.relations={
+        {{"evidence-for-1",RelationKind::EvidenceFor,"evidence-1","claim-1"}},
+        {{"published-by-1",RelationKind::PublishedBy,"evidence-1","publisher-1"}}};
+      const auto result=graph.apply(provenance);
+      assert(result.committed&&result.state_version==1);
+      assert(graph.relations().size()==2);
+      assert(graph.relations().at("evidence-for-1").kind==RelationKind::EvidenceFor);
+      assert(graph.relations().at("published-by-1").kind==RelationKind::PublishedBy);
+      SemanticDelta invalid;invalid.delta_id="provenance-invalid";
+      invalid.idempotency_key="provenance-invalid-key";invalid.expected_state_version=1;
+      invalid.relations={{{"bad-evidence-for",RelationKind::EvidenceFor,
+          "claim-1","evidence-1"}}};
+      assert(graph.apply(invalid).error=="EVIDENCE_FOR_RELATION_TYPE_INVALID");
+      assert(graph.state_version()==1);
+    }
+    {
+      ContextGraph recovered(provenance_path);assert(recovered.open());
+      assert(recovered.state_version()==1&&recovered.relations().size()==2);
+      assert(recovered.relations().at("published-by-1").kind==RelationKind::PublishedBy);
+    }
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 4 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 5 groups passed\n";
 }
