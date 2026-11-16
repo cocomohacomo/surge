@@ -452,7 +452,7 @@ class WebDocumentRecognitionEngine:
             for previous_app, previous_id in prior_claims:
                 comparison = ClaimApplicabilityComparator.compare(previous_app,applicability)
                 if comparison.conflict:
-                    relations.append({"id":f"contradicts/{previous_id}/{claim_id}",
+                    relations.append({"id":f"contradicts/{packet_id}/{previous_id}/{claim_id}",
                         "kind":"CONTRADICTS","from":previous_id,"to":claim_id})
             for previous in self.index.claims_for_proposition(candidate["proposition"]):
                 if previous["claim_id"] == claim_id:
@@ -460,7 +460,7 @@ class WebDocumentRecognitionEngine:
                 previous_app = ClaimApplicability(**previous["applicability"])
                 comparison = ClaimApplicabilityComparator.compare(previous_app,applicability)
                 if comparison.conflict:
-                    relation_id = f"contradicts/{previous['claim_id']}/{claim_id}"
+                    relation_id = f"contradicts/{packet_id}/{previous['claim_id']}/{claim_id}"
                     if not any(r["id"] == relation_id for r in relations):
                         relations.append({"id":relation_id,"kind":"CONTRADICTS",
                             "from":previous["claim_id"],"to":claim_id})
