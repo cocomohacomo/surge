@@ -461,11 +461,11 @@ size_t surge_context_graph_scope_count(void* opaque) {
   return opaque?static_cast<Handle*>(opaque)->graph.scope_spans().size():0;
 }
 
-int surge_context_graph_retrieve(void* opaque, const char* query, const char* kinds_csv,
-    size_t limit, char* output, size_t output_capacity, size_t* required_capacity,
-    char* error, size_t error_capacity) {
+int surge_context_graph_retrieve_page(void* opaque, const char* query, const char* kinds_csv,
+    size_t offset, size_t limit, char* output, size_t output_capacity,
+    size_t* required_capacity, char* error, size_t error_capacity) {
   try {
-    if (!opaque || !query || !*query || limit == 0 || limit > 1000) {
+    if (!opaque || !query || !*query || offset > 10000000 || limit == 0 || limit > 1000) {
       copy_text(error, error_capacity, "RETRIEVAL_ARGUMENT_INVALID"); return 0;
     }
     auto* handle = static_cast<Handle*>(opaque);
@@ -492,8 +492,44 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
       std::string term;
       int total = 0, hits = 0;
       while (terms >> term) { ++total; if (hay.find(term) != std::string::npos) ++hits; }
-      if (total == 0 || hits == 0) return 0;
-      return hits == total ? 65 + hits : 20 + (40 * hits / total);
+      if (total > 0 && hits > 0)
+        return hits == total ? 65 + hits : 20 + (40 * hits / total);
+
+      // Japanese has no whitespace-delimited word boundaries. Fall back to
+      // UTF-8 code-point bigram overlap instead of treating the whole query
+      // as one indivisible token.
+      const bool has_non_ascii = std::any_of(needle.begin(), needle.end(),
+          [](unsigned char ch) { return ch >= 0x80; });
+      if (!has_non_ascii) return 0;
+      auto codepoints = [](const std::string& text) {
+        std::vector<std::string> points;
+        for (std::size_t i = 0; i < text.size();) {
+          const unsigned char lead = static_cast<unsigned char>(text[i]);
+          std::size_t width = lead < 0x80 ? 1 :
+              (lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC2 ? 2 : 1);
+          if (i + width > text.size()) width = 1;
+          points.push_back(text.substr(i, width));
+          i += width;
+        }
+        return points;
+      };
+      const auto query_points = codepoints(needle);
+      const auto hay_points = codepoints(hay);
+      auto make_grams = [](const std::vector<std::string>& points) {
+        std::set<std::string> grams;
+        if (points.size() == 1) grams.insert(points.front());
+        else for (std::size_t i = 0; i + 1 < points.size(); ++i)
+          grams.insert(points[i] + points[i + 1]);
+        return grams;
+      };
+      const auto query_grams = make_grams(query_points);
+      const auto hay_grams = make_grams(hay_points);
+      if (query_grams.empty() || hay_grams.empty()) return 0;
+      std::size_t overlap = 0;
+      for (const auto& gram : query_grams)
+        if (hay_grams.count(gram)) ++overlap;
+      if (overlap == 0) return 0;
+      return 25 + static_cast<int>(35 * overlap / query_grams.size());
     };
     auto quote = [](const std::string& value) {
       std::string out = "\"";
@@ -662,12 +698,16 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
              << ",\"interest_id\":" << quote(graph.focus()->interest_id) << "}";
     } else result << "null";
     result << ",\"items\":[";
-    const size_t count = std::min(limit, hits.size());
+    const size_t begin = std::min(offset, hits.size());
+    const size_t count = std::min(limit, hits.size() - begin);
     for (size_t i = 0; i < count; ++i) {
       if (i) result << ',';
-      result << hits[i].json;
+      result << hits[begin + i].json;
     }
-    result << "],\"total_matches\":" << hits.size() << "}";
+    result << "],\"offset\":" << offset << ",\"next_offset\":";
+    if (begin + count < hits.size()) result << (begin + count);
+    else result << "null";
+    result << ",\"total_matches\":" << hits.size() << "}";
     const std::string payload = result.str();
     if (required_capacity) *required_capacity = payload.size() + 1;
     if (!output || output_capacity < payload.size() + 1) {
@@ -683,6 +723,13 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
   }
 }
 
+
+int surge_context_graph_retrieve(void* opaque, const char* query, const char* kinds_csv,
+    size_t limit, char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  return surge_context_graph_retrieve_page(opaque, query, kinds_csv, 0, limit,
+      output, output_capacity, required_capacity, error, error_capacity);
+}
 
 int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id,
     char* output, size_t output_capacity, size_t* required_capacity,
