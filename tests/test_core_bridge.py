@@ -6,6 +6,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 from surge_adapter.packet_ingest import (
     CppCoreBridge, PacketRejected, RecognitionPacketAdapter, normalize_source,
 )
@@ -55,6 +56,39 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(duplicate.status, "DUPLICATE")
                 self.assertEqual(recovered.state_version, 1)
                 self.assertEqual(recovered.packet_count, 1)
+
+
+    def test_temporal_boundary_c_api_bridge_persists_and_restores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "temporal-ledger.sgj"
+            with SemanticCoreBridge(journal) as core:
+                first = core.add_temporal_boundary(
+                    transaction_id="tb-tx-1", idempotency_key="tb-idem-1",
+                    event_id="tb-event-1", expected_state_version=0,
+                    claim_id="claim/bridge", role="VALID_FROM",
+                    valid_from="2026-04-01T00:00:00+09:00",
+                    evidence_id="evidence/1", packet_id="packet/1")
+                self.assertEqual(first["status"], "NEEDS_OTHER_BOUNDARY")
+                self.assertEqual(core.temporal_boundary_pending_count, 1)
+                second = core.add_temporal_boundary(
+                    transaction_id="tb-tx-2", idempotency_key="tb-idem-2",
+                    event_id="tb-event-2", expected_state_version=1,
+                    claim_id="claim/bridge", role="VALID_UNTIL",
+                    valid_until="2026-05-01T00:00:00+09:00",
+                    evidence_id="evidence/2", packet_id="packet/2")
+                self.assertEqual(second["status"], "BOUNDARIES_COMPLETE_PENDING_REVIEW")
+                self.assertEqual(len(second["pending"]["evidence_ids"]), 2)
+            with SemanticCoreBridge(journal) as recovered:
+                pending = recovered.get_temporal_boundary("claim/bridge")
+                self.assertEqual(pending["valid_from"], "2026-04-01T00:00:00+09:00")
+                self.assertEqual(pending["valid_until"], "2026-05-01T00:00:00+09:00")
+                self.assertEqual(pending["packet_ids"], ["packet/1", "packet/2"])
+                cleared = recovered.clear_temporal_boundary(
+                    transaction_id="tb-tx-3", idempotency_key="tb-idem-3",
+                    event_id="tb-event-3", expected_state_version=2,
+                    claim_id="claim/bridge")
+                self.assertTrue(cleared["committed"])
+                self.assertIsNone(recovered.get_temporal_boundary("claim/bridge"))
 
     def test_invalid_snapshot_rejected_before_core_commit(self):
         with tempfile.TemporaryDirectory() as tmp:

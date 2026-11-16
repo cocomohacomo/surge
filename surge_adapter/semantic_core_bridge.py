@@ -100,6 +100,26 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_claim_validity_at.restype = ctypes.c_int
 
+        lib.surge_temporal_boundary_add.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_temporal_boundary_add.restype = ctypes.c_int
+        lib.surge_temporal_boundary_get.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_temporal_boundary_get.restype = ctypes.c_int
+        lib.surge_temporal_boundary_clear.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_temporal_boundary_clear.restype = ctypes.c_int
+        lib.surge_temporal_boundary_pending_count.argtypes = [ctypes.c_void_p]
+        lib.surge_temporal_boundary_pending_count.restype = ctypes.c_size_t
+
+
     @property
     def scope_count(self) -> int:
         return int(self._lib.surge_context_graph_scope_count(self._handle))
@@ -372,3 +392,73 @@ class SemanticCoreBridge(CppCoreBridge):
                                  "SEMANTIC_DELTA_REJECTED")
         return {"committed": True, "duplicate": bool(duplicate.value),
                 "state_version": int(version.value)}
+
+
+    @staticmethod
+    def _decode_temporal_ledger_json(payload: bytes) -> dict[str, Any]:
+        try:
+            value = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("TEMPORAL_LEDGER_RESPONSE_INVALID") from exc
+        if not isinstance(value, dict):
+            raise PacketRejected("TEMPORAL_LEDGER_RESPONSE_INVALID")
+        return value
+
+    def _temporal_ledger_call(self, function, args: tuple[Any, ...]) -> dict[str, Any]:
+        required = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(512)
+        ok = function(*args, None, 0, ctypes.byref(required), error, len(error))
+        if ok or error.value.decode("utf-8", errors="replace") != "TEMPORAL_LEDGER_BUFFER_TOO_SMALL":
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "TEMPORAL_LEDGER_READ_FAILED")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(512)
+        function(*args, output, len(output), ctypes.byref(required), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if detail:
+            raise PacketRejected(detail)
+        return self._decode_temporal_ledger_json(output.value)
+
+    def add_temporal_boundary(self, *, transaction_id: str, idempotency_key: str,
+                              event_id: str, expected_state_version: int,
+                              claim_id: str, role: str, valid_from: str = "",
+                              valid_until: str = "", evidence_id: str,
+                              packet_id: str) -> dict[str, Any]:
+        if any(not isinstance(v, str) or not v.strip() for v in
+               (transaction_id, idempotency_key, event_id, claim_id, role, evidence_id, packet_id)):
+            raise PacketRejected("TEMPORAL_LEDGER_ARGUMENT_INVALID")
+        args = (self._handle, transaction_id.encode(), idempotency_key.encode(),
+                event_id.encode(), int(expected_state_version), claim_id.encode(),
+                role.encode(), valid_from.encode(), valid_until.encode(),
+                evidence_id.encode(), packet_id.encode())
+        result = self._temporal_ledger_call(self._lib.surge_temporal_boundary_add, args)
+        if not result.get("committed"):
+            raise PacketRejected(result.get("status") or result.get("error") or
+                                 "TEMPORAL_LEDGER_ADD_REJECTED")
+        return result
+
+    def get_temporal_boundary(self, claim_id: str) -> dict[str, Any] | None:
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            raise PacketRejected("CLAIM_ID_REQUIRED")
+        args = (self._handle, claim_id.encode())
+        result = self._temporal_ledger_call(self._lib.surge_temporal_boundary_get, args)
+        return result.get("pending") if result.get("found") else None
+
+    def clear_temporal_boundary(self, *, transaction_id: str, idempotency_key: str,
+                                event_id: str, expected_state_version: int,
+                                claim_id: str) -> dict[str, Any]:
+        if any(not isinstance(v, str) or not v.strip() for v in
+               (transaction_id, idempotency_key, event_id, claim_id)):
+            raise PacketRejected("TEMPORAL_LEDGER_ARGUMENT_INVALID")
+        args = (self._handle, transaction_id.encode(), idempotency_key.encode(),
+                event_id.encode(), int(expected_state_version), claim_id.encode())
+        result = self._temporal_ledger_call(self._lib.surge_temporal_boundary_clear, args)
+        if not result.get("committed"):
+            raise PacketRejected(result.get("status") or result.get("error") or
+                                 "TEMPORAL_LEDGER_CLEAR_REJECTED")
+        return result
+
+    @property
+    def temporal_boundary_pending_count(self) -> int:
+        return int(self._lib.surge_temporal_boundary_pending_count(self._handle))
+

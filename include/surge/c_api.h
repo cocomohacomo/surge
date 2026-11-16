@@ -120,6 +120,22 @@ int surge_context_graph_apply_claim_validity_reviewed(void* handle,
 int surge_question_aspect_set_status(void* handle, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity);
 
+// Durable, proposal-only cross-packet temporal boundary ledger.
+int surge_temporal_boundary_add(void* handle, const char* transaction_id,
+    const char* idempotency_key, const char* event_id, uint64_t expected_state_version,
+    const char* claim_id, const char* role, const char* valid_from, const char* valid_until,
+    const char* evidence_id, const char* packet_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+int surge_temporal_boundary_get(void* handle, const char* claim_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+int surge_temporal_boundary_clear(void* handle, const char* transaction_id,
+    const char* idempotency_key, const char* event_id, uint64_t expected_state_version,
+    const char* claim_id, char* output, size_t output_capacity,
+    size_t* required_capacity, char* error, size_t error_capacity);
+size_t surge_temporal_boundary_pending_count(void* handle);
+
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
 size_t surge_context_graph_scope_count(void* handle);
