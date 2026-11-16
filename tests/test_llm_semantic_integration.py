@@ -20,6 +20,38 @@ def result(kind="CLAIM", topic="予算", proposition="予算を増額", polarity
             "importance":importance}
 
 class LLMSemanticIntegrationTests(unittest.TestCase):
+
+    def test_temporal_candidate_binds_to_single_accepted_claim_as_proposal_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = LLMSemanticRuntime(StubProvider([result(
+                topic="契約A", proposition="契約Aは有効")]), "ctx", "source")
+            with SemanticCoreBridge(pathlib.Path(tmp) / "temporal-bind.sgj") as core:
+                out = runtime.process("契約Aは2026年4月1日から有効", core,
+                                      timezone_offset="+09:00")
+                self.assertEqual(len(out["temporal_bindings"]), 1)
+                binding = out["temporal_bindings"][0]
+                self.assertEqual(binding["binding_status"], "BOUND_PENDING_CORE_REVIEW")
+                self.assertEqual(binding["claim_ref"], "claim/" + out["packet_id"])
+                self.assertEqual(binding["evidence_ref"], out["evidence_id"])
+                self.assertFalse(binding["claim_validity_write"])
+                self.assertEqual(core.state_version, 1)
+
+    def test_temporal_binding_refuses_multiple_cues_and_corrections(self):
+        from surge_adapter.temporal_recognition import recognize_temporal_spans
+        from surge_adapter.temporal_claim_binding import bind_temporal_candidates
+        source = "契約Aは2026年4月1日から有効、契約Bは2026年5月1日から有効"
+        spans = recognize_temporal_spans(source, timezone_offset="+09:00")
+        out = bind_temporal_candidates(source, spans, claim_id="claim/1",
+                                       evidence_id="evidence/1", claim_accepted=True)
+        self.assertEqual(len(out), 2)
+        self.assertTrue(all(x["binding_status"] == "MULTIPLE_TEMPORAL_CUES" for x in out))
+
+        correction = "開始日は2026年4月1日ではなく2026年3月1日から有効"
+        spans = recognize_temporal_spans(correction, timezone_offset="+09:00")
+        out = bind_temporal_candidates(correction, spans, claim_id="claim/2",
+                                       evidence_id="evidence/2", claim_accepted=True)
+        self.assertTrue(all(x["binding_status"] == "CORRECTION_REVIEW_REQUIRED" for x in out))
+
     def test_claim_commits_packet_evidence_claim_cluster_and_replays(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal=pathlib.Path(tmp)/"runtime.sgj"

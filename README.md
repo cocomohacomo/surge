@@ -40,6 +40,7 @@ Universal Context Cognition Framework.
 - **Question / Interest / Focus router:** [docs/surge/QUESTION_ROUTER_v0.1.md](docs/surge/QUESTION_ROUTER_v0.1.md)
 - **Dependency impact engine:** [docs/surge/DEPENDENCY_ENGINE_v0.1.md](docs/surge/DEPENDENCY_ENGINE_v0.1.md)
 - **Claim temporal validity:** [docs/surge/CLAIM_TEMPORAL_VALIDITY_v0.1.md](docs/surge/CLAIM_TEMPORAL_VALIDITY_v0.1.md)\n- **Japanese temporal recognition:** [docs/surge/JAPANESE_TEMPORAL_RECOGNITION_v0.1.md](docs/surge/JAPANESE_TEMPORAL_RECOGNITION_v0.1.md)
+- **Temporal Claim binding:** [docs/surge/TEMPORAL_CLAIM_BINDING_v0.1.md](docs/surge/TEMPORAL_CLAIM_BINDING_v0.1.md)
 - **Typed Context Graph:** [docs/surge/CONTEXT_GRAPH_v0.1.md](docs/surge/CONTEXT_GRAPH_v0.1.md)
 - **Event journal design:** [docs/surge/EVENT_JOURNAL_v0.1.md](docs/surge/EVENT_JOURNAL_v0.1.md)
 - **Event journal conformance:** [tests/conformance/SURGE_v0.9_EVENT_JOURNAL.md](tests/conformance/SURGE_v0.9_EVENT_JOURNAL.md)
@@ -114,11 +115,9 @@ PacketAdmissionCoordinator independently recomputes SHA-256 over the caller-supp
 
 ## License and reuse
 
-SURGE is intentionally published without an open-source license. All rights are
-reserved by the applicable rightsholders. No general permission is granted to
-use, modify, redistribute, sublicense, or sell the code or documentation.
-Public visibility does not itself grant such a license. See
-[Publication and reuse policy](docs/PUBLICATION_POLICY.md).
+SURGE is licensed under the [MIT License](LICENSE). The MIT License applies
+ to project-owned code and documentation; third-party components remain subject
+to their respective licenses. See [Publication and reuse policy](docs/PUBLICATION_POLICY.md).
 
 
 See the [public release readiness checklist](docs/PUBLIC_RELEASE_CHECKLIST.md),

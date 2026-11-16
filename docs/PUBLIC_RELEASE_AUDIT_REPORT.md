@@ -52,3 +52,15 @@ Open PRs remain as previously created (including draft PR #35 preparation).
 2. Merge preparation / audit PRs.
 3. Explicitly confirm Public visibility change in GitHub Settings.
 4. After Public, enable Secret scanning + Push protection and re-run CI.
+
+
+## License change addendum (2026-11-17)
+
+The audit above records the repository's historical no-license state at the
+time it was written. The project owner subsequently selected MIT. The root
+`LICENSE` file now grants the MIT License for project-owned code and
+documentation, and `README.md`, `docs/PUBLICATION_POLICY.md`, and the
+release checklist have been updated to reflect that decision. Third-party
+materials remain under their respective licenses. This addendum supersedes
+the historical "License: None" observation for the repository's current
+default branch.

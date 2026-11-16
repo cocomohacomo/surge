@@ -8,12 +8,12 @@ This checklist does not itself change repository visibility.
 ## Owner-selected publication policy
 
 - Repository visibility: **Public** (changed by owner after audit)
-- License: none. No MIT, Apache-2.0, or other general copyright license is granted.
+- License: MIT. The root `LICENSE` file is authoritative.
 - Branches: retain all branches. Do not delete or silently retarget existing branches or pull requests.
 
 ## Completed preparation
 
-- [x] State the no-license policy in README and `docs/PUBLICATION_POLICY.md`.
+- [x] Publish the MIT license in the root `LICENSE` and align README and `docs/PUBLICATION_POLICY.md`.
 - [x] Add `SECURITY.md` with private vulnerability-disclosure guidance.
 - [x] Add ignore rules for local builds, caches, credentials, databases, journals, and logs.
 - [x] Harden conformance CI (least privilege, pinned SHAs, concurrency, full test matrix).
