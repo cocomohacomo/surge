@@ -140,6 +140,8 @@ int surge_temporal_question_get(void* handle, const char* claim_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 size_t surge_temporal_question_count(void* handle);
+int surge_context_graph_focus_get(void* handle, char* output, size_t output_capacity,
+    size_t* required_capacity, char* error, size_t error_capacity);
 
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);

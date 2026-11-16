@@ -130,6 +130,10 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_temporal_question_get.restype = ctypes.c_int
         lib.surge_temporal_question_count.argtypes = [ctypes.c_void_p]
         lib.surge_temporal_question_count.restype = ctypes.c_size_t
+        lib.surge_context_graph_focus_get.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_focus_get.restype = ctypes.c_int
 
 
     @property
@@ -500,4 +504,10 @@ class SemanticCoreBridge(CppCoreBridge):
     @property
     def temporal_question_count(self) -> int:
         return int(self._lib.surge_temporal_question_count(self._handle))
+
+    def get_focus(self) -> dict[str, Any] | None:
+        result = self._temporal_ledger_call(
+            self._lib.surge_context_graph_focus_get, (self._handle,),
+            "FOCUS_BUFFER_TOO_SMALL")
+        return result if result.get("found") else None
 

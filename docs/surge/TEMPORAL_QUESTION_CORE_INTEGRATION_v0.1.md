@@ -47,3 +47,17 @@ eligible RecognitionPacket temporal proposals automatically create or update
 the associated durable Question whenever a conflict exists. Ambiguous,
 unresolved, multi-cue, correction, or unbound proposals remain review-only
 and are not promoted into the ledger.
+
+
+## Focus routing
+
+When a temporal Question is synchronized, the Core also creates its graph-level
+Question and QuestionAspect. It follows existing ABOUT relations from the
+affected Claim to Cluster nodes and creates an Interest for each linked
+Cluster. Focus is switched only when exactly one Cluster is linked; zero or
+multiple matches leave the current Focus unchanged. This follows the existing
+QuestionRouter ambiguity rule and does not execute an external action.
+
+The current Focus can be read through the C ABI
+`surge_context_graph_focus_get` and Python `SemanticCoreBridge.get_focus()`.
+Question and Focus graph records are journal-backed and survive restart.
