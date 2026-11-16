@@ -196,7 +196,12 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
   record.impacted_nodes=evaluation.impacted_nodes;
   record.rejected_dependencies=evaluation.rejected_dependencies;
   for(const auto& id:evaluation.triggered_dependencies){
-   const auto& dep=staged.nodes.at(id);
+   const auto dep_it=staged.nodes.find(id);
+   if(dep_it==staged.nodes.end()||dep_it->second.kind!=NodeKind::Dependency||
+      dep_it->second.references.size()!=2){
+    error="DEPENDENCY_TRIGGER_RECORD_INVALID";events.clear();return false;
+   }
+   const auto& dep=dep_it->second;
    record.triggered.push_back({id,dep.references[0],dep.references[1]});
   }
   staged.dependency_evaluations[d.delta_id]=record;
