@@ -44,12 +44,46 @@ class ContextRetriever:
         self._lib.surge_retrieval_ticket_issue.restype = ctypes.c_int
         self._lib.surge_retrieval_ticket_resolve.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         self._lib.surge_retrieval_ticket_resolve.restype = ctypes.c_int
+        self._lib.surge_context_graph_dependency_evaluation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+        ]
+        self._lib.surge_context_graph_dependency_evaluation.restype = ctypes.c_int
         self._lib.surge_question_aspect_set_status.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
             ctypes.c_uint64, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
         ]
         self._lib.surge_question_aspect_set_status.restype = ctypes.c_int
 
+
+
+    def dependency_evaluation(self, delta_id: str) -> dict[str, Any]:
+        """Return the durable Core evaluation record for one SemanticDelta."""
+        if not isinstance(delta_id, str) or not delta_id:
+            raise ValueError("DEPENDENCY_EVALUATION_DELTA_ID_INVALID")
+        capacity = 1024
+        for _ in range(3):
+            output = ctypes.create_string_buffer(capacity)
+            required = ctypes.c_size_t(0)
+            error = ctypes.create_string_buffer(512)
+            ok = self._lib.surge_context_graph_dependency_evaluation(
+                self._core._handle, delta_id.encode("utf-8"), output, capacity,
+                ctypes.byref(required), error, len(error))
+            if ok:
+                try:
+                    result = json.loads(output.value.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID") from exc
+                expected = {"delta_id", "triggered", "impacted_nodes", "rejected_dependencies"}
+                if not isinstance(result, dict) or set(result) != expected:
+                    raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_SHAPE_INVALID")
+                return result
+            message = error.value.decode("utf-8", errors="replace")
+            if message != "RETRIEVAL_BUFFER_TOO_SMALL" or required.value <= capacity:
+                raise PacketRejected(message or "DEPENDENCY_EVALUATION_RETRIEVAL_FAILED")
+            capacity = required.value
+        raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_TOO_LARGE")
 
     @staticmethod
     def _refs_digest(refs: list[str]) -> str:

@@ -94,3 +94,22 @@ Conformance coverage verifies trigger generation, malformed predicate
 rejection, idempotent retry, and restart replay. The C ABI/Python exposure of
 these records, fine-grained predicate-operation budgets, and crash/fault
 injection remain subsequent work.
+
+
+## v0.4: durable evaluation read API
+
+The C ABI exposes read-only lookup of a persisted dependency evaluation by
+SemanticDelta ID. The response includes triggered dependency IDs and their
+prerequisite/dependent endpoints, impacted node IDs, and rejected dependency
+IDs. The API uses a bounded output buffer and reports the required capacity
+when the caller must retry. Missing records return
+`DEPENDENCY_EVALUATION_NOT_FOUND`.
+
+The Python `ContextRetriever.dependency_evaluation(delta_id)` bridge validates
+the JSON response shape and retries bounded-buffer responses. The record is
+read from the replayed Core graph, not reconstructed by Python. Conformance
+coverage reads a record after closing and reopening the Core handle and checks
+triggered, impacted, rejected, and missing-record behavior.
+
+This API is read-only. Dependency evaluation remains part of the SemanticDelta
+transaction; this endpoint does not trigger reevaluation or mutate state.

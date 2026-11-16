@@ -683,4 +683,69 @@ int surge_context_graph_retrieve(void* opaque, const char* query, const char* ki
   }
 }
 
+
+int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !delta_id || !*delta_id) {
+      copy_text(error, error_capacity, "DEPENDENCY_EVALUATION_ARGUMENT_INVALID");
+      return 0;
+    }
+    const auto& records = static_cast<Handle*>(opaque)->graph.dependency_evaluations();
+    const auto found = records.find(delta_id);
+    if (found == records.end()) {
+      copy_text(error, error_capacity, "DEPENDENCY_EVALUATION_NOT_FOUND");
+      return 0;
+    }
+    auto quote = [](const std::string& value) {
+      std::string out = "\"";
+      for (unsigned char c : value) {
+        if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else if (c < 0x20) out += ' ';
+        else out += static_cast<char>(c);
+      }
+      out += '"';
+      return out;
+    };
+    const auto& record = found->second;
+    std::ostringstream json;
+    json << "{\"delta_id\":" << quote(record.delta_id) << ",\"triggered\":[";
+    for (size_t i = 0; i < record.triggered.size(); ++i) {
+      if (i) json << ',';
+      const auto& trigger = record.triggered[i];
+      json << "{\"dependency_id\":" << quote(trigger.dependency_id)
+           << ",\"prerequisite_id\":" << quote(trigger.prerequisite_id)
+           << ",\"dependent_id\":" << quote(trigger.dependent_id) << '}';
+    }
+    json << "],\"impacted_nodes\":[";
+    for (size_t i = 0; i < record.impacted_nodes.size(); ++i) {
+      if (i) json << ',';
+      json << quote(record.impacted_nodes[i]);
+    }
+    json << "],\"rejected_dependencies\":[";
+    for (size_t i = 0; i < record.rejected_dependencies.size(); ++i) {
+      if (i) json << ',';
+      json << quote(record.rejected_dependencies[i]);
+    }
+    json << "]}";
+    const std::string payload = json.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "RETRIEVAL_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_DEPENDENCY_EVALUATION_EXCEPTION");
+    return 0;
+  }
+}
 }

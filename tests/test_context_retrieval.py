@@ -85,6 +85,45 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(only_claims["items"][0]["kind"], "CLAIM")
                 self.assertEqual(retriever.search("unmatched-token")["items"], [])
 
+
+    def test_dependency_evaluation_is_retrievable_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "dependency-evaluation.sgj"
+            with SemanticCoreBridge(journal) as core:
+                result = core.apply_semantic_delta({
+                    "delta_id": "delta/dependency-evaluation",
+                    "idempotency_key": "idem/dependency-evaluation",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "cluster/source", "kind": "CLUSTER",
+                         "content": "approved", "references": []},
+                        {"id": "cluster/target", "kind": "CLUSTER",
+                         "content": "target", "references": []},
+                        {"id": "dependency/approval", "kind": "DEPENDENCY",
+                         "content": "CONTENT_EQUALS:approved",
+                         "references": ["cluster/source", "cluster/target"]},
+                        {"id": "dependency/invalid", "kind": "DEPENDENCY",
+                         "content": "UNKNOWN_PREDICATE",
+                         "references": ["cluster/source", "cluster/target"]},
+                    ],
+                    "relations": [],
+                })
+                self.assertTrue(result["committed"])
+            with SemanticCoreBridge(journal) as recovered:
+                record = ContextRetriever(recovered).dependency_evaluation(
+                    "delta/dependency-evaluation")
+                self.assertEqual(record["delta_id"], "delta/dependency-evaluation")
+                self.assertEqual(record["triggered"], [{
+                    "dependency_id": "dependency/approval",
+                    "prerequisite_id": "cluster/source",
+                    "dependent_id": "cluster/target",
+                }])
+                self.assertIn("cluster/target", record["impacted_nodes"])
+                self.assertEqual(record["rejected_dependencies"],
+                                 ["dependency/invalid"])
+                with self.assertRaisesRegex(Exception, "DEPENDENCY_EVALUATION_NOT_FOUND"):
+                    ContextRetriever(recovered).dependency_evaluation("missing-delta")
+
     def test_invalid_query_options_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "invalid.sgj") as core:

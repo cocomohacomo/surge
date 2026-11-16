@@ -100,3 +100,11 @@ restored on replay. Restart, idempotency, and atomic packet + semantic tests
 have been added. The current CI attempts have not produced a successful run,
 so these checklist items remain open until the test suite passes and the PR is
 merged. C ABI/Python exposure and fault-injection verification are also open.
+
+
+A follow-up implementation is in progress on
+`feat/dependency-evaluation-c-api-v0.1`, stacked on PR #29. It adds a
+read-only C ABI and Python `ContextRetriever` API for retrieving persisted
+dependency evaluation records by delta ID, with bounded-buffer retry and
+restart-replay conformance coverage. This work is not complete until the
+stacked PR's CI passes and both PRs are merged.
