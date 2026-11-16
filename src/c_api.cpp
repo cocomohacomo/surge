@@ -5,6 +5,7 @@
 #include "surge/packet_admission.hpp"
 #include <algorithm>
 #include <cstring>
+#include <iomanip>
 #include <exception>
 #include <memory>
 #include <string>
@@ -320,6 +321,7 @@ int surge_packet_core_admit_and_apply(
     const SurgeGraphRelationInput* relations,size_t relation_count,
     const SurgeScopeSpanInput* scopes,size_t scope_count,
     const char* focus_cluster_id,const char* focus_interest_id,
+    const SurgeClassificationProposalInput* proposal,
     int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
     char* error,size_t error_cap) {
   try {
@@ -419,6 +421,30 @@ int surge_packet_core_admit_and_apply(
     if(!handle->graph.prepare_events(delta,semantic_events,prepare_error)){
       copy_text(error,error_cap,prepare_error);return 0;
     }
+    if(proposal){
+      if(!proposal->proposal_id||!*proposal->proposal_id||
+         !proposal->packet_ref||!proposal->packet_source_generation||
+         !proposal->serialized_json||!*proposal->serialized_json||
+         std::string(proposal->packet_ref)!=packet.packet_id||
+         proposal->base_state_version!=expected||
+         proposal->context_hint_state_version!=expected||
+         std::string(proposal->packet_source_generation)!=packet.source_generation||
+         proposal->packet_source_sequence!=packet.source_sequence||
+         std::strlen(proposal->proposal_id)>256||
+         std::strlen(proposal->serialized_json)>1024U*1024U){
+        copy_text(error,error_cap,"CLASSIFICATION_PROPOSAL_LINEAGE_INVALID");return 0;
+      }
+      std::ostringstream payload;
+      payload<<"P1 "<<std::quoted(std::string(proposal->proposal_id))<<' '
+             <<std::quoted(std::string(proposal->packet_ref))<<' '
+             <<proposal->base_state_version<<' '
+             <<proposal->context_hint_state_version<<' '
+             <<std::quoted(std::string(proposal->packet_source_generation))<<' '
+             <<proposal->packet_source_sequence<<' '
+             <<std::quoted(std::string(proposal->serialized_json));
+      semantic_events.push_back({"classification-proposal:"+std::string(proposal->proposal_id),
+          "CLASSIFICATION_PROPOSAL_RECORDED",payload.str()});
+    }
     const auto admitted=handle->coordinator.admit(packet,source,semantic_events);
     if(!admitted.admitted){copy_text(error,error_cap,admitted.error);return 0;}
     if(!handle->graph.open()){
@@ -431,6 +457,41 @@ int surge_packet_core_admit_and_apply(
     return 1;
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
+}
+
+int surge_classification_proposal_get(void* opaque,const char* proposal_id,
+    char* output,size_t output_capacity,size_t* required_capacity,
+    char* error,size_t error_capacity){
+  try{
+    if(!opaque||!proposal_id||!*proposal_id||(!output&&output_capacity)){
+      copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_QUERY_ARGUMENT_INVALID");return 0;
+    }
+    const auto events=static_cast<Handle*>(opaque)->journal.committed_events();
+    for(auto it=events.rbegin();it!=events.rend();++it){
+      if(it->kind!="CLASSIFICATION_PROPOSAL_RECORDED")continue;
+      std::istringstream payload(it->payload);
+      std::string magic,id,packet_ref,generation,json,extra;
+      std::uint64_t base=0,hint=0,sequence=0;
+      if(!(payload>>magic>>std::quoted(id)>>std::quoted(packet_ref)>>base>>hint>>
+           std::quoted(generation)>>sequence>>std::quoted(json))||(payload>>extra)||magic!="P1"){
+        copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_JOURNAL_RECORD_INVALID");return 0;
+      }
+      if(id!=proposal_id)continue;
+      if(packet_ref.empty()||generation.empty()||base!=hint||json.empty()){
+        copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_JOURNAL_LINEAGE_INVALID");return 0;
+      }
+      const std::size_t required=json.size()+1;
+      if(required_capacity)*required_capacity=required;
+      if(!output||output_capacity<required){
+        copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_BUFFER_TOO_SMALL");return 0;
+      }
+      copy_text(output,output_capacity,json);
+      copy_text(error,error_capacity,"");
+      return 1;
+    }
+    copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_NOT_FOUND");return 0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"UNKNOWN_CLASSIFICATION_PROPOSAL_QUERY_EXCEPTION");return 0;}
 }
 
 int surge_context_graph_apply_claim_validity(void* opaque,
