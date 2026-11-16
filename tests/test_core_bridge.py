@@ -369,6 +369,42 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.get_question_memory_state("q/low")["memory_state"],"DORMANT")
                 self.assertEqual(recovered.get_question_memory_state("q/mid")["memory_state"],"ACTIVE")
 
+    def test_core_derived_question_memory_plan_is_explainable_and_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "memory-plan.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "memory-plan-seed", "idempotency_key": "memory-plan-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/open", "kind": "QUESTION", "content": "open question"},
+                        {"id": "q/low", "kind": "QUESTION", "content": "low priority"},
+                        {"id": "q/dependent", "kind": "QUESTION", "content": "dependency protected"},
+                        {"id": "a/open", "kind": "QUESTION_ASPECT", "content": "unresolved",
+                         "references": ["q/open"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "memory-plan-dependency", "idempotency_key": "memory-plan-dependency",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [{"id": "r/protect", "kind": "DEPENDS_ON",
+                                  "from": "q/dependent", "to": "q/open"}],
+                })
+                before = core.state_version
+                plan = core.plan_question_memory_capacity(1)
+                self.assertEqual(core.state_version, before)
+                by_id = {item["question_id"]: item for item in plan["scores"]}
+                self.assertTrue(by_id["q/dependent"]["protected_by_dependency"])
+                self.assertGreaterEqual(by_id["q/dependent"]["retention_score"], 0.75)
+                self.assertEqual(by_id["q/open"]["factors"]["unresolved_importance"], 1.0)
+                self.assertEqual(by_id["q/low"]["factors"]["recency"], 0.5)
+                self.assertIn("q/open", plan["demotion_candidates"])
+                self.assertEqual(plan["state_version"], before)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, before)
+                self.assertEqual(recovered.get_question_memory_state("q/open")["memory_state"], "ACTIVE")
+
+
     def test_question_relationship_network_types_cycles_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-relations.sgj"
