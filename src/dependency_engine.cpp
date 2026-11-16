@@ -103,7 +103,7 @@ DependencyEvaluationResult DependencyEngine::evaluate(
     }
     return false;
   };
-  std::map<std::string, DependencyPredicate> parsed;
+  std::set<std::string> fired, rejected;\n  std::map<std::string, DependencyPredicate> parsed;
   for (const auto* dep : dependencies) {
     auto predicate = parse_predicate(dep->content);
     if (!predicate.valid()) rejected.insert(dep->id);
