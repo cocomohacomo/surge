@@ -215,6 +215,33 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertEqual(core.packet_count, 0)
                 self.assertEqual(core.scope_count, 0)
 
+
+    def test_temporal_spans_use_exact_utf8_byte_offsets(self):
+        from surge_adapter.temporal_recognition import recognize_temporal_spans
+        source = "契約は2026年4月1日から有効"
+        spans = recognize_temporal_spans(source, timezone_offset="+09:00")
+        self.assertEqual(len(spans), 1)
+        span = spans[0]
+        raw = source.encode("utf-8")
+        self.assertEqual(raw[span["start_offset"]:span["end_offset"]].decode("utf-8"), span["exact_text"])
+        self.assertEqual(span["offset_basis"], "UTF8_BYTE_NFC")
+        self.assertIn("TEMPORAL_ROLE:VALID_FROM", span["labels"])
+
+    def test_temporal_candidate_is_in_runtime_proposal_without_core_mutation(self):
+        from datetime import datetime, timezone, timedelta
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = LLMSemanticRuntime(StubProvider([result()]), "ctx", "source")
+            ref = datetime(2026, 1, 1, 9, 0, tzinfo=timezone(timedelta(hours=9)))
+            with SemanticCoreBridge(pathlib.Path(tmp) / "temporal.sgj") as core:
+                out = runtime.process("契約は2026年4月1日から有効", core,
+                    reference_datetime=ref, timezone_offset="+09:00")
+                spans = out["proposal"]["candidate_spans"]
+                self.assertEqual(len(spans), 1)
+                self.assertIn("TEMPORAL_STATUS:RESOLVED", spans[0]["labels"])
+                self.assertEqual(out["temporal_candidates"][0]["valid_from"], "2026-04-01T00:00:00+09:00")
+                self.assertTrue(out["semantic_commit"]["committed"])
+                self.assertEqual(core.state_version, 1)
+
     def test_50_independent_claim_inputs_commit_and_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
             outputs=[result(topic="予算",proposition=f"提案{n}",polarity="POSITIVE")

@@ -165,3 +165,34 @@ def recognize_temporal_expressions(
         ]
     # Keep source order stable, including ties.
     return sorted(candidates, key=lambda item: text.find(item.text))
+
+
+
+def recognize_temporal_spans(text: str, *, base_offset: int = 0,
+                              reference_datetime: Optional[datetime] = None,
+                              timezone_offset: Optional[str] = None) -> list[dict]:
+    """Emit proposal-ready temporal cues anchored to NFC UTF-8 byte ranges."""
+    import unicodedata
+    if not isinstance(base_offset, int) or isinstance(base_offset, bool) or base_offset < 0:
+        raise ValueError("TEMPORAL_BASE_OFFSET_INVALID")
+    normalized = unicodedata.normalize("NFC", text)
+    candidates = recognize_temporal_expressions(normalized,
+        reference_datetime=reference_datetime, timezone_offset=timezone_offset)
+    spans, cursor = [], 0
+    for index, candidate in enumerate(candidates):
+        start_char = normalized.find(candidate.text, cursor)
+        if start_char < 0:
+            start_char = normalized.find(candidate.text)
+        if start_char < 0:
+            continue
+        end_char = start_char + len(candidate.text)
+        start = base_offset + len(normalized[:start_char].encode("utf-8"))
+        end = base_offset + len(normalized[:end_char].encode("utf-8"))
+        spans.append({"start_offset": start, "end_offset": end,
+            "offset_basis": "UTF8_BYTE_NFC",
+            "labels": ["TEMPORAL_ROLE:" + candidate.role,
+                       "TEMPORAL_STATUS:" + candidate.status],
+            "candidate_kind": "TEMPORAL_CUE", "exact_text": candidate.text,
+            "candidate": candidate.to_dict()})
+        cursor = end_char
+    return spans
