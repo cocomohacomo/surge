@@ -46,13 +46,15 @@ class LLMProposalIntegrationTests(unittest.TestCase):
 
     def runtime_result(self, provider):
         runtime = LLMSemanticRuntime(provider, "ctx", "source", "test-generation")
-        runtime.packet_adapter.admit_and_apply_to_core = (
-            lambda packet, text, core, delta: (
-                SimpleNamespace(status="ADMITTED"),
-                {"committed": True, "duplicate": False, "state_version": 13},
-            )
-        )
-        return runtime.process("予算を増額する。", FakeCore())
+        captured = {}
+        def fake_admit(packet, text, core, delta):
+            captured["delta"] = delta
+            return (SimpleNamespace(status="ADMITTED"),
+                    {"committed": True, "duplicate": False, "state_version": 13})
+        runtime.packet_adapter.admit_and_apply_to_core = fake_admit
+        result = runtime.process("予算を増額する。", FakeCore())
+        self.assertEqual(captured["delta"]["classification_proposal"], result["proposal"])
+        return result
 
     def test_runtime_emits_schema_valid_proposal_before_core_commit(self):
         result = self.runtime_result(FixedProvider())
