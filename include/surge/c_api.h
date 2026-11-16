@@ -122,6 +122,9 @@ int surge_question_aspect_set_status(void* handle, const char* aspect_id,
 int surge_question_aspect_get_status(void* handle, const char* aspect_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
+int surge_question_get_aggregate_status(void* handle, const char* question_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
 int surge_question_route_contradiction(void* handle, const char* relation_id,
     const char* policy_version, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity);

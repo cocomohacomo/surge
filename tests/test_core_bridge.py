@@ -220,6 +220,69 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
             with SemanticCoreBridge(journal) as recovered:
                 self.assertEqual(recovered.get_question_aspect(first["question_aspect_id"])["status"], "RESOLVED")
                 self.assertEqual(recovered.get_question_aspect(second["question_aspect_id"])["status"], "OPEN")
+    def test_question_aggregate_state_precedence_counts_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-aggregate.sgj"
+            question_id = "question/aggregate"
+            aspect_ids = ["aspect/aggregate/open", "aspect/aggregate/deferred",
+                          "aspect/aggregate/resolved-a", "aspect/aggregate/resolved-b"]
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "seed-question-aggregate",
+                    "idempotency_key": "seed-question-aggregate",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": question_id, "kind": "QUESTION", "content": "集約状態テスト"},
+                        *[{"id": aspect_id, "kind": "QUESTION_ASPECT", "content": "aspect",
+                           "references": [question_id]} for aspect_id in aspect_ids],
+                    ],
+                    "relations": [],
+                })
+                empty_question = "question/empty"
+                core.apply_semantic_delta({
+                    "delta_id": "seed-empty-question", "idempotency_key": "seed-empty-question",
+                    "expected_state_version": core.state_version, "nodes": [
+                        {"id": empty_question, "kind": "QUESTION", "content": "未発生"},
+                    ], "relations": [],
+                })
+                empty = core.get_question_aggregate(empty_question)
+                self.assertEqual(empty["status"], "UNKNOWN")
+                self.assertEqual(empty["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 0})
+                self.assertEqual(empty["aspect_ids"], [])
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_NOT_FOUND"):
+                    core.get_question_aggregate("question/missing")
+                initial_version = core.state_version
+                result = core.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "OPEN")
+                self.assertEqual(result["counts"], {"OPEN": 4, "DEFERRED": 0, "RESOLVED": 0})
+                self.assertEqual(result["state_version"], initial_version)
+                self.assertEqual(core.state_version, initial_version)
+                core.set_question_aspect_status(aspect_ids[0], "RESOLVED")
+                core.set_question_aspect_status(aspect_ids[1], "DEFERRED")
+                result = core.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "OPEN")
+                self.assertEqual(result["counts"], {"OPEN": 2, "DEFERRED": 1, "RESOLVED": 1})
+                core.set_question_aspect_status(aspect_ids[2], "DEFERRED")
+                result = core.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "OPEN")
+                self.assertEqual(result["counts"], {"OPEN": 1, "DEFERRED": 2, "RESOLVED": 1})
+                core.set_question_aspect_status(aspect_ids[3], "DEFERRED")
+                result = core.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "DEFERRED")
+                self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 3, "RESOLVED": 1})
+                for aspect_id in aspect_ids:
+                    core.set_question_aspect_status(aspect_id, "RESOLVED")
+                result = core.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "RESOLVED")
+                self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 4})
+                self.assertEqual(result["aspect_ids"], sorted(aspect_ids))
+                resolved_version = result["state_version"]
+            with SemanticCoreBridge(journal) as recovered:
+                result = recovered.get_question_aggregate(question_id)
+                self.assertEqual(result["status"], "RESOLVED")
+                self.assertEqual(result["state_version"], resolved_version)
+                self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 4})
+
     def test_general_contradiction_question_route_is_durable_and_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "general-question.sgj"
