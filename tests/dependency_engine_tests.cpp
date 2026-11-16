@@ -1,4 +1,5 @@
 #include "surge/dependency_engine.hpp"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <utility>
