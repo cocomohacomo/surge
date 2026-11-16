@@ -15,10 +15,11 @@ expected Claim/ScopeSpan, expected lifecycle state and adjudicated outcome.
 ## 1. Claim applicability comparison
 
 A contradiction is eligible only when normalized propositions match, topic and
-geographic scope do not conflict, condition scopes overlap, validity intervals
-overlap, and opposite known polarities remain after temporal lifecycle checks.
-The comparator returns a reason code and never resolves a conflict by choosing
-a winner. Planned-versus-cancelled is a lifecycle transition, not a contradiction.
+geographic scope do not conflict, no explicit exclusive condition pair applies,
+validity intervals overlap, lifecycle states match, modality matches, and
+opposite known polarities remain. The comparator returns a reason code and
+never resolves a conflict by choosing a winner. Different lifecycle states are
+treated as state transitions, not contradictory simultaneous facts.
 
 Current v0.1 scope dimensions: proposition, polarity, topic, condition markers,
 geography, temporal state, valid-from/to and modality. Missing dimensions are
@@ -29,17 +30,22 @@ conservative and returns no contradiction when scope cannot be shown to overlap.
 
 Recognized states are PLANNED, FORECAST, UNDER_REVIEW, DECIDED, CURRENT,
 COMPLETED, CANCELLED and UNKNOWN. They are independent of polarity and
-confidence. A later document creates a new immutable claim occurrence and
-records supersession metadata; it does not rewrite the earlier claim. State
-transition ordering is not inferred solely from publication date.
+confidence. A changed Web capture creates a new immutable source generation.
+A genuinely changed claim creates a new Claim with supersession metadata; an
+identical canonical Claim reuses its existing Claim ID and attaches new
+Evidence. Earlier source and claim records are never overwritten.
 
 ## 3. Web document identity and deduplication
 
-Canonical URL removes fragments, query strings and default path differences.
-The SQLite index stores URL, source digest, packet identity, revision sequence,
-title, publisher and claim signatures. Same URL + same digest is DUPLICATE;
-same URL + changed digest is UPDATE; a new URL is NEW. The index is rebuildable
-and is not the Core journal. Core remains authoritative for semantic state.
+Canonical URL removes fragments and known tracking parameters while preserving
+functional query parameters. The SQLite index stores URL, source digest, packet
+identity, document revision sequence, title, publisher and a many-to-many
+document-to-Claim signature map. Same URL + same digest is DUPLICATE;
+same URL + changed digest is UPDATE; a new URL is NEW. Each changed capture gets
+a new RecognitionPacket source_generation because full-page byte ranges may
+change length; it is not mislabeled as a same-range Packet REVISION. The index
+retains previous_packet_id and document revision lineage. The index is
+rebuildable and is not the Core journal. Core remains authoritative for semantic state.
 Claim signatures are deterministic over proposition, polarity, topic,
 conditions, temporal state and modality.
 
@@ -85,7 +91,9 @@ subject to the existing strict LLM output validator and RecognitionScoring.
   source format. Reiwa dates are normalized to Gregorian ISO dates for interval
   comparison.
 - Cross-document contradiction candidates require persisted Claim records;
-  the comparator itself is deterministic and side-effect-free.
+  the comparator itself is deterministic and side-effect-free. The SQLite
+  document_claims mapping preserves source membership even when identical
+  Claims are reused across multiple URLs.
 - The index and Core journal are separate durability domains. A failed index
   write after Core commit is recovered by replay/reconciliation, not rollback.
 - A Web corpus case is not counted as an executed pass unless its source text,
