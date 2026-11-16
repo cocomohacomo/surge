@@ -127,10 +127,10 @@ class ClaimApplicabilityComparator:
         bf, bt = _date_interval(b)
         if (at and bf and at < bf) or (bt and af and bt < af):
             return ApplicabilityResult(True, False, False, "TIME_INTERVAL_DISJOINT")
-        if a.temporal_state == "CANCELLED" and b.temporal_state in ("PLANNED", "FORECAST"):
-            return ApplicabilityResult(True, False, False, "LIFECYCLE_TRANSITION_NOT_CONTRADICTION")
-        if b.temporal_state == "CANCELLED" and a.temporal_state in ("PLANNED", "FORECAST"):
-            return ApplicabilityResult(True, False, False, "LIFECYCLE_TRANSITION_NOT_CONTRADICTION")
+        lifecycle_states = {"PLANNED","FORECAST","UNDER_REVIEW","DECIDED","CURRENT","COMPLETED","CANCELLED"}
+        if (a.temporal_state in lifecycle_states and b.temporal_state in lifecycle_states
+                and a.temporal_state != b.temporal_state):
+            return ApplicabilityResult(True, False, False, "LIFECYCLE_STATE_DIFFERENT")
         if a.modality != b.modality:
             return ApplicabilityResult(True, False, False, "MODALITY_SCOPE_DIFFERENT")
         opposite = a.polarity != b.polarity and "UNKNOWN" not in (a.polarity, b.polarity)
