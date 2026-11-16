@@ -91,6 +91,22 @@ class WebDocumentRecognitionTests(unittest.TestCase):
                              temporal["opener"]["exact_text"])
             index.close()
 
+    def test_scope_anchor_crossing_overlap_is_deduplicated(self):
+        text=("前文。"*43)+"会議を開催しません。"+("後文。"*200)
+        chunks=split_document(text,max_chars=256,overlap_chars=80)
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"overlap.sqlite")
+            engine=WebDocumentRecognitionEngine(Provider([candidate() for _ in chunks]),
+                "ctx","web",index,max_chunk_chars=256,overlap_chars=80)
+            result=engine.prepare(text,"https://example.jp/overlap","機関")
+            negations=[sp for sp in result["delta"]["scope_spans"] if sp["kind"]=="NEGATION"]
+            self.assertEqual(len(negations),1)
+            span=negations[0]["opener"]
+            raw=text.encode("utf-8")
+            self.assertEqual(raw[span["start_offset"]:span["end_offset"]].decode(),
+                             span["exact_text"])
+            index.close()
+
     def test_quote_attribution_is_not_confused_with_publisher(self):
         with tempfile.TemporaryDirectory() as tmp:
             index=WebDocumentIndex(pathlib.Path(tmp)/"quote.sqlite")
