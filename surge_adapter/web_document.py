@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-from surge_adapter.llm_interface import LLMRecognizer
+from surge_adapter.llm_interface import LLMRecognizer, LLMSemanticRuntime
 from surge_adapter.packet_ingest import RecognitionPacketAdapter, normalize_source
-from surge_adapter.llm_interface import LLMSemanticRuntime
+from surge_adapter.recognition_scoring import RecognitionScorer
 
 TEMPORAL_PATTERNS = (
     ("CANCELLED", r"中止|取消|撤回|取りやめ|廃止"),
@@ -36,6 +36,8 @@ DATE_RE = re.compile(r"令和[元0-9０-９]+年[0-9０-９]+月(?:[0-9０-９]+
 QUOTE_RE = re.compile(r"「[^」]{1,200}」|『[^』]{1,200}』|\"[^\"]{1,200}\"")
 ATTRIBUTION_RE = re.compile(r"([一-龥ぁ-んァ-ヶA-Za-z0-9・]{2,40})(?:によると|は|が)(?:、|\s)*(?:次のとおり|以下のとおり|と発表|と説明|と述べ|と報告)")
 CONDITION_RE = re.compile(r"場合|とき|限り|において|については")
+GEO_RE = re.compile(r"北海道|東京都|(?:京都|大阪)府|[一-龥]{2,3}県|[一-龥]{2,8}市")
+EXCLUSIVE_CONDITIONS = (("災害時","平常時"),("平日","休日"),("昼間","夜間"))
 
 @dataclass(frozen=True)
 class TextChunk:
@@ -84,8 +86,26 @@ def _normal(s: str) -> str:
     s = unicodedata.normalize("NFKC", s).casefold()
     return re.sub(r"[\s、。，．,.・:：;；「」『』（）()\[\]【】]+", "", s)
 
+def _date_key(value: str) -> str:
+    if not value:
+        return ""
+    m = re.search(r"令和([元0-9０-９]+)年([0-9０-９]+)月(?:([0-9０-９]+)日)?", value)
+    if m:
+        year_text = unicodedata.normalize("NFKC",m.group(1))
+        year = 1 if year_text == "元" else int(year_text)
+        month = int(unicodedata.normalize("NFKC",m.group(2)))
+        day = int(unicodedata.normalize("NFKC",m.group(3) or "1"))
+        return f"{2018+year:04d}-{month:02d}-{day:02d}"
+    m = re.search(r"(20[0-9]{2})年([0-9]{1,2})月(?:([0-9]{1,2})日)?", value)
+    if m:
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3) or '1'):02d}"
+    if re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}",value):
+        return value
+    return ""
+
 def _date_interval(a: ClaimApplicability) -> tuple[str, str]:
-    return a.valid_from or "", a.valid_to or ""
+    start, end = _date_key(a.valid_from), _date_key(a.valid_to)
+    return start, end or start
 
 class ClaimApplicabilityComparator:
     """Only reports contradiction when proposition AND applicable scope overlap."""
@@ -99,9 +119,10 @@ class ClaimApplicabilityComparator:
         if a.geography and b.geography and _normal(a.geography) != _normal(b.geography):
             return ApplicabilityResult(True, False, False, "GEOGRAPHY_SCOPE_DISJOINT")
         if a.conditions and b.conditions:
-            left, right = {_normal(x) for x in a.conditions}, {_normal(x) for x in b.conditions}
-            if left.isdisjoint(right):
-                return ApplicabilityResult(True, False, False, "CONDITION_SCOPE_DISJOINT")
+            left, right = " ".join(a.conditions), " ".join(b.conditions)
+            for first, second in EXCLUSIVE_CONDITIONS:
+                if (first in left and second in right) or (second in left and first in right):
+                    return ApplicabilityResult(True, False, False, "CONDITION_SCOPE_DISJOINT")
         af, at = _date_interval(a)
         bf, bt = _date_interval(b)
         if (at and bf and at < bf) or (bt and af and bt < af):
@@ -110,7 +131,7 @@ class ClaimApplicabilityComparator:
             return ApplicabilityResult(True, False, False, "LIFECYCLE_TRANSITION_NOT_CONTRADICTION")
         if b.temporal_state == "CANCELLED" and a.temporal_state in ("PLANNED", "FORECAST"):
             return ApplicabilityResult(True, False, False, "LIFECYCLE_TRANSITION_NOT_CONTRADICTION")
-        if a.modality != b.modality and "ASSERTED" not in (a.modality, b.modality):
+        if a.modality != b.modality:
             return ApplicabilityResult(True, False, False, "MODALITY_SCOPE_DIFFERENT")
         opposite = a.polarity != b.polarity and "UNKNOWN" not in (a.polarity, b.polarity)
         return ApplicabilityResult(True, True, opposite,
@@ -262,10 +283,14 @@ class WebDocumentRecognitionEngine:
         self.index = index
         self.max_chunk_chars, self.overlap_chars = max_chunk_chars, overlap_chars
         self.packet_adapter = RecognitionPacketAdapter()
+        self.scorer = RecognitionScorer()
         self.sequence = 0
 
     def prepare(self, text: str, url: str, publisher: str, title: str = "",
-                retrieved_at: str = "", context: dict[str, Any] | None = None) -> dict[str, Any]:
+                retrieved_at: str = "", context: dict[str, Any] | None = None,
+                capture_status: str = "FULL_TEXT") -> dict[str, Any]:
+        if capture_status not in {"FULL_TEXT","PARTIAL","PDF_TEXT"}:
+            raise ValueError("CAPTURE_STATUS_INVALID")
         source_text = unicodedata.normalize("NFC", text)
         source = normalize_source(source_text)
         digest = hashlib.sha256(source).hexdigest()
@@ -311,11 +336,19 @@ class WebDocumentRecognitionEngine:
             evidence_content = {"url":url,"title":title,"publisher":publisher,
                 "retrieved_at":retrieved_at,"source_digest":digest,
                 "start_byte":chunk.start_byte,"end_byte":chunk.end_byte,
-                "capture":"FULL_TEXT","chunk_index":chunk.index}
+                "capture":capture_status,"chunk_index":chunk.index}
             nodes.append({"id":evidence_id,"kind":"EVIDENCE",
                 "content":json.dumps(evidence_content,ensure_ascii=False,sort_keys=True),
                 "references":[publisher_id]})
-            if candidate["kind"] != "CLAIM" or not candidate["proposition"]:
+            score = self.scorer.evaluate("web/" + packet_id + "/" + str(chunk.index), {
+                "relevance":0.75 if candidate.get("topic") else 0.40,
+                "importance":float(candidate["importance"]),
+                "relation_strength":0.65 if self.index.claims_for_proposition(
+                    candidate.get("proposition") or "") else 0.20,
+                "confidence":float(candidate["confidence"]),
+                "ambiguity":float(candidate["ambiguity"]),
+                "novelty":0.70 if candidate["kind"] in ("CLAIM","QUESTION") else 0.25})
+            if candidate["kind"] != "CLAIM" or not candidate["proposition"] or score.decision == "ABSTAIN":
                 continue
             state = temporal_state(chunk.text)
             modality = "CONDITIONAL" if candidate["conditional"] else (
@@ -323,8 +356,9 @@ class WebDocumentRecognitionEngine:
             conditions = tuple(m.group(0) for m in re.finditer(
                 r"[^。！？\n]{0,60}(?:場合|とき|限り|において|については)", chunk.text))
             dates = [m.group(0) for m in DATE_RE.finditer(chunk.text)]
+            geography = next(iter(GEO_RE.findall(chunk.text)), "")
             applicability = ClaimApplicability(candidate["proposition"],candidate["polarity"],
-                candidate.get("topic") or "",conditions, "", state,
+                candidate.get("topic") or "",conditions, geography, state,
                 dates[0] if dates else "", dates[1] if len(dates) > 1 else "", modality)
             signature = hashlib.sha256(json.dumps({
                 "proposition":_normal(applicability.proposition),
@@ -342,7 +376,7 @@ class WebDocumentRecognitionEngine:
                 claim_content = {"proposition":candidate["proposition"],"polarity":candidate["polarity"],
                 "topic":candidate.get("topic") or "", "conditional":candidate["conditional"],
                 "temporal_state":state,"modality":modality,"conditions":list(conditions),
-                "source_url":url,"publisher":publisher,"retrieved_at":retrieved_at,
+                "recognition_decision":score.decision,"source_url":url,"publisher":publisher,"retrieved_at":retrieved_at,
                 "source_digest":digest,"chunk_index":chunk.index,
                 "supersedes_claim_id":next((p["claim_id"] for p in self.index.claims_for_url(url)
                     if _normal(p.get("applicability",{}).get("proposition","")) ==
@@ -413,8 +447,9 @@ class WebDocumentRecognitionEngine:
             "previous_packet_id":identity["previous_packet_id"],"revision":identity["revision"]}
 
     def ingest(self, text: str, url: str, publisher: str, core: Any,
-               title: str = "", retrieved_at: str = "", context: dict[str, Any] | None = None):
-        prepared=self.prepare(text,url,publisher,title,retrieved_at,context)
+               title: str = "", retrieved_at: str = "", context: dict[str, Any] | None = None,
+               capture_status: str = "FULL_TEXT"):
+        prepared=self.prepare(text,url,publisher,title,retrieved_at,context,capture_status)
         if prepared["status"]=="DUPLICATE":
             return prepared
         prepared["packet"]["context_hint"]["state_version"]=core.state_version
