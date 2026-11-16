@@ -1001,7 +1001,8 @@ int surge_context_graph_focus_get(void*o,char*out,size_t cap,size_t*req,char*err
  const auto& focus=static_cast<Handle*>(o)->graph.focus();std::string value;
  if(focus)value=std::string(R"({"found":true,"cluster_id":)")+json_quote(focus->cluster_id)+R"(,"interest_id":)"+json_quote(focus->interest_id)+"}";
  else value=R"({"found":false,"cluster_id":null,"interest_id":null})";
- if(req)*req=value.size()+1;if(!out||cap<value.size()+1){copy_text(err,ec,"FOCUS_BUFFER_TOO_SMALL");return 0;}
+ if(req) *req=value.size()+1;
+ if(!out||cap<value.size()+1){copy_text(err,ec,"FOCUS_BUFFER_TOO_SMALL");return 0;}
  copy_text(out,cap,value);copy_text(err,ec,"");return 1;
  }catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"FOCUS_QUERY_UNKNOWN_EXCEPTION");return 0;}
 }
