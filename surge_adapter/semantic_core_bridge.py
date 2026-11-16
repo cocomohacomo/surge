@@ -586,7 +586,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ids.append(question_id.encode("utf-8"));scores.append(float(score))
         id_array=(ctypes.c_char_p*len(ids))(*ids) if ids else None;score_array=(ctypes.c_double*len(scores))(*scores) if scores else None
         expected=self.state_version if expected_state_version is None else int(expected_state_version)
-        return self._temporal_ledger_call(self._lib.surge_question_memory_enforce_capacity,(self._handle,id_array,score_array,len(ids),max_active,expected),"QUESTION_MEMORY_BUFFER_TOO_SMALL")
+        output_capacity=128+sum(6*len(item)+16 for item in ids)
+        output=ctypes.create_string_buffer(output_capacity);required=ctypes.c_size_t(0);error=ctypes.create_string_buffer(512)
+        ok=self._lib.surge_question_memory_enforce_capacity(self._handle,id_array,score_array,len(ids),max_active,expected,output,len(output),ctypes.byref(required),error,len(error))
+        detail=error.value.decode("utf-8",errors="replace")
+        if not ok or detail: raise PacketRejected(detail or "QUESTION_MEMORY_CAPACITY_REJECTED")
+        return self._decode_temporal_ledger_json(output.value)
 
     def get_question_reevaluation_candidates(self, question_id: str,
                                              max_depth: int = 8,

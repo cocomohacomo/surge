@@ -722,15 +722,28 @@ int surge_question_memory_recommendation(double a,double b,double c,double d,dou
 
 
 int surge_question_memory_enforce_capacity(void* opaque,const char* const* ids,const double* scores,size_t count,size_t max_active,uint64_t expected,char* output,size_t output_capacity,size_t* required,char* error,size_t error_capacity){
- try{if(!opaque||count>4096||max_active>4096||(count&&(!ids||!scores))){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID");return 0;}
- std::vector<std::pair<std::string,double>> values;values.reserve(count);for(size_t i=0;i<count;++i){if(!ids[i]||!*ids[i]){copy_text(error,error_capacity,"QUESTION_MEMORY_SCORE_INVALID");return 0;}values.emplace_back(ids[i],scores[i]);}
- auto& graph=static_cast<Handle*>(opaque)->graph;std::vector<std::string> demoted;std::string detail;if(!graph.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
- size_t active_after=0;for(const auto& n:graph.nodes())if(n.second.kind==surge::NodeKind::Question&&graph.question_memory_state(n.first)==surge::QuestionMemoryState::Active)++active_after;
- std::ostringstream json;json<<'{'<<char(34)<<"capacity"<<char(34)<<':'<<max_active<<','<<char(34)<<"active_after"<<char(34)<<':'<<active_after<<','<<char(34)<<"demoted"<<char(34)<<":[";
- for(size_t i=0;i<demoted.size();++i){if(i)json<<',';json<<json_quote(demoted[i]);}
- json<<"],"<<char(34)<<"state_version"<<char(34)<<':'<<graph.state_version()<<'}';
- const auto value=json.str();if(required)*required=value.size()+1;if(!output||output_capacity<value.size()+1){copy_text(error,error_capacity,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
- }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_UNKNOWN_EXCEPTION");return 0;}}
+ try{
+  if(!opaque||count>4096||max_active>4096||(count&&(!ids||!scores))){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID");return 0;}
+  size_t upper=128;
+  for(size_t i=0;i<count;++i){
+   if(!ids[i]||!*ids[i]){copy_text(error,error_capacity,"QUESTION_MEMORY_SCORE_INVALID");return 0;}
+   const size_t length=std::strlen(ids[i]);if(length>4096||upper>static_cast<size_t>(-1)-6*length-16){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID");return 0;}
+   upper+=6*length+16;
+  }
+  if(required)*required=upper;
+  if(!output||output_capacity<upper){copy_text(error,error_capacity,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}
+  std::vector<std::pair<std::string,double>> values;values.reserve(count);
+  for(size_t i=0;i<count;++i)values.emplace_back(ids[i],scores[i]);
+  auto& graph=static_cast<Handle*>(opaque)->graph;std::vector<std::string> demoted;std::string detail;
+  if(!graph.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
+  size_t active_after=0;for(const auto& n:graph.nodes())if(n.second.kind==surge::NodeKind::Question&&graph.question_memory_state(n.first)==surge::QuestionMemoryState::Active)++active_after;
+  std::ostringstream json;json<<'{'<<char(34)<<"capacity"<<char(34)<<':'<<max_active<<','<<char(34)<<"active_after"<<char(34)<<':'<<active_after<<','<<char(34)<<"demoted"<<char(34)<<":[";
+  for(size_t i=0;i<demoted.size();++i){if(i)json<<',';json<<json_quote(demoted[i]);}
+  json<<"],"<<char(34)<<"state_version"<<char(34)<<':'<<graph.state_version()<<'}';
+  const auto value=json.str();if(required)*required=value.size()+1;
+  copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+ }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_UNKNOWN_EXCEPTION");return 0;}
+}
 int surge_question_get_reevaluation_candidates(void* opaque, const char* question_id,
     size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {
