@@ -49,6 +49,13 @@ RESOLVED, NEEDS_TIMEZONE, NEEDS_REFERENCE, NEEDS_YEAR and INVALID.
 `recognize_temporal_expressions(text, reference_datetime=None,
 timezone_offset=None) -> list[TemporalCandidate]`
 
+The packet helper recognize_temporal_spans emits TEMPORAL_CUE proposal spans
+with absolute half-open UTF-8 byte offsets over the packet NFC snapshot.
+LLMSemanticRuntime.process includes these cues in its non-committing
+ClassificationProposal and returns candidate records for review. Callers may
+supply reference_datetime and timezone_offset; neither is inferred. A cue does
+not itself bind a temporal candidate to a Claim.
+
 The caller retains source offsets and Evidence provenance. Before committing,
 it must bind the candidate to a Claim and Evidence, validate the interval, and
 append a new ClaimValidity revision with the next revision number. An unresolved

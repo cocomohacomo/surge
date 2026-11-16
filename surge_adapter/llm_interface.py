@@ -16,6 +16,7 @@ from surge_adapter.packet_ingest import RecognitionPacketAdapter, normalize_sour
 from surge_adapter.recognition_scoring import RecognitionScorer
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 from surge_adapter.proposal_builder import build_classification_proposal
+from surge_adapter.temporal_recognition import recognize_temporal_spans
 
 KINDS = {"CLAIM", "QUESTION", "ACKNOWLEDGEMENT", "UNRESOLVED", "FILLER"}
 POLARITIES = {"POSITIVE", "NEGATIVE", "UNKNOWN"}
@@ -142,7 +143,8 @@ class LLMSemanticRuntime:
             "finalization": "FINAL"}
 
     def _build_proposal(self, packet: dict[str, Any], candidate: dict[str, Any],
-                        score: Any, core: SemanticCoreBridge) -> dict[str, Any]:
+                        score: Any, core: SemanticCoreBridge,
+                        temporal_spans: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Create validated, non-committing metadata before deriving Core writes."""
         labels = [{
             "family": "SPEECH_FUNCTION",
@@ -164,7 +166,7 @@ class LLMSemanticRuntime:
             runtime_descriptor="surge-llm-semantic-runtime/0.2",
             base_state_version=core.state_version,
             candidate_labels=labels,
-            candidate_spans=[],
+            candidate_spans=temporal_spans or [],
         )
 
     @staticmethod
@@ -172,7 +174,8 @@ class LLMSemanticRuntime:
         """Only ACCEPT may turn an LLM candidate into a resolved Claim."""
         return candidate["kind"] == "CLAIM" and score.decision == "ACCEPT"
 
-    def process(self, text: str, core: SemanticCoreBridge) -> dict[str, Any]:
+    def process(self, text: str, core: SemanticCoreBridge, *,
+                reference_datetime=None, timezone_offset: str | None = None) -> dict[str, Any]:
         next_sequence = self.sequence + 1
         packet = self._packet(text, self.context_id, self.source_id,
                               self.source_generation, next_sequence)
@@ -189,8 +192,17 @@ class LLMSemanticRuntime:
             "confidence": float(candidate["confidence"]),
             "ambiguity": float(candidate["ambiguity"]),
             "novelty": 0.70 if candidate["kind"] in ("CLAIM", "QUESTION") else 0.25})
+        # Use the exact NFC snapshot and packet byte coordinate system.
+        normalized_text = normalize_source(text).decode("utf-8")
+        temporal_spans = recognize_temporal_spans(normalized_text,
+            reference_datetime=reference_datetime, timezone_offset=timezone_offset)
         # Proposal creation is isolated from Core mutation and validated first.
-        proposal = self._build_proposal(packet, candidate, score, core)
+        proposal_spans = [
+            {key: span[key] for key in ("start_offset", "end_offset",
+                "offset_basis", "labels", "candidate_kind")}
+            for span in temporal_spans
+        ]
+        proposal = self._build_proposal(packet, candidate, score, core, proposal_spans)
         evidence_id = "evidence/" + packet["packet_id"]
         nodes = [{"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []}]
         relations = []
@@ -252,4 +264,5 @@ class LLMSemanticRuntime:
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
                 "cluster_id": cluster_id, "evidence_id": evidence_id,
-                "proposal": proposal, "review_required": score.decision == "REVIEW"}
+                "proposal": proposal, "temporal_candidates": [s["candidate"] for s in temporal_spans],
+                "review_required": score.decision == "REVIEW"}
