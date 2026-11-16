@@ -87,6 +87,22 @@ int main(){
   assert((fixed.triggered_dependencies == std::vector<std::string>{
       "dep-1", "dep-2", "dep-3", "dep-5"}));
   assert((fixed.cyclic_components[0] == std::vector<std::string>{"B", "C", "D"}));
+  auto level_nodes = eval_nodes;
+  level_nodes.emplace("F", GraphNode{"F", NodeKind::Cluster, "present source", {}});
+  level_nodes.emplace("G", GraphNode{"G", NodeKind::Cluster, "level target", {}});
+  level_nodes.emplace("H", GraphNode{"H", NodeKind::Claim, "cycle target", {}});
+  level_nodes.emplace("dep-level-present", GraphNode{"dep-level-present", NodeKind::Dependency,
+      "PRESENT", {"F", "G"}});
+  level_nodes.emplace("dep-level-gh", GraphNode{"dep-level-gh", NodeKind::Dependency,
+      "ON_CHANGE", {"G", "H"}});
+  level_nodes.emplace("dep-level-hg", GraphNode{"dep-level-hg", NodeKind::Dependency,
+      "ON_CHANGE", {"H", "G"}});
+  auto level_fixed = DependencyEngine::evaluate_fixpoint(level_nodes, {"A"}, 20, 10, 200);
+  assert(level_fixed.status == FixpointStatus::Converged);
+  assert(std::find(level_fixed.impacted_nodes.begin(), level_fixed.impacted_nodes.end(), "G") != level_fixed.impacted_nodes.end());
+  assert(std::find(level_fixed.impacted_nodes.begin(), level_fixed.impacted_nodes.end(), "H") != level_fixed.impacted_nodes.end());
+  assert(std::find(level_fixed.cyclic_components.begin(), level_fixed.cyclic_components.end(),
+      std::vector<std::string>{"G", "H"}) != level_fixed.cyclic_components.end());
   auto iteration_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 1, 100);
   assert(iteration_deferred.status == FixpointStatus::Deferred);
   assert(iteration_deferred.error == "DEPENDENCY_FIXPOINT_ITERATION_BUDGET_EXCEEDED");
