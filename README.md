@@ -132,3 +132,8 @@ repository, use the reusable
 ## Question relationship network
 
 Question nodes support durable DUPLICATES, CONTAINS, AGREES_WITH, CONFLICTS_WITH, and DEPENDS_ON relations. Question dependency cycles are rejected transactionally. See [Question Relationship Network v0.1](docs/surge/QUESTION_RELATIONSHIP_NETWORK_v0.1.md).
+
+
+## Question reevaluation discovery
+
+The Core can discover bounded, direct and transitive dependent Questions without changing their lifecycle state. See [Question Reevaluation Discovery API v0.1](docs/surge/QUESTION_REEVALUATION_DISCOVERY_API_v0.1.md).

@@ -283,6 +283,54 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(result["state_version"], resolved_version)
                 self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 4})
 
+
+    def test_question_reevaluation_candidates_are_bounded_read_only_and_persistent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-reevaluation.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "reeval-seed", "idempotency_key": "reeval-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/root", "kind": "QUESTION", "content": "root"},
+                        {"id": "q/mid", "kind": "QUESTION", "content": "middle"},
+                        {"id": "q/leaf", "kind": "QUESTION", "content": "leaf"},
+                        {"id": "q/other", "kind": "QUESTION", "content": "other"},
+                        {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "root aspect",
+                         "references": ["q/root"]},
+                        {"id": "a/mid", "kind": "QUESTION_ASPECT", "content": "middle aspect",
+                         "references": ["q/mid"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "reeval-links", "idempotency_key": "reeval-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/mid-root", "kind": "DEPENDS_ON", "from": "q/mid", "to": "q/root"},
+                        {"id": "r/leaf-mid", "kind": "DEPENDS_ON", "from": "q/leaf", "to": "q/mid"},
+                        {"id": "r/other-root", "kind": "DEPENDS_ON", "from": "q/other", "to": "q/root"},
+                    ],
+                })
+                before = core.state_version
+                result = core.get_question_reevaluation_candidates("q/root")
+                self.assertEqual([x["question_id"] for x in result["candidates"]],
+                                 ["q/mid", "q/other", "q/leaf"])
+                self.assertEqual([x["depth"] for x in result["candidates"]], [1, 1, 2])
+                self.assertEqual(result["candidates"][0]["status"], "OPEN")
+                self.assertEqual(core.state_version, before)
+                shallow = core.get_question_reevaluation_candidates("q/root", max_depth=1)
+                self.assertEqual([x["question_id"] for x in shallow["candidates"]],
+                                 ["q/mid", "q/other"])
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_REEVALUATION_NODE_LIMIT"):
+                    core.get_question_reevaluation_candidates("q/root", max_nodes=1)
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_REEVALUATION_DEPTH_INVALID"):
+                    core.get_question_reevaluation_candidates("q/root", max_depth=0)
+            with SemanticCoreBridge(journal) as recovered:
+                again = recovered.get_question_reevaluation_candidates("q/root")
+                self.assertEqual([x["question_id"] for x in again["candidates"]],
+                                 ["q/mid", "q/other", "q/leaf"])
+                self.assertEqual(recovered.state_version, before)
+
     def test_question_relationship_network_types_cycles_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-relations.sgj"
