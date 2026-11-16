@@ -9,7 +9,8 @@
 
 namespace surge {
 enum class NodeKind { Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
-enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About };
+enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts };
+enum class ClaimStatus { Active, Superseded, Retracted };
 enum class ScopeKind { Negation, Condition, Modality, Concession, Contrast, Coreference, Anaphora, Quotation, Temporal, ListContinuation, TableHeader };
 enum class ScopeStatus { Closed, Unresolved };
 enum class QuestionAspectStatus { Open, Resolved, Deferred };
@@ -71,6 +72,10 @@ class ContextGraph {
     return state_.dependency_evaluations;
   }
   QuestionAspectStatus question_aspect_status(const std::string& id) const;
+  ClaimStatus claim_status(const std::string& id) const {
+    const auto it = state_.claim_statuses.find(id);
+    return it == state_.claim_statuses.end() ? ClaimStatus::Active : it->second;
+  }
   bool set_question_aspect_status(const std::string& id, QuestionAspectStatus status,
                                   std::uint64_t expected_state_version, std::string& error);
  private:
@@ -81,6 +86,7 @@ class ContextGraph {
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
     std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
+    std::map<std::string, ClaimStatus> claim_statuses;
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
