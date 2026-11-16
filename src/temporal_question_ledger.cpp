@@ -67,8 +67,10 @@ TemporalQuestionResult TemporalQuestionLedger::synchronize(const std::string&tx,
   const bool conflict=conflict_for(p,role),selected=p.selected_candidate_ids.count(role)!=0;
   if(!conflict&&!(selected&&old!=questions_.end()))continue;
   TemporalQuestion q;q.question_id=id;q.claim_id=p.claim_id;q.role=role;q.last_event_id=eid;
-  q.status=conflict?(old==questions_.end()?"OPEN":
-   (old->second.status=="RESOLVED_PENDING_APPROVAL"?"REOPENED":"UNDER_REVIEW")):"RESOLVED_PENDING_APPROVAL";
+  const bool resolved=selected&&p.status=="CONFLICT_RESOLVED_PENDING_APPROVAL";
+  q.status=resolved?"RESOLVED_PENDING_APPROVAL":
+   (conflict?(old==questions_.end()?"OPEN":
+    (old->second.status=="RESOLVED_PENDING_APPROVAL"?"REOPENED":"UNDER_REVIEW")):"RESOLVED_PENDING_APPROVAL");
   for(const auto&c:p.candidates)if(c.role==role){q.candidate_ids.push_back(c.candidate_id);
    add_unique(q.evidence_ids,c.evidence_id);add_unique(q.packet_ids,c.packet_id);}
   snapshots.push_back(std::move(q));
