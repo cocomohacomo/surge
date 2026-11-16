@@ -3,16 +3,16 @@ name: SURGE v0.9 conformance
 on:
   push:
     branches:
-      - main
-      - "spec/**"
-      - "impl/**"
-      - "feat/**"
-      - "chore/**"
+      - "**"
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: surge-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cpp-core:
