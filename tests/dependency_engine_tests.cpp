@@ -37,8 +37,8 @@ int main(){
   eval_nodes["dep-2"].content = "ON_CHANGE";
   eval_nodes["dep-3"].content = "CONTENT_CONTAINS:urgent";
   eval_nodes["dep-4"].content = "UNKNOWN:unsafe";
-  eval_nodes["dep-5"].content = "KIND:QUESTION";
-  eval_nodes["D"].content = "urgent question";
+  eval_nodes["dep-5"].content = "KIND:CLAIM";
+  eval_nodes["C"].content = "urgent claim";
   auto evaluated = DependencyEngine::evaluate(eval_nodes, {"A"}, 10);
   assert(evaluated.complete);
   assert((evaluated.triggered_dependencies == std::vector<std::string>{"dep-1", "dep-2", "dep-3", "dep-5"}));
