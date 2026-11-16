@@ -114,6 +114,19 @@ Claim lifecycle states are ACTIVE, SUPERSEDED and RETRACTED. New Claims start AC
 
 Historical Claims remain retrievable with their original Evidence and a `claim_status` field. Current-state consumers must explicitly filter ACTIVE; audit consumers retain all lifecycle states. See CLAIM_LIFECYCLE_v0.1.md.
 
+### 3.10 Temporal dependency propagation
+
+Dependency predicates may explicitly route a changed Claim according to its
+latest valid-time state at a supplied RFC3339 instant:
+`CLAIM_TEMPORAL_STATE:<STATE>@<RFC3339>`. Supported states are UNKNOWN,
+NOT_YET_VALID, VALID and EXPIRED. A predicate is evaluated only when its
+prerequisite Claim is included in the current changed-node set. A validity
+revision and its resulting dependency evaluation are persisted atomically.
+The Core MUST NOT infer wall-clock time or silently treat missing validity as
+VALID. Temporal predicates on non-Claim prerequisites and malformed values
+fail closed. This mechanism routes impacted records; it does not automatically
+rewrite dependent Claims. See DEPENDENCY_ENGINE_v0.1.md.
+
 ### 3.9 Claim temporal validity
 
 Claim lifecycle and temporal validity are independent dimensions. Lifecycle states (ACTIVE, SUPERSEDED, RETRACTED) describe graph assertion status; valid time describes the interval in the modeled world. Each Claim may have append-only validity revisions with a half-open interval `[valid_from, valid_until)`, an Evidence basis, revision number and `recorded_state_version`.
