@@ -124,6 +124,20 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             self.assertEqual(core.calls,1)
             index.close()
 
+    def test_web_scoring_preserves_review_and_abstain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"scores.sqlite")
+            review=WebDocumentRecognitionEngine(Provider([candidate(confidence=.75)]),
+                "ctx","web",index).prepare("会議を開催する。","https://example.jp/review","機関")
+            self.assertEqual(review["decisions"][0]["decision"],"REVIEW")
+            self.assertEqual(len(review["claims"]),1)
+            abstain=WebDocumentRecognitionEngine(Provider([candidate(confidence=.40)]),
+                "ctx","web",index).prepare("会議を開催する。","https://example.jp/abstain","機関")
+            self.assertEqual(abstain["decisions"][0]["decision"],"ABSTAIN")
+            self.assertEqual(len(abstain["claims"]),0)
+            self.assertFalse(any(n["kind"]=="CLAIM" for n in abstain["delta"]["nodes"]))
+            index.close()
+
     def test_url_duplicate_and_update_classification(self):
         with tempfile.TemporaryDirectory() as tmp:
             index=WebDocumentIndex(pathlib.Path(tmp)/"web.sqlite")
