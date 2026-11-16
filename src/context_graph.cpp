@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "surge/context_graph.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
