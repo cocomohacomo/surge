@@ -77,7 +77,7 @@ class ContextRetriever:
                     raise PacketRejected("DEPENDENCY_EVALUATION_RESPONSE_INVALID") from exc
                 expected = {
                     "delta_id", "status", "iterations", "evaluation_cost",
-                    "diagnostic_error", "triggered", "impacted_nodes",
+                    "diagnostic_error", "impacted_nodes_truncated", "triggered", "impacted_nodes",
                     "rejected_dependencies", "cyclic_components",
                 }
                 if not isinstance(result, dict) or set(result) != expected:
@@ -86,6 +86,7 @@ class ContextRetriever:
                         or not isinstance(result["iterations"], int)
                         or not isinstance(result["evaluation_cost"], int)
                         or not isinstance(result["diagnostic_error"], str)
+                        or not isinstance(result["impacted_nodes_truncated"], bool)
                         or not isinstance(result["cyclic_components"], list)
                         or not all(isinstance(component, list)
                                    and all(isinstance(ref, str) for ref in component)
