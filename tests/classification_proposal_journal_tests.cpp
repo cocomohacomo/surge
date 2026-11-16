@@ -82,7 +82,7 @@ int main() {
         handle, proposal_id.c_str(), output.data(), output.size(),
         &required, error, sizeof(error));
     assert(loaded == 1);
-    assert(output == proposal_json);
+    assert(std::string(output.c_str()) == proposal_json);
     surge_packet_core_close(handle);
   }
 
