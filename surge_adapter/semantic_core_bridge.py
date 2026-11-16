@@ -87,6 +87,8 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_question_memory_get_state.restype=ctypes.c_int
         lib.surge_question_memory_recommendation.argtypes=[ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_recommendation.restype=ctypes.c_int
+        lib.surge_question_memory_enforce_capacity.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_char_p),ctypes.POINTER(ctypes.c_double),ctypes.c_size_t,ctypes.c_size_t,ctypes.c_uint64,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_enforce_capacity.restype=ctypes.c_int
         lib.surge_question_get_reevaluation_candidates.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -574,6 +576,17 @@ class SemanticCoreBridge(CppCoreBridge):
         values=(contradiction_strength,focus_relevance,unresolved_importance,recency,recurrence,dormant_threshold)
         if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not 0<=v<=1 for v in values): raise PacketRejected("QUESTION_MEMORY_FACTOR_OUT_OF_RANGE")
         return self._temporal_ledger_call(self._lib.surge_question_memory_recommendation,values,"QUESTION_MEMORY_BUFFER_TOO_SMALL")
+
+    def enforce_question_memory_capacity(self, retention_scores: dict[str,float], max_active: int, expected_state_version: int | None = None) -> dict[str,Any]:
+        if not isinstance(retention_scores,dict) or len(retention_scores)>4096: raise PacketRejected("QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID")
+        if not isinstance(max_active,int) or isinstance(max_active,bool) or not 0<=max_active<=4096: raise PacketRejected("QUESTION_MEMORY_CAPACITY_LIMIT")
+        items=sorted(retention_scores.items()); ids=[]; scores=[]
+        for question_id,score in items:
+            if not isinstance(question_id,str) or not question_id.strip() or isinstance(score,bool) or not isinstance(score,(int,float)) or not 0<=score<=1: raise PacketRejected("QUESTION_MEMORY_SCORE_INVALID")
+            ids.append(question_id.encode("utf-8"));scores.append(float(score))
+        id_array=(ctypes.c_char_p*len(ids))(*ids) if ids else None;score_array=(ctypes.c_double*len(scores))(*scores) if scores else None
+        expected=self.state_version if expected_state_version is None else int(expected_state_version)
+        return self._temporal_ledger_call(self._lib.surge_question_memory_enforce_capacity,(self._handle,id_array,score_array,len(ids),max_active,expected),"QUESTION_MEMORY_BUFFER_TOO_SMALL")
 
     def get_question_reevaluation_candidates(self, question_id: str,
                                              max_depth: int = 8,

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace surge {
 enum class NodeKind { Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
@@ -80,6 +81,7 @@ class ContextGraph {
   QuestionAspectStatus question_aspect_status(const std::string& id) const;
   QuestionMemoryState question_memory_state(const std::string& id) const;
   bool set_question_memory_state(const std::string& id, QuestionMemoryState state, std::uint64_t expected_state_version, std::string& error);
+  bool enforce_question_memory_capacity(const std::vector<std::pair<std::string, double>>& scores, std::size_t max_active, std::uint64_t expected_state_version, std::vector<std::string>& demoted, std::string& error);
   const std::map<std::string, std::vector<ClaimValidityRecord>>& claim_validity_history() const { return state_.claim_validity_history; }
   std::optional<ClaimValidityRecord> latest_claim_validity(const std::string& id) const {
     const auto it = state_.claim_validity_history.find(id);
