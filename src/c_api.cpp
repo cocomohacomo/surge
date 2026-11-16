@@ -713,7 +713,12 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
     };
     const auto& record = found->second;
     std::ostringstream json;
-    json << "{\"delta_id\":" << quote(record.delta_id) << ",\"triggered\":[";
+    json << "{\"delta_id\":" << quote(record.delta_id)
+         << ",\"status\":" << quote(record.status)
+         << ",\"iterations\":" << record.iterations
+         << ",\"evaluation_cost\":" << record.evaluation_cost
+         << ",\"diagnostic_error\":" << quote(record.diagnostic_error)
+         << ",\"triggered\":[";
     for (size_t i = 0; i < record.triggered.size(); ++i) {
       if (i) json << ',';
       const auto& trigger = record.triggered[i];
@@ -731,7 +736,17 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
       if (i) json << ',';
       json << quote(record.rejected_dependencies[i]);
     }
-    json << "]}";
+    json << "],\"cyclic_components\":[";
+    for (size_t i = 0; i < record.cyclic_components.size(); ++i) {
+      if (i) json << ',';
+      json << '[';
+      for (size_t j = 0; j < record.cyclic_components[i].size(); ++j) {
+        if (j) json << ',';
+        json << quote(record.cyclic_components[i][j]);
+      }
+      json << ']';
+    }
+    json << "]}";;
     const std::string payload = json.str();
     if (required_capacity) *required_capacity = payload.size() + 1;
     if (!output || output_capacity < payload.size() + 1) {
