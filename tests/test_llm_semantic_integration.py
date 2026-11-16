@@ -34,7 +34,14 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertEqual(binding["claim_ref"], "claim/" + out["packet_id"])
                 self.assertEqual(binding["evidence_ref"], out["evidence_id"])
                 self.assertFalse(binding["claim_validity_write"])
-                self.assertEqual(core.state_version, 1)
+                self.assertEqual(core.state_version, 2)
+                self.assertEqual(core.temporal_boundary_pending_count, 1)
+                pending = core.get_temporal_boundary(binding["claim_ref"])
+                self.assertEqual(pending["valid_from"], "2026-04-01T00:00:00+09:00")
+                self.assertEqual(pending["evidence_ids"], [out["evidence_id"]])
+                self.assertEqual(pending["packet_ids"], [out["packet_id"]])
+                self.assertTrue(out["temporal_ledger"][0]["persisted"])
+                self.assertFalse(out["temporal_ledger"][0]["claim_validity_write"])
 
     def test_temporal_binding_refuses_multiple_cues_and_corrections(self):
         from surge_adapter.temporal_recognition import recognize_temporal_spans
@@ -51,6 +58,41 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
         out = bind_temporal_candidates(correction, spans, claim_id="claim/2",
                                        evidence_id="evidence/2", claim_accepted=True)
         self.assertTrue(all(x["binding_status"] == "CORRECTION_REVIEW_REQUIRED" for x in out))
+
+    def test_temporal_ledger_restores_automatically_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "temporal-auto-replay.sgj"
+            runtime = LLMSemanticRuntime(StubProvider([result(
+                topic="契約A", proposition="契約Aは有効")]), "ctx", "source")
+            with SemanticCoreBridge(journal) as core:
+                out = runtime.process("契約Aは2026年4月1日から有効", core,
+                                       timezone_offset="+09:00")
+                claim_id = out["temporal_bindings"][0]["claim_ref"]
+                self.assertEqual(core.state_version, 2)
+            with SemanticCoreBridge(journal) as recovered:
+                pending = recovered.get_temporal_boundary(claim_id)
+                self.assertIsNotNone(pending)
+                self.assertEqual(pending["packet_ids"], [out["packet_id"]])
+                self.assertEqual(recovered.temporal_boundary_pending_count, 1)
+
+    def test_unresolved_timezone_and_multiple_cues_do_not_write_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = LLMSemanticRuntime(StubProvider([
+                result(topic="契約A", proposition="契約Aは有効"),
+                result(topic="契約B", proposition="契約Bは有効")]), "ctx", "source")
+            with SemanticCoreBridge(pathlib.Path(tmp) / "temporal-gates.sgj") as core:
+                unresolved = runtime.process("契約Aは2026年4月1日から有効", core)
+                self.assertEqual(unresolved["temporal_bindings"][0]["binding_status"],
+                                 "TEMPORAL_UNRESOLVED")
+                self.assertFalse(unresolved["temporal_ledger"][0]["persisted"])
+                self.assertEqual(core.temporal_boundary_pending_count, 0)
+                multiple = runtime.process(
+                    "契約Bは2026年4月1日から有効、別契約は2026年5月1日から有効",
+                    core, timezone_offset="+09:00")
+                self.assertTrue(all(x["binding_status"] == "MULTIPLE_TEMPORAL_CUES"
+                                    for x in multiple["temporal_bindings"]))
+                self.assertTrue(all(not x["persisted"] for x in multiple["temporal_ledger"]))
+                self.assertEqual(core.temporal_boundary_pending_count, 0)
 
     def test_claim_commits_packet_evidence_claim_cluster_and_replays(self):
         with tempfile.TemporaryDirectory() as tmp:

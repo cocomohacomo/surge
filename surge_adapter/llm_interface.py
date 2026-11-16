@@ -18,6 +18,7 @@ from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 from surge_adapter.proposal_builder import build_classification_proposal
 from surge_adapter.temporal_recognition import recognize_temporal_spans
 from surge_adapter.temporal_claim_binding import bind_temporal_candidates
+from surge_adapter.temporal_ledger_integration import persist_temporal_binding
 
 KINDS = {"CLAIM", "QUESTION", "ACKNOWLEDGEMENT", "UNRESOLVED", "FILLER"}
 POLARITIES = {"POSITIVE", "NEGATIVE", "UNKNOWN"}
@@ -264,10 +265,17 @@ class LLMSemanticRuntime:
         temporal_bindings = bind_temporal_candidates(
             normalized_text, temporal_spans, claim_id=claim_id if accepted_claim else None,
             evidence_id=evidence_id, claim_accepted=accepted_claim)
+        # Persist only a single, explicitly bound, resolved cue. This is a
+        # separate proposal transaction, never an authoritative validity write.
+        temporal_ledger_results = [
+            persist_temporal_binding(core, binding, packet_id=packet["packet_id"])
+            for binding in temporal_bindings
+        ]
         return {"packet_id": packet["packet_id"], "admission": admission.status,
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
                 "cluster_id": cluster_id, "evidence_id": evidence_id,
                 "proposal": proposal, "temporal_candidates": [s["candidate"] for s in temporal_spans],
                 "temporal_bindings": temporal_bindings,
+                "temporal_ledger": temporal_ledger_results,
                 "review_required": score.decision == "REVIEW"}
