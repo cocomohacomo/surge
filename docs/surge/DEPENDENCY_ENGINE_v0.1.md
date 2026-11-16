@@ -48,3 +48,17 @@ This is a pure evaluator over a caller-provided snapshot. It does not yet
 subscribe to EventJournal commits or persist trigger outcomes. The transaction
 coordinator must invoke it against the staged post-delta snapshot and persist
 its results atomically in a later integration increment.
+
+
+## v0.3: Strict predicate grammar validation
+
+Predicate prefixes alone are not sufficient to establish a valid predicate.
+The evaluator now rejects empty operands for `CONTENT_EQUALS:` and
+`CONTENT_CONTAINS:`, empty `KIND:`, and unknown node-kind names. These
+records are returned in `rejected_dependencies` and never silently treated as
+valid no-match conditions. This keeps malformed configuration distinguishable
+from a valid predicate whose condition currently evaluates to false.
+
+Conformance tests cover all four malformed forms. This remains a pure
+snapshot evaluator; durable transaction integration is still a separate
+required refactor.
