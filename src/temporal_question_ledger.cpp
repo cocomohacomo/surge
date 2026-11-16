@@ -29,7 +29,7 @@ std::string encode_batch(const std::vector<TemporalQuestion>&v){
 bool decode_batch(const std::string&p,const std::string&eid,std::vector<TemporalQuestion>&v){
  std::istringstream i(p);int ver=0;std::size_t n=0;if(!(i>>ver>>n)||ver!=1||n==0||n>3)return false;
  for(std::size_t x=0;x<n;++x){std::string item;TemporalQuestion q;
-  if(!(i>>std::quoted(item))||!decode_one(item,q)||q.last_event_id!=eid)return false;v.push_back(std::move(q));}
+  if(!(i>>std::quoted(item))||!decode_one(item,q)||q.last_event_id!=eid)return false;\n  v.push_back(std::move(q));\n }
  i>>std::ws;return i.eof();
 }
 void add_unique(std::vector<std::string>&v,const std::string&s){if(std::find(v.begin(),v.end(),s)==v.end())v.push_back(s);}
@@ -50,7 +50,7 @@ bool TemporalQuestionLedger::apply_event(const JournalEvent&e){
  std::vector<TemporalQuestion> v;if(!decode_batch(e.payload,e.event_id,v))return false;
  std::size_t extra=0;for(const auto&q:v)if(!questions_.count(q.question_id))++extra;
  if(questions_.size()+extra>max_questions_)return false;
- for(auto&q:v)questions_[q.question_id]=std::move(q);return true;
+ for(auto&q:v) questions_[q.question_id]=std::move(q);\n return true;
 }
 TemporalQuestionResult TemporalQuestionLedger::synchronize(const std::string&tx,const std::string&ik,
  const std::string&eid,std::uint64_t version,const TemporalBoundaryPending&p){
