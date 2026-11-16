@@ -82,5 +82,38 @@ int main(){
   auto operation_complete=DependencyEngine::evaluate(budget_nodes,{"root"},4096,256);
   assert(operation_complete.complete);
   assert(operation_complete.predicate_operations==200);
-  std::cout<<"SURGE DependencyEngine tests: 10 groups passed\n";
+  {
+    std::map<std::string,GraphNode> temporal_nodes;
+    temporal_nodes.emplace("claim-temporal",GraphNode{"claim-temporal",NodeKind::Claim,"契約期間",{}});
+    temporal_nodes.emplace("valid-dependent",GraphNode{"valid-dependent",NodeKind::Cluster,"有効時の処理",{}});
+    temporal_nodes.emplace("expired-dependent",GraphNode{"expired-dependent",NodeKind::Cluster,"失効後の処理",{}});
+    temporal_nodes.emplace("unknown-dependent",GraphNode{"unknown-dependent",NodeKind::Cluster,"不明時の処理",{}});
+    temporal_nodes.emplace("dep-valid",GraphNode{"dep-valid",NodeKind::Dependency,
+        "CLAIM_TEMPORAL_STATE:VALID@2026-02-01T00:00:00Z",
+        {"claim-temporal","valid-dependent"}});
+    temporal_nodes.emplace("dep-expired",GraphNode{"dep-expired",NodeKind::Dependency,
+        "CLAIM_TEMPORAL_STATE:EXPIRED@2026-05-01T00:00:00Z",
+        {"claim-temporal","expired-dependent"}});
+    temporal_nodes.emplace("dep-unknown",GraphNode{"dep-unknown",NodeKind::Dependency,
+        "CLAIM_TEMPORAL_STATE:UNKNOWN@2026-02-01T00:00:00Z",
+        {"claim-temporal","unknown-dependent"}});
+    temporal_nodes.emplace("dep-malformed",GraphNode{"dep-malformed",NodeKind::Dependency,
+        "CLAIM_TEMPORAL_STATE:INVALID@2026-02-01T00:00:00Z",
+        {"claim-temporal","unknown-dependent"}});
+    ClaimValidityRecord active{{"claim-temporal","2026-01-01T00:00:00Z",
+        "2026-04-01T00:00:00Z","evidence",1},1};
+    auto valid_state=DependencyEngine::evaluate(temporal_nodes,{"claim-temporal"},4096,65536,
+        {{"claim-temporal",active}});
+    assert(valid_state.complete);
+    assert((valid_state.triggered_dependencies==std::vector<std::string>{"dep-valid"}));
+    assert((valid_state.rejected_dependencies==std::vector<std::string>{"dep-malformed"}));
+    assert(std::find(valid_state.impacted_nodes.begin(),valid_state.impacted_nodes.end(),
+        "valid-dependent")!=valid_state.impacted_nodes.end());
+    assert(std::find(valid_state.impacted_nodes.begin(),valid_state.impacted_nodes.end(),
+        "expired-dependent")==valid_state.impacted_nodes.end());
+    auto no_validity=DependencyEngine::evaluate(temporal_nodes,{"claim-temporal"},4096,65536,{});
+    assert(no_validity.complete);
+    assert((no_validity.triggered_dependencies==std::vector<std::string>{"dep-unknown"}));
+  }
+  std::cout<<"SURGE DependencyEngine tests: 11 groups passed\n";
 }
