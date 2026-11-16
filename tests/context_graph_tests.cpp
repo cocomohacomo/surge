@@ -180,5 +180,5 @@ int main(){
     }
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 2 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 3 groups passed\n";
 }
