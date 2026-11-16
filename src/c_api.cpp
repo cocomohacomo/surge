@@ -147,6 +147,8 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   else if(s=="ABOUT")out=surge::RelationKind::About;
   else if(s=="SUPERSEDES")out=surge::RelationKind::Supersedes;
   else if(s=="RETRACTS")out=surge::RelationKind::Retracts;
+  else if(s=="DUPLICATES")out=surge::RelationKind::Duplicates;
+  else if(s=="CONTAINS")out=surge::RelationKind::Contains;
   else return false;
   return true;
 }
@@ -904,6 +906,8 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::RelationKind::About: return "ABOUT";
         case surge::RelationKind::Supersedes: return "SUPERSEDES";
         case surge::RelationKind::Retracts: return "RETRACTS";
+        case surge::RelationKind::Duplicates: return "DUPLICATES";
+        case surge::RelationKind::Contains: return "CONTAINS";
       }
       return "UNKNOWN";
     };

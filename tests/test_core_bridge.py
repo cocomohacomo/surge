@@ -283,6 +283,54 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(result["state_version"], resolved_version)
                 self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 4})
 
+    def test_question_relationship_network_types_cycles_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-relations.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "question-network-seed", "idempotency_key": "question-network-seed",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "q/a", "kind": "QUESTION", "content": "A"},
+                        {"id": "q/b", "kind": "QUESTION", "content": "B"},
+                        {"id": "q/c", "kind": "QUESTION", "content": "C"},
+                        {"id": "cluster/x", "kind": "CLUSTER", "content": "cluster"},
+                    ], "relations": [],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "question-network-links", "idempotency_key": "question-network-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/contains", "kind": "CONTAINS", "from": "q/a", "to": "q/b"},
+                        {"id": "r/duplicates", "kind": "DUPLICATES", "from": "q/b", "to": "q/c"},
+                        {"id": "r/agrees", "kind": "AGREES_WITH", "from": "q/a", "to": "q/c"},
+                        {"id": "r/conflicts", "kind": "CONFLICTS_WITH", "from": "q/b", "to": "q/c"},
+                        {"id": "r/depends", "kind": "DEPENDS_ON", "from": "q/a", "to": "q/b"},
+                    ],
+                })
+                before = core.state_version
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_DEPENDENCY_CYCLE"):
+                    core.apply_semantic_delta({
+                        "delta_id": "question-network-cycle", "idempotency_key": "question-network-cycle",
+                        "expected_state_version": before, "nodes": [],
+                        "relations": [
+                            {"id": "r/cycle-1", "kind": "DEPENDS_ON", "from": "q/b", "to": "q/c"},
+                            {"id": "r/cycle-2", "kind": "DEPENDS_ON", "from": "q/c", "to": "q/a"},
+                        ],
+                    })
+                self.assertEqual(core.state_version, before)
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_RELATION_TYPE_INVALID"):
+                    core.apply_semantic_delta({
+                        "delta_id": "question-network-invalid-endpoint",
+                        "idempotency_key": "question-network-invalid-endpoint",
+                        "expected_state_version": before, "nodes": [],
+                        "relations": [{"id": "r/invalid", "kind": "CONTAINS",
+                                       "from": "q/a", "to": "cluster/x"}],
+                    })
+                self.assertEqual(core.state_version, before)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, before)
+
     def test_general_contradiction_question_route_is_durable_and_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "general-question.sgj"
