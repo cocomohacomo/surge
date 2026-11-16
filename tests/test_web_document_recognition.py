@@ -78,8 +78,12 @@ class WebDocumentRecognitionTests(unittest.TestCase):
                                   "会議開催のお知らせ","2026-11-16T12:00:00+09:00")
             self.assertEqual(result["status"],"NEW")
             self.assertEqual(result["chunk_count"],1)
-            self.assertTrue(any(n["kind"]=="EVIDENCE" and "example.jp" in n["content"]
-                                for n in result["delta"]["nodes"]))
+            evidence=next(n for n in result["delta"]["nodes"] if n["kind"]=="EVIDENCE")
+            self.assertIn("example.jp",evidence["content"])
+            self.assertEqual(evidence["references"],[])
+            relation_kinds={r["kind"] for r in result["delta"]["relations"]}
+            self.assertIn("PUBLISHED_BY",relation_kinds)
+            self.assertIn("EVIDENCE_FOR",relation_kinds)
             kinds={s["kind"] for s in result["delta"]["scope_spans"]}
             self.assertIn("NEGATION",kinds)
             self.assertIn("MODALITY",kinds)
