@@ -687,6 +687,7 @@ int surge_question_get_aggregate_status(void* opaque, const char* question_id,
 
 int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->graph.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
 
+int surge_question_memory_record_reference(void* o,const char* id,uint64_t expected,int* reactivated,uint64_t* count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=g.record_question_reference(id,expected,did,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(count)*count=g.question_reference_count(id);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_REFERENCE_UNKNOWN_EXCEPTION");return 0;}}
 int surge_question_memory_get_state(void* o,const char* id,char* out,size_t cap,size_t* req,char* err,size_t ec){
  try{
   if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}
@@ -748,7 +749,7 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
    const double recency=0.5; // Neutral: no wall-clock or timestamp inference.
    bool protected_dependency=false;
    for(const auto& rel:graph.relations())if(rel.second.kind==surge::RelationKind::DependsOn&&(rel.second.from==node.first||rel.second.to==node.first)){protected_dependency=true;break;}
-   double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*recurrence;
+   double reference_frequency=std::min(1.0,static_cast<double>(graph.question_reference_count(node.first))/5.0);\n   double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*reference_frequency;
    if(protected_dependency)score=std::max(score,.75);
    items.push_back({node.first,score,contradiction,focus,unresolved,recency,recurrence,protected_dependency,total?(open?"OPEN":(deferred?"DEFERRED":"RESOLVED")):"UNKNOWN"});
   }
