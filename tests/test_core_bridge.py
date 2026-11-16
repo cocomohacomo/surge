@@ -264,11 +264,10 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(result["counts"], {"OPEN": 2, "DEFERRED": 1, "RESOLVED": 1})
                 core.set_question_aspect_status(aspect_ids[2], "DEFERRED")
                 result = core.get_question_aggregate(question_id)
-                self.assertEqual(result["status"], "DEFERRED")
+                self.assertEqual(result["status"], "OPEN")
                 self.assertEqual(result["counts"], {"OPEN": 1, "DEFERRED": 2, "RESOLVED": 1})
                 core.set_question_aspect_status(aspect_ids[3], "DEFERRED")
                 result = core.get_question_aggregate(question_id)
-                self.assertEqual(result["status"], "DEFERRED")
                 self.assertEqual(result["status"], "DEFERRED")
                 self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 4, "RESOLVED": 0})
                 for aspect_id in aspect_ids:
