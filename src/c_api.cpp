@@ -755,6 +755,5 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
     copy_text(error, error_capacity, "UNKNOWN_DEPENDENCY_EVALUATION_EXCEPTION"); return 0;
   }
 }
-}
 
 }
