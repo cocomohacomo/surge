@@ -721,6 +721,56 @@ int surge_question_memory_recommendation(double a,double b,double c,double d,dou
 }
 
 
+
+int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_t output_capacity,size_t* required,char* error,size_t error_capacity){
+ try{
+  if(!opaque||max_active>4096){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_LIMIT");return 0;}
+  const auto& graph=static_cast<Handle*>(opaque)->graph;
+  struct Item{std::string id;double score,contradiction,focus,unresolved,recency,recurrence;bool protected_by_dependency;std::string status;};
+  std::vector<Item> items;
+  for(const auto& node:graph.nodes()){
+   if(node.second.kind!=surge::NodeKind::Question||graph.question_memory_state(node.first)!=surge::QuestionMemoryState::Active)continue;
+   std::vector<std::string> aspects;size_t open=0,deferred=0,resolved=0;
+   for(const auto& candidate:graph.nodes())if(candidate.second.kind==surge::NodeKind::QuestionAspect&&candidate.second.references.size()==1&&candidate.second.references.front()==node.first){
+    aspects.push_back(candidate.first);switch(graph.question_aspect_status(candidate.first)){case surge::QuestionAspectStatus::Open:++open;break;case surge::QuestionAspectStatus::Deferred:++deferred;break;case surge::QuestionAspectStatus::Resolved:++resolved;break;}
+   }
+   double contradiction=0.0;
+   for(const auto& rel:graph.relations())if(rel.second.kind==surge::RelationKind::Contradicts){
+    bool linked=node.first.find(rel.first)!=std::string::npos;
+    for(const auto& aid:aspects){const auto& text=graph.nodes().at(aid).content;if(text.find(rel.first)!=std::string::npos)linked=true;}
+    if(linked)contradiction=1.0;
+   }
+   double focus=0.0;
+   if(graph.focus())for(const auto& candidate:graph.nodes())if(candidate.second.kind==surge::NodeKind::Interest&&candidate.first==graph.focus()->interest_id&&candidate.second.references.size()==2&&std::find(aspects.begin(),aspects.end(),candidate.second.references.front())!=aspects.end()){focus=1.0;break;}
+   const size_t total=open+deferred+resolved;
+   double unresolved=total?static_cast<double>(open+0.65*deferred+0.15*resolved)/static_cast<double>(total):0.5;
+   double recurrence=std::min(1.0,static_cast<double>(aspects.size())/4.0);
+   const double recency=0.5; // Neutral: no wall-clock or timestamp inference.
+   bool protected_dependency=false;
+   for(const auto& rel:graph.relations())if(rel.second.kind==surge::RelationKind::DependsOn&&(rel.second.from==node.first||rel.second.to==node.first)){protected_dependency=true;break;}
+   double score=.30*contradiction+.20*focus+.25*unresolved+.10*recency+.15*recurrence;
+   if(protected_dependency)score=std::max(score,.75);
+   items.push_back({node.first,score,contradiction,focus,unresolved,recency,recurrence,protected_dependency,total?(open?"OPEN":(deferred?"DEFERRED":"RESOLVED")):"UNKNOWN"});
+  }
+  std::sort(items.begin(),items.end(),[](const Item&a,const Item&b){return a.score!=b.score?a.score>b.score:a.id<b.id;});
+  auto quote=[](const std::string& value){return json_quote(value);};
+  std::ostringstream json;json.precision(8);
+  json<<"{\"state_version\":"<<graph.state_version()<<",\"capacity\":"<<max_active<<",\"active_count\":"<<items.size()<<",\"demotion_candidates\":[";
+  for(size_t i=max_active;i<items.size();++i){if(i>max_active)json<<',';json<<quote(items[i].id);}
+  json<<"],\"scores\":[";
+  for(size_t i=0;i<items.size();++i){if(i)json<<',';const auto& x=items[i];
+   json<<"{\"question_id\":"<<quote(x.id)<<",\"retention_score\":"<<x.score<<",\"recommended_state\":"<<quote(i<max_active?"ACTIVE":"DORMANT")
+       <<",\"aspect_state\":"<<quote(x.status)<<",\"protected_by_dependency\":"<<(x.protected_by_dependency?"true":"false")
+       <<",\"factors\":{\"contradiction_strength\":"<<x.contradiction<<",\"focus_relevance\":"<<x.focus
+       <<",\"unresolved_importance\":"<<x.unresolved<<",\"recency\":"<<x.recency<<",\"recurrence_proxy\":"<<x.recurrence<<"}}";
+  }
+  json<<"]}";
+  const auto value=json.str();if(required)*required=value.size()+1;
+  if(!output||output_capacity<value.size()+1){copy_text(error,error_capacity,"QUESTION_MEMORY_PLAN_BUFFER_TOO_SMALL");return 0;}
+  copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+ }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_MEMORY_PLAN_UNKNOWN_EXCEPTION");return 0;}
+}
+
 int surge_question_memory_enforce_capacity(void* opaque,const char* const* ids,const double* scores,size_t count,size_t max_active,uint64_t expected,char* output,size_t output_capacity,size_t* required,char* error,size_t error_capacity){
  try{
   if(!opaque||count>4096||max_active>4096||(count&&(!ids||!scores))){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_ARGUMENT_INVALID");return 0;}
