@@ -81,8 +81,23 @@ class ContextRetriever:
             ref, kind = candidate.get("ref"), candidate.get("kind")
             if not isinstance(ref, str) or not ref or kind not in priority:
                 raise ValueError("CONTEXT_HINT_CANDIDATE_INVALID")
-            if ref not in unique:
-                unique[ref] = candidate
+            score = candidate.get("source_overlap", 0)
+            depth = candidate.get("dependency_depth", 0)
+            if (isinstance(score, bool) or not isinstance(score, int) or score < 0
+                    or isinstance(depth, bool) or not isinstance(depth, int) or depth < 0):
+                raise ValueError("CONTEXT_HINT_CANDIDATE_METADATA_INVALID")
+            current = unique.get(ref)
+            if current is None:
+                unique[ref] = dict(candidate)
+                continue
+            # A ref may be discovered through several paths. Keep its strongest
+            # semantic class, but aggregate evidence quality independently.
+            if priority[kind] < priority[current["kind"]]:
+                current["kind"] = kind
+            current["source_overlap"] = max(
+                int(current.get("source_overlap", 0)), score)
+            current["dependency_depth"] = min(
+                int(current.get("dependency_depth", depth)), depth)
         ordered = sorted(unique.values(), key=lambda c: (
             priority[c["kind"]], -int(c.get("source_overlap", 0)),
             int(c.get("dependency_depth", 0)), c["ref"]))
