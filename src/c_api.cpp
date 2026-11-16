@@ -456,6 +456,32 @@ int surge_context_graph_apply_claim_validity(void* opaque,
     catch(...){copy_text(error,error_capacity,"UNKNOWN_CLAIM_VALIDITY_EXCEPTION");return 0;}
 }
 
+int surge_context_graph_apply_claim_validity_reviewed(void* opaque,
+    const char* delta_id, const char* idempotency_key, uint64_t expected_state_version,
+    const char* claim_id, const char* valid_from, const char* valid_until,
+    const char* basis_evidence_id, uint64_t revision,
+    const char* review_evidence_id, const char* reviewer_id,
+    int* duplicate, uint64_t* state_version, char* error, size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!idempotency_key||!claim_id||!valid_from||
+       !basis_evidence_id||!review_evidence_id||!*review_evidence_id||
+       !reviewer_id||!*reviewer_id||revision==0){
+      copy_text(error,error_capacity,"CLAIM_VALIDITY_REVIEW_ARGUMENT_INVALID");return 0;
+    }
+    surge::SemanticDelta delta;
+    delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected_state_version;
+    delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",
+        basis_evidence_id,revision,review_evidence_id,reviewer_id});
+    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);
+    return result.committed?1:0;
+  } catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+    catch(...){copy_text(error,error_capacity,"UNKNOWN_REVIEWED_CLAIM_VALIDITY_EXCEPTION");return 0;}
+}
+
 int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
   try {
@@ -654,7 +680,9 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
           if (value.valid_until.empty()) item << "null";
           else item << quote(value.valid_until);
           item << ",\"basis_evidence_id\":" << quote(value.basis_evidence_id)
-               << ",\"recorded_state_version\":" << validity->recorded_state_version << "},";
+               << ",\"recorded_state_version\":" << validity->recorded_state_version
+                << ",\"review_evidence_id\":" << quote(value.review_evidence_id)
+                << ",\"reviewer_id\":" << quote(value.reviewer_id) << "},";
         } else item << "\"claim_validity\":null,";
       }
       if (node.kind == surge::NodeKind::QuestionAspect) {

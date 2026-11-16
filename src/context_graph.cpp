@@ -1,6 +1,7 @@
 #include "surge/context_graph.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <iomanip>
 #include <memory>
@@ -58,12 +59,15 @@ bool time_less(const ParsedRfc3339& a,const ParsedRfc3339& b){
 std::string encode_claim_validity(const ClaimValidityRecord& record) {
  const auto& v=record.validity;std::ostringstream out;
  out<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '
-    <<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<record.recorded_state_version;return out.str();
+    <<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<record.recorded_state_version<<' '
+    <<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id);return out.str();
 }
 bool decode_claim_validity(const std::string& payload,ClaimValidityRecord& record) {
  std::istringstream in(payload);std::string extra;auto& v=record.validity;
  if(!(in>>std::quoted(v.claim_id)>>std::quoted(v.valid_from)>>std::quoted(v.valid_until)>>
-      std::quoted(v.basis_evidence_id)>>v.revision>>record.recorded_state_version)||(in>>extra))return false;
+      std::quoted(v.basis_evidence_id)>>v.revision>>record.recorded_state_version))return false;
+ if(in>>std::quoted(v.review_evidence_id)){if(!(in>>std::quoted(v.reviewer_id))||(in>>extra))return false;}
+ else {in.clear();if(in>>extra)return false;}
  return true;
 }
 std::string encode_node(const GraphNode& n){std::ostringstream o;o<<std::quoted(n.id)<<' '<<node_kind_name(n.kind)<<' '<<std::quoted(n.content)<<' '<<n.references.size();for(const auto& r:n.references)o<<' '<<std::quoted(r);return o.str();}
@@ -121,7 +125,7 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  const auto from=s.nodes.find(r.from),to=s.nodes.find(r.to);
  if(from==s.nodes.end()||to==s.nodes.end()){e="RELATION_ENDPOINT_INVALID";return false;}
  auto a=from->second.kind,b=to->second.kind;
- switch(r.kind){case RelationKind::Supports:case RelationKind::Contradicts:if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
+ switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim)){e="CLUSTER_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;case RelationKind::DependsOn:break;
  case RelationKind::Supersedes:{if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_SUPERSESSION_ENDPOINT_INVALID";return false;}const auto old_status=s.claim_statuses.find(r.to);const auto new_status=s.claim_statuses.find(r.from);if(old_status==s.claim_statuses.end()||new_status==s.claim_statuses.end()||old_status->second!=ClaimStatus::Active||new_status->second!=ClaimStatus::Active){e="CLAIM_NOT_ACTIVE_FOR_SUPERSESSION";return false;}break;}
@@ -140,6 +144,11 @@ bool ContextGraph::apply_claim_validity(State& s,const ClaimValidity& validity,
  const auto evidence=s.nodes.find(validity.basis_evidence_id);
  if(claim==s.nodes.end()||claim->second.kind!=NodeKind::Claim){error="CLAIM_VALIDITY_CLAIM_INVALID";return false;}
  if(evidence==s.nodes.end()||evidence->second.kind!=NodeKind::Evidence){error="CLAIM_VALIDITY_EVIDENCE_INVALID";return false;}
+ const bool directly_linked=std::find(claim->second.references.begin(),claim->second.references.end(),validity.basis_evidence_id)!=claim->second.references.end();
+ bool supported_by_relation=false;for(const auto& item:s.relations){const auto& rel=item.second;if(rel.kind==RelationKind::Supports&&rel.from==validity.basis_evidence_id&&rel.to==validity.claim_id){supported_by_relation=true;break;}}
+ if(!directly_linked&&!supported_by_relation){error="CLAIM_VALIDITY_EVIDENCE_NOT_BOUND_TO_CLAIM";return false;}
+ if(validity.review_evidence_id.empty()!=validity.reviewer_id.empty()){error="CLAIM_VALIDITY_REVIEW_PROVENANCE_INVALID";return false;}
+ if(!validity.review_evidence_id.empty()){const auto review=s.nodes.find(validity.review_evidence_id);if(review==s.nodes.end()||review->second.kind!=NodeKind::Evidence){error="CLAIM_VALIDITY_REVIEW_EVIDENCE_INVALID";return false;}}
  ParsedRfc3339 from{},until{};
  if(!parse_rfc3339(validity.valid_from,from)||(!validity.valid_until.empty()&&!parse_rfc3339(validity.valid_until,until))){error="CLAIM_VALIDITY_TIMESTAMP_INVALID";return false;}
  if(!validity.valid_until.empty()&&!time_less(from,until)){error="CLAIM_VALIDITY_INTERVAL_INVALID";return false;}
@@ -164,7 +173,7 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
  for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
  for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
- for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<'\n';
+ for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  if(d.focus) { o<<"F "<<encode_focus(d.focus->focus)<<'\n'; }
  return hash_text(o.str());
 }

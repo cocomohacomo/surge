@@ -206,6 +206,8 @@ int main(){
       SemanticDelta correction;correction.delta_id="temporal-correction";
       correction.idempotency_key="temporal-correction";correction.expected_state_version=1;
       correction.nodes={{{"temporal-evidence-2",NodeKind::Evidence,"契約開始日の訂正",{}}}};
+      correction.relations={{{"temporal-evidence-2-supports-claim",RelationKind::Supports,
+          "temporal-evidence-2","temporal-claim"}}};
       correction.claim_validity_updates.push_back({"temporal-claim",
           "2025-12-01T00:00:00Z","2026-04-01T00:00:00Z",
           "temporal-evidence-2",2});
@@ -261,6 +263,8 @@ int main(){
       correction.idempotency_key="temporal-propagation-correction";
       correction.expected_state_version=1;
       correction.nodes={{{"basis-2",NodeKind::Evidence,"契約期間の訂正",{}}}};
+      correction.relations={{{"basis-2-supports-claim",RelationKind::Supports,
+          "basis-2","claim-period"}}};
       correction.claim_validity_updates.push_back({"claim-period","2025-12-01T00:00:00Z",
           "2026-01-15T00:00:00Z","basis-2",2});
       const auto correction_result=graph.apply(correction);

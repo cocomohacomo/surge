@@ -25,7 +25,9 @@ A timestamp without an explicit timezone is rejected. Invalid calendar dates, in
 
 ## 3. Evidence and revisions
 
-Every validity revision MUST reference an existing Evidence node that supports the temporal boundary. The referenced Claim and Evidence must already exist in the graph or be created earlier in the same SemanticDelta.
+Every validity revision MUST reference an existing Evidence node that supports the temporal boundary. The Evidence must either be directly referenced by the Claim or connected through an explicit Evidence-to-Claim SUPPORTS relation. The referenced Claim and Evidence must already exist in the graph or be created earlier in the same SemanticDelta.
+
+Reviewed revisions may additionally record a separate review Evidence ID and reviewer ID. Both fields are required together and are persisted in the same journal event as the validity revision. The review Evidence must be an existing Evidence node.
 
 A revision number starts at 1 and increases by exactly one per Claim. Revisions are append-only. A corrected date range creates a new revision; it does not rewrite the prior range. The latest revision is the current temporal assertion, while all prior revisions remain available for audit.
 
@@ -56,6 +58,9 @@ Claim retrieval includes the latest `claim_validity` object, or null when no val
 
 - `CLAIM_VALIDITY_CLAIM_INVALID`: target is not an existing Claim.
 - `CLAIM_VALIDITY_EVIDENCE_INVALID`: basis is not an existing Evidence.
+- `CLAIM_VALIDITY_EVIDENCE_NOT_BOUND_TO_CLAIM`: basis Evidence has no direct Claim reference or explicit SUPPORTS relation.
+- `CLAIM_VALIDITY_REVIEW_EVIDENCE_INVALID`: review provenance does not reference an existing Evidence node.
+- `CLAIM_VALIDITY_REVIEW_PROVENANCE_INVALID`: reviewer and review Evidence must be supplied together.
 - `CLAIM_VALIDITY_TIMESTAMP_INVALID`: malformed or timezone-free RFC3339 timestamp.
 - `CLAIM_VALIDITY_INTERVAL_INVALID`: end is not later than start.
 - `CLAIM_VALIDITY_REVISION_INVALID`: revision sequence is not contiguous.
