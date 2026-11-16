@@ -37,6 +37,17 @@ class TemporalLedgerIntegrationTests(unittest.TestCase):
         binding["temporal_candidate"]["status"] = "NEEDS_TIMEZONE"
         self.assertFalse(persist_temporal_binding(core, binding, packet_id="p1")["persisted"])
         self.assertEqual(core.calls, [])
+    def test_core_rejection_is_reported_without_raising_or_claim_write(self):
+        class RejectingCore(FakeCore):
+            def add_temporal_boundary(self, **kwargs):
+                raise ValueError("BOUNDARY_CONFLICT_REVIEW_REQUIRED")
+        core = RejectingCore()
+        result = persist_temporal_binding(core, self.binding(), packet_id="p1")
+        self.assertFalse(result["persisted"])
+        self.assertTrue(result["requires_review"])
+        self.assertEqual(result["status"], "BOUNDARY_CONFLICT_REVIEW_REQUIRED")
+        self.assertFalse(result["claim_validity_write")
+
     def test_authority_or_role_mismatch_is_rejected(self):
         core = FakeCore()
         binding = self.binding()

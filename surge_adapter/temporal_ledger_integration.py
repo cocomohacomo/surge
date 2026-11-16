@@ -4,6 +4,8 @@ Only explicitly bound, resolved candidates are eligible; this never writes Claim
 from __future__ import annotations
 from typing import Any
 
+from surge_adapter.packet_ingest import PacketRejected
+
 def persist_temporal_binding(core: Any, binding: dict[str, Any], *, packet_id: str) -> dict[str, Any]:
     """Persist one eligible binding with deterministic retry identifiers."""
     if not isinstance(packet_id, str) or not packet_id.strip():
@@ -32,13 +34,21 @@ def persist_temporal_binding(core: Any, binding: dict[str, Any], *, packet_id: s
             (role == "INTERVAL" and (not valid_from or not valid_until))):
         return {"status": "CANDIDATE_ROLE_BOUNDARY_MISMATCH", "persisted": False, "claim_validity_write": False}
     suffix = packet_id + "/" + role
-    result = core.add_temporal_boundary(
-        transaction_id="temporal-tx/" + suffix,
-        idempotency_key="temporal-idem/" + suffix,
-        event_id="temporal-event/" + suffix,
-        expected_state_version=core.state_version,
-        claim_id=claim_id, role=role, valid_from=valid_from, valid_until=valid_until,
-        evidence_id=evidence_id, packet_id=packet_id)
+    try:
+        result = core.add_temporal_boundary(
+            transaction_id="temporal-tx/" + suffix,
+            idempotency_key="temporal-idem/" + suffix,
+            event_id="temporal-event/" + suffix,
+            expected_state_version=core.state_version,
+            claim_id=claim_id, role=role, valid_from=valid_from, valid_until=valid_until,
+            evidence_id=evidence_id, packet_id=packet_id)
+    except PacketRejected as exc:
+        # Do not turn a committed packet into a failed runtime call. The exact
+        # rejection remains visible so callers can retry or route it to review.
+        return {"status": str(exc), "persisted": False, "requires_review": True,
+                "claim_ref": claim_id, "evidence_ref": evidence_id,
+                "packet_ref": packet_id, "candidate_role": role,
+                "claim_validity_write": False, "authority": "PROPOSAL_ONLY"}
     return {"status": result.get("status", "PERSISTED"),
             "persisted": bool(result.get("committed")),
             "duplicate": bool(result.get("duplicate")),
