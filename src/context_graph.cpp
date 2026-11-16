@@ -40,7 +40,7 @@ bool parse_rfc3339(const std::string& value, ParsedRfc3339& out) {
  if(pos<value.size()&&value[pos]=='Z')++pos;
  else if(pos<value.size()&&(value[pos]=='+'||value[pos]=='-')){
   const int sign=value[pos]=='+'?1:-1;++pos;int oh=0,om=0;
-  if(pos+5!=value.size()||value[pos+2]!=':'||!number(pos,2,oh)||!number(pos+3,2,om)||oh>23||om>59)return false;
+  if(pos+5!=value.size()||value[pos+2]!=':'||!number(pos,2,oh)||!number(pos+3,2,om)||oh>23||om>59||(sign<0&&oh==0&&om==0))return false;
   offset_seconds=sign*(oh*3600+om*60);pos+=5;
  } else return false;
  if(pos!=value.size())return false;
