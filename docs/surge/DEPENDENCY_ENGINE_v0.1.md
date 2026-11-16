@@ -24,3 +24,27 @@ The transaction coordinator must evaluate each SCC against a stable snapshot, it
 ## Scope
 
 This is a pure bounded dependency analysis primitive. It does not yet compute source trust, temporal activation, dependency predicates, edge weights, or automatic semantic updates.
+
+
+## v0.2: Predicate-aware deterministic evaluation
+
+`DependencyEngine::evaluate` evaluates each Dependency predicate against one
+immutable graph snapshot. Supported grammar:
+
+- empty or `ON_CHANGE`: prerequisite must be in the changed set;
+- `PRESENT`: prerequisite exists in the snapshot;
+- `CONTENT_EQUALS:<text>`: exact prerequisite content equality;
+- `CONTENT_CONTAINS:<text>`: non-empty substring match;
+- `KIND:<NODE_KIND>`: exact prerequisite node-kind match.
+
+A fired dependency adds its dependent to the changed set, enabling transitive
+evaluation. Each dependency fires at most once per call, including cycles.
+Unknown predicates fail closed and are returned in
+`rejected_dependencies`; they never fire. Results are stable-sorted by ID.
+Missing roots, malformed edges, and budget overflow fail the evaluation.
+Partial results on budget overflow are diagnostic only.
+
+This is a pure evaluator over a caller-provided snapshot. It does not yet
+subscribe to EventJournal commits or persist trigger outcomes. The transaction
+coordinator must invoke it against the staged post-delta snapshot and persist
+its results atomically in a later integration increment.
