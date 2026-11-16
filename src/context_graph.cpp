@@ -419,6 +419,7 @@ bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<
  const std::string tx="question-memory/capacity/"+std::to_string(expected);std::vector<JournalEvent> events;events.reserve(demoted.size());
  for(const auto&id:demoted){std::ostringstream p;p<<std::quoted(id)<<" DORMANT";events.push_back({tx+"/demote/"+id,"QUESTION_MEMORY_STATE_SET",p.str()});}
  const auto result=journal_->commit(tx,tx,expected,events);if(!result.committed){error=result.error;demoted.clear();return false;}
- for(const auto&id:demoted)state_.question_memory_states[id]=QuestionMemoryState::Dormant;return true;
+ for(const auto&id:demoted) { state_.question_memory_states[id]=QuestionMemoryState::Dormant; }
+ return true;
 }
 } // namespace surge
