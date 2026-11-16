@@ -48,24 +48,29 @@ TemporalQuestionResult TemporalQuestionLedger::synchronize(const std::string&tx,
  if(tx.empty()||ik.empty()||eid.empty()||p.claim_id.empty()||p.candidates.empty()){
   r.status=r.error="TEMPORAL_QUESTION_SYNC_ARGUMENT_INVALID";return r;}
  std::set<std::string> roles;for(const auto&c:p.candidates)roles.insert(c.role);
+ std::vector<JournalEvent> events;std::vector<TemporalQuestion> snapshots;
  for(const auto&role:roles){
   const auto id=qid(p.claim_id,role);auto old=questions_.find(id);
   const bool conflict=conflict_for(p,role);
   const bool selected=p.selected_candidate_ids.count(role)!=0;
   if(!conflict&&!(selected&&old!=questions_.end()))continue;
-  TemporalQuestion q;q.question_id=id;q.claim_id=p.claim_id;q.role=role;q.last_event_id=eid;
+  TemporalQuestion q;q.question_id=id;q.claim_id=p.claim_id;q.role=role;
+  q.last_event_id=eid+"/"+role;
   q.status=conflict?(old==questions_.end()?"OPEN":
     (old->second.status=="RESOLVED_PENDING_APPROVAL"?"REOPENED":"UNDER_REVIEW")):"RESOLVED_PENDING_APPROVAL";
   for(const auto&c:p.candidates)if(c.role==role){q.candidate_ids.push_back(c.candidate_id);
    add_unique(q.evidence_ids,c.evidence_id);add_unique(q.packet_ids,c.packet_id);}
-  JournalEvent e{eid,kKind,encode(q)};auto committed=journal_.commit(tx,ik,version,{e});
-  r.committed=committed.committed;r.duplicate=committed.duplicate;r.state_version=committed.state_version;
-  r.error=committed.error;
-  if(!committed.committed){r.status=committed.error.empty()?"TEMPORAL_QUESTION_COMMIT_REJECTED":committed.error;return r;}
-  if(!committed.duplicate&&!apply_event(e)){r.committed=false;r.status=r.error="TEMPORAL_QUESTION_REPLAY_REQUIRED";return r;}
-  r.question=questions_.at(id);r.status=r.question.status;return r;
+  events.push_back({q.last_event_id,kKind,encode(q)});snapshots.push_back(q);
  }
- r.status="NO_TEMPORAL_CONFLICT_QUESTION";return r;
+ if(events.empty()){r.status="NO_TEMPORAL_CONFLICT_QUESTION";return r;}
+ auto committed=journal_.commit(tx,ik,version,events);
+ r.committed=committed.committed;r.duplicate=committed.duplicate;
+ r.state_version=committed.state_version;r.error=committed.error;
+ if(!committed.committed){r.status=committed.error.empty()?"TEMPORAL_QUESTION_COMMIT_REJECTED":committed.error;return r;}
+ if(!committed.duplicate)for(const auto&e:events)if(!apply_event(e)){
+  r.committed=false;r.status=r.error="TEMPORAL_QUESTION_REPLAY_REQUIRED";return r;}
+ const auto& last=snapshots.back();r.question=questions_.at(last.question_id);
+ r.status=r.question.status;return r;
 }
 bool TemporalQuestionLedger::get(const std::string&c,const std::string&r,TemporalQuestion&o)const{
  auto f=questions_.find(qid(c,r));if(f==questions_.end())return false;o=f->second;return true;}
