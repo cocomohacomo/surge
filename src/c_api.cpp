@@ -4,6 +4,7 @@
 #include "surge/event_journal.hpp"
 #include "surge/packet_admission.hpp"
 #include "surge/temporal_boundary_ledger.hpp"
+#include "surge/temporal_question_ledger.hpp"
 #include <algorithm>
 #include <cstring>
 #include <exception>
@@ -63,6 +64,22 @@ std::string temporal_pending_json(const surge::TemporalBoundaryPending& p) {
       << R"(,"packet_id":)" << json_quote(x.packet_id)
       << R"(,"selected":)" << (x.selected?"true":"false") << '}';
   }
+  j << "]}";
+  return j.str();
+}
+std::string temporal_question_json(const surge::TemporalQuestion& q) {
+  std::ostringstream j;
+  j << R"({"question_id":)" << json_quote(q.question_id)
+    << R"(,"claim_id":)" << json_quote(q.claim_id)
+    << R"(,"role":)" << json_quote(q.role)
+    << R"(,"status":)" << json_quote(q.status)
+    << R"(,"last_event_id":)" << json_quote(q.last_event_id)
+    << R"(,"candidate_ids":[)";
+  for (size_t i=0;i<q.candidate_ids.size();++i) { if(i) j << ','; j << json_quote(q.candidate_ids[i]); }
+  j << R"(],"evidence_ids":[)";
+  for (size_t i=0;i<q.evidence_ids.size();++i) { if(i) j << ','; j << json_quote(q.evidence_ids[i]); }
+  j << R"(],"packet_ids":[)";
+  for (size_t i=0;i<q.packet_ids.size();++i) { if(i) j << ','; j << json_quote(q.packet_ids[i]); }
   j << "]}";
   return j.str();
 }
@@ -138,10 +155,44 @@ struct Handle {
   surge::ContextGraph graph;
   surge::PersistentRetrievalTicketRegistry tickets;
   surge::TemporalBoundaryLedger temporal_ledger;
+  surge::TemporalQuestionLedger temporal_questions;
   explicit Handle(const std::string& path)
       : journal(path), coordinator(journal), graph(journal), tickets(journal),
-        temporal_ledger(journal) {}
+        temporal_ledger(journal), temporal_questions(journal) {}
 };
+bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion& question){
+  const std::string aspect_id="aspect/"+question.question_id;
+  const auto existing=handle.graph.nodes().find(question.question_id);
+  if(existing!=handle.graph.nodes().end())
+    return existing->second.kind==surge::NodeKind::Question &&
+           handle.graph.nodes().count(aspect_id)!=0;
+  std::set<std::string> clusters;
+  for(const auto& relation:handle.graph.relations()){
+    if(relation.second.kind==surge::RelationKind::About &&
+       relation.second.from==question.claim_id &&
+       handle.graph.nodes().count(relation.second.to) &&
+       handle.graph.nodes().at(relation.second.to).kind==surge::NodeKind::Cluster)
+      clusters.insert(relation.second.to);
+  }
+  surge::SemanticDelta delta;
+  delta.delta_id="temporal-question-route/"+question.question_id;
+  delta.idempotency_key=delta.delta_id;
+  delta.expected_state_version=handle.journal.state_version();
+  delta.nodes.push_back({{question.question_id,surge::NodeKind::Question,
+    "時間境界候補の競合を確認する: "+question.claim_id+" / "+question.role,{}}});
+  delta.nodes.push_back({{aspect_id,surge::NodeKind::QuestionAspect,
+    "候補の適用時点・根拠・有効範囲を確認する。",{question.question_id}}});
+  std::vector<std::string> interests;
+  for(const auto& cluster:clusters){
+    const auto interest_id="interest/temporal/"+question.question_id+"/"+cluster;
+    interests.push_back(interest_id);
+    delta.nodes.push_back({{interest_id,surge::NodeKind::Interest,
+      "時間境界の根拠を確認する対象クラスター",{aspect_id,cluster}}});
+  }
+  if(clusters.size()==1)delta.focus=surge::SetFocus{{*clusters.begin(),interests.front()}};
+  const auto result=handle.graph.apply(delta);
+  return result.committed;
+}
 }
 extern "C" {
 void* surge_packet_core_open(const char* path, char* error, size_t cap) {
@@ -154,6 +205,9 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
     if (!handle->tickets.open()) { copy_text(error, cap, "RETRIEVAL_TICKET_RECOVERY_FAILED"); return nullptr; }
     if (!handle->temporal_ledger.replay()) {
       copy_text(error, cap, handle->temporal_ledger.last_error()); return nullptr;
+    }
+    if (!handle->temporal_questions.replay()) {
+      copy_text(error, cap, handle->temporal_questions.last_error()); return nullptr;
     }
     copy_text(error, cap, "");
     return handle.release();
@@ -953,10 +1007,42 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
 }
 
 
-int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.add(t,i,e,v,x);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&h=*static_cast<Handle*>(o);auto z=h.temporal_ledger.add(t,i,e,v,x);
+if(z.committed){bool already_synced=false;for(const auto&q:h.temporal_questions.for_claim(z.pending.claim_id))if(q.last_event_id==std::string(e)+"/question")already_synced=true;
+if(!already_synced){auto sync=h.temporal_questions.synchronize(std::string(t)+"/question",std::string(i)+"/question",std::string(e)+"/question",z.state_version,z.pending);
+if(!sync.committed&&sync.status!="NO_TEMPORAL_CONFLICT_QUESTION"){copy_text(err,ec,sync.error.empty()?sync.status:sync.error);return 0;}}
+for(const auto&candidate:z.pending.candidates){surge::TemporalQuestion question;if(h.temporal_questions.get(z.pending.claim_id,candidate.role,question)&&!ensure_temporal_question_route(h,question)){copy_text(err,ec,"TEMPORAL_QUESTION_FOCUS_ROUTE_FAILED");return 0;}}
+z.state_version=h.journal.state_version();}
+auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
 int surge_temporal_boundary_get(void*o,const char*c,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!c||!*c){copy_text(err,ec,"CLAIM_ID_REQUIRED");return 0;}surge::TemporalBoundaryPending p;bool found=static_cast<Handle*>(o)->temporal_ledger.get(c,p);auto q=found?std::string(R"({"found":true,"pending":)")+temporal_pending_json(p)+"}":std::string(R"({"found":false,"pending":null})");if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
 int surge_temporal_boundary_clear(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!*c){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.clear(t,i,e,v,c);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
-int surge_temporal_boundary_resolve_candidate(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*d,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!d){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}auto&l=static_cast<Handle*>(o)->temporal_ledger;auto z=l.resolve_candidate(t,i,e,v,c,r,d);auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_boundary_resolve_candidate(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*d,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!d){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}auto&h=*static_cast<Handle*>(o);auto z=h.temporal_ledger.resolve_candidate(t,i,e,v,c,r,d);
+if(z.committed){bool already_synced=false;for(const auto&q:h.temporal_questions.for_claim(z.pending.claim_id))if(q.last_event_id==std::string(e)+"/question")already_synced=true;
+if(!already_synced){auto sync=h.temporal_questions.synchronize(std::string(t)+"/question",std::string(i)+"/question",std::string(e)+"/question",z.state_version,z.pending);
+if(!sync.committed&&sync.status!="NO_TEMPORAL_CONFLICT_QUESTION"){copy_text(err,ec,sync.error.empty()?sync.status:sync.error);return 0;}}
+for(const auto&candidate:z.pending.candidates){surge::TemporalQuestion question;if(h.temporal_questions.get(z.pending.claim_id,candidate.role,question)&&!ensure_temporal_question_route(h,question)){copy_text(err,ec,"TEMPORAL_QUESTION_FOCUS_ROUTE_FAILED");return 0;}}
+z.state_version=h.journal.state_version();}
+auto q=temporal_result_json(z);if(req)*req=q.size()+1;if(!out||cap<q.size()+1){copy_text(err,ec,"TEMPORAL_LEDGER_BUFFER_TOO_SMALL");return 0;}copy_text(out,cap,q);copy_text(err,ec,"");return z.committed?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_LEDGER_UNKNOWN_EXCEPTION");return 0;}}
+int surge_temporal_question_get(void*o,const char*c,char*out,size_t cap,size_t*req,char*err,size_t ec){
+ try{if(!o||!c||!*c){copy_text(err,ec,"CLAIM_ID_REQUIRED");return 0;}
+ auto questions=static_cast<Handle*>(o)->temporal_questions.for_claim(c);std::ostringstream j;
+ j<<R"({"found":)"<<(questions.empty()?"false":"true")<<R"(,"questions":[)";
+ for(size_t i=0;i<questions.size();++i){if(i)j<<',';j<<temporal_question_json(questions[i]);}j<<"]}";
+ auto value=j.str();if(req)*req=value.size()+1;if(!out||cap<value.size()+1){copy_text(err,ec,"TEMPORAL_QUESTION_BUFFER_TOO_SMALL");return 0;}
+ copy_text(out,cap,value);copy_text(err,ec,"");return 1;
+ }catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"TEMPORAL_QUESTION_UNKNOWN_EXCEPTION");return 0;}
+}
+size_t surge_temporal_question_count(void*o){try{return o?static_cast<Handle*>(o)->temporal_questions.size():0;}catch(...){return 0;}}
+int surge_context_graph_focus_get(void*o,char*out,size_t cap,size_t*req,char*err,size_t ec){
+ try{if(!o){copy_text(err,ec,"CORE_HANDLE_REQUIRED");return 0;}
+ const auto& focus=static_cast<Handle*>(o)->graph.focus();std::string value;
+ if(focus)value=std::string(R"({"found":true,"cluster_id":)")+json_quote(focus->cluster_id)+R"(,"interest_id":)"+json_quote(focus->interest_id)+"}";
+ else value=R"({"found":false,"cluster_id":null,"interest_id":null})";
+ if(req) *req=value.size()+1;
+ if(!out||cap<value.size()+1){copy_text(err,ec,"FOCUS_BUFFER_TOO_SMALL");return 0;}
+ copy_text(out,cap,value);copy_text(err,ec,"");return 1;
+ }catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"FOCUS_QUERY_UNKNOWN_EXCEPTION");return 0;}
+}
 size_t surge_temporal_boundary_pending_count(void* opaque) {
   try { return opaque?static_cast<Handle*>(opaque)->temporal_ledger.pending_claim_count():0; }
   catch(...) { return 0; }

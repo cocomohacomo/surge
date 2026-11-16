@@ -124,6 +124,16 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_temporal_boundary_clear.restype = ctypes.c_int
         lib.surge_temporal_boundary_pending_count.argtypes = [ctypes.c_void_p]
         lib.surge_temporal_boundary_pending_count.restype = ctypes.c_size_t
+        lib.surge_temporal_question_get.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_temporal_question_get.restype = ctypes.c_int
+        lib.surge_temporal_question_count.argtypes = [ctypes.c_void_p]
+        lib.surge_temporal_question_count.restype = ctypes.c_size_t
+        lib.surge_context_graph_focus_get.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_focus_get.restype = ctypes.c_int
 
 
     @property
@@ -410,11 +420,12 @@ class SemanticCoreBridge(CppCoreBridge):
             raise PacketRejected("TEMPORAL_LEDGER_RESPONSE_INVALID")
         return value
 
-    def _temporal_ledger_call(self, function, args: tuple[Any, ...]) -> dict[str, Any]:
+    def _temporal_ledger_call(self, function, args: tuple[Any, ...],
+                              buffer_error: str = "TEMPORAL_LEDGER_BUFFER_TOO_SMALL") -> dict[str, Any]:
         required = ctypes.c_size_t(0)
         error = ctypes.create_string_buffer(512)
         ok = function(*args, None, 0, ctypes.byref(required), error, len(error))
-        if ok or error.value.decode("utf-8", errors="replace") != "TEMPORAL_LEDGER_BUFFER_TOO_SMALL":
+        if ok or error.value.decode("utf-8", errors="replace") != buffer_error:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
                                  "TEMPORAL_LEDGER_READ_FAILED")
         output = ctypes.create_string_buffer(required.value)
@@ -481,4 +492,22 @@ class SemanticCoreBridge(CppCoreBridge):
     @property
     def temporal_boundary_pending_count(self) -> int:
         return int(self._lib.surge_temporal_boundary_pending_count(self._handle))
+
+    def get_temporal_questions(self, claim_id: str) -> list[dict[str, Any]]:
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            raise PacketRejected("CLAIM_ID_REQUIRED")
+        result = self._temporal_ledger_call(
+            self._lib.surge_temporal_question_get, (self._handle, claim_id.encode()),
+            "TEMPORAL_QUESTION_BUFFER_TOO_SMALL")
+        return result.get("questions", [])
+
+    @property
+    def temporal_question_count(self) -> int:
+        return int(self._lib.surge_temporal_question_count(self._handle))
+
+    def get_focus(self) -> dict[str, Any] | None:
+        result = self._temporal_ledger_call(
+            self._lib.surge_context_graph_focus_get, (self._handle,),
+            "FOCUS_BUFFER_TOO_SMALL")
+        return result if result.get("found") else None
 
