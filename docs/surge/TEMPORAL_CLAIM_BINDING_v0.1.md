@@ -52,8 +52,12 @@ Evidence, timezone-bearing interval syntax, and contiguous revision number.
 The validity revision, review provenance, and any temporal Dependency
 Evaluation are appended in one Core transaction. The operation is idempotent
 and replay-safe. Corrections append a new revision and never overwrite earlier
-history. A correction candidate is not auto-committed by this API; it requires
-a separately reviewed binding.
+history. A correction candidate is not auto-committed. The same API may commit it only
+when the binding is explicitly marked `CORRECTION_REVIEW_REQUIRED`, the caller
+supplies `approved=True`, and reviewer plus review Evidence provenance are
+provided. The reviewer must select the intended corrected temporal candidate
+and ensure its Evidence is linked to the target Claim. The API then appends a
+new revision; it never overwrites the earlier interval.
 
 ## Conservative limitation
 
