@@ -52,6 +52,7 @@ struct DependencyEvaluationRecord {
   std::string status{"CONVERGED"};
   std::size_t iterations{0};
   std::size_t evaluation_cost{0};
+  bool impacted_nodes_truncated{false};
   std::vector<DependencyTrigger> triggered;
   std::vector<std::string> impacted_nodes;
   std::vector<std::string> rejected_dependencies;
