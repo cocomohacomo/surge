@@ -146,25 +146,32 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
   for(std::size_t i=0;i<count;++i){
    DependencyTrigger trigger;
    if(!(in>>std::quoted(trigger.dependency_id)>>std::quoted(trigger.prerequisite_id)>>
-        std::quoted(trigger.dependent_id))||!s.nodes.count(trigger.dependency_id)){
+        std::quoted(trigger.dependent_id))||trigger.dependency_id.empty()||
+      trigger.prerequisite_id.empty()||trigger.dependent_id.empty()){
     error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
    }
-   const auto dependency=s.nodes.find(trigger.dependency_id);
-   if(dependency->second.kind!=NodeKind::Dependency||
-      dependency->second.references.size()!=2||
-      dependency->second.references[0]!=trigger.prerequisite_id||
-      dependency->second.references[1]!=trigger.dependent_id){
-    error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+   if(e.kind=="DEPENDENCY_EVALUATION"){
+    const auto dependency=s.nodes.find(trigger.dependency_id);
+    if(dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency||
+       dependency->second.references.size()!=2||
+       dependency->second.references[0]!=trigger.prerequisite_id||
+       dependency->second.references[1]!=trigger.dependent_id){
+     error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+    }
    }
    record.triggered.push_back(std::move(trigger));
   }
   if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
-  for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||!s.nodes.count(id)){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
+  for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||id.empty()||
+      (e.kind=="DEPENDENCY_EVALUATION"&&!s.nodes.count(id))){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
   if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
   for(std::size_t i=0;i<count;++i){
    std::string id;if(!(in>>std::quoted(id))){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
    const auto dependency=s.nodes.find(id);
-   if(dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
+   if(id.empty()||(e.kind=="DEPENDENCY_EVALUATION"&&
+      (dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency))){
+    error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;
+   }
    record.rejected_dependencies.push_back(std::move(id));
   }
   if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
@@ -174,7 +181,8 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
    std::vector<std::string> component;
    for(std::size_t j=0;j<members;++j){
     std::string id;
-    if(!(in>>std::quoted(id))||!s.nodes.count(id)){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
+    if(!(in>>std::quoted(id))||id.empty()||
+       (e.kind=="DEPENDENCY_EVALUATION"&&!s.nodes.count(id))){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
     component.push_back(std::move(id));
    }
    if(!std::is_sorted(component.begin(),component.end())||
