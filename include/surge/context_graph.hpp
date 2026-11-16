@@ -49,9 +49,15 @@ struct SemanticDelta {
 struct DependencyTrigger { std::string dependency_id, prerequisite_id, dependent_id; };
 struct DependencyEvaluationRecord {
   std::string delta_id;
+  std::string status{"CONVERGED"};
+  std::size_t iterations{0};
+  std::size_t evaluation_cost{0};
+  bool impacted_nodes_truncated{false};
   std::vector<DependencyTrigger> triggered;
   std::vector<std::string> impacted_nodes;
   std::vector<std::string> rejected_dependencies;
+  std::vector<std::vector<std::string>> cyclic_components;
+  std::string diagnostic_error;
 };
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraph {
@@ -89,7 +95,7 @@ class ContextGraph {
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool replay();
   bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
-                           std::string&) const;
+                           std::string&, DependencyEvaluationRecord* = nullptr) const;
   std::string fingerprint(const SemanticDelta&) const;
   std::vector<JournalEvent> encode(const SemanticDelta&, const std::string&) const;
   bool replay_event(State&, const JournalEvent&, std::string&) const;

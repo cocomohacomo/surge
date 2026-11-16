@@ -133,3 +133,24 @@ Next dependency-semantics increment: persist the fixpoint diagnostics
 (iteration count, evaluation cost, SCC membership, and deferred reason) in the
 journal/read API, then add fault-injection and non-monotonic-rule admission
 guards before introducing semantic rewrite callbacks inside SCCs.
+
+
+## Progress update: durable fixed-point diagnostics
+
+The diagnostics increment is implemented on branch
+`feat/dependency-fixpoint-diagnostics-v0.1`. Successful evaluations persist
+status, iterations, predicate evaluation cost, triggered/rejected dependencies,
+impacted references, SCC membership, and diagnostic code in the SemanticDelta
+transaction. Direct `ContextGraph::apply` attempts that defer or fail also
+write a separate diagnostic-only journal transaction while leaving the
+SemanticDelta uncommitted. This audit transaction advances state_version and
+the returned result reports `committed=false`; retry callers must refresh the
+expected state version. Replay permits staged references in diagnostic-only
+records because the rejected graph was never committed. A later converged
+retry can supersede a prior non-converged diagnostic.
+
+The C ABI and Python retrieval method expose the expanded diagnostic record.
+Regression coverage includes successful diagnostic replay and an oversized
+impact set producing a durable DEFERRED diagnostic. Atomic packet preparation
+remains side-effect-free and therefore reports, but does not separately journal,
+deferred diagnostics. Build/test execution and CI remain unverified.

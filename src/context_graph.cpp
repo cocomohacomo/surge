@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "surge/context_graph.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
@@ -28,7 +29,10 @@ bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);s
 std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
 std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  std::ostringstream out;
- out << std::quoted(r.delta_id) << ' ' << r.triggered.size();
+ out << std::quoted(r.delta_id) << ' ' << r.status << ' '
+     << r.iterations << ' ' << r.evaluation_cost << ' '
+     << (r.impacted_nodes_truncated ? 1 : 0) << ' '
+     << std::quoted(r.diagnostic_error) << ' ' << r.triggered.size();
  for (const auto& item : r.triggered)
   out << ' ' << std::quoted(item.dependency_id) << ' '
       << std::quoted(item.prerequisite_id) << ' ' << std::quoted(item.dependent_id);
@@ -36,6 +40,11 @@ std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  for (const auto& id : r.impacted_nodes) out << ' ' << std::quoted(id);
  out << ' ' << r.rejected_dependencies.size();
  for (const auto& id : r.rejected_dependencies) out << ' ' << std::quoted(id);
+ out << ' ' << r.cyclic_components.size();
+ for (const auto& component : r.cyclic_components) {
+  out << ' ' << component.size();
+  for (const auto& id : component) out << ' ' << std::quoted(id);
+ }
  return out.str();
 }
 } // namespace
@@ -115,40 +124,100 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
- if(e.kind=="DEPENDENCY_EVALUATION"){
+ if(e.kind=="DEPENDENCY_EVALUATION"||e.kind=="DEPENDENCY_EVALUATION_DIAGNOSTIC"){
   std::istringstream in(e.payload); DependencyEvaluationRecord record;
   std::size_t count=0;
-  if(!(in>>std::quoted(record.delta_id)>>count)||record.delta_id.empty()||
-     count>4096||s.dependency_evaluations.count(record.delta_id)){
+  std::string status_or_legacy_count;
+  if(!(in>>std::quoted(record.delta_id)>>status_or_legacy_count)||
+     record.delta_id.empty()){
    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+  }
+  const bool legacy=status_or_legacy_count!="CONVERGED"&&
+      status_or_legacy_count!="DEFERRED"&&status_or_legacy_count!="INVALID";
+  if(legacy){
+   if(e.kind!="DEPENDENCY_EVALUATION"){
+    error="JOURNAL_DEPENDENCY_EVALUATION_VERSION_INVALID";return false;
+   }
+   std::istringstream legacy_count(status_or_legacy_count);
+   std::string trailing;
+   if(!(legacy_count>>count)||(legacy_count>>trailing)){
+    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+   }
+   record.status="CONVERGED";
+  } else {
+   record.status=status_or_legacy_count;
+   int impacted_truncated=0;
+   if(!(in>>record.iterations>>record.evaluation_cost>>impacted_truncated>>
+        std::quoted(record.diagnostic_error)>>count)||
+      (impacted_truncated!=0&&impacted_truncated!=1)){
+    error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+   }
+   record.impacted_nodes_truncated=impacted_truncated!=0;
+  }
+  if((record.status!="CONVERGED"&&record.status!="DEFERRED"&&record.status!="INVALID")||
+     count>4096){
+   error="JOURNAL_DEPENDENCY_EVALUATION_INVALID";return false;
+  }
+  const auto prior=s.dependency_evaluations.find(record.delta_id);
+  if(prior!=s.dependency_evaluations.end()&&
+     !(e.kind=="DEPENDENCY_EVALUATION"&&prior->second.status!="CONVERGED"&&
+       record.status=="CONVERGED")){
+   error="JOURNAL_DEPENDENCY_EVALUATION_DUPLICATE";return false;
+  }
+  if((e.kind=="DEPENDENCY_EVALUATION"&&record.status!="CONVERGED")||
+     (e.kind=="DEPENDENCY_EVALUATION_DIAGNOSTIC"&&record.status=="CONVERGED")){
+   error="JOURNAL_DEPENDENCY_EVALUATION_STATUS_INVALID";return false;
   }
   for(std::size_t i=0;i<count;++i){
    DependencyTrigger trigger;
    if(!(in>>std::quoted(trigger.dependency_id)>>std::quoted(trigger.prerequisite_id)>>
-        std::quoted(trigger.dependent_id))||
-      !s.nodes.count(trigger.dependency_id)){
+        std::quoted(trigger.dependent_id))||trigger.dependency_id.empty()||
+      trigger.prerequisite_id.empty()||trigger.dependent_id.empty()){
     error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
    }
-   const auto dependency=s.nodes.find(trigger.dependency_id);
-   if(dependency->second.kind!=NodeKind::Dependency||
-      dependency->second.references.size()!=2||
-      dependency->second.references[0]!=trigger.prerequisite_id||
-      dependency->second.references[1]!=trigger.dependent_id){
-    error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+   if(e.kind=="DEPENDENCY_EVALUATION"){
+    const auto dependency=s.nodes.find(trigger.dependency_id);
+    if(dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency||
+       dependency->second.references.size()!=2||
+       dependency->second.references[0]!=trigger.prerequisite_id||
+       dependency->second.references[1]!=trigger.dependent_id){
+     error="JOURNAL_DEPENDENCY_TRIGGER_INVALID";return false;
+    }
    }
    record.triggered.push_back(std::move(trigger));
   }
-  if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
-  for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||!s.nodes.count(id)){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
+  if(!(in>>count)||count>8192){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}
+  for(std::size_t i=0;i<count;++i){std::string id;if(!(in>>std::quoted(id))||id.empty()||
+      (e.kind=="DEPENDENCY_EVALUATION"&&!s.nodes.count(id))){error="JOURNAL_DEPENDENCY_IMPACT_INVALID";return false;}record.impacted_nodes.push_back(std::move(id));}
   if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
   for(std::size_t i=0;i<count;++i){
    std::string id;if(!(in>>std::quoted(id))){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
    const auto dependency=s.nodes.find(id);
-   if(dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency){error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;}
+   if(id.empty()||(e.kind=="DEPENDENCY_EVALUATION"&&
+      (dependency==s.nodes.end()||dependency->second.kind!=NodeKind::Dependency))){
+    error="JOURNAL_DEPENDENCY_REJECTION_INVALID";return false;
+   }
    record.rejected_dependencies.push_back(std::move(id));
   }
+  if(!(in>>count)||count>4096){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
+  for(std::size_t i=0;i<count;++i){
+   std::size_t members=0;
+   if(!(in>>members)||members>4096){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
+   std::vector<std::string> component;
+   for(std::size_t j=0;j<members;++j){
+    std::string id;
+    if(!(in>>std::quoted(id))||id.empty()||
+       (e.kind=="DEPENDENCY_EVALUATION"&&!s.nodes.count(id))){error="JOURNAL_DEPENDENCY_SCC_INVALID";return false;}
+    component.push_back(std::move(id));
+   }
+   if(!std::is_sorted(component.begin(),component.end())||
+      std::adjacent_find(component.begin(),component.end())!=component.end()){
+    error="JOURNAL_DEPENDENCY_SCC_ORDER_INVALID";return false;
+   }
+   record.cyclic_components.push_back(std::move(component));
+  }
   std::string extra;if(in>>extra){error="JOURNAL_DEPENDENCY_EVALUATION_TRAILING_DATA";return false;}
-  s.dependency_evaluations.emplace(record.delta_id,std::move(record));return true;
+  s.dependency_evaluations[record.delta_id]=std::move(record);return true;
  }
  if(e.kind=="QUESTION_ASPECT_STATUS_SET"){
   std::istringstream in(e.payload);std::string id,status,extra;
@@ -172,6 +241,11 @@ bool ContextGraph::replay(){
   if(e.kind=="RETRIEVAL_TICKET_ISSUED"||e.kind=="RETRIEVAL_TICKET_RESOLVED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
+  if(e.kind=="DEPENDENCY_EVALUATION_DIAGNOSTIC"){
+   if(have_meta){++version;have_meta=false;}
+   if(!replay_event(rebuilt,e,last_error_))return false;
+   ++version;continue;
+  }
   if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
@@ -183,7 +257,8 @@ bool ContextGraph::replay(){
 }
 
 bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
-    std::vector<JournalEvent>& events, std::string& error) const {
+    std::vector<JournalEvent>& events, std::string& error,
+    DependencyEvaluationRecord* diagnostic) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
     (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
@@ -223,13 +298,25 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  if(has_dependencies&&!changed.empty()){
   const auto evaluation=DependencyEngine::evaluate_fixpoint(staged.nodes,
       std::vector<std::string>(changed.begin(),changed.end()),4096,4096,1000000);
+  DependencyEvaluationRecord record;
+  record.delta_id=d.delta_id;
+  record.status=evaluation.status==FixpointStatus::Converged?"CONVERGED":
+      evaluation.status==FixpointStatus::Deferred?"DEFERRED":"INVALID";
+  record.iterations=evaluation.iterations;
+  record.evaluation_cost=evaluation.evaluation_cost;
+  record.impacted_nodes=evaluation.impacted_nodes;
+  if(record.impacted_nodes.size()>8192){
+   record.impacted_nodes.resize(8192);
+   record.impacted_nodes_truncated=true;
+  }
+  record.rejected_dependencies=evaluation.rejected_dependencies;
+  record.cyclic_components=evaluation.cyclic_components;
+  record.diagnostic_error=evaluation.error;
   if(evaluation.status!=FixpointStatus::Converged){
+   if(diagnostic)*diagnostic=record;
    error=evaluation.error.empty()?"DEPENDENCY_FIXPOINT_DEFERRED":evaluation.error;
    events.clear();return false;
   }
-  DependencyEvaluationRecord record;record.delta_id=d.delta_id;
-  record.impacted_nodes=evaluation.impacted_nodes;
-  record.rejected_dependencies=evaluation.rejected_dependencies;
   for(const auto& id:evaluation.triggered_dependencies){
    const auto dep_it=staged.nodes.find(id);
    if(dep_it==staged.nodes.end()||dep_it->second.kind!=NodeKind::Dependency||
@@ -253,8 +340,25 @@ bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEven
 
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
  State staged;std::vector<JournalEvent> events;std::string error;
- if(!prepare_transaction(d,staged,events,error))
+ DependencyEvaluationRecord diagnostic;
+ if(!prepare_transaction(d,staged,events,error,&diagnostic)){
+  if(!diagnostic.delta_id.empty()){
+   const auto existing=state_.dependency_evaluations.find(diagnostic.delta_id);
+   if(existing==state_.dependency_evaluations.end()){
+    const std::string txid="dependency-diagnostic/"+diagnostic.delta_id;
+    const std::string key="dependency-diagnostic/"+diagnostic.delta_id;
+    const auto committed=journal_->commit(txid,key,state_version(),
+        {{txid+"/record","DEPENDENCY_EVALUATION_DIAGNOSTIC",
+          encode_dependency_evaluation(diagnostic)}});
+    if(committed.committed){
+     state_.dependency_evaluations[diagnostic.delta_id]=diagnostic;
+    } else {
+     error=committed.error;
+    }
+   }
+  }
   return {false,false,state_version(),error};
+ }
  if(events.empty())return {true,true,state_version(),{}};
  const auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,events);
  if(!committed.committed)return {false,false,state_version(),committed.error};
