@@ -137,3 +137,4 @@ Question nodes support durable DUPLICATES, CONTAINS, AGREES_WITH, CONFLICTS_WITH
 ## Question reevaluation discovery
 
 The Core can discover bounded, direct and transitive dependent Questions without changing their lifecycle state. See [Question Reevaluation Discovery API v0.1](docs/surge/QUESTION_REEVALUATION_DISCOVERY_API_v0.1.md).
+\n\n## Question forgetting and memory lifecycle\n\nRetention recommendations weigh contradiction strength (0.30), unresolved importance (0.25), Focus relevance (0.20), recurrence (0.15), and recency (0.10). Low-scoring Questions may be marked DORMANT; history and QuestionAspect status remain intact. ARCHIVED is explicit long-term storage, and ACTIVE supports recall. Forgetting never resolves a Question or deletes provenance. See [Question Forgetting and Memory Lifecycle v0.1](docs/surge/QUESTION_FORGETTING_MEMORY_LIFECYCLE_v0.1.md).\n

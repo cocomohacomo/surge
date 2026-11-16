@@ -15,6 +15,7 @@ enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
 enum class ScopeKind { Negation, Condition, Modality, Concession, Contrast, Coreference, Anaphora, Quotation, Temporal, ListContinuation, TableHeader };
 enum class ScopeStatus { Closed, Unresolved };
 enum class QuestionAspectStatus { Open, Resolved, Deferred };
+enum class QuestionMemoryState { Active, Dormant, Archived };
 enum class ScopeEffect { NegatedClaim, ConditionalRelation, ModalityQualified, ConcessionRelation, ContrastRelation, ReferenceCandidate, QuotationEvidence, TemporalQualifier, StructuralContinuation, TableHeaderScope };
 struct GraphNode { std::string id; NodeKind kind{NodeKind::Cluster}; std::string content; std::vector<std::string> references; };
 struct GraphRelation { std::string id; RelationKind kind{RelationKind::About}; std::string from; std::string to; };
@@ -77,6 +78,8 @@ class ContextGraph {
     return state_.dependency_evaluations;
   }
   QuestionAspectStatus question_aspect_status(const std::string& id) const;
+  QuestionMemoryState question_memory_state(const std::string& id) const;
+  bool set_question_memory_state(const std::string& id, QuestionMemoryState state, std::uint64_t expected_state_version, std::string& error);
   const std::map<std::string, std::vector<ClaimValidityRecord>>& claim_validity_history() const { return state_.claim_validity_history; }
   std::optional<ClaimValidityRecord> latest_claim_validity(const std::string& id) const {
     const auto it = state_.claim_validity_history.find(id);
@@ -99,6 +102,7 @@ class ContextGraph {
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
     std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
+    std::map<std::string, QuestionMemoryState> question_memory_states;
     std::map<std::string, ClaimStatus> claim_statuses;
     std::map<std::string, std::vector<ClaimValidityRecord>> claim_validity_history;
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;

@@ -331,6 +331,24 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                                  ["q/mid", "q/other", "q/leaf"])
                 self.assertEqual(recovered.state_version, before)
 
+
+    def test_question_forgetting_policy_and_durable_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal=pathlib.Path(tmp)/"forgetting.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({"delta_id":"mem-seed","idempotency_key":"mem-seed","expected_state_version":0,"nodes":[{"id":"q/strong","kind":"QUESTION","content":"strong"},{"id":"q/weak","kind":"QUESTION","content":"weak"},{"id":"a/weak","kind":"QUESTION_ASPECT","content":"unresolved","references":["q/weak"]}],"relations":[]})
+                self.assertEqual(core.recommend_question_memory(1,.8,1,.2,.5)["recommended_state"],"ACTIVE")
+                self.assertEqual(core.recommend_question_memory(.05,0,0,.1,0)["recommended_state"],"DORMANT")
+                before=core.state_version;core.set_question_memory_state("q/weak","DORMANT",before)
+                self.assertEqual(core.get_question_memory_state("q/weak")["memory_state"],"DORMANT")
+                self.assertEqual(core.get_question_aspect("a/weak")["status"],"OPEN")
+                with self.assertRaisesRegex(PacketRejected,"STATE_VERSION_CONFLICT"): core.set_question_memory_state("q/weak","ARCHIVED",before)
+                version=core.set_question_memory_state("q/weak","ARCHIVED")
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_memory_state("q/weak")["memory_state"],"ARCHIVED")
+                self.assertEqual(recovered.get_question_aspect("a/weak")["status"],"OPEN")
+                self.assertEqual(recovered.state_version,version)
+
     def test_question_relationship_network_types_cycles_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-relations.sgj"
