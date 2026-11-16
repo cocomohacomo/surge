@@ -416,7 +416,8 @@ class SemanticCoreBridge(CppCoreBridge):
             raise PacketRejected("TEMPORAL_LEDGER_RESPONSE_INVALID")
         return value
 
-    def _temporal_ledger_call(self, function, args: tuple[Any, ...],\n                              buffer_error: str = "TEMPORAL_LEDGER_BUFFER_TOO_SMALL") -> dict[str, Any]:
+    def _temporal_ledger_call(self, function, args: tuple[Any, ...],
+                              buffer_error: str = "TEMPORAL_LEDGER_BUFFER_TOO_SMALL") -> dict[str, Any]:
         required = ctypes.c_size_t(0)
         error = ctypes.create_string_buffer(512)
         ok = function(*args, None, 0, ctypes.byref(required), error, len(error))
