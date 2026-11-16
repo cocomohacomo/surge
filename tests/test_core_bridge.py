@@ -169,6 +169,84 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 questions = recovered.get_temporal_questions("claim/temporal")
                 self.assertEqual(questions[0]["status"], "OPEN")
 
+    def test_general_contradiction_question_route_is_durable_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "general-question.sgj"
+            with SemanticCoreBridge(journal) as core:
+                seeded = core.apply_semantic_delta({
+                    "delta_id": "seed-general-question",
+                    "idempotency_key": "seed-general-question",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "cluster/general", "kind": "CLUSTER", "content": "補助金制度"},
+                        {"id": "evidence/general-a", "kind": "EVIDENCE", "content": "資料A"},
+                        {"id": "evidence/general-b", "kind": "EVIDENCE", "content": "資料B"},
+                        {"id": "claim/general-a", "kind": "CLAIM", "content": "申請期限は6月末",
+                         "references": ["evidence/general-a"]},
+                        {"id": "claim/general-b", "kind": "CLAIM", "content": "申請期限は7月末",
+                         "references": ["evidence/general-b"]},
+                    ],
+                    "relations": [
+                        {"id": "about/general-a", "kind": "ABOUT",
+                         "from": "claim/general-a", "to": "cluster/general"},
+                        {"id": "about/general-b", "kind": "ABOUT",
+                         "from": "claim/general-b", "to": "cluster/general"},
+                        {"id": "contradiction/general", "kind": "CONTRADICTS",
+                         "from": "claim/general-a", "to": "claim/general-b"},
+                    ],
+                })
+                self.assertTrue(seeded["committed"])
+                routed = core.route_contradiction("contradiction/general")
+                self.assertTrue(routed["committed"])
+                self.assertFalse(routed["duplicate"])
+                self.assertTrue(routed["focus_selected"])
+                self.assertEqual(len(routed["interest_ids"]), 1)
+                version = core.state_version
+                duplicate = core.route_contradiction("contradiction/general")
+                self.assertTrue(duplicate["committed"])
+                self.assertTrue(duplicate["duplicate"])
+                self.assertEqual(core.state_version, version)
+                self.assertEqual(core.get_focus()["cluster_id"], "cluster/general")
+            with SemanticCoreBridge(journal) as recovered:
+                duplicate = recovered.route_contradiction("contradiction/general")
+                self.assertTrue(duplicate["duplicate"])
+                self.assertEqual(recovered.get_focus()["cluster_id"], "cluster/general")
+                self.assertEqual(recovered.state_version, version)
+
+    def test_general_contradiction_keeps_focus_unchanged_when_cluster_is_ambiguous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "general-question-ambiguous.sgj"
+            with SemanticCoreBridge(journal) as core:
+                seeded = core.apply_semantic_delta({
+                    "delta_id": "seed-general-question-ambiguous",
+                    "idempotency_key": "seed-general-question-ambiguous",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "cluster/general-a", "kind": "CLUSTER", "content": "制度A"},
+                        {"id": "cluster/general-b", "kind": "CLUSTER", "content": "制度B"},
+                        {"id": "evidence/general-a", "kind": "EVIDENCE", "content": "資料A"},
+                        {"id": "evidence/general-b", "kind": "EVIDENCE", "content": "資料B"},
+                        {"id": "claim/general-a", "kind": "CLAIM", "content": "期限は6月",
+                         "references": ["evidence/general-a"]},
+                        {"id": "claim/general-b", "kind": "CLAIM", "content": "期限は7月",
+                         "references": ["evidence/general-b"]},
+                    ],
+                    "relations": [
+                        {"id": "about/general-a", "kind": "ABOUT",
+                         "from": "claim/general-a", "to": "cluster/general-a"},
+                        {"id": "about/general-b", "kind": "ABOUT",
+                         "from": "claim/general-b", "to": "cluster/general-b"},
+                        {"id": "contradiction/general-ambiguous", "kind": "CONTRADICTS",
+                         "from": "claim/general-a", "to": "claim/general-b"},
+                    ],
+                })
+                self.assertTrue(seeded["committed"])
+                routed = core.route_contradiction("contradiction/general-ambiguous")
+                self.assertTrue(routed["committed"])
+                self.assertFalse(routed["focus_selected"])
+                self.assertEqual(len(routed["interest_ids"]), 2)
+                self.assertIsNone(core.get_focus())
+
     def test_invalid_snapshot_rejected_before_core_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
             adapter = RecognitionPacketAdapter()
