@@ -127,5 +127,55 @@ class ClaimTemporalValidityBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.claim_validity_at("claim-a",
                     "2026-04-01T00:00:00+09:00"), "VALID")
 
+    def test_explicitly_reviewed_correction_appends_new_revision(self):
+        from surge_adapter.temporal_recognition import recognize_temporal_spans
+        from surge_adapter.temporal_claim_binding import bind_temporal_candidates
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "corrected-validity.sgj"
+            original = "契約Aは2026年4月1日から有効"
+            correction = "契約Aの開始日は2026年3月1日から有効に訂正"
+            spans = recognize_temporal_spans(correction, timezone_offset="+09:00")
+            binding = bind_temporal_candidates(correction, spans, claim_id="claim-a",
+                evidence_id="correction-evidence", claim_accepted=True)[0]
+            self.assertEqual(binding["binding_status"], "CORRECTION_REVIEW_REQUIRED")
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "correction-seed", "idempotency_key": "correction-seed",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "original-evidence", "kind": "EVIDENCE", "content": original, "references": []},
+                        {"id": "review-evidence", "kind": "EVIDENCE", "content": "訂正審査: 承認", "references": []},
+                        {"id": "claim-a", "kind": "CLAIM", "content": "契約Aは有効", "references": ["original-evidence"]},
+                    ], "relations": []})
+                core.apply_approved_temporal_binding(
+                    {"binding_status": "BOUND_PENDING_CORE_REVIEW",
+                     "claim_ref": "claim-a", "evidence_ref": "original-evidence",
+                     "source_span": {"start_offset": len("契約Aは".encode("utf-8")),
+                         "end_offset": len("契約Aは2026年4月1日".encode("utf-8")),
+                         "offset_basis": "UTF8_BYTE_NFC", "exact_text": "2026年4月1日"},
+                     "temporal_candidate": {"role": "VALID_FROM", "status": "RESOLVED",
+                         "valid_from": "2026-04-01T00:00:00+09:00", "valid_until": None}},
+                    original, approved=True, reviewer_id="reviewer-1",
+                    review_evidence_id="review-evidence", delta_id="revision-1",
+                    idempotency_key="revision-1", expected_state_version=1, revision=1)
+                core.apply_semantic_delta({
+                    "delta_id": "correction-evidence-add", "idempotency_key": "correction-evidence-add",
+                    "expected_state_version": 2,
+                    "nodes": [{"id": "correction-evidence", "kind": "EVIDENCE",
+                               "content": correction, "references": []}],
+                    "relations": [{"id": "correction-supports-claim", "kind": "SUPPORTS",
+                                   "from": "correction-evidence", "to": "claim-a"}]})
+                committed = core.apply_approved_temporal_binding(binding, correction,
+                    approved=True, reviewer_id="reviewer-1", review_evidence_id="review-evidence",
+                    delta_id="revision-2", idempotency_key="revision-2",
+                    expected_state_version=3, revision=2)
+                self.assertEqual(committed["revision"], 2)
+                self.assertEqual(core.claim_validity_at("claim-a", "2026-03-15T00:00:00+09:00"), "VALID")
+                self.assertEqual(core.state_version, 4)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, 4)
+                self.assertEqual(recovered.claim_validity_at("claim-a",
+                    "2026-03-15T00:00:00+09:00"), "VALID")
+
 if __name__ == "__main__":
     unittest.main()

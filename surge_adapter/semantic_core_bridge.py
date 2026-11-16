@@ -245,7 +245,7 @@ class SemanticCoreBridge(CppCoreBridge):
         import unicodedata
         if approved is not True:
             raise PacketRejected("CLAIM_VALIDITY_REVIEW_NOT_APPROVED")
-        if not isinstance(binding, dict) or binding.get("binding_status") != "BOUND_PENDING_CORE_REVIEW":
+        if not isinstance(binding, dict) or binding.get("binding_status") not in ("BOUND_PENDING_CORE_REVIEW", "CORRECTION_REVIEW_REQUIRED"):
             raise PacketRejected("TEMPORAL_BINDING_NOT_ELIGIBLE")
         if not isinstance(reviewer_id, str) or not reviewer_id.strip() or not isinstance(review_evidence_id, str) or not review_evidence_id.strip():
             raise PacketRejected("CLAIM_VALIDITY_REVIEW_PROVENANCE_REQUIRED")
@@ -264,7 +264,7 @@ class SemanticCoreBridge(CppCoreBridge):
         if exact != span.get("exact_text"):
             raise PacketRejected("CLAIM_VALIDITY_SOURCE_SPAN_MISMATCH")
         candidate = binding.get("temporal_candidate") or {}
-        if (candidate.get("status") != "RESOLVED" or candidate.get("correction") or
+        if (candidate.get("status") != "RESOLVED" or
                 candidate.get("role") not in ("VALID_FROM", "INTERVAL") or
                 not isinstance(candidate.get("valid_from"), str) or not candidate.get("valid_from")):
             raise PacketRejected("CLAIM_VALIDITY_CANDIDATE_NOT_COMMITTABLE")
