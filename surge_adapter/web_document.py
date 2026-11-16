@@ -22,15 +22,15 @@ from surge_adapter.packet_ingest import RecognitionPacketAdapter, normalize_sour
 from surge_adapter.recognition_scoring import RecognitionScorer
 
 TEMPORAL_PATTERNS = (
-    ("CANCELLED", r"中止|取消|撤回|取りやめ|廃止"),
-    ("UNDER_REVIEW", r"検討中|審議中|調整中|審査中|協議中|確認中"),
+    ("CANCELLED", r"中止した|中止しました|取り消した|取り消しました|撤回した|撤回しました|取りやめた|取りやめました|廃止した|廃止しました"),
+    ("UNDER_REVIEW", r"検討中|検討しています|検討している|審議中|調整中|審査中|協議中|確認中"),
     ("FORECAST", r"見通し|予想|予報|見込み|推計"),
-    ("PLANNED", r"予定|計画|開催します|実施します|募集します|公募します"),
-    ("DECIDED", r"決定|承認|認定|閣議決定|公布"),
+    ("PLANNED", r"予定|計画|開催します|実施します|募集します|公募します|公募開始|募集開始|中止予定|廃止予定"),
+    ("DECIDED", r"決定|承認|認定|閣議決定|公布|解除|設定"),
     ("COMPLETED", r"実施した|実施しました|開催した|開催しました|完了した|完了しました|公表した|公表しました|提出した|提出しました"),
     ("CURRENT", r"現在|現時点|引き続き|継続して"),
 )
-NEGATION_RE = re.compile(r"ない|ません|ず|ぬ|禁止|不可|停止|中止")
+NEGATION_RE = re.compile(r"ない|ません|ず|ぬ|禁止|不可")
 MODALITY_RE = re.compile(r"予定|計画|検討|可能|見込み|方針|必要|義務|原則|決定")
 DATE_RE = re.compile(r"令和[元0-9０-９]+年[0-9０-９]+月(?:[0-9０-９]+日)?|20[0-9]{2}年[0-9]{1,2}月(?:[0-9]{1,2}日)?|[0-9]{4}-[0-9]{2}-[0-9]{2}")
 QUOTE_RE = re.compile(r"「[^」]{1,200}」|『[^』]{1,200}』|\"[^\"]{1,200}\"")
