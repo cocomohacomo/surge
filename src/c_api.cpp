@@ -745,7 +745,6 @@ int surge_question_memory_plan(void* opaque,size_t max_active,char* output,size_
    if(graph.focus())for(const auto& candidate:graph.nodes())if(candidate.second.kind==surge::NodeKind::Interest&&candidate.first==graph.focus()->interest_id&&candidate.second.references.size()==2&&std::find(aspects.begin(),aspects.end(),candidate.second.references.front())!=aspects.end()){focus=1.0;break;}
    const size_t total=open+deferred+resolved;
    double unresolved=total?static_cast<double>(open+0.65*deferred+0.15*resolved)/static_cast<double>(total):0.5;
-   double recurrence=std::min(1.0,static_cast<double>(aspects.size())/4.0);
    const double recency=0.5; // Neutral: no wall-clock or timestamp inference.
    bool protected_dependency=false;
    for(const auto& rel:graph.relations())if(rel.second.kind==surge::RelationKind::DependsOn&&(rel.second.from==node.first||rel.second.to==node.first)){protected_dependency=true;break;}
