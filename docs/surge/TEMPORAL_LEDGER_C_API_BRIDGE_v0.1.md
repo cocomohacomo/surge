@@ -43,3 +43,19 @@ proposal; reprocessing the same packet can safely complete the second write.
 
 This path persists review proposals only. It does not verify Evidence
 entailment, approve temporal meaning, or mutate ClaimValidity.
+
+
+## Conflict preservation and candidate review v0.1
+
+Every structurally valid contribution is appended even when its boundary
+conflicts with an earlier contribution. The journal event ID is exposed as
+the candidate ID. Each candidate retains its role, boundary values, Evidence
+ID, and Packet ID. Conflicts report `BOUNDARY_CONFLICT_REVIEW_REQUIRED`;
+no latest-wins overwrite occurs.
+
+The read API returns every candidate and its selection state. Reviewers can
+select a candidate with `resolve_temporal_boundary_candidate`, which appends
+a durable disposition event. This selects a proposal for subsequent review
+only. Its state is `CONFLICT_RESOLVED_PENDING_APPROVAL`; it does not approve
+the temporal interpretation or change ClaimValidity. Candidates and
+dispositions survive restart and replay.
