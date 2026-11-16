@@ -47,10 +47,11 @@ conditions, temporal state and modality.
 
 Every document creates a publisher Entity and Evidence record. Evidence records
 canonical URL, title, publisher, retrieval timestamp, source digest, capture
-status and byte range. Quoted speech must be represented separately from the
-publisher's own assertion. Publisher identity is never treated as the author
-of quoted content by default. Attribution candidates require an explicit
-speaker/source entity and a quotation ScopeSpan.
+status and byte range. The publisher Entity is linked from Evidence. Quoted
+speech is represented separately from the publisher's own assertion. The
+attribution candidate extractor creates a distinct speaker Entity and attaches
+it to a quotation ScopeSpan only when an attribution phrase precedes the quote.
+Publisher identity is never silently substituted for a quoted speaker.
 
 ## 5. Long-document chunking and ScopeSpan
 
@@ -77,8 +78,12 @@ subject to the existing strict LLM output validator and RecognitionScoring.
   extraction requires a versioned provider response schema.
 - Regex marker discovery is a candidate generator, not a semantic truth oracle.
   False marker hits must be caught by conformance tests and provider review.
-- Geography and exact valid-time intervals are represented but are not yet
-  reliably inferred by the v0.1 heuristic layer.
+  Existing RecognitionScorer is applied to each chunk; ACCEPT, REVIEW and
+  ABSTAIN outcomes are returned independently of the extraction proposal.
+- Geography and exact valid-time intervals are represented with conservative
+  Japanese place/date heuristics; they are not yet reliably inferred for every
+  source format. Reiwa dates are normalized to Gregorian ISO dates for interval
+  comparison.
 - Cross-document contradiction candidates require persisted Claim records;
   the comparator itself is deterministic and side-effect-free.
 - The index and Core journal are separate durability domains. A failed index
