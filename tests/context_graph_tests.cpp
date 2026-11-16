@@ -224,6 +224,12 @@ int main(){
       invalid.relations={{{"bad-evidence-for",RelationKind::EvidenceFor,
           "claim-1","evidence-1"}}};
       assert(graph.apply(invalid).error=="EVIDENCE_FOR_RELATION_TYPE_INVALID");
+      SemanticDelta invalid_publisher;invalid_publisher.delta_id="publisher-invalid";
+      invalid_publisher.idempotency_key="publisher-invalid-key";
+      invalid_publisher.expected_state_version=1;
+      invalid_publisher.relations={{{"bad-published-by",RelationKind::PublishedBy,
+          "evidence-1","claim-1"}}};
+      assert(graph.apply(invalid_publisher).error=="PUBLISHED_BY_RELATION_TYPE_INVALID");
       assert(graph.state_version()==1);
     }
     {
