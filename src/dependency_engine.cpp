@@ -70,7 +70,7 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       const std::string actual = state == ClaimTemporalState::Unknown ? "UNKNOWN" :
           state == ClaimTemporalState::NotYetValid ? "NOT_YET_VALID" :
           state == ClaimTemporalState::Valid ? "VALID" : "EXPIRED";
-      return expected == actual;
+      return changed.count(prerequisite.id) != 0 && expected == actual;
     }
     const std::string kind = "KIND:";
     if (expr.compare(0, kind.size(), kind) == 0) {
