@@ -247,7 +247,9 @@
                     "AGREES_WITH",
                     "CONFLICTS_WITH",
                     "ABOUT",
-                    "DEPENDS_ON"
+                    "DEPENDS_ON",
+                    "EVIDENCE_FOR",
+                    "PUBLISHED_BY"
                   ]
                 },
                 "from": {
