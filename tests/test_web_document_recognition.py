@@ -98,6 +98,19 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             self.assertEqual(conflicts[0]["from"],"claim/old")
             index.close()
 
+    def test_claim_identity_keeps_geographically_distinct_applicability(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            index=WebDocumentIndex(pathlib.Path(tmp)/"geography.sqlite")
+            first_engine=WebDocumentRecognitionEngine(Provider([candidate()]),"ctx","web",index)
+            first=first_engine.prepare("盛岡市で会議を開催する。","https://example.jp/morioka","機関")
+            index.record(first["url"],first["digest"],first["packet"]["packet_id"],0,
+                         "盛岡","機関",first["claims"])
+            second_engine=WebDocumentRecognitionEngine(Provider([candidate()]),"ctx","web",index)
+            second=second_engine.prepare("仙台市で会議を開催する。","https://example.jp/sendai","機関")
+            self.assertNotEqual(first["claims"][0]["signature"],second["claims"][0]["signature"])
+            self.assertNotEqual(first["claims"][0]["claim_id"],second["claims"][0]["claim_id"])
+            index.close()
+
     def test_ingest_connects_packet_and_semantic_delta_atomically(self):
         class FakeCore:
             state_version=0
