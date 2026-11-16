@@ -401,6 +401,76 @@ class ContextRetriever:
         )
 
     @staticmethod
+    def changed_refs_from_semantic_delta(delta: dict[str, Any]) -> list[str]:
+        """Derive ON_CHANGE triggers from the committed SemanticDelta payload.
+
+        Node IDs are direct changes. Relation endpoints and ScopeSpan targets /
+        antecedents are included because their semantic neighborhood changed.
+        Focus references are included when Focus itself is updated.
+        """
+        if not isinstance(delta, dict):
+            raise ValueError("SEMANTIC_DELTA_SHAPE_INVALID")
+        changed: set[str] = set()
+        nodes = delta.get("nodes", [])
+        relations = delta.get("relations", [])
+        scopes = delta.get("scope_spans", [])
+        if not all(isinstance(value, list) for value in (nodes, relations, scopes)):
+            raise ValueError("SEMANTIC_DELTA_SHAPE_INVALID")
+        for node in nodes:
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not node["id"]:
+                raise ValueError("SEMANTIC_DELTA_NODE_INVALID")
+            changed.add(node["id"])
+        for relation in relations:
+            if not isinstance(relation, dict):
+                raise ValueError("SEMANTIC_DELTA_RELATION_INVALID")
+            for key in ("from", "to"):
+                ref = relation.get(key)
+                if not isinstance(ref, str) or not ref:
+                    raise ValueError("SEMANTIC_DELTA_RELATION_INVALID")
+                changed.add(ref)
+        for scope in scopes:
+            if not isinstance(scope, dict) or not isinstance(scope.get("span_id"), str):
+                raise ValueError("SEMANTIC_DELTA_SCOPE_INVALID")
+            changed.add(scope["span_id"])
+            for key in ("target_refs", "antecedent_refs"):
+                refs = scope.get(key, [])
+                if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref for ref in refs):
+                    raise ValueError("SEMANTIC_DELTA_SCOPE_INVALID")
+                changed.update(refs)
+        focus = delta.get("focus")
+        if focus is not None:
+            if not isinstance(focus, dict):
+                raise ValueError("SEMANTIC_DELTA_FOCUS_INVALID")
+            for key in ("cluster_id", "interest_id"):
+                ref = focus.get(key)
+                if ref:
+                    if not isinstance(ref, str):
+                        raise ValueError("SEMANTIC_DELTA_FOCUS_INVALID")
+                    changed.add(ref)
+        return sorted(changed)
+
+    def build_hint_after_semantic_delta(
+        self, context_id: str, packet_ref: str, source_range_digest: str,
+        policy_version: str, query: str, reference_budget: int,
+        delta: dict[str, Any], commit_result: dict[str, Any],
+        limit: int = 100, max_depth: int = 3, max_nodes: int = 256,
+    ) -> dict[str, Any]:
+        """Build a hint using change triggers derived from an accepted Core commit."""
+        if not isinstance(commit_result, dict) or commit_result.get("committed") is not True:
+            raise PacketRejected("SEMANTIC_DELTA_NOT_COMMITTED")
+        if not isinstance(commit_result.get("state_version"), int):
+            raise PacketRejected("SEMANTIC_DELTA_COMMIT_VERSION_MISSING")
+        if commit_result["state_version"] != self._core.state_version:
+            raise PacketRejected("SEMANTIC_DELTA_COMMIT_VERSION_STALE")
+        changed_refs = self.changed_refs_from_semantic_delta(delta)
+        return self.build_hint_from_graph(
+            context_id=context_id, packet_ref=packet_ref,
+            source_range_digest=source_range_digest, policy_version=policy_version,
+            query=query, reference_budget=reference_budget, limit=limit,
+            changed_refs=changed_refs, max_depth=max_depth, max_nodes=max_nodes,
+        )
+
+    @staticmethod
     def _hint_priority(kind: str) -> int:
         return {
             "OPEN_SCOPE": 0, "REQUIRED_QUESTION_ASPECT": 1,
