@@ -444,6 +444,10 @@ class ContextRetriever:
             for relation in item.get("relations", []):
                 target = relation.get("ref")
                 if target in by_id:
+                    target_item = by_id[target]
+                    if (target_item.get("kind") == "QUESTION_ASPECT"
+                            and target_item.get("status", "OPEN") == "RESOLVED"):
+                        continue
                     add(target, "LOW_PRIORITY", item.get("score", 0), visited[ref] + 1)
 
         candidates = list(candidate_map.values())
