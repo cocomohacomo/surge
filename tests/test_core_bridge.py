@@ -133,8 +133,9 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     "expected_state_version": 0,
                     "nodes": [
                         {"id": "cluster/temporal", "kind": "CLUSTER", "content": "有効期間"},
-                        {"id": "claim/temporal", "kind": "CLAIM", "content": "施行日は4月1日"},
                         {"id": "evidence/temporal", "kind": "EVIDENCE", "content": "公布資料"},
+                        {"id": "claim/temporal", "kind": "CLAIM", "content": "施行日は4月1日",
+                         "references": ["evidence/temporal"]},
                     ],
                     "relations": [
                         {"id": "about-temporal", "kind": "ABOUT",
