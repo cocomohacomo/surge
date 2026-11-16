@@ -225,7 +225,7 @@ int main(){
       const auto latest=recovered.latest_claim_validity("temporal-claim");
       assert(latest && latest->validity.revision==2);
       assert(latest->recorded_state_version==2);
-      assert(graph.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
+      assert(recovered.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
     }
   }
   std::filesystem::remove_all(root);
