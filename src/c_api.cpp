@@ -682,6 +682,106 @@ int surge_question_get_aggregate_status(void* opaque, const char* question_id,
     catch (...) { copy_text(error, error_capacity, "QUESTION_AGGREGATE_GET_UNKNOWN_EXCEPTION"); return 0; }
 }
 
+
+int surge_question_get_reevaluation_candidates(void* opaque, const char* question_id,
+    size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,
+    size_t* required_capacity, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !question_id || !*question_id || max_depth == 0 ||
+        max_depth > 64 || max_nodes == 0 || max_nodes > 4096) {
+      copy_text(error, error_capacity, "QUESTION_REEVALUATION_ARGUMENT_INVALID");
+      return 0;
+    }
+    const auto& graph = static_cast<Handle*>(opaque)->graph;
+    const auto root = graph.nodes().find(question_id);
+    if (root == graph.nodes().end() || root->second.kind != surge::NodeKind::Question) {
+      copy_text(error, error_capacity, "QUESTION_NOT_FOUND");
+      return 0;
+    }
+    struct Edge { std::string dependent_id, relation_id; };
+    struct Step { std::string question_id; size_t depth; std::vector<std::string> path; };
+    struct Candidate { std::string question_id, status; size_t depth; std::vector<std::string> path; };
+    std::map<std::string, std::vector<Edge>> reverse_dependencies;
+    for (const auto& item : graph.relations()) {
+      const auto& relation = item.second;
+      if (relation.kind != surge::RelationKind::DependsOn) continue;
+      const auto from = graph.nodes().find(relation.from);
+      const auto to = graph.nodes().find(relation.to);
+      if (from == graph.nodes().end() || to == graph.nodes().end() ||
+          from->second.kind != surge::NodeKind::Question ||
+          to->second.kind != surge::NodeKind::Question) continue;
+      reverse_dependencies[relation.to].push_back({relation.from, relation.id});
+    }
+    std::vector<Step> pending{{question_id, 0, {}}};
+    size_t cursor = 0;
+    std::set<std::string> visited{question_id};
+    std::vector<Candidate> candidates;
+    while (cursor < pending.size()) {
+      const Step current = pending[cursor++];
+      if (current.depth >= max_depth) continue;
+      const auto edges = reverse_dependencies.find(current.question_id);
+      if (edges == reverse_dependencies.end()) continue;
+      for (const auto& edge : edges->second) {
+        if (!visited.insert(edge.dependent_id).second) continue;
+        if (candidates.size() >= max_nodes) {
+          copy_text(error, error_capacity, "QUESTION_REEVALUATION_NODE_LIMIT");
+          return 0;
+        }
+        Step next{edge.dependent_id, current.depth + 1, current.path};
+        next.path.push_back(edge.relation_id);
+        pending.push_back(next);
+        size_t open_count = 0, deferred_count = 0, aspect_count = 0;
+        for (const auto& node_item : graph.nodes()) {
+          const auto& node = node_item.second;
+          if (node.kind != surge::NodeKind::QuestionAspect ||
+              std::find(node.references.begin(), node.references.end(), edge.dependent_id) == node.references.end()) continue;
+          ++aspect_count;
+          const auto status = graph.question_aspect_status(node.id);
+          if (status == surge::QuestionAspectStatus::Open) ++open_count;
+          else if (status == surge::QuestionAspectStatus::Deferred) ++deferred_count;
+        }
+        const std::string aggregate = aspect_count == 0 ? "UNKNOWN" :
+            open_count ? "OPEN" : deferred_count ? "DEFERRED" : "RESOLVED";
+        candidates.push_back({edge.dependent_id, aggregate, next.depth, next.path});
+      }
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+      if (a.depth != b.depth) return a.depth < b.depth;
+      return a.question_id < b.question_id;
+    });
+    std::ostringstream json;
+    json << "{\"trigger_question_id\":" << json_quote(question_id)
+         << ",\"max_depth\":" << max_depth << ",\"max_nodes\":" << max_nodes
+         << ",\"candidates\":[";
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      if (i) json << ',';
+      const auto& item = candidates[i];
+      json << "{\"question_id\":" << json_quote(item.question_id)
+           << ",\"status\":" << json_quote(item.status)
+           << ",\"depth\":" << item.depth << ",\"via_relation_ids\":[";
+      for (size_t j = 0; j < item.path.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(item.path[j]);
+      }
+      json << "]}";
+    }
+    json << "],\"state_version\":" << graph.state_version() << '}';
+    const std::string value = json.str();
+    if (required_capacity) *required_capacity = value.size() + 1;
+    if (!output || output_capacity < value.size() + 1) {
+      copy_text(error, error_capacity, "QUESTION_REEVALUATION_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, value);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "QUESTION_REEVALUATION_UNKNOWN_EXCEPTION"); return 0;
+  }
+}
+
 int surge_question_route_contradiction(void* opaque, const char* relation_id,
     const char* policy_version, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {
