@@ -34,7 +34,7 @@ NEGATION_RE = re.compile(r"ない|ません|ず|ぬ|禁止|不可|停止|中止"
 MODALITY_RE = re.compile(r"予定|計画|検討|可能|見込み|方針|必要|義務|原則|決定")
 DATE_RE = re.compile(r"令和[元0-9０-９]+年[0-9０-９]+月(?:[0-9０-９]+日)?|20[0-9]{2}年[0-9]{1,2}月(?:[0-9]{1,2}日)?|[0-9]{4}-[0-9]{2}-[0-9]{2}")
 QUOTE_RE = re.compile(r"「[^」]{1,200}」|『[^』]{1,200}』|\"[^\"]{1,200}\"")
-ATTRIBUTION_RE = re.compile(r"([一-龥ぁ-んァ-ヶA-Za-z0-9・]{2,40})(?:によると|は|が)(?:、|\s)*(?:次のとおり|以下のとおり|と発表|と説明|と述べ|と報告)")
+ATTRIBUTION_RE = re.compile(r"([一-龥ぁ-んァ-ヶA-Za-z0-9・]{2,40})(?:によると|は|が)(?:、|\s)*(?=「|『|\\"|次のとおり|以下のとおり|と発表|と説明|と述べ|と報告)")
 CONDITION_RE = re.compile(r"場合|とき|限り|において|については")
 GEO_RE = re.compile(r"北海道|東京都|(?:京都|大阪)府|[一-龥]{2,3}県|[一-龥]{2,8}市")
 EXCLUSIVE_CONDITIONS = (("災害時","平常時"),("平日","休日"),("昼間","夜間"))
@@ -327,6 +327,7 @@ class WebDocumentRecognitionEngine:
         relations: list[dict[str, str]] = []
         scopes: list[dict[str, Any]] = []
         extracted: list[dict[str, Any]] = []
+        decision_results: list[dict[str, Any]] = []
         chunks = split_document(source_text, self.max_chunk_chars, self.overlap_chars)
         prior_claims: list[tuple[ClaimApplicability, str]] = []
         seen_signatures: dict[str, str] = {}
@@ -348,6 +349,9 @@ class WebDocumentRecognitionEngine:
                 "confidence":float(candidate["confidence"]),
                 "ambiguity":float(candidate["ambiguity"]),
                 "novelty":0.70 if candidate["kind"] in ("CLAIM","QUESTION") else 0.25})
+            decision_results.append({"chunk_index":chunk.index,"decision":score.decision,
+                "abstention_reasons":list(score.abstention_reasons),
+                "priority_score":score.priority_score})
             if candidate["kind"] != "CLAIM" or not candidate["proposition"] or score.decision == "ABSTAIN":
                 continue
             state = temporal_state(chunk.text)
@@ -415,7 +419,7 @@ class WebDocumentRecognitionEngine:
                                          packet_id,claim_id,chunk.index))
             extracted.append({"claim_id":claim_id,"signature":signature,
                 "applicability":asdict(applicability),"chunk_index":chunk.index,
-                "source_url":url,"publisher":publisher,"title":title})
+                "decision":score.decision,"source_url":url,"publisher":publisher,"title":title})
         # Collapse duplicate marker hits introduced by overlapping chunks.
         unique_scopes = {}
         for span in scopes:
@@ -443,7 +447,7 @@ class WebDocumentRecognitionEngine:
             "expected_state_version":0,"nodes":nodes,"relations":relations,
             "scope_spans":scopes,"source_snapshot":source_text}
         return {"status":identity["status"],"url":url,"digest":digest,"packet":packet,
-            "delta":delta,"claims":extracted,"chunk_count":len(chunks),
+            "delta":delta,"claims":extracted,"decisions":decision_results,"chunk_count":len(chunks),
             "previous_packet_id":identity["previous_packet_id"],"revision":identity["revision"]}
 
     def ingest(self, text: str, url: str, publisher: str, core: Any,
