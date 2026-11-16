@@ -38,7 +38,7 @@ int main(){
   {
     const auto dependency_path=(root/"dependency-evaluation.sgj").string();
     {
-      ContextGraph graph(dependency_path);assert(graph.open());
+      ContextGraph graph(dependency_path);assert(graph.open()); std::cerr<<"dep-test: fresh-open\\n";
       SemanticDelta d;d.delta_id="dependency-delta-1";d.idempotency_key="dependency-key-1";
       d.expected_state_version=0;
       d.nodes={{{"source-cluster",NodeKind::Cluster,"approved",{}}},
@@ -47,7 +47,7 @@ int main(){
                   {"source-cluster","target-cluster"}}},
                {{"dependency-invalid",NodeKind::Dependency,"KIND:UNKNOWN",
                   {"source-cluster","target-cluster"}}}};
-      const auto result=graph.apply(d);
+      const auto result=graph.apply(d); std::cerr<<"dep-test: first-apply\\n";
       assert(result.committed && !result.duplicate && result.state_version==1);
       assert(graph.dependency_evaluations().count("dependency-delta-1")==1);
       const auto& evaluation=graph.dependency_evaluations().at("dependency-delta-1");
@@ -60,7 +60,7 @@ int main(){
       assert(retry.committed && retry.duplicate && graph.state_version()==1);
     }
     {
-      ContextGraph recovered(dependency_path);assert(recovered.open());
+      ContextGraph recovered(dependency_path);assert(recovered.open()); std::cerr<<"dep-test: recovered-open\\n";
       assert(recovered.state_version()==1);
       assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
       const auto& evaluation=recovered.dependency_evaluations().at("dependency-delta-1");
@@ -71,7 +71,7 @@ int main(){
       new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
       new_dependency.nodes={{{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
           {"source-cluster","target-cluster"}}}};
-      const auto added=recovered.apply(new_dependency);
+      const auto added=recovered.apply(new_dependency); std::cerr<<"dep-test: second-apply\\n";
       assert(added.committed&&added.state_version==2);
       assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
       assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
