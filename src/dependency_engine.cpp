@@ -6,6 +6,89 @@
 #include <utility>
 
 namespace surge {
+DependencyEvaluationResult DependencyEngine::evaluate(
+    const std::map<std::string, GraphNode>& nodes,
+    const std::vector<std::string>& roots, std::size_t maximum_nodes) {
+  DependencyEvaluationResult result;
+  if (roots.empty() || maximum_nodes == 0) {
+    result.error = "DEPENDENCY_EVALUATION_REQUEST_INVALID"; return result;
+  }
+  std::set<std::string> changed;
+  for (const auto& id : roots) {
+    if (!nodes.count(id)) { result.error = "DEPENDENCY_TRIGGER_ROOT_NOT_FOUND"; return result; }
+    changed.insert(id);
+  }
+  if (changed.size() > maximum_nodes) {
+    result.error = "DEPENDENCY_EVALUATION_BUDGET_EXCEEDED"; return result;
+  }
+  std::vector<const GraphNode*> dependencies;
+  for (const auto& item : nodes) {
+    const auto& dep = item.second;
+    if (dep.kind != NodeKind::Dependency) continue;
+    if (dep.references.size() != 2 || dep.references[0] == dep.references[1] ||
+        !nodes.count(dep.references[0]) || !nodes.count(dep.references[1])) {
+      result.error = "DEPENDENCY_RECORD_INVALID"; return result;
+    }
+    dependencies.push_back(&dep);
+  }
+  auto matches = [&](const GraphNode& dep, const GraphNode& prerequisite) {
+    const auto& expr = dep.content;
+    if (expr.empty() || expr == "ON_CHANGE") return changed.count(prerequisite.id) != 0;
+    if (expr == "PRESENT") return true;
+    const std::string eq = "CONTENT_EQUALS:";
+    if (expr.compare(0, eq.size(), eq) == 0) return prerequisite.content == expr.substr(eq.size());
+    const std::string contains = "CONTENT_CONTAINS:";
+    if (expr.compare(0, contains.size(), contains) == 0) {
+      const auto needle = expr.substr(contains.size());
+      return !needle.empty() && prerequisite.content.find(needle) != std::string::npos;
+    }
+    const std::string kind = "KIND:";
+    if (expr.compare(0, kind.size(), kind) == 0) {
+      const auto expected = expr.substr(kind.size());
+      switch (prerequisite.kind) {
+        case NodeKind::Cluster: return expected == "CLUSTER";
+        case NodeKind::Entity: return expected == "ENTITY";
+        case NodeKind::Evidence: return expected == "EVIDENCE";
+        case NodeKind::Claim: return expected == "CLAIM";
+        case NodeKind::Question: return expected == "QUESTION";
+        case NodeKind::QuestionAspect: return expected == "QUESTION_ASPECT";
+        case NodeKind::Dependency: return expected == "DEPENDENCY";
+        case NodeKind::Interest: return expected == "INTEREST";
+      }
+    }
+    return false;
+  };
+  auto known = [](const std::string& expr) {
+    return expr.empty() || expr == "ON_CHANGE" || expr == "PRESENT" ||
+      expr.compare(0, 15, "CONTENT_EQUALS:") == 0 ||
+      expr.compare(0, 17, "CONTENT_CONTAINS:") == 0 ||
+      expr.compare(0, 5, "KIND:") == 0;
+  };
+  std::set<std::string> fired, rejected;
+  for (const auto* dep : dependencies) if (!known(dep->content)) rejected.insert(dep->id);
+  bool progress = true;
+  while (progress) {
+    progress = false;
+    for (const auto* dep : dependencies) {
+      if (fired.count(dep->id)) continue;
+      if (!matches(*dep, nodes.at(dep->references[0]))) continue;
+      fired.insert(dep->id);
+      if (changed.insert(dep->references[1]).second) {
+        if (changed.size() > maximum_nodes) {
+          result.error = "DEPENDENCY_EVALUATION_BUDGET_EXCEEDED";
+          result.impacted_nodes.assign(changed.begin(), changed.end()); return result;
+        }
+        progress = true;
+      }
+    }
+  }
+  result.triggered_dependencies.assign(fired.begin(), fired.end());
+  result.rejected_dependencies.assign(rejected.begin(), rejected.end());
+  result.impacted_nodes.assign(changed.begin(), changed.end());
+  result.complete = true;
+  return result;
+}
+
 ImpactResult DependencyEngine::compute(const std::map<std::string, GraphNode>& nodes,
                                         const std::vector<std::string>& changed,
                                         std::size_t maximum_nodes) {
