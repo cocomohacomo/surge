@@ -147,6 +147,16 @@ class ClaimApplicabilityComparator:
             return ApplicabilityResult(True, False, False, "LIFECYCLE_STATE_DIFFERENT")
         if a.modality != b.modality:
             return ApplicabilityResult(True, False, False, "MODALITY_SCOPE_DIFFERENT")
+        shared_anchor = (
+            bool(a.topic and b.topic and _normal(a.topic) == _normal(b.topic)) or
+            bool(a.geography and b.geography and _normal(a.geography) == _normal(b.geography)) or
+            bool(a.conditions and b.conditions and
+                 {_normal(x) for x in a.conditions} == {_normal(x) for x in b.conditions}) or
+            bool(af and bf and not ((at and bf and at < bf) or (bt and af and bt < af))) or
+            bool(a.temporal_state in lifecycle_states and a.temporal_state == b.temporal_state)
+        )
+        if not shared_anchor:
+            return ApplicabilityResult(True, False, False, "SCOPE_OVERLAP_UNPROVEN")
         opposite = a.polarity != b.polarity and "UNKNOWN" not in (a.polarity, b.polarity)
         return ApplicabilityResult(True, True, opposite,
             "OVERLAPPING_OPPOSITE_POLARITY" if opposite else "OVERLAPPING_SCOPE")
