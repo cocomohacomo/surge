@@ -142,6 +142,49 @@ int main(){
     assert(recovered.nodes().count("cluster-2")==1);
     assert(recovered.nodes().count("cluster-1")==1);
   }
+  {
+    const auto claim_path=(root/"claim-lifecycle.sgj").string();
+    {
+      ContextGraph graph(claim_path);assert(graph.open());
+      SemanticDelta seed;seed.delta_id="claim-seed";seed.idempotency_key="claim-seed";
+      seed.expected_state_version=0;
+      seed.nodes={{{"evidence-old",NodeKind::Evidence,"当初の会議記録",{}}},
+                  {{"claim-old",NodeKind::Claim,"予算は100万円",{"evidence-old"}}}};
+      assert(graph.apply(seed).committed);
+      assert(graph.claim_status("claim-old")==ClaimStatus::Active);
+      SemanticDelta correction;correction.delta_id="claim-correction";
+      correction.idempotency_key="claim-correction";correction.expected_state_version=1;
+      correction.nodes={{{"evidence-new",NodeKind::Evidence,"訂正後の会議記録",{}}},
+                        {{"claim-new",NodeKind::Claim,"予算は120万円",{"evidence-new"}}}};
+      correction.relations={{{"claim-supersedes",RelationKind::Supersedes,
+                              "claim-new","claim-old"}}};
+      assert(graph.apply(correction).committed);
+      assert(graph.claim_status("claim-old")==ClaimStatus::Superseded);
+      assert(graph.claim_status("claim-new")==ClaimStatus::Active);
+      SemanticDelta invalid;invalid.delta_id="claim-double-supersede";
+      invalid.idempotency_key="claim-double-supersede";invalid.expected_state_version=2;
+      invalid.relations={{{"claim-supersedes-again",RelationKind::Supersedes,
+                           "claim-new","claim-old"}}};
+      assert(graph.apply(invalid).error=="CLAIM_NOT_ACTIVE_FOR_SUPERSESSION");
+      assert(graph.state_version()==2);
+      SemanticDelta retract;retract.delta_id="claim-retract";
+      retract.idempotency_key="claim-retract";retract.expected_state_version=2;
+      retract.nodes={{{"evidence-retract",NodeKind::Evidence,"根拠の誤りを確認",{}}}};
+      retract.relations={{{"claim-retracted",RelationKind::Retracts,
+                           "evidence-retract","claim-new"}}};
+      assert(graph.apply(retract).committed);
+      assert(graph.claim_status("claim-new")==ClaimStatus::Retracted);
+      assert(graph.claim_status("claim-old")==ClaimStatus::Superseded);
+    }
+    {
+      ContextGraph recovered(claim_path);assert(recovered.open());
+      assert(recovered.state_version()==3);
+      assert(recovered.claim_status("claim-old")==ClaimStatus::Superseded);
+      assert(recovered.claim_status("claim-new")==ClaimStatus::Retracted);
+      assert(recovered.relations().count("claim-supersedes")==1);
+      assert(recovered.relations().count("claim-retracted")==1);
+    }
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 2 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 3 groups passed\\n";
 }
