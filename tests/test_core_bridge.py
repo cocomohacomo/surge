@@ -213,6 +213,48 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.get_focus()["cluster_id"], "cluster/general")
                 self.assertEqual(recovered.state_version, version)
 
+    def test_general_question_lifecycle_resolve_defer_reopen_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-lifecycle.sgj"
+            aspect_id = "aspect/contradiction/contradiction/lifecycle"
+            with SemanticCoreBridge(journal) as core:
+                seeded = core.apply_semantic_delta({
+                    "delta_id": "seed-question-lifecycle",
+                    "idempotency_key": "seed-question-lifecycle",
+                    "expected_state_version": 0,
+                    "nodes": [
+                        {"id": "cluster/lifecycle", "kind": "CLUSTER", "content": "制度"},
+                        {"id": "evidence/lifecycle-a", "kind": "EVIDENCE", "content": "資料A"},
+                        {"id": "evidence/lifecycle-b", "kind": "EVIDENCE", "content": "資料B"},
+                        {"id": "claim/lifecycle-a", "kind": "CLAIM", "content": "期限は6月",
+                         "references": ["evidence/lifecycle-a"]},
+                        {"id": "claim/lifecycle-b", "kind": "CLAIM", "content": "期限は7月",
+                         "references": ["evidence/lifecycle-b"]},
+                    ],
+                    "relations": [
+                        {"id": "about/lifecycle-a", "kind": "ABOUT",
+                         "from": "claim/lifecycle-a", "to": "cluster/lifecycle"},
+                        {"id": "about/lifecycle-b", "kind": "ABOUT",
+                         "from": "claim/lifecycle-b", "to": "cluster/lifecycle"},
+                        {"id": "contradiction/lifecycle", "kind": "CONTRADICTS",
+                         "from": "claim/lifecycle-a", "to": "claim/lifecycle-b"},
+                    ],
+                })
+                self.assertTrue(seeded["committed"])
+                core.route_contradiction("contradiction/lifecycle")
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "OPEN")
+                version = core.set_question_aspect_status(aspect_id, "RESOLVED")
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "RESOLVED")
+                version = core.set_question_aspect_status(aspect_id, "DEFERRED", version)
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "DEFERRED")
+                version = core.set_question_aspect_status(aspect_id, "OPEN", version)
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "OPEN")
+                self.assertEqual(core.get_question_aspect(aspect_id)["state_version"], version)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_aspect(aspect_id)["status"], "OPEN")
+                self.assertEqual(recovered.get_question_aspect(aspect_id)["state_version"],
+                                 recovered.state_version)
+
     def test_general_contradiction_keeps_focus_unchanged_when_cluster_is_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "general-question-ambiguous.sgj"
