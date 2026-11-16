@@ -1,25 +1,36 @@
 name: SURGE v0.9 conformance
+
 on:
   push:
-    branches: [main, "spec/**", "impl/**"]
+    branches:
+      - main
+      - "spec/**"
+      - "impl/**"
+      - "feat/**"
+      - "chore/**"
   pull_request:
-    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   cpp-core:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
   schema-and-fixtures:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.6.0
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements-dev.txt
