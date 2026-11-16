@@ -152,17 +152,6 @@ FixpointEvaluationResult DependencyEngine::evaluate_fixpoint(
     return result;
   }
 
-  // Validate topology and obtain the deterministic SCC view before evaluating.
-  const auto topology = compute(nodes, roots, maximum_nodes);
-  if (!topology.complete) {
-    result.status = topology.error == "IMPACT_ROOT_NOT_FOUND"
-        ? FixpointStatus::Invalid : FixpointStatus::Deferred;
-    result.error = topology.error;
-    result.impacted_nodes = topology.impacted_nodes;
-    return result;
-  }
-  result.cyclic_components = topology.cyclic_components;
-
   std::set<std::string> changed;
   for (const auto& id : roots) {
     if (!nodes.count(id)) {
@@ -219,6 +208,30 @@ FixpointEvaluationResult DependencyEngine::evaluate_fixpoint(
     }
     return false;
   };
+
+  // Level-triggered predicates can activate dependencies even when their
+  // prerequisite is not one of the caller's changed roots. Include those
+  // prerequisites when computing the potential impact and SCC closure.
+  std::vector<std::string> topology_roots = roots;
+  for (const auto* dep : dependencies) {
+    const auto predicate = parsed.find(dep->id);
+    if (predicate == parsed.end() || !predicate->second.valid() ||
+        predicate->second.kind == DependencyPredicateKind::OnChange) continue;
+    const auto prerequisite = nodes.find(dep->references[0]);
+    if (prerequisite != nodes.end() &&
+        matches(predicate->second, prerequisite->second)) {
+      topology_roots.push_back(prerequisite->first);
+    }
+  }
+  const auto topology = compute(nodes, topology_roots, maximum_nodes);
+  if (!topology.complete) {
+    result.status = topology.error == "IMPACT_ROOT_NOT_FOUND"
+        ? FixpointStatus::Invalid : FixpointStatus::Deferred;
+    result.error = topology.error;
+    result.impacted_nodes = topology.impacted_nodes;
+    return result;
+  }
+  result.cyclic_components = topology.cyclic_components;
 
   for (;;) {
     if (result.iterations >= maximum_iterations) {
