@@ -97,10 +97,10 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 pending = recovered.get_temporal_boundary("claim/bridge")
                 self.assertEqual(pending["valid_from"], "2026-04-01T00:00:00+09:00")
                 self.assertEqual(pending["valid_until"], "2026-05-01T00:00:00+09:00")
-                self.assertEqual(pending["packet_ids"], ["packet/1", "packet/2"])
+                self.assertEqual(pending["packet_ids"], ["packet/1", "packet/2", "packet/3"])
                 cleared = recovered.clear_temporal_boundary(
-                    transaction_id="tb-tx-3", idempotency_key="tb-idem-3",
-                    event_id="tb-event-3", expected_state_version=4,
+                    transaction_id="tb-tx-5", idempotency_key="tb-idem-5",
+                    event_id="tb-event-5", expected_state_version=4,
                     claim_id="claim/bridge")
                 self.assertTrue(cleared["committed"])
                 self.assertIsNone(recovered.get_temporal_boundary("claim/bridge"))
