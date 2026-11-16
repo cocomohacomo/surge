@@ -87,6 +87,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_uint64, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_apply_claim_validity.restype = ctypes.c_int
+        lib.surge_context_graph_claim_validity_at.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_claim_validity_at.restype = ctypes.c_int
 
     @property
     def scope_count(self) -> int:
@@ -223,6 +228,18 @@ class SemanticCoreBridge(CppCoreBridge):
                                  "CLAIM_VALIDITY_REJECTED")
         return {"committed": True, "duplicate": bool(duplicate.value),
                 "state_version": int(version.value)}
+
+    def claim_validity_at(self, claim_id: str, instant: str) -> str:
+        """Evaluate the latest valid-time revision at an explicit RFC3339 instant."""
+        output = ctypes.create_string_buffer(64)
+        error = ctypes.create_string_buffer(256)
+        ok = self._lib.surge_context_graph_claim_validity_at(
+            self._handle, claim_id.encode("utf-8"), instant.encode("utf-8"),
+            output, len(output), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLAIM_VALIDITY_QUERY_FAILED")
+        return output.value.decode("ascii")
 
     def apply_semantic_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         required = {"delta_id", "idempotency_key", "expected_state_version",
