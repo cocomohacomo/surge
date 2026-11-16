@@ -228,6 +228,9 @@ class WebDocumentIndex:
             revision INTEGER NOT NULL, title TEXT NOT NULL, publisher TEXT NOT NULL)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS claims(
             signature TEXT PRIMARY KEY, claim_id TEXT NOT NULL, payload TEXT NOT NULL)""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS document_claims(
+            url TEXT NOT NULL, signature TEXT NOT NULL,
+            PRIMARY KEY(url,signature))""")
         self.db.commit()
 
     def inspect(self, url: str, digest: str) -> dict[str, Any]:
@@ -253,10 +256,10 @@ class WebDocumentIndex:
 
     def claims_for_url(self, url: str) -> list[dict[str, Any]]:
         result = []
-        for claim_id, payload in self.db.execute("SELECT claim_id,payload FROM claims"):
-            item = json.loads(payload)
-            if item.get("source_url") == url:
-                result.append({"claim_id": claim_id, **item})
+        rows = self.db.execute("""SELECT c.claim_id,c.payload FROM claims c
+            JOIN document_claims d ON d.signature=c.signature WHERE d.url=?""",(url,))
+        for claim_id, payload in rows:
+            result.append({"claim_id": claim_id, **json.loads(payload)})
         return result
 
     def record(self, url: str, digest: str, packet_id: str, revision: int,
@@ -268,6 +271,8 @@ class WebDocumentIndex:
         for item in claims:
             self.db.execute("INSERT OR IGNORE INTO claims(signature,claim_id,payload) VALUES(?,?,?)",
                 (item["signature"], item["claim_id"], json.dumps(item,ensure_ascii=False,sort_keys=True)))
+            self.db.execute("INSERT OR IGNORE INTO document_claims(url,signature) VALUES(?,?)",
+                (url,item["signature"]))
         self.db.commit()
 
     def close(self) -> None:
@@ -306,19 +311,19 @@ class WebDocumentRecognitionEngine:
         packet["packet_id"] = packet_id
         packet["idempotency_key"] = "idem/" + packet_id
         packet["source_id"] = url
+        packet["source_position"]["source_generation"] = "web-" + digest[:16]
         packet["source_position"]["block_ref"] = "document/" + hashlib.sha256(url.encode()).hexdigest()[:16]
-        packet["source_position"]["source_sequence"] = identity["revision"] + 1
+        packet["source_position"]["source_sequence"] = 1
         packet["source_position"]["end_offset"] = len(source)
         packet["source_position"]["source_range_digest"] = digest
         packet["content"]["normalized_digest"] = digest
         packet["content"]["text"] = source_text
         packet["context_hint"]["retrieval_reason"] = "web-document-recognition-v0.1"
-        if identity["status"] == "UPDATE":
-            packet["finalization"] = "REVISION"
-            packet["source_position"]["source_revision_sequence"] = identity["revision"]
-            packet["source_position"]["revision_of_ref"] = identity["previous_packet_id"]
-        else:
-            packet["finalization"] = "FINAL"
+        # Each immutable Web capture is a new source_generation because the
+        # byte range may change when a page is edited. Document-level revision
+        # lineage is retained by WebDocumentIndex, not misrepresented as an
+        # in-place RecognitionPacket range revision.
+        packet["finalization"] = "FINAL"
         publisher = publisher.strip() or urlsplit(url).netloc
         publisher_id = "entity/publisher/" + hashlib.sha256(publisher.encode()).hexdigest()[:16]
         nodes: list[dict[str, Any]] = [{"id": publisher_id, "kind": "ENTITY",
@@ -336,6 +341,8 @@ class WebDocumentRecognitionEngine:
             evidence_id = f"evidence/{packet_id}/{chunk.index}"
             evidence_content = {"url":url,"title":title,"publisher":publisher,
                 "retrieved_at":retrieved_at,"source_digest":digest,
+                "document_revision":identity["revision"],
+                "previous_packet_id":identity["previous_packet_id"],
                 "start_byte":chunk.start_byte,"end_byte":chunk.end_byte,
                 "capture":capture_status,"chunk_index":chunk.index}
             nodes.append({"id":evidence_id,"kind":"EVIDENCE",
