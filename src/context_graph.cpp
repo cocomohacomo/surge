@@ -166,7 +166,11 @@ bool ContextGraph::replay(){
  for(const auto& e:journal_->committed_events()){
   if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="SEMANTIC_PACKET_ADMITTED"){
-   if(have_meta||semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_ORDER_INVALID";return false;}
+   // A committed semantic packet closes the preceding delta transaction.
+   // Without advancing here, the next packet is incorrectly treated as
+   // overlapping the still-open DELTA_META from the previous transaction.
+   if(have_meta){++version;have_meta=false;}
+   if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_ORDER_INVALID";return false;}
    semantic_packet_waiting_for_delta=true;continue;
   }
   if(e.kind=="RETRIEVAL_TICKET_ISSUED"||e.kind=="RETRIEVAL_TICKET_RESOLVED"){if(have_meta){++version;have_meta=false;}++version;continue;}
