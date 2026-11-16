@@ -73,6 +73,7 @@ int main(){
           {"source-cluster","target-cluster"}}}};
       const auto added=recovered.apply(new_dependency); std::cerr<<"dep-test: second-apply\\n";
       assert(added.committed&&added.state_version==2);
+      assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
       assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered.size()==1);
       assert(recovered.dependency_evaluations().at("dependency-delta-2").triggered[0].dependency_id==
           "dependency-on-change");
