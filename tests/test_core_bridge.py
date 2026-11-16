@@ -405,6 +405,44 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.get_question_memory_state("q/open")["memory_state"], "ACTIVE")
 
 
+    def test_question_reference_history_reactivates_dormant_and_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-reference.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "reference-seed", "idempotency_key": "reference-seed",
+                    "expected_state_version": 0, "nodes": [
+                        {"id": "q/ref", "kind": "QUESTION", "content": "remember me"},
+                    ], "relations": [],
+                })
+                core.set_question_memory_state("q/ref", "DORMANT")
+                first = core.record_question_reference("q/ref")
+                self.assertTrue(first["reactivated"])
+                self.assertEqual(first["reference_count"], 1)
+                self.assertEqual(first["memory_state"], "ACTIVE")
+                second = core.record_question_reference("q/ref")
+                self.assertFalse(second["reactivated"])
+                self.assertEqual(second["reference_count"], 2)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_memory_state("q/ref")["memory_state"], "ACTIVE")
+                plan = recovered.plan_question_memory_capacity(1)
+                item = next(x for x in plan["scores"] if x["question_id"] == "q/ref")
+                self.assertEqual(item["factors"]["reference_frequency"], 0.4)
+                self.assertEqual(recovered.state_version, second["state_version"])
+
+    def test_archived_question_reference_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "archived-reference.sgj") as core:
+                core.apply_semantic_delta({
+                    "delta_id": "archived-seed", "idempotency_key": "archived-seed",
+                    "expected_state_version": 0, "nodes": [
+                        {"id": "q/archive", "kind": "QUESTION", "content": "archived"},
+                    ], "relations": [],
+                })
+                core.set_question_memory_state("q/archive", "ARCHIVED")
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_ARCHIVED"):
+                    core.record_question_reference("q/archive")
+
     def test_question_relationship_network_types_cycles_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-relations.sgj"

@@ -126,6 +126,7 @@ int surge_question_get_aggregate_status(void* handle, const char* question_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 int surge_question_memory_set_state(void*,const char*,const char*,uint64_t,char*,size_t);
+int surge_question_memory_record_reference(void*,const char*,uint64_t,int*,uint64_t*,char*,size_t);
 int surge_question_memory_get_state(void*,const char*,char*,size_t,size_t*,char*,size_t);
 int surge_question_memory_recommendation(double,double,double,double,double,double,char*,size_t,size_t*,char*,size_t);
 int surge_question_memory_plan(void*,size_t,char*,size_t,size_t*,char*,size_t);
