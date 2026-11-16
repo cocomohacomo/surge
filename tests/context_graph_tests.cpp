@@ -55,6 +55,7 @@ int main(){
       assert(evaluation.iterations>=1);
       assert(evaluation.evaluation_cost>0);
       assert(evaluation.diagnostic_error.empty());
+      assert(!evaluation.impacted_nodes_truncated);
       assert(evaluation.triggered.size()==1);
       assert(evaluation.triggered[0].dependency_id=="dependency-good");
       assert(evaluation.triggered[0].prerequisite_id=="source-cluster");
@@ -69,7 +70,8 @@ int main(){
       assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
       const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=recovered.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
       assert(evaluation.status=="CONVERGED" && evaluation.iterations>=1 &&
-             evaluation.evaluation_cost>0 && evaluation.diagnostic_error.empty());
+             evaluation.evaluation_cost>0 && evaluation.diagnostic_error.empty() &&
+             !evaluation.impacted_nodes_truncated);
       assert(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
