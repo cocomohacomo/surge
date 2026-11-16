@@ -107,8 +107,10 @@ ScopeSpan candidates, conservative Claim applicability comparison, temporal
 lifecycle classification, publisher/Evidence provenance, URL/content revision
 indexing, and Python adapter regression tests. The engine prepares a typed
 SemanticDelta and sends it through the existing atomic Packet + SemanticDelta
-Core API. It does not change the production specification or the existing
-Japanese Scoring 50-case dataset.
+Core API. ContextGraph now has typed EVIDENCE_FOR (Evidence -> Claim) and
+PUBLISHED_BY (Evidence -> Entity) relations, with C ABI serialization and
+replay support. It does not change the production specification or the
+existing Japanese Scoring 50-case dataset.
 
 The exact prior Web test's individual 50 source excerpts and expected outputs
 are not present in the retrievable conversation record. The known aggregate
