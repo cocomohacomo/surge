@@ -117,6 +117,11 @@ uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);
 size_t surge_context_graph_scope_count(void* handle);
 
+// Evaluate the latest Claim valid-time revision at an RFC3339 instant.
+int surge_context_graph_claim_validity_at(void* handle, const char* claim_id,
+    const char* instant, char* output, size_t output_capacity,
+    char* error, size_t error_capacity);
+
 // Read-only deterministic lexical retrieval over replayed durable graph state.
 // kinds_csv is a comma-separated allow-list (e.g. CLUSTER,CLAIM,SCOPE_SPAN); empty means all.
 // On insufficient output capacity, required_capacity receives the needed byte count including NUL.
