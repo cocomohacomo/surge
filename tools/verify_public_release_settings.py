@@ -10,9 +10,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from typing import Any
+
+# Redact common credential-looking substrings before any logging.
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)(gh[pousr]_|github_pat_)[A-Za-z0-9_]{10,}"),
+    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-+=/]{8,}"),
+    re.compile(r"(?i)(token[=:\s]+)[A-Za-z0-9._\-+=/]{8,}"),
+    re.compile(r"(?i)(authorization[=:\s]+)[^\s]+"),
+    re.compile(r"(?i)x-access-token:[^@\s]+"),
+)
+
+
+def sanitize(text: str, limit: int = 240) -> str:
+    """Return a log-safe snippet with credential-like substrings redacted."""
+    cleaned = text.replace("\n", " ").strip()
+    for pattern in _SECRET_PATTERNS:
+        cleaned = pattern.sub(r"\1[REDACTED]", cleaned)
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 3] + "..."
+    return cleaned
 
 
 def run_gh(args: list[str]) -> tuple[int, str, str]:
@@ -27,12 +47,21 @@ def run_gh(args: list[str]) -> tuple[int, str, str]:
 def gh_json(args: list[str]) -> Any:
     code, out, err = run_gh(args)
     if code != 0:
-        raise RuntimeError(err.strip() or out.strip() or f"gh failed: {' '.join(args)}")
+        # Never raise raw stderr: gh may echo auth headers or tokens.
+        safe = sanitize(err or out or f"gh failed ({code})")
+        raise RuntimeError(f"gh command failed: {safe}")
     return json.loads(out) if out.strip() else None
 
 
 def check(name: str, ok: bool, detail: str, required: bool, rows: list[dict[str, Any]]) -> None:
-    rows.append({"name": name, "ok": ok, "required": required, "detail": detail})
+    rows.append(
+        {
+            "name": name,
+            "ok": ok,
+            "required": required,
+            "detail": sanitize(detail),
+        }
+    )
 
 
 def main() -> int:
@@ -62,7 +91,7 @@ def main() -> int:
     try:
         repo = gh_json(["api", f"repos/{slug}"])
     except RuntimeError as exc:
-        print(f"error: cannot read repository: {exc}", file=sys.stderr)
+        print(f"error: cannot read repository: {sanitize(str(exc))}", file=sys.stderr)
         return 2
 
     visibility = (repo or {}).get("visibility")
@@ -77,33 +106,38 @@ def main() -> int:
 
     security = (repo or {}).get("security_and_analysis") or {}
     if not security:
-        # Some tokens omit the block on REST; fall back to GraphQL-unrelated null.
         check(
             "security_and_analysis_readable",
             False,
-            "security_and_analysis missing from REST payload; use a token that can read admin fields or inspect the UI",
+            "security_and_analysis missing from REST payload; inspect Advanced Security UI",
             False,
             rows,
         )
     else:
-        secret = ((security.get("secret_scanning") or {}).get("status")) == "enabled"
-        push = ((security.get("secret_scanning_push_protection") or {}).get("status")) == "enabled"
-        dependabot = ((security.get("dependabot_security_updates") or {}).get("status")) == "enabled"
-        check("secret_scanning", secret, str((security.get("secret_scanning") or {})), True, rows)
-        check("push_protection", push, str((security.get("secret_scanning_push_protection") or {})), True, rows)
-        check("dependabot_security_updates", dependabot, str((security.get("dependabot_security_updates") or {})), False, rows)
+        secret_status = (security.get("secret_scanning") or {}).get("status")
+        push_status = (security.get("secret_scanning_push_protection") or {}).get("status")
+        dependabot_status = (security.get("dependabot_security_updates") or {}).get("status")
+        check("secret_scanning", secret_status == "enabled", f"status={secret_status}", True, rows)
+        check("push_protection", push_status == "enabled", f"status={push_status}", True, rows)
+        check(
+            "dependabot_security_updates",
+            dependabot_status == "enabled",
+            f"status={dependabot_status}",
+            False,
+            rows,
+        )
 
     try:
         pvr = gh_json(["api", f"repos/{slug}/private-vulnerability-reporting"]) or {}
         check(
             "private_vulnerability_reporting",
             bool(pvr.get("enabled")),
-            json.dumps(pvr),
+            f"enabled={bool(pvr.get('enabled'))}",
             True,
             rows,
         )
     except RuntimeError as exc:
-        check("private_vulnerability_reporting", False, str(exc), True, rows)
+        check("private_vulnerability_reporting", False, sanitize(str(exc)), True, rows)
 
     try:
         gql = gh_json(
@@ -122,20 +156,21 @@ def main() -> int:
         check(
             "vulnerability_alerts",
             bool(node.get("hasVulnerabilityAlertsEnabled")),
-            json.dumps(node),
+            f"enabled={bool(node.get('hasVulnerabilityAlertsEnabled'))}",
             True,
             rows,
         )
+        policy_url = node.get("securityPolicyUrl") or ""
         check(
             "security_policy",
             bool(node.get("isSecurityPolicyEnabled")),
-            str(node.get("securityPolicyUrl")),
+            f"enabled={bool(node.get('isSecurityPolicyEnabled'))} url_set={bool(policy_url)}",
             True,
             rows,
         )
     except RuntimeError as exc:
-        check("vulnerability_alerts", False, str(exc), True, rows)
-        check("security_policy", False, str(exc), True, rows)
+        check("vulnerability_alerts", False, sanitize(str(exc)), True, rows)
+        check("security_policy", False, sanitize(str(exc)), True, rows)
 
     default_branch = (repo or {}).get("default_branch") or "main"
     try:
@@ -148,7 +183,7 @@ def main() -> int:
             rows,
         )
     except RuntimeError as exc:
-        check("default_branch_protected_flag", False, str(exc), True, rows)
+        check("default_branch_protected_flag", False, sanitize(str(exc)), True, rows)
 
     required_found: set[str] = set()
     extra_checks: set[str] = set()
@@ -176,9 +211,17 @@ def main() -> int:
                     else:
                         extra_checks.add(ctx)
             elif rtype == "code_scanning":
-                extra_checks.add("code_scanning:" + json.dumps(params.get("code_scanning_tools")))
+                tools = params.get("code_scanning_tools") or []
+                names = sorted(
+                    {
+                        str(tool.get("tool"))
+                        for tool in tools
+                        if isinstance(tool, dict) and tool.get("tool")
+                    }
+                )
+                extra_checks.add("code_scanning:" + ",".join(names))
     except RuntimeError as exc:
-        check("ruleset_readable", False, str(exc), True, rows)
+        check("ruleset_readable", False, sanitize(str(exc)), True, rows)
 
     check("ruleset_require_pull_request", has_pr_rule, f"present={has_pr_rule}", True, rows)
     check("ruleset_block_force_push", has_force_push_block, f"present={has_force_push_block}", True, rows)
@@ -216,6 +259,7 @@ def main() -> int:
         mark = "PASS" if row["ok"] else ("FAIL" if row["required"] else "WARN")
         if row["required"] and not row["ok"]:
             failed += 1
+        # detail was sanitized at check() time; print only that safe string.
         print(f"[{mark}] {row['name']:<{width}}  {row['detail']}")
 
     if failed:
@@ -229,5 +273,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except json.JSONDecodeError as exc:
-        print(f"error: invalid JSON from gh: {exc}", file=sys.stderr)
+        print(f"error: invalid JSON from gh: {sanitize(str(exc))}", file=sys.stderr)
         raise SystemExit(2) from exc
