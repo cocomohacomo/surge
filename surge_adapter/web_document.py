@@ -15,7 +15,7 @@ import unicodedata
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 from surge_adapter.llm_interface import LLMRecognizer
 from surge_adapter.packet_ingest import RecognitionPacketAdapter, normalize_source
@@ -69,7 +69,10 @@ def canonical_url(url: str) -> str:
     p = urlsplit(url.strip())
     if p.scheme not in ("http", "https") or not p.netloc:
         raise ValueError("SOURCE_URL_INVALID")
-    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path or "/", "", ""))
+    query = [(k,v) for k,v in parse_qsl(p.query, keep_blank_values=True)
+              if not k.lower().startswith("utm_") and k.lower() not in {"fbclid","gclid"}]
+    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path or "/",
+                       urlencode(query, doseq=True), ""))
 
 def temporal_state(text: str) -> str:
     for state, pattern in TEMPORAL_PATTERNS:
@@ -227,6 +230,14 @@ class WebDocumentIndex:
                 result.append({"claim_id": claim_id, **item})
         return result
 
+    def claims_for_url(self, url: str) -> list[dict[str, Any]]:
+        result = []
+        for claim_id, payload in self.db.execute("SELECT claim_id,payload FROM claims"):
+            item = json.loads(payload)
+            if item.get("source_url") == url:
+                result.append({"claim_id": claim_id, **item})
+        return result
+
     def record(self, url: str, digest: str, packet_id: str, revision: int,
                title: str, publisher: str, claims: Iterable[dict[str, Any]]) -> None:
         self.db.execute("""INSERT INTO documents(url,digest,packet_id,revision,title,publisher)
@@ -333,7 +344,9 @@ class WebDocumentRecognitionEngine:
                 "temporal_state":state,"modality":modality,"conditions":list(conditions),
                 "source_url":url,"publisher":publisher,"retrieved_at":retrieved_at,
                 "source_digest":digest,"chunk_index":chunk.index,
-                "supersedes_claim_id":old["claim_id"] if identity["status"]=="UPDATE" and old else "",
+                "supersedes_claim_id":next((p["claim_id"] for p in self.index.claims_for_url(url)
+                    if _normal(p.get("applicability",{}).get("proposition","")) ==
+                       _normal(candidate["proposition"])), ""),
                 "canonical_signature":signature}
                 nodes.append({"id":claim_id,"kind":"CLAIM","content":json.dumps(
                     claim_content,ensure_ascii=False,sort_keys=True),"references":[evidence_id]})
@@ -369,6 +382,13 @@ class WebDocumentRecognitionEngine:
             extracted.append({"claim_id":claim_id,"signature":signature,
                 "applicability":asdict(applicability),"chunk_index":chunk.index,
                 "source_url":url,"publisher":publisher,"title":title})
+        # Collapse duplicate marker hits introduced by overlapping chunks.
+        unique_scopes = {}
+        for span in scopes:
+            key = (span["kind"],span["opener"]["start_offset"],span["opener"]["end_offset"],
+                   tuple(span["target_refs"]))
+            unique_scopes.setdefault(key,span)
+        scopes = list(unique_scopes.values())
         # Explicit quotation attribution is separate from publisher attribution.
         attribution_entities = []
         for m in ATTRIBUTION_RE.finditer(source_text):
