@@ -92,7 +92,7 @@ class WebDocumentRecognitionTests(unittest.TestCase):
             index.close()
 
     def test_scope_anchor_crossing_overlap_is_deduplicated(self):
-        text=("前文。"*43)+"会議を開催しません。"+("後文。"*200)
+        text=("前文。"*42)+"前文会議を開催しません。"+("後文。"*200)
         chunks=split_document(text,max_chars=256,overlap_chars=80)
         with tempfile.TemporaryDirectory() as tmp:
             index=WebDocumentIndex(pathlib.Path(tmp)/"overlap.sqlite")
