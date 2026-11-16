@@ -17,6 +17,7 @@ from surge_adapter.recognition_scoring import RecognitionScorer
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 from surge_adapter.proposal_builder import build_classification_proposal
 from surge_adapter.temporal_recognition import recognize_temporal_spans
+from surge_adapter.temporal_claim_binding import bind_temporal_candidates
 
 KINDS = {"CLAIM", "QUESTION", "ACKNOWLEDGEMENT", "UNRESOLVED", "FILLER"}
 POLARITIES = {"POSITIVE", "NEGATIVE", "UNKNOWN"}
@@ -260,9 +261,13 @@ class LLMSemanticRuntime:
         if candidate["topic"]:
             self.active_topic = candidate["topic"]
         self.previous_kind = candidate["kind"]
+        temporal_bindings = bind_temporal_candidates(
+            normalized_text, temporal_spans, claim_id=claim_id if accepted_claim else None,
+            evidence_id=evidence_id, claim_accepted=accepted_claim)
         return {"packet_id": packet["packet_id"], "admission": admission.status,
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
                 "cluster_id": cluster_id, "evidence_id": evidence_id,
                 "proposal": proposal, "temporal_candidates": [s["candidate"] for s in temporal_spans],
+                "temporal_bindings": temporal_bindings,
                 "review_required": score.decision == "REVIEW"}

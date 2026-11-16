@@ -63,6 +63,15 @@ class JapaneseTemporalRecognitionTests(unittest.TestCase):
             "契約は2026年2月30日から有効", timezone_offset="+09:00")[0]
         self.assertEqual(item.status, "INVALID")
 
+    def test_binding_rejects_source_span_mismatch(self):
+        from surge_adapter.temporal_recognition import recognize_temporal_spans
+        from surge_adapter.temporal_claim_binding import bind_temporal_candidates
+        spans = recognize_temporal_spans("契約は2026年4月1日から有効", timezone_offset="+09:00")
+        spans[0]["start_offset"] += 1
+        result = bind_temporal_candidates("契約は2026年4月1日から有効", spans,
+            claim_id="claim/x", evidence_id="evidence/x", claim_accepted=True)
+        self.assertEqual(result[0]["binding_status"], "SOURCE_SPAN_MISMATCH")
+
 
 if __name__ == "__main__":
     unittest.main()
