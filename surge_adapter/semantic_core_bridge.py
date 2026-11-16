@@ -517,6 +517,7 @@ class SemanticCoreBridge(CppCoreBridge):
             raise PacketRejected("CONTRADICTION_RELATION_ID_REQUIRED")
         if not isinstance(policy_version, str) or not policy_version.strip():
             raise PacketRejected("QUESTION_POLICY_VERSION_REQUIRED")
+        before_version = self.state_version
         required = ctypes.c_size_t(0)
         error = ctypes.create_string_buffer(256)
         fn = self._lib.surge_question_route_contradiction
@@ -532,7 +533,12 @@ class SemanticCoreBridge(CppCoreBridge):
         if not ok:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
                                  "QUESTION_ROUTE_FAILED")
-        return json.loads(output.value.decode("utf-8"))
+        result = json.loads(output.value.decode("utf-8"))
+        # The sizing probe may have committed the route; report whether it
+        # existed before this method call rather than the retry's duplicate bit.
+        if int(result.get("state_version", before_version)) > before_version:
+            result["duplicate"] = False
+        return result
 
     def get_focus(self) -> dict[str, Any] | None:
         result = self._temporal_ledger_call(
