@@ -15,6 +15,56 @@ const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supp
 bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* scope_kind_name(ScopeKind k){switch(k){case ScopeKind::Negation:return "NEGATION";case ScopeKind::Condition:return "CONDITION";case ScopeKind::Modality:return "MODALITY";case ScopeKind::Concession:return "CONCESSION";case ScopeKind::Contrast:return "CONTRAST";case ScopeKind::Coreference:return "COREFERENCE";case ScopeKind::Anaphora:return "ANAPHORA";case ScopeKind::Quotation:return "QUOTATION";case ScopeKind::Temporal:return "TEMPORAL";case ScopeKind::ListContinuation:return "LIST_CONTINUATION";case ScopeKind::TableHeader:return "TABLE_HEADER";}return "UNKNOWN";}
 bool parse_scope_kind(const std::string& s,ScopeKind& k){const std::pair<const char*,ScopeKind> v[]={{"NEGATION",ScopeKind::Negation},{"CONDITION",ScopeKind::Condition},{"MODALITY",ScopeKind::Modality},{"CONCESSION",ScopeKind::Concession},{"CONTRAST",ScopeKind::Contrast},{"COREFERENCE",ScopeKind::Coreference},{"ANAPHORA",ScopeKind::Anaphora},{"QUOTATION",ScopeKind::Quotation},{"TEMPORAL",ScopeKind::Temporal},{"LIST_CONTINUATION",ScopeKind::ListContinuation},{"TABLE_HEADER",ScopeKind::TableHeader}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+struct ParsedRfc3339 { std::int64_t seconds{0}; int nanos{0}; };
+bool parse_rfc3339(const std::string& value, ParsedRfc3339& out) {
+ auto digit=[&](std::size_t i)->int { return i<value.size()&&value[i]>='0'&&value[i]<='9'?value[i]-'0':-1; };
+ auto number=[&](std::size_t i,std::size_t n,int& result) {
+  result=0;for(std::size_t x=0;x<n;++x){const int d=digit(i+x);if(d<0)return false;result=result*10+d;}return true;
+ };
+ if(value.size()<20||value[4]!='-'||value[7]!='-'||value[10]!='T'||value[13]!=':'||value[16]!=':')return false;
+ int year=0,month=0,day=0,hour=0,minute=0,second=0;
+ if(!number(0,4,year)||!number(5,2,month)||!number(8,2,day)||!number(11,2,hour)||!number(14,2,minute)||!number(17,2,second))return false;
+ if(year<1||month<1||month>12||hour>23||minute>59||second>59)return false;
+ const bool leap=(year%4==0&&(year%100!=0||year%400==0));
+ const int month_days[]={31,leap?29:28,31,30,31,30,31,31,30,31,30,31};
+ if(day<1||day>month_days[month-1])return false;
+ std::size_t pos=19;int nanos=0;
+ if(pos<value.size()&&value[pos]=='.'){
+  ++pos;int digits=0;
+  while(pos<value.size()&&digit(pos)>=0){if(digits<9)nanos=nanos*10+digit(pos);++digits;++pos;}
+  if(digits==0||digits>9)return false;
+  while(digits++<9)nanos*=10;
+ }
+ int offset_seconds=0;
+ if(pos<value.size()&&value[pos]=='Z')++pos;
+ else if(pos<value.size()&&(value[pos]=='+'||value[pos]=='-')){
+  const int sign=value[pos]=='+'?1:-1;++pos;int oh=0,om=0;
+  if(pos+5!=value.size()||value[pos+2]!=':'||!number(pos,2,oh)||!number(pos+3,2,om)||oh>23||om>59)return false;
+  offset_seconds=sign*(oh*3600+om*60);pos+=5;
+ } else return false;
+ if(pos!=value.size())return false;
+ int y=year;y-=month<=2;const int era=(y>=0?y:y-399)/400;
+ const unsigned yoe=static_cast<unsigned>(y-era*400);
+ const unsigned mp=static_cast<unsigned>(month+(month>2?-3:9));
+ const unsigned doy=(153*mp+2)/5+static_cast<unsigned>(day)-1;
+ const unsigned doe=yoe*365+yoe/4-yoe/100+doy;
+ const std::int64_t days=static_cast<std::int64_t>(era)*146097+doe-719468;
+ out.seconds=days*86400+hour*3600+minute*60+second-offset_seconds;out.nanos=nanos;return true;
+}
+bool time_less(const ParsedRfc3339& a,const ParsedRfc3339& b){
+ return a.seconds<b.seconds||(a.seconds==b.seconds&&a.nanos<b.nanos);
+}
+std::string encode_claim_validity(const ClaimValidityRecord& record) {
+ const auto& v=record.validity;std::ostringstream out;
+ out<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '
+    <<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<record.recorded_state_version;return out.str();
+}
+bool decode_claim_validity(const std::string& payload,ClaimValidityRecord& record) {
+ std::istringstream in(payload);std::string extra;auto& v=record.validity;
+ if(!(in>>std::quoted(v.claim_id)>>std::quoted(v.valid_from)>>std::quoted(v.valid_until)>>
+      std::quoted(v.basis_evidence_id)>>v.revision>>record.recorded_state_version)||(in>>extra))return false;
+ return true;
+}
 std::string encode_node(const GraphNode& n){std::ostringstream o;o<<std::quoted(n.id)<<' '<<node_kind_name(n.kind)<<' '<<std::quoted(n.content)<<' '<<n.references.size();for(const auto& r:n.references)o<<' '<<std::quoted(r);return o.str();}
 bool decode_node(const std::string& p,GraphNode& n){std::istringstream i(p);std::string k;std::size_t c=0;if(!(i>>std::quoted(n.id)>>k>>std::quoted(n.content)>>c)||!parse_node_kind(k,n.kind)||c>1024)return false;for(std::size_t x=0;x<c;++x){std::string r;if(!(i>>std::quoted(r)))return false;n.references.push_back(r);}std::string extra;return !(i>>extra);}
 std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to);return o.str();}
@@ -83,6 +133,19 @@ bool ContextGraph::apply_scope_span(State& s,const AddScopeSpan& add,std::string
  if(!result.accepted){e=result.error.empty()?"SCOPE_SPAN_REJECTED":result.error;return false;}
  s.scope_spans.emplace(add.span.span_id,ScopeSpanRecord{add.span,result.status,result.effect,result.may_emit_unconditional_claim});return true;
 }
+bool ContextGraph::apply_claim_validity(State& s,const ClaimValidity& validity,
+    std::uint64_t recorded_state_version,std::string& error)const{
+ const auto claim=s.nodes.find(validity.claim_id);
+ const auto evidence=s.nodes.find(validity.basis_evidence_id);
+ if(claim==s.nodes.end()||claim->second.kind!=NodeKind::Claim){error="CLAIM_VALIDITY_CLAIM_INVALID";return false;}
+ if(evidence==s.nodes.end()||evidence->second.kind!=NodeKind::Evidence){error="CLAIM_VALIDITY_EVIDENCE_INVALID";return false;}
+ ParsedRfc3339 from{},until{};
+ if(!parse_rfc3339(validity.valid_from,from)||(!validity.valid_until.empty()&&!parse_rfc3339(validity.valid_until,until))){error="CLAIM_VALIDITY_TIMESTAMP_INVALID";return false;}
+ if(!validity.valid_until.empty()&&!time_less(from,until)){error="CLAIM_VALIDITY_INTERVAL_INVALID";return false;}
+ auto& history=s.claim_validity_history[validity.claim_id];
+ if(validity.revision!=history.size()+1||recorded_state_version==0){error="CLAIM_VALIDITY_REVISION_INVALID";return false;}
+ history.push_back({validity,recorded_state_version});return true;
+}
 bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
  const auto cluster=s.nodes.find(f.cluster_id);
  if(cluster==s.nodes.end()||cluster->second.kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
@@ -100,6 +163,7 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
  for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
  for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
+ for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<'\n';
  if(d.focus) { o<<"F "<<encode_focus(d.focus->focus)<<'\n'; }
  return hash_text(o.str());
 }
@@ -110,6 +174,7 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
+ i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record));}
  return out;
 }
 bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
@@ -117,6 +182,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
+ if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
  if(e.kind=="DEPENDENCY_EVALUATION"){
   std::istringstream in(e.payload); DependencyEvaluationRecord record;
   std::size_t count=0;
@@ -179,7 +245,7 @@ bool ContextGraph::replay(){
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
   if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
@@ -192,7 +258,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
     std::vector<JournalEvent>& events, std::string& error) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
-    (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&!d.focus)){
+    (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&!d.focus)){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
@@ -206,6 +272,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
  for(const auto& scope:d.scope_spans)if(!apply_scope_span(staged,scope,error))return false;
+ for(const auto& validity:d.claim_validity_updates)if(!apply_claim_validity(staged,validity,d.expected_state_version+1,error))return false;
  if(d.focus&&!apply_focus(staged,d.focus->focus,error))return false;
 
  std::set<std::string> changed;
@@ -217,6 +284,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
    add_if_node(n.node.references[0]);
  }
  for(const auto& r:d.relations){add_if_node(r.relation.from);add_if_node(r.relation.to);}
+ for(const auto& validity:d.claim_validity_updates){add_if_node(validity.claim_id);add_if_node(validity.basis_evidence_id);}
  for(const auto& scope:d.scope_spans){
   for(const auto& id:scope.span.target_refs)add_if_node(id);
   for(const auto& id:scope.span.antecedent_refs)add_if_node(id);
@@ -266,6 +334,18 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d){
  if(!committed.committed)return {false,false,state_version(),committed.error};
  state_=std::move(staged);idempotency_[d.idempotency_key]=fingerprint(d);
  return {true,committed.duplicate,state_version(),{}};
+}
+
+ClaimTemporalState ContextGraph::claim_validity_at(const std::string& id,const std::string& instant)const{
+ const auto latest=latest_claim_validity(id);if(!latest)return ClaimTemporalState::Unknown;
+ ParsedRfc3339 at{},from{},until{};
+ if(!parse_rfc3339(instant,at)||!parse_rfc3339(latest->validity.valid_from,from))return ClaimTemporalState::Unknown;
+ if(time_less(at,from))return ClaimTemporalState::NotYetValid;
+ if(!latest->validity.valid_until.empty()){
+  if(!parse_rfc3339(latest->validity.valid_until,until))return ClaimTemporalState::Unknown;
+  if(!time_less(at,until))return ClaimTemporalState::Expired;
+ }
+ return ClaimTemporalState::Valid;
 }
 
 QuestionAspectStatus ContextGraph::question_aspect_status(const std::string& id) const {
