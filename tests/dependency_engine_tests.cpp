@@ -80,5 +80,24 @@ int main(){
   assert(std::find(malformed.triggered_dependencies.begin(),
       malformed.triggered_dependencies.end(), "dep-empty-equals") ==
       malformed.triggered_dependencies.end());
+  auto fixed = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 10, 100);
+  assert(fixed.status == FixpointStatus::Converged);
+  assert(fixed.iterations >= 1 && fixed.iterations <= 10);
+  assert(fixed.evaluation_cost > 0 && fixed.evaluation_cost <= 100);
+  assert((fixed.triggered_dependencies == std::vector<std::string>{
+      "dep-1", "dep-2", "dep-3", "dep-5"}));
+  assert((fixed.cyclic_components[0] == std::vector<std::string>{"B", "C", "D"}));
+  auto iteration_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 1, 100);
+  assert(iteration_deferred.status == FixpointStatus::Deferred);
+  assert(iteration_deferred.error == "DEPENDENCY_FIXPOINT_ITERATION_BUDGET_EXCEEDED");
+  auto cost_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 10, 10, 1);
+  assert(cost_deferred.status == FixpointStatus::Deferred);
+  assert(cost_deferred.error == "DEPENDENCY_FIXPOINT_EVALUATION_BUDGET_EXCEEDED");
+  auto node_deferred = DependencyEngine::evaluate_fixpoint(eval_nodes, {"A"}, 2, 10, 100);
+  assert(node_deferred.status == FixpointStatus::Deferred);
+  assert(node_deferred.error == "IMPACT_BUDGET_EXCEEDED");
+  auto invalid_fixpoint = DependencyEngine::evaluate_fixpoint(eval_nodes, {"MISSING"}, 10, 10, 100);
+  assert(invalid_fixpoint.status == FixpointStatus::Invalid);
+  assert(invalid_fixpoint.error == "IMPACT_ROOT_NOT_FOUND");
   std::cout<<"SURGE DependencyEngine tests: 9 groups passed\n";
 }
