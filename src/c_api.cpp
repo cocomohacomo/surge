@@ -697,7 +697,8 @@ int surge_question_memory_get_state(void* o,const char* id,char* out,size_t cap,
   value+=char(34);value+="question_id";value+=char(34);value+=':';value+=json_quote(id);value+=',';
   value+=char(34);value+="memory_state";value+=char(34);value+=':';value+=json_quote(name);value+=',';
   value+=char(34);value+="state_version";value+=char(34);value+=':';value+=std::to_string(g.state_version());value+='}';
-  if(req)*req=value.size()+1;if(!out||cap<value.size()+1){copy_text(err,ec,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}
+  if(req) *req=value.size()+1;
+  if(!out||cap<value.size()+1){copy_text(err,ec,"QUESTION_MEMORY_BUFFER_TOO_SMALL");return 0;}
   copy_text(out,cap,value);copy_text(err,ec,"");return 1;
  }catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_GET_UNKNOWN_EXCEPTION");return 0;}
 }
