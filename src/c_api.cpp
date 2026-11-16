@@ -71,6 +71,8 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   else if(s=="CONFLICTS_WITH")out=surge::RelationKind::ConflictsWith;
   else if(s=="DEPENDS_ON")out=surge::RelationKind::DependsOn;
   else if(s=="ABOUT")out=surge::RelationKind::About;
+  else if(s=="SUPERSEDES")out=surge::RelationKind::Supersedes;
+  else if(s=="RETRACTS")out=surge::RelationKind::Retracts;
   else return false;
   return true;
 }
@@ -579,6 +581,8 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::RelationKind::ConflictsWith: return "CONFLICTS_WITH";
         case surge::RelationKind::DependsOn: return "DEPENDS_ON";
         case surge::RelationKind::About: return "ABOUT";
+        case surge::RelationKind::Supersedes: return "SUPERSEDES";
+        case surge::RelationKind::Retracts: return "RETRACTS";
       }
       return "UNKNOWN";
     };
@@ -597,6 +601,12 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         item << quote(node.references[i]);
       }
       item << "],";
+      if (node.kind == surge::NodeKind::Claim) {
+        const auto status = graph.claim_status(node.id);
+        const char* status_text = status == surge::ClaimStatus::Active ? "ACTIVE" :
+            status == surge::ClaimStatus::Superseded ? "SUPERSEDED" : "RETRACTED";
+        item << "\\\"claim_status\\\":" << quote(status_text) << ",";
+      }
       if (node.kind == surge::NodeKind::QuestionAspect) {
         const auto status = graph.question_aspect_status(node.id);
         const char* status_text = status == surge::QuestionAspectStatus::Open ? "OPEN" :
