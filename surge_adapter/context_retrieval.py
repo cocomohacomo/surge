@@ -4,6 +4,7 @@ from __future__ import annotations
 import ctypes
 import json
 import hashlib
+import unicodedata
 from typing import Any
 
 from surge_adapter.packet_ingest import PacketRejected
@@ -40,6 +41,13 @@ class ContextRetriever:
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
         ]
         self._lib.surge_context_graph_retrieve.restype = ctypes.c_int
+        self._lib.surge_context_graph_retrieve_page.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+        ]
+        self._lib.surge_context_graph_retrieve_page.restype = ctypes.c_int
         self._lib.surge_retrieval_ticket_issue.argtypes = [ctypes.c_void_p, ctypes.POINTER(_TicketInput), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         self._lib.surge_retrieval_ticket_issue.restype = ctypes.c_int
         self._lib.surge_retrieval_ticket_resolve.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
@@ -171,12 +179,14 @@ class ContextRetriever:
         raise PacketRejected("RETRIEVAL_TICKET_RESPONSE_TOO_LARGE")
 
     def search(self, query: str, kinds: list[str] | None = None,
-               limit: int = 20) -> dict[str, Any]:
+               limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        """Return one deterministic page from the current durable graph snapshot."""
         if not isinstance(query, str) or not query.strip() or len(query) > 4096:
             raise ValueError("RETRIEVAL_QUERY_INVALID")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("RETRIEVAL_LIMIT_INVALID")
-        normalized_kinds = None
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 10000000:
+            raise ValueError("RETRIEVAL_OFFSET_INVALID")
         if kinds is not None:
             if not isinstance(kinds, list) or any(
                 not isinstance(kind, str) or kind not in self.ALLOWED_KINDS
@@ -184,6 +194,9 @@ class ContextRetriever:
             ):
                 raise ValueError("RETRIEVAL_KIND_FILTER_INVALID")
             normalized_kinds = sorted(set(kinds))
+        else:
+            normalized_kinds = None
+        query = unicodedata.normalize("NFC", query)
         query_bytes = query.encode("utf-8")
         kinds_bytes = ",".join(normalized_kinds or []).encode("ascii")
         capacity = 65536
@@ -191,8 +204,8 @@ class ContextRetriever:
             output = ctypes.create_string_buffer(capacity)
             required = ctypes.c_size_t(0)
             error = ctypes.create_string_buffer(256)
-            ok = self._lib.surge_context_graph_retrieve(
-                self._core._handle, query_bytes, kinds_bytes, limit,
+            ok = self._lib.surge_context_graph_retrieve_page(
+                self._core._handle, query_bytes, kinds_bytes, offset, limit,
                 output, capacity, ctypes.byref(required), error, len(error)
             )
             if ok:
@@ -200,7 +213,10 @@ class ContextRetriever:
                     result = json.loads(output.value.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise PacketRejected("RETRIEVAL_RESPONSE_INVALID") from exc
-                if not isinstance(result, dict) or not isinstance(result.get("items"), list):
+                if (not isinstance(result, dict) or
+                        not isinstance(result.get("items"), list) or
+                        result.get("offset") != offset or
+                        "next_offset" not in result):
                     raise PacketRejected("RETRIEVAL_RESPONSE_SHAPE_INVALID")
                 return result
             message = error.value.decode("utf-8", errors="replace")
@@ -209,6 +225,43 @@ class ContextRetriever:
             capacity = required.value
         raise PacketRejected("RETRIEVAL_RESPONSE_TOO_LARGE")
 
+    def search_all(self, query: str, kinds: list[str] | None = None,
+                   page_size: int = 500, max_items: int = 100000) -> dict[str, Any]:
+        """Retrieve all matches across pages, rejecting mixed-version snapshots."""
+        if (isinstance(page_size, bool) or not isinstance(page_size, int)
+                or not 1 <= page_size <= 1000):
+            raise ValueError("RETRIEVAL_PAGE_SIZE_INVALID")
+        if (isinstance(max_items, bool) or not isinstance(max_items, int)
+                or not 1 <= max_items <= 1000000):
+            raise ValueError("RETRIEVAL_MAX_ITEMS_INVALID")
+        first = self.search(query, kinds=kinds, limit=page_size, offset=0)
+        items = list(first["items"])
+        state_version = first["state_version"]
+        total_matches = first["total_matches"]
+        next_offset = first["next_offset"]
+        while next_offset is not None:
+            if len(items) >= max_items:
+                raise PacketRejected("RETRIEVAL_RESULT_BUDGET_EXCEEDED")
+            page = self.search(query, kinds=kinds, limit=page_size, offset=int(next_offset))
+            if (page["state_version"] != state_version or
+                    page["total_matches"] != total_matches):
+                raise PacketRejected("RETRIEVAL_STATE_VERSION_CHANGED")
+            if not page["items"]:
+                raise PacketRejected("RETRIEVAL_PAGE_SEQUENCE_INVALID")
+            items.extend(page["items"])
+            if len(items) > max_items:
+                raise PacketRejected("RETRIEVAL_RESULT_BUDGET_EXCEEDED")
+            next_offset = page["next_offset"]
+        if len(items) != total_matches:
+            raise PacketRejected("RETRIEVAL_RESULT_INCOMPLETE")
+        return {
+            "state_version": state_version,
+            "query": unicodedata.normalize("NFC", query),
+            "items": items,
+            "offset": 0,
+            "next_offset": None,
+            "total_matches": total_matches,
+        }
 
 
     def set_question_aspect_status(self, aspect_id: str, status: str,
