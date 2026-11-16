@@ -180,7 +180,9 @@ A later successful retry using the same delta ID may supersede a prior
 DEFERRED/INVALID diagnostic with a CONVERGED record. A prior CONVERGED record
 cannot be overwritten. The read-only C ABI and Python
 `ContextRetriever.dependency_evaluation` return the extended record, including
-status, iteration/cost metrics, SCCs, and error code.
+status, iteration/cost metrics, SCCs, and error code. Replay also accepts
+legacy `DEPENDENCY_EVALUATION` payloads written before this diagnostic format;
+legacy records are treated as `CONVERGED` with zero metrics and no SCC/error data.
 
 Atomic packet + SemanticDelta preparation still rejects a deferred evaluation
 without appending either packet or semantic state. Its caller receives the
