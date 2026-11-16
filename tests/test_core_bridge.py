@@ -134,10 +134,13 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     "nodes": [
                         {"id": "cluster/temporal", "kind": "CLUSTER", "content": "有効期間"},
                         {"id": "claim/temporal", "kind": "CLAIM", "content": "施行日は4月1日"},
+                        {"id": "evidence/temporal", "kind": "EVIDENCE", "content": "公布資料"},
                     ],
                     "relations": [
                         {"id": "about-temporal", "kind": "ABOUT",
                          "from": "claim/temporal", "to": "cluster/temporal"},
+                        {"id": "supports-temporal", "kind": "SUPPORTS",
+                         "from": "evidence/temporal", "to": "claim/temporal"},
                     ],
                 })
                 self.assertTrue(initial["committed"])
