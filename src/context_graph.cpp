@@ -22,7 +22,7 @@ bool parse_rfc3339(const std::string& value, ParsedRfc3339& out) {
  auto number=[&](std::size_t i,std::size_t n,int& result) {
   result=0;for(std::size_t x=0;x<n;++x){const int d=digit(i+x);if(d<0)return false;result=result*10+d;}return true;
  };
- if(value.size()<20||value[4]!='-'||value[7]!='-'||value[10]!='T'||value[13]!=':'||value[16]!=':')return false;
+ if(value.size()<20||value[4]!='-'||value[7]!='-'||(value[10]!='T'&&value[10]!='t')||value[13]!=':'||value[16]!=':')return false;
  int year=0,month=0,day=0,hour=0,minute=0,second=0;
  if(!number(0,4,year)||!number(5,2,month)||!number(8,2,day)||!number(11,2,hour)||!number(14,2,minute)||!number(17,2,second))return false;
  if(year<1||month<1||month>12||hour>23||minute>59||second>59)return false;
@@ -37,7 +37,7 @@ bool parse_rfc3339(const std::string& value, ParsedRfc3339& out) {
   while(digits++<9)nanos*=10;
  }
  int offset_seconds=0;
- if(pos<value.size()&&value[pos]=='Z')++pos;
+ if(pos<value.size()&&(value[pos]=='Z'||value[pos]=='z'))++pos;
  else if(pos<value.size()&&(value[pos]=='+'||value[pos]=='-')){
   const int sign=value[pos]=='+'?1:-1;++pos;int oh=0,om=0;
   if(pos+5!=value.size()||value[pos+2]!=':'||!number(pos,2,oh)||!number(pos+3,2,om)||oh>23||om>59||(sign<0&&oh==0&&om==0))return false;
@@ -246,7 +246,7 @@ bool ContextGraph::replay(){
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
   if(e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}++version;continue;}
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!have_meta||!decode_claim_validity(e.payload,record)||record.recorded_state_version!=version+1){last_error_="JOURNAL_CLAIM_VALIDITY_VERSION_INVALID";return false;}}\n  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
