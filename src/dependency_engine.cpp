@@ -8,6 +8,12 @@
 namespace surge {
 DependencyEvaluationResult DependencyEngine::evaluate(
     const std::map<std::string, GraphNode>& nodes,
+    const std::vector<std::string>& roots, std::size_t maximum_nodes) {
+  return evaluate(nodes, roots, maximum_nodes, 65536);
+}
+
+DependencyEvaluationResult DependencyEngine::evaluate(
+    const std::map<std::string, GraphNode>& nodes,
     const std::vector<std::string>& roots, std::size_t maximum_nodes,
     std::size_t maximum_predicate_operations) {
   DependencyEvaluationResult result;
