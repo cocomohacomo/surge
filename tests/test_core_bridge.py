@@ -163,11 +163,22 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(focus["cluster_id"], "cluster/temporal")
                 self.assertEqual(focus["interest_id"],
                                  "interest/temporal/question/temporal/claim/temporal/VALID_FROM/cluster/temporal")
+                aspect_id = "aspect/question/temporal/claim/temporal/VALID_FROM"
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "OPEN")
+                version = core.set_question_aspect_status(aspect_id, "RESOLVED")
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "RESOLVED")
+                version = core.set_question_aspect_status(aspect_id, "DEFERRED", version)
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "DEFERRED")
+                version = core.set_question_aspect_status(aspect_id, "OPEN", version)
+                self.assertEqual(core.get_question_aspect(aspect_id)["status"], "OPEN")
+                with self.assertRaisesRegex(PacketRejected, "STATE_VERSION_CONFLICT"):
+                    core.set_question_aspect_status(aspect_id, "RESOLVED", version - 1)
             with SemanticCoreBridge(journal) as recovered:
                 focus = recovered.get_focus()
                 self.assertEqual(focus["cluster_id"], "cluster/temporal")
                 questions = recovered.get_temporal_questions("claim/temporal")
                 self.assertEqual(questions[0]["status"], "OPEN")
+                self.assertEqual(recovered.get_question_aspect(aspect_id)["status"], "OPEN")
 
     def test_general_contradiction_question_route_is_durable_and_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
