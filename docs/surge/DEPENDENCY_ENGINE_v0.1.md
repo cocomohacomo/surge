@@ -94,3 +94,29 @@ Conformance coverage verifies trigger generation, malformed predicate
 rejection, idempotent retry, and restart replay. The C ABI/Python exposure of
 these records, fine-grained predicate-operation budgets, and crash/fault
 injection remain subsequent work.
+
+
+## v0.4: Durable evaluation read API
+
+The C ABI now exposes a read-only lookup for a committed evaluation record:
+
+- Function: surge_context_graph_dependency_evaluation(handle, delta_id, output, output_capacity, required_capacity, error, error_capacity)
+
+The response is JSON with:
+- delta_id;
+- triggered: dependency ID plus prerequisite and dependent endpoint IDs;
+- impacted_nodes: the deterministic impacted-node set;
+- rejected_dependencies: dependency IDs rejected by strict predicate validation.
+
+The caller must provide the exact SemanticDelta ID. A missing record returns
+DEPENDENCY_EVALUATION_NOT_FOUND. If the output buffer is absent or too small,
+the function returns DEPENDENCY_EVALUATION_BUFFER_TOO_SMALL and reports the
+required capacity including the terminating NUL byte. The API is read-only and
+does not rerun evaluation.
+
+The Python SemanticCoreBridge.dependency_evaluation(delta_id) method wraps
+this API, parses the JSON response, and raises PacketRejected for missing,
+malformed, or inconsistent records. The same method works after journal
+recovery, so callers can inspect the persisted result without re-evaluating
+the dependency graph.
+
