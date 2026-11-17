@@ -355,7 +355,7 @@ class ContextRetriever:
                         if item.get("from_ref") in selected_refs and item.get("to_ref") in selected_refs]
             by_type: dict[str, list[dict[str, Any]]] = {}
             for association in relevant:
-                by_type.setdefault(str(association.get("type", "")), []).append(association)
+                by_type.setdefault(str(association.get("association_type", "")), []).append(association)
 
             def association_order(item: dict[str, Any]) -> tuple[int, float, str]:
                 value = observed_value(item, "confidence")
@@ -439,6 +439,200 @@ class ContextRetriever:
         if after != before:
             raise PacketRejected("RETRIEVAL_STATE_VERSION_CHANGED")
         result["state_version"] = after
+        return result
+
+    def retrieve_chaos_cluster(
+        self, cluster_id: str, *,
+        association_types: list[str] | None = None,
+        association_statuses: list[str] | None = None,
+        valid_at_utc: str | None = None,
+        producer_ids: list[str] | None = None,
+        member_refs: list[str] | None = None,
+        include_hypotheses: bool = True,
+        include_counterexamples: bool = True,
+        lineage_depth: int = 0,
+        max_members: int = 1000,
+        max_associations: int = 1000,
+        max_hypotheses: int = 256,
+    ) -> dict[str, Any]:
+        """Retrieve a Chaos Cluster using explicit temporal, provenance and lineage filters."""
+        if not isinstance(cluster_id, str) or not cluster_id.strip():
+            raise ValueError("CHAOS_RETRIEVAL_CLUSTER_ID_INVALID")
+        if any(isinstance(v, bool) or not isinstance(v, int) or v < 0
+               for v in (lineage_depth, max_members, max_associations, max_hypotheses)):
+            raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
+        if lineage_depth > 8 or max_members > 10000 or max_associations > 10000 or max_hypotheses > 1000:
+            raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
+        if not isinstance(include_hypotheses, bool) or not isinstance(include_counterexamples, bool):
+            raise ValueError("CHAOS_RETRIEVAL_OPTION_INVALID")
+
+        allowed_types = {"CO_OCCURS", "ANALOGY", "HYPOTHESIS", "QUESTION", "CONTRADICTION",
+                          "TEMPORAL_NEARNESS", "UNCLASSIFIED", "CREATIVE_SYNTHESIS"}
+        allowed_statuses = {"PROVISIONAL", "REVIEWED", "REJECTED", "EXPIRED"}
+
+        def normalize_filter(values: list[str] | None, allowed: set[str], code: str) -> set[str] | None:
+            if values is None:
+                return None
+            if (not isinstance(values, list) or any(not isinstance(v, str) or v not in allowed for v in values)
+                    or len(set(values)) != len(values)):
+                raise ValueError(code)
+            return set(values)
+
+        type_filter = normalize_filter(association_types, allowed_types, "CHAOS_ASSOCIATION_TYPE_FILTER_INVALID")
+        status_filter = normalize_filter(association_statuses, allowed_statuses, "CHAOS_ASSOCIATION_STATUS_FILTER_INVALID")
+
+        def normalize_refs(values: list[str] | None, code: str) -> set[str] | None:
+            if values is None:
+                return None
+            if (not isinstance(values, list) or any(not isinstance(v, str) or not v.strip() for v in values)
+                    or len(set(values)) != len(values)):
+                raise ValueError(code)
+            return set(values)
+
+        producer_filter = normalize_refs(producer_ids, "CHAOS_PRODUCER_FILTER_INVALID")
+        member_filter = normalize_refs(member_refs, "CHAOS_MEMBER_FILTER_INVALID")
+        if valid_at_utc is not None:
+            if (not isinstance(valid_at_utc, str) or len(valid_at_utc) != 20
+                    or valid_at_utc[4:5] != "-" or valid_at_utc[7:8] != "-"
+                    or valid_at_utc[10:11] != "T" or valid_at_utc[13:14] != ":"
+                    or valid_at_utc[16:17] != ":" or not valid_at_utc.endswith("Z")
+                    or not valid_at_utc[:4].isdigit()):
+                raise ValueError("CHAOS_VALID_AT_INVALID")
+
+        before = int(self._core.state_version)
+        target = self._core.get_chaos_cluster(
+            cluster_id, max_members=10000, max_associations=10000,
+            max_hypotheses=1000, max_history_per_association=1000,
+            max_hypothesis_refs=1000)
+        source_complete = bool(target.get("complete", False))
+        source_omitted = target.get("omitted", {})
+        members = target.get("members", [])
+        associations = target.get("associations", [])
+        hypotheses = target.get("pattern_hypotheses", [])
+        if not all(isinstance(values, list) for values in (members, associations, hypotheses)):
+            raise PacketRejected("CHAOS_RETRIEVAL_PROJECTION_INVALID")
+
+        def producer_of(item: dict[str, Any]) -> str | None:
+            provenance = item.get("provenance")
+            if not isinstance(provenance, dict):
+                return None
+            value = provenance.get("producer_id")
+            return value if isinstance(value, str) else None
+
+        filtered_members = [
+            item for item in members
+            if (member_filter is None or item.get("member_ref") in member_filter)
+            and (producer_filter is None or producer_of(item) in producer_filter)
+            and item.get("membership_active", True) is True
+        ]
+        selected_member_refs = {item.get("member_ref") for item in filtered_members}
+
+        filtered_associations = []
+        for item in associations:
+            association_type = item.get("association_type")
+            status = item.get("status")
+            if type_filter is not None and association_type not in type_filter:
+                continue
+            if status_filter is not None and status not in status_filter:
+                continue
+            if producer_filter is not None and producer_of(item) not in producer_filter:
+                continue
+            if valid_at_utc is not None:
+                valid_from, valid_until = item.get("valid_from"), item.get("valid_until")
+                if valid_from and valid_at_utc < valid_from:
+                    continue
+                if valid_until and valid_at_utc >= valid_until:
+                    continue
+            if (item.get("from_ref") not in selected_member_refs
+                    or item.get("to_ref") not in selected_member_refs):
+                continue
+            filtered_associations.append(item)
+
+        filtered_hypotheses = []
+        if include_hypotheses:
+            for item in hypotheses:
+                if producer_filter is not None and producer_of(item) not in producer_filter:
+                    continue
+                if member_filter is not None and not (set(item.get("member_refs", [])) & member_filter):
+                    continue
+                if not include_counterexamples:
+                    item = dict(item)
+                    item["counterexample_refs"] = []
+                filtered_hypotheses.append(item)
+
+        selected_members = filtered_members[:max_members]
+        selected_associations = filtered_associations[:max_associations]
+        selected_hypotheses = filtered_hypotheses[:max_hypotheses]
+        omitted_member_refs = [str(item.get("member_ref", "")) for item in filtered_members[max_members:]]
+        omitted_association_refs = [str(item.get("association_id", "")) for item in filtered_associations[max_associations:]]
+        omitted_hypothesis_refs = [str(item.get("hypothesis_id", "")) for item in filtered_hypotheses[max_hypotheses:]]
+
+        # Lineage traversal is metadata-only. It never silently expands the
+        # content budget of linked clusters or conflates lineage with membership.
+        lineage: list[dict[str, Any]] = []
+        unresolved_lineage_refs: list[str] = []
+        omitted_lineage_refs: list[str] = []
+        visited = {cluster_id}
+        frontier = [(target, 0)]
+        while frontier:
+            current, depth = frontier.pop(0)
+            neighbors = sorted(set(current.get("parent_refs", [])) | set(current.get("child_refs", [])))
+            if depth >= lineage_depth:
+                omitted_lineage_refs.extend(ref for ref in neighbors if ref not in visited)
+                continue
+            for ref in neighbors:
+                if ref in visited:
+                    continue
+                visited.add(ref)
+                try:
+                    meta = self._core.get_chaos_cluster(
+                        ref, max_members=0, max_associations=0, max_hypotheses=0,
+                        max_history_per_association=0, max_hypothesis_refs=0)
+                except PacketRejected:
+                    unresolved_lineage_refs.append(ref)
+                    continue
+                entry = {
+                    "cluster_id": ref, "lifecycle": meta.get("lifecycle"),
+                    "parent_refs": meta.get("parent_refs", []),
+                    "child_refs": meta.get("child_refs", []),
+                    "state_version": meta.get("state_version"),
+                }
+                lineage.append(entry)
+                frontier.append((meta, depth + 1))
+
+        after = int(self._core.state_version)
+        if after != before:
+            raise PacketRejected("RETRIEVAL_STATE_VERSION_CHANGED")
+
+        result_target = dict(target)
+        result_target["members"] = selected_members
+        result_target["associations"] = selected_associations
+        result_target["pattern_hypotheses"] = selected_hypotheses
+        result = {
+            "found": True, "target_kind": "CHAOS_CLUSTER",
+            "cluster_id": cluster_id, "state_version": after,
+            "target": result_target,
+            "query": {
+                "association_types": sorted(type_filter) if type_filter is not None else None,
+                "association_statuses": sorted(status_filter) if status_filter is not None else None,
+                "valid_at_utc": valid_at_utc,
+                "producer_ids": sorted(producer_filter) if producer_filter is not None else None,
+                "member_refs": sorted(member_filter) if member_filter is not None else None,
+                "include_hypotheses": include_hypotheses,
+                "include_counterexamples": include_counterexamples,
+                "lineage_depth": lineage_depth,
+            },
+            "lineage": lineage,
+            "unresolved_lineage_refs": sorted(set(unresolved_lineage_refs)),
+            "omitted_lineage_refs": sorted(set(omitted_lineage_refs)),
+            "omitted_member_refs": omitted_member_refs,
+            "omitted_association_refs": omitted_association_refs,
+            "omitted_hypothesis_refs": omitted_hypothesis_refs,
+            "source_omitted": source_omitted,
+            "complete": source_complete and not omitted_member_refs and
+                        not omitted_association_refs and not omitted_hypothesis_refs and
+                        not unresolved_lineage_refs and not omitted_lineage_refs,
+        }
         return result
 
     def set_question_aspect_status(self, aspect_id: str, status: str,
