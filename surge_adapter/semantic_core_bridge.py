@@ -95,6 +95,11 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_question_memory_plan.restype=ctypes.c_int
         lib.surge_question_memory_enforce_capacity.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_char_p),ctypes.POINTER(ctypes.c_double),ctypes.c_size_t,ctypes.c_size_t,ctypes.c_uint64,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_enforce_capacity.restype=ctypes.c_int
+        lib.surge_question_get_context_bundle.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_get_context_bundle.restype = ctypes.c_int
         lib.surge_question_get_reevaluation_candidates.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
@@ -648,6 +653,20 @@ class SemanticCoreBridge(CppCoreBridge):
         detail=error.value.decode("utf-8",errors="replace")
         if not ok or detail: raise PacketRejected(detail or "QUESTION_MEMORY_CAPACITY_REJECTED")
         return self._decode_temporal_ledger_json(output.value)
+
+    def get_question_context_bundle(self, question_id: str,
+                                    max_depth: int = 8, max_nodes: int = 256) -> dict[str, Any]:
+        """Read-only bounded restoration view of dependent Questions, aspects, Claims and Evidence."""
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise PacketRejected("QUESTION_ID_REQUIRED")
+        if not isinstance(max_depth, int) or isinstance(max_depth, bool) or not 1 <= max_depth <= 64:
+            raise PacketRejected("QUESTION_CONTEXT_DEPTH_INVALID")
+        if not isinstance(max_nodes, int) or isinstance(max_nodes, bool) or not 1 <= max_nodes <= 4096:
+            raise PacketRejected("QUESTION_CONTEXT_NODE_LIMIT_INVALID")
+        return self._temporal_ledger_call(
+            self._lib.surge_question_get_context_bundle,
+            (self._handle, question_id.encode(), max_depth, max_nodes),
+            "QUESTION_CONTEXT_BUFFER_TOO_SMALL")
 
     def get_question_reevaluation_candidates(self, question_id: str,
                                              max_depth: int = 8,

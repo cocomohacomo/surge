@@ -134,6 +134,7 @@ int surge_question_memory_plan(void*,size_t,char*,size_t,size_t*,char*,size_t);
 int surge_question_memory_enforce_capacity(void*,const char* const*,const double*,size_t,size_t,uint64_t,char*,size_t,size_t*,char*,size_t);
 // Read-only bounded discovery of Questions that depend (directly or transitively)
 // on the supplied prerequisite Question. max_depth is 1..64, max_nodes is 1..4096.
+int surge_question_get_context_bundle(void* handle, const char* question_id, size_t max_depth, size_t max_nodes, char* output, size_t output_capacity, size_t* required_capacity, char* error, size_t error_capacity);
 int surge_question_get_reevaluation_candidates(void* handle, const char* question_id,
     size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity);

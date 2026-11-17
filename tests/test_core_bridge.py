@@ -284,6 +284,43 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(result["counts"], {"OPEN": 0, "DEFERRED": 0, "RESOLVED": 4})
 
 
+    def test_question_context_bundle_restores_linked_aspects_claims_and_evidence_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "question-context.sgj") as core:
+                core.apply_semantic_delta({
+                    "delta_id": "context-bundle-seed", "idempotency_key": "context-bundle-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/root", "kind": "QUESTION", "content": "Why did the value change?"},
+                        {"id": "q/child", "kind": "QUESTION", "content": "Was the input revised?"},
+                        {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "Temporal cause", "references": ["q/root"]},
+                        {"id": "c/root", "kind": "CLAIM", "content": "The input was revised"},
+                        {"id": "e/root", "kind": "EVIDENCE", "content": "Revision log"},
+                        {"id": "q/unrelated", "kind": "QUESTION", "content": "Unrelated"},
+                        {"id": "c/unrelated", "kind": "CLAIM", "content": "Unrelated claim"},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "context-bundle-links", "idempotency_key": "context-bundle-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/child-root", "kind": "DEPENDS_ON", "from": "q/child", "to": "q/root"},
+                        {"id": "r/claim-root", "kind": "ABOUT", "from": "c/root", "to": "q/root"},
+                        {"id": "r/evidence-claim", "kind": "SUPPORTS", "from": "e/root", "to": "c/root"},
+                    ],
+                })
+                before = core.state_version
+                bundle = core.get_question_context_bundle("q/root")
+                ids = {node["id"] for node in bundle["nodes"]}
+                self.assertTrue({"q/root", "q/child", "a/root", "c/root", "e/root"}.issubset(ids))
+                self.assertFalse({"q/unrelated", "c/unrelated"} & ids)
+                self.assertEqual(bundle["question_id"], "q/root")
+                self.assertEqual(bundle["state_version"], before)
+                self.assertEqual(len(bundle["relations"]), 3)
+                self.assertEqual(core.state_version, before)
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_CONTEXT_NODE_LIMIT"):
+                    core.get_question_context_bundle("q/root", max_nodes=1)
+
     def test_question_reevaluation_candidates_are_bounded_read_only_and_persistent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-reevaluation.sgj"
