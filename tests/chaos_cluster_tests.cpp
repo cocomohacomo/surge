@@ -46,6 +46,19 @@ int main(){
   CHECK(l.split_subsets("split","ik-split",15,"chaos-2",{{"chaos-2a",{"x1"}},{"chaos-2b",{"x2"}}},p).committed);
   CHECK(l.get("chaos-2a",c));CHECK(c.members.size()==1&&c.parent_refs.size()==1);
   CHECK(l.get("chaos-2",c));CHECK(c.members.size()==2&&c.child_refs.size()==2&&c.lifecycle==surge::ChaosLifecycle::Forked);
+  CHECK(l.create("score-create","ik-score-create",l.state_version(),"chaos-score",p).committed);
+  surge::ChaosScoreObservation novelty{0.91,"recognizer","2.1","score-policy-1","2026-11-17T00:01:00Z"};
+  auto score_version=l.state_version();
+  CHECK(l.record_observation("score-novelty","ik-score-novelty",score_version,"chaos-score","novelty",novelty).committed);
+  novelty.value=0.84;novelty.observed_at="2026-11-17T00:02:00Z";
+  CHECK(l.record_observation("score-novelty-2","ik-score-novelty-2",l.state_version(),"chaos-score","novelty",novelty).committed);
+  auto invalid=novelty;invalid.value=1.01;
+  auto bad_score=l.record_observation("score-invalid","ik-score-invalid",l.state_version(),"chaos-score","salience",invalid);
+  CHECK(!bad_score.committed&&bad_score.error=="CHAOS_SCORE_OBSERVATION_INVALID");
+  auto bad_dimension=l.record_observation("score-invalid-dim","ik-score-invalid-dim",l.state_version(),"chaos-score","truth",novelty);
+  CHECK(!bad_dimension.committed&&bad_dimension.error=="CHAOS_SCORE_OBSERVATION_INVALID");
+  CHECK(l.get("chaos-score",c));
+  CHECK(c.observations.at("novelty").size()==2&&c.observations.at("novelty").front().value==0.91);
  }
  {
   surge::ChaosClusterLedger l(path);CHECK(l.open());
@@ -54,6 +67,9 @@ int main(){
   CHECK(c.pattern_hypotheses.count("hyp-1")==1&&c.promoted_member_targets.at("m1")=="topic-A");
   CHECK(l.get("chaos-child",c));CHECK(c.parent_refs.size()==1&&c.members.size()==2);
   CHECK(l.get("chaos-2b",c));CHECK(c.parent_refs.size()==1&&c.members.size()==1);
+  CHECK(l.get("chaos-score",c));CHECK(c.observations.at("novelty").size()==2);
+  CHECK(c.observations.at("novelty")[0].scorer_id=="recognizer");
+  CHECK(c.observations.at("novelty")[1].value==0.84);
   const auto v=l.state_version();
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
