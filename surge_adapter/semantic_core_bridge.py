@@ -288,6 +288,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosScoreObservation),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_record_observation.restype = ctypes.c_int
+        lib.surge_chaos_cluster_record_entity_observation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(_ChaosScoreObservation), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_record_entity_observation.restype = ctypes.c_int
         lib.surge_chaos_cluster_revise_membership.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
@@ -1123,6 +1129,33 @@ class SemanticCoreBridge(CppCoreBridge):
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), member_ref.encode(), status.encode("ascii"),
              1 if active else 0, ctypes.byref(p)))
+
+    def record_chaos_entity_observation(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, entity_kind: str,
+        entity_ref: str, observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append member salience, association confidence or hypothesis confidence."""
+        dimensions = {"MEMBER": "salience", "ASSOCIATION": "confidence",
+                      "HYPOTHESIS": "confidence"}
+        if entity_kind not in dimensions or not isinstance(observation, dict):
+            raise PacketRejected("CHAOS_SCORE_ENTITY_INVALID")
+        value = observation.get("value")
+        import math
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or not 0 <= float(value) <= 1:
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        fields = ("scorer_id", "scorer_version", "policy_version", "observed_at")
+        metadata = [observation.get(name) for name in fields]
+        if any(not isinstance(item, str) or not item.strip() for item in metadata):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id, entity_ref)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_IDENTITY_INVALID")
+        item = _ChaosScoreObservation(float(value), *(item.encode("utf-8") for item in metadata))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_record_entity_observation,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), entity_kind.encode("ascii"), entity_ref.encode(),
+             ctypes.byref(item)))
 
     def record_chaos_score_observation(
         self, *, operation_id: str, idempotency_key: str,
