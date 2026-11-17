@@ -294,10 +294,11 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "q/root", "kind": "QUESTION", "content": "Why did the value change?"},
                         {"id": "q/child", "kind": "QUESTION", "content": "Was the input revised?"},
                         {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "Temporal cause", "references": ["q/root"]},
-                        {"id": "c/root", "kind": "CLAIM", "content": "The input was revised", "references": ["e/root"]},
                         {"id": "e/root", "kind": "EVIDENCE", "content": "Revision log"},
+                        {"id": "e/unrelated", "kind": "EVIDENCE", "content": "Unrelated evidence"},
+                        {"id": "c/root", "kind": "CLAIM", "content": "The input was revised", "references": ["e/root"]},
                         {"id": "q/unrelated", "kind": "QUESTION", "content": "Unrelated"},
-                        {"id": "c/unrelated", "kind": "CLAIM", "content": "Unrelated claim"},
+                        {"id": "c/unrelated", "kind": "CLAIM", "content": "Unrelated claim", "references": ["e/unrelated"]},
                     ],
                 })
                 core.apply_semantic_delta({
