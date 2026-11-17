@@ -221,5 +221,41 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     retriever.search("x", limit=0)
 
 
+    def test_chaos_score_observations_roundtrip_through_python_bridge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-score-api.sgj"
+            provenance = {"producer_id": "score-api-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T00:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="create", idempotency_key="create",
+                    expected_state_version=0, cluster_id="chaos/scores", provenance=provenance)
+                for index, value in enumerate((0.91, 0.84)):
+                    core.record_chaos_score_observation(
+                        operation_id=f"score-{index}", idempotency_key=f"score-{index}",
+                        expected_state_version=core.state_version, cluster_id="chaos/scores",
+                        dimension="novelty",
+                        observation={"value": value, "scorer_id": "recognizer",
+                                     "scorer_version": "2.1", "policy_version": "score-v1",
+                                     "observed_at": f"2026-11-18T00:0{index}:00Z"})
+                result = core.get_chaos_cluster("chaos/scores")
+                history = result["observations"]["novelty"]["history"]
+                self.assertEqual([item["value"] for item in history], [0.91, 0.84])
+                self.assertEqual(history[0]["scorer_id"], "recognizer")
+                self.assertEqual(result["omitted"]["score_observation_revisions"], 0)
+                bounded = core.get_chaos_cluster("chaos/scores", max_history_per_association=1)
+                self.assertTrue(bounded["complete"])
+                with self.assertRaises(PacketRejected):
+                    core.record_chaos_score_observation(
+                        operation_id="bad", idempotency_key="bad",
+                        expected_state_version=core.state_version, cluster_id="chaos/scores",
+                        dimension="novelty",
+                        observation={"value": float("nan"), "scorer_id": "recognizer",
+                                     "scorer_version": "2.1", "policy_version": "score-v1",
+                                     "observed_at": "2026-11-18T00:03:00Z"})
+            with SemanticCoreBridge(journal) as recovered:
+                result = recovered.get_chaos_cluster("chaos/scores")
+                self.assertEqual(len(result["observations"]["novelty"]["history"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
