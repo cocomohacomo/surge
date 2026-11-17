@@ -28,6 +28,7 @@ class EventJournal {
  public:
   using AppendFrameGate = std::function<bool(std::size_t frame_index)>;
   explicit EventJournal(std::string path);
+  ~EventJournal();
   EventJournal(std::string path, AppendFrameGate append_frame_gate);
   bool open();
   JournalCommitResult commit(const std::string& transaction_id,
@@ -39,8 +40,11 @@ class EventJournal {
   std::string last_error() const;
  private:
   bool recover();
+  bool acquire_writer_lock();
+  void release_writer_lock();
   bool append_frame(const std::string& payload);
   std::string path_;
+  std::intptr_t lock_handle_{-1};
   AppendFrameGate append_frame_gate_;
   std::size_t append_frame_count_{0};
   mutable std::mutex mutex_;

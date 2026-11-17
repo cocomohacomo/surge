@@ -6,11 +6,53 @@
 #include <limits>
 #include <sstream>
 #include <utility>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
 
 namespace surge {
 namespace {
 constexpr char kMagic[] = "SURGEJ1\n";
 constexpr std::uint32_t kMaxFrame = 16U * 1024U * 1024U;
+
+bool sync_file_to_stable_storage(const std::string& path) {
+#ifdef _WIN32
+  HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+  const BOOL ok = FlushFileBuffers(file);
+  CloseHandle(file);
+  return ok != 0;
+#else
+  const int fd = ::open(path.c_str(), O_WRONLY);
+  if (fd < 0) return false;
+  const int result = ::fsync(fd);
+  ::close(fd);
+  return result == 0;
+#endif
+}
+bool sync_parent_directory(const std::string& path) {
+#ifdef _WIN32
+  (void)path;
+  return true;
+#else
+  auto parent = std::filesystem::path(path).parent_path();
+  if (parent.empty()) parent = ".";
+  const int fd = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY);
+  if (fd < 0) return false;
+  const int result = ::fsync(fd);
+  ::close(fd);
+  return result == 0;
+#endif
+}
 
 std::uint32_t crc32(const std::string& data) {
   std::uint32_t crc = 0xFFFFFFFFU;
@@ -64,6 +106,44 @@ EventJournal::EventJournal(std::string path) : path_(std::move(path)) {}
 EventJournal::EventJournal(std::string path, AppendFrameGate append_frame_gate)
     : path_(std::move(path)), append_frame_gate_(std::move(append_frame_gate)) {}
 
+EventJournal::~EventJournal() { release_writer_lock(); }
+
+bool EventJournal::acquire_writer_lock() {
+  const auto lock_path = path_ + ".lock";
+#ifdef _WIN32
+  HANDLE handle = CreateFileA(lock_path.c_str(), GENERIC_READ | GENERIC_WRITE,
+      0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    last_error_ = GetLastError() == ERROR_SHARING_VIOLATION
+        ? "JOURNAL_WRITER_LOCKED" : "JOURNAL_WRITER_LOCK_ERROR";
+    return false;
+  }
+  lock_handle_ = reinterpret_cast<std::intptr_t>(handle);
+#else
+  const int fd = ::open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+  if (fd < 0) { last_error_ = "JOURNAL_WRITER_LOCK_ERROR"; return false; }
+  if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    ::close(fd);
+    last_error_ = "JOURNAL_WRITER_LOCKED";
+    return false;
+  }
+  lock_handle_ = static_cast<std::intptr_t>(fd);
+#endif
+  return true;
+}
+
+void EventJournal::release_writer_lock() {
+  if (lock_handle_ == -1) return;
+#ifdef _WIN32
+  CloseHandle(reinterpret_cast<HANDLE>(lock_handle_));
+#else
+  const int fd = static_cast<int>(lock_handle_);
+  ::flock(fd, LOCK_UN);
+  ::close(fd);
+#endif
+  lock_handle_ = -1;
+}
+
 bool EventJournal::open() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (opened_) return true;
@@ -71,14 +151,19 @@ bool EventJournal::open() {
   const auto parent = std::filesystem::path(path_).parent_path();
   if (!parent.empty()) std::filesystem::create_directories(parent, ec);
   if (ec) { last_error_ = "JOURNAL_DIRECTORY_ERROR"; return false; }
+  if (lock_handle_ == -1 && !acquire_writer_lock()) return false;
   if (!std::filesystem::exists(path_)) {
     std::ofstream create(path_, std::ios::binary | std::ios::out);
-    if (!create) { last_error_ = "JOURNAL_CREATE_ERROR"; return false; }
+    if (!create) { last_error_ = "JOURNAL_CREATE_ERROR"; release_writer_lock(); return false; }
     create.write(kMagic, static_cast<std::streamsize>(sizeof(kMagic) - 1));
     create.flush();
-    if (!create) { last_error_ = "JOURNAL_HEADER_WRITE_ERROR"; return false; }
+    if (!create) { last_error_ = "JOURNAL_HEADER_WRITE_ERROR"; release_writer_lock(); return false; }
+    create.close();
+    if (!sync_file_to_stable_storage(path_) || !sync_parent_directory(path_)) {
+      last_error_ = "JOURNAL_HEADER_SYNC_ERROR"; release_writer_lock(); return false;
+    }
   }
-  if (!recover()) return false;
+  if (!recover()) { release_writer_lock(); return false; }
   opened_ = true;
   return true;
 }
@@ -103,6 +188,11 @@ bool EventJournal::append_frame(const std::string& payload) {
   put_u32(out, crc32(payload));
   out.flush();
   if (!out) { last_error_ = "JOURNAL_WRITE_ERROR"; return false; }
+  out.close();
+  if (!sync_file_to_stable_storage(path_)) {
+    last_error_ = "JOURNAL_SYNC_ERROR";
+    return false;
+  }
   ++append_frame_count_;
   return true;
 }
@@ -215,6 +305,9 @@ bool EventJournal::recover() {
     std::error_code ec;
     std::filesystem::resize_file(path_, static_cast<std::uintmax_t>(truncate_at), ec);
     if (ec) { last_error_ = "JOURNAL_TAIL_TRUNCATE_ERROR"; return false; }
+    if (!sync_file_to_stable_storage(path_)) {
+      last_error_ = "JOURNAL_TAIL_SYNC_ERROR"; return false;
+    }
   }
   return true;
 }
