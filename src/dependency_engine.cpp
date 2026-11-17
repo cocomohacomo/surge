@@ -77,6 +77,7 @@ DependencyEvaluationResult DependencyEngine::evaluate(
       const auto expected = expr.substr(kind.size());
       switch (prerequisite.kind) {
         case NodeKind::Cluster: return expected == "CLUSTER";
+        case NodeKind::ChaosCluster: return expected == "CHAOS_CLUSTER";
         case NodeKind::Entity: return expected == "ENTITY";
         case NodeKind::Evidence: return expected == "EVIDENCE";
         case NodeKind::Claim: return expected == "CLAIM";

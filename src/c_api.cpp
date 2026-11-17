@@ -1415,6 +1415,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
     auto node_kind_text = [](surge::NodeKind kind) {
       switch (kind) {
         case surge::NodeKind::Cluster: return "CLUSTER";
+        case surge::NodeKind::ChaosCluster: return "CHAOS_CLUSTER";
         case surge::NodeKind::Entity: return "ENTITY";
         case surge::NodeKind::Evidence: return "EVIDENCE";
         case surge::NodeKind::Claim: return "CLAIM";
@@ -1742,7 +1743,8 @@ int surge_context_graph_focus_set_chaos(void* opaque,const char* delta_id,const 
     else if(existing->second.kind!=surge::NodeKind::ChaosCluster) { copy_text(error,error_cap,"CHAOS_FOCUS_GRAPH_ID_CONFLICT");return 0; }
     delta.focus=surge::SetFocus{{chaos_cluster_id,interest_id?interest_id:"",true}};
     const auto result=handle.graph.apply(delta);
-    if(duplicate)*duplicate=result.duplicate?1:0;if(state_version)*state_version=result.state_version;
+    if(duplicate) *duplicate=result.duplicate?1:0;
+    if(state_version) *state_version=result.state_version;
     copy_text(error,error_cap,result.error);return result.committed?1:0;
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"CHAOS_FOCUS_UNKNOWN_EXCEPTION");return 0;}
