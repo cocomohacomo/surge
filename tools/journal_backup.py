@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import contextlib
+import ctypes
 import hashlib
 import json
 import os
@@ -16,37 +17,52 @@ MAGIC = b"SURGEJ1\n"
 
 @contextlib.contextmanager
 def writer_lock(journal: pathlib.Path):
-    """Acquire the same sidecar writer lock used by EventJournal."""
+    """Acquire the same OS sidecar lock primitive used by EventJournal."""
     lock_path = pathlib.Path(str(journal) + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        # EventJournal uses CreateFile(..., share_mode=0). Use the identical
+        # primitive here; msvcrt.locking is a different lock namespace and
+        # would not exclude the C++ writer.
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = (
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+        )
+        create_file.restype = wintypes.HANDLE
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = (wintypes.HANDLE,)
+        close_handle.restype = wintypes.BOOL
+        invalid_handle = ctypes.c_void_p(-1).value
+        handle = create_file(
+            str(lock_path), 0xC0000000, 0, None, 4, 0x80, None
+        )
+        if handle is None or handle == invalid_handle:
+            error = ctypes.get_last_error()
+            if error in (32, 33):
+                raise RuntimeError("JOURNAL_WRITER_LOCKED")
+            raise OSError(error, "JOURNAL_WRITER_LOCK_ERROR", str(lock_path))
+        try:
+            yield
+        finally:
+            close_handle(handle)
+        return
+
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     acquired = False
     try:
-        if os.name == "nt":
-            import msvcrt
-            os.lseek(fd, 0, os.SEEK_SET)
-            try:
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                acquired = True
-            except OSError as exc:
-                raise RuntimeError("JOURNAL_WRITER_LOCKED") from exc
-        else:
-            import fcntl
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired = True
-            except OSError as exc:
-                raise RuntimeError("JOURNAL_WRITER_LOCKED") from exc
+        import fcntl
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except OSError as exc:
+            raise RuntimeError("JOURNAL_WRITER_LOCKED") from exc
         yield
     finally:
         if acquired:
-            if os.name == "nt":
-                import msvcrt
-                os.lseek(fd, 0, os.SEEK_SET)
-                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
 
@@ -60,6 +76,7 @@ def sha256_file(path: pathlib.Path) -> str:
 
 def fsync_directory(path: pathlib.Path) -> None:
     if os.name == "nt":
+        # Windows does not expose a portable directory fsync equivalent here.
         return
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:

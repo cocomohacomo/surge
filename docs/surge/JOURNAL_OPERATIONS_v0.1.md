@@ -2,14 +2,15 @@
 
 ## Current operating contract
 
-EventJournal remains a single-writer append-only journal. This increment adds:
-- an OS-visible sidecar lock at `<journal>.lock`, exclusive and non-blocking;
-- refusal to open a journal when another writer owns the lock;
-- `fsync` after every complete frame on POSIX and `FlushFileBuffers` on Windows;
-- file and parent-directory synchronization when the journal header is first created;
-- a lock held for the EventJournal object's lifetime, released on destruction.
+EventJournal remains a single-writer append-only journal. The writer lock is an OS-visible sidecar lock at `<journal>.lock`, held for the EventJournal object's lifetime. A second writer is rejected.
 
-The in-process mutex still protects threads in one process. The OS lock protects competing processes. Opening a second EventJournal as a writer is intentionally rejected.
+- POSIX: C++ and Python acquire an exclusive non-blocking `flock(LOCK_EX | LOCK_NB)` on the same sidecar inode.
+- Windows: C++ and Python both open the sidecar with `CreateFile` / `CreateFileW` and share mode zero. This is the same Windows sharing-exclusion mechanism. Python must not use `msvcrt.locking` here because byte-range locks are a separate lock namespace and do not exclude the C++ writer.
+- POSIX appends are followed by `fsync`; Windows appends are followed by `FlushFileBuffers`.
+- Header creation syncs the journal file and parent directory where supported. Windows currently syncs the file but does not claim portable parent-directory durability.
+- Recovery tail truncation is synced before the journal is considered recovered.
+
+The in-process mutex protects threads in one process. The OS lock protects competing processes and backup/restore operations. Do not delete the sidecar lock file while any process may hold it.
 
 ## Backup and restore
 
@@ -35,7 +36,6 @@ In-place mutation, implicit downgrade and migration without a verified backup ar
 
 ## Remaining production gaps
 
-- cross-platform CI for Windows lock/sync and macOS durability behavior;
 - automated backup scheduling/retention and off-host replication;
 - crash-injection tests at OS sync boundaries and restore drills;
 - snapshot/compaction and journal segment rotation;
