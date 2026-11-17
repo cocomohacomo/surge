@@ -1,6 +1,6 @@
+#include "test_support.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/sha256.hpp"
-#include <cassert>
 #include <iostream>
 using namespace surge;
 static ScopeAnchor anchor(const std::string& id,const std::string& digest,const std::string& text,
@@ -23,64 +23,64 @@ int main(){
   {
     auto s=make(ScopeKind::Negation,"not",0);s.target_refs={"c1"};
     auto r=ScopeSpanValidator::validate(s,source,nodes);
-    assert(r.accepted&&r.status==ScopeStatus::Closed&&r.effect==ScopeEffect::NegatedClaim&&!r.may_emit_unconditional_claim);
+    CHECK(r.accepted&&r.status==ScopeStatus::Closed&&r.effect==ScopeEffect::NegatedClaim&&!r.may_emit_unconditional_claim);
   }
   {
     auto s=make(ScopeKind::Condition,"if",12);s.target_refs={"c1","c2"};
     auto open=ScopeSpanValidator::validate(s,source,nodes);
-    assert(open.accepted&&open.status==ScopeStatus::Unresolved);
+    CHECK(open.accepted&&open.status==ScopeStatus::Unresolved);
     s.closer=anchor("close",digest,"approve",26,"p2");
     auto closed_result=ScopeSpanValidator::validate(s,source,nodes);
-    assert(closed_result.accepted&&closed_result.status==ScopeStatus::Closed&&!closed_result.may_emit_unconditional_claim);
+    CHECK(closed_result.accepted&&closed_result.status==ScopeStatus::Closed&&!closed_result.may_emit_unconditional_claim);
   }
   {
     auto s=make(ScopeKind::Modality,"may",22);s.target_refs={"c1"};s.modality_kind="POSSIBILITY";
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ModalityQualified);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ModalityQualified);
   }
   {
     auto s=make(ScopeKind::Concession,"although",34);s.target_refs={"c1","c2"};
     s.closer=anchor("close",digest,"approve",55,"p2");
-    assert(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Closed);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Closed);
   }
   {
     auto s=make(ScopeKind::Contrast,"but",51);s.target_refs={"c1","c2"};
     s.closer=anchor("close",digest,"approve",55,"p2");
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ContrastRelation);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::ContrastRelation);
   }
   {
     auto s=make(ScopeKind::Coreference,"he",63);s.target_refs={"c1"};s.antecedent_refs={"entity1"};
-    assert(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Closed);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Closed);
     s.antecedent_refs={"entity1","c2"};
-    assert(ScopeSpanValidator::validate(s,source,nodes).error=="ANTECEDENT_CANDIDATE_INVALID");
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).error=="ANTECEDENT_CANDIDATE_INVALID");
   }
   {
     auto s=make(ScopeKind::Anaphora,"he",63);s.target_refs={"c1"};s.antecedent_refs={"entity1","entity2"};
     nodes["entity2"]={"entity2",NodeKind::Entity,"entity2",{}};
-    assert(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Unresolved);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).status==ScopeStatus::Unresolved);
   }
   {
     auto s=make(ScopeKind::Quotation,"said",66);
     s.closer=anchor("close",digest,"yes",72,"p2");
     s.attribution_ref="entity1";
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::QuotationEvidence);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::QuotationEvidence);
   }
   {
     auto s=make(ScopeKind::Temporal,"in",77);s.target_refs={"c1"};s.temporal_role="VALID_FROM";
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TemporalQualifier);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TemporalQualifier);
   }
   {
     auto s=make(ScopeKind::ListContinuation,"item",85);s.parent_ref="list-1";
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::StructuralContinuation);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::StructuralContinuation);
   }
   {
     auto s=make(ScopeKind::TableHeader,"header",90);s.parent_ref="table-column-1";
-    assert(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TableHeaderScope);
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).effect==ScopeEffect::TableHeaderScope);
   }
   {
     auto s=make(ScopeKind::Negation,"not",0);s.target_refs={"c1","c2"};
-    assert(ScopeSpanValidator::validate(s,source,nodes).error=="NEGATION_TARGET_INVALID");
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).error=="NEGATION_TARGET_INVALID");
     s.target_refs={"c1"};s.opener.exact_text="wrong";
-    assert(ScopeSpanValidator::validate(s,source,nodes).error=="SCOPE_OPENER_ANCHOR_INVALID");
+    CHECK(ScopeSpanValidator::validate(s,source,nodes).error=="SCOPE_OPENER_ANCHOR_INVALID");
   }
   std::cout<<"SURGE ScopeSpan validator tests: 12 groups passed\n";
 }

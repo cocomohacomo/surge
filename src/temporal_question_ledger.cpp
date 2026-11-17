@@ -60,6 +60,27 @@ TemporalQuestionResult TemporalQuestionLedger::synchronize(const std::string&tx,
  TemporalQuestionResult r;r.state_version=journal_.state_version();
  if(tx.empty()||ik.empty()||eid.empty()||p.claim_id.empty()||p.candidates.empty()){
   r.status=r.error="TEMPORAL_QUESTION_SYNC_ARGUMENT_INVALID";return r;}
+ // A retry may arrive after the ledger has already applied the original event.
+ // Reuse the exact committed payload so EventJournal can confirm idempotency
+ // before the updated question status changes a newly computed snapshot.
+ const auto committed_events=journal_.committed_events();
+ const auto prior=std::find_if(committed_events.begin(),committed_events.end(),
+     [&](const JournalEvent& event){return event.event_id==eid;});
+ if(prior!=committed_events.end()){
+  std::vector<TemporalQuestion> prior_questions;
+  if(!decode_batch(prior->payload,eid,prior_questions)){
+   r.status=r.error="TEMPORAL_QUESTION_EXISTING_EVENT_INVALID";return r;
+  }
+  auto cm=journal_.commit(tx,ik,version,{*prior});
+  r.committed=cm.committed;r.duplicate=cm.duplicate;r.state_version=cm.state_version;r.error=cm.error;
+  if(!cm.committed){r.status=cm.error;return r;}
+  if(!cm.duplicate&&!apply_event(*prior)){
+   r.committed=false;r.status=r.error="TEMPORAL_QUESTION_REPLAY_REQUIRED";return r;
+  }
+  const auto found=questions_.find(prior_questions.back().question_id);
+  if(found==questions_.end()){r.committed=false;r.status=r.error="TEMPORAL_QUESTION_RECORD_MISSING";return r;}
+  r.question=found->second;r.status=r.question.status;return r;
+ }
  std::set<std::string> roles;for(const auto&c:p.candidates)roles.insert(c.role);
  std::vector<TemporalQuestion> snapshots;
  for(const auto&role:roles){

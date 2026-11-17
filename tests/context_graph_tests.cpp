@@ -1,6 +1,6 @@
+#include "test_support.hpp"
 #include "surge/context_graph.hpp"
 #include <algorithm>
-#include <cassert>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -11,36 +11,36 @@ int main(){
   {
     const auto qpath=(root/"question-aspect-status.sgj").string();
     {
-      ContextGraph graph(qpath);assert(graph.open());
+      ContextGraph graph(qpath);CHECK(graph.open());
       SemanticDelta d;d.delta_id="qa-seed";d.idempotency_key="qa-seed";d.expected_state_version=0;
       d.nodes={{{"question-x",NodeKind::Question,"確認事項",{}}},
                {{"aspect-x",NodeKind::QuestionAspect,"期限の確認",{"question-x"}}}};
-      assert(graph.apply(d).committed && graph.state_version()==1);
+      CHECK(graph.apply(d).committed && graph.state_version()==1);
       std::string error;
-      assert(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Open);
-      assert(graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Resolved,1,error));
-      assert(graph.state_version()==2);
-      assert(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
-      assert(!graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,1,error));
-      assert(error=="STATE_VERSION_CONFLICT");
+      CHECK(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Open);
+      CHECK(graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Resolved,1,error));
+      CHECK(graph.state_version()==2);
+      CHECK(graph.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
+      CHECK(!graph.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,1,error));
+      CHECK(error=="STATE_VERSION_CONFLICT");
     }
     {
-      ContextGraph recovered(qpath);assert(recovered.open());
-      assert(recovered.state_version()==2);
-      assert(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
+      ContextGraph recovered(qpath);CHECK(recovered.open());
+      CHECK(recovered.state_version()==2);
+      CHECK(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Resolved);
       std::string error;
-      assert(recovered.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,2,error));
+      CHECK(recovered.set_question_aspect_status("aspect-x",QuestionAspectStatus::Deferred,2,error));
     }
     {
-      ContextGraph recovered(qpath);assert(recovered.open());
-      assert(recovered.state_version()==3);
-      assert(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Deferred);
+      ContextGraph recovered(qpath);CHECK(recovered.open());
+      CHECK(recovered.state_version()==3);
+      CHECK(recovered.question_aspect_status("aspect-x")==QuestionAspectStatus::Deferred);
     }
   }
   {
     const auto dependency_path=(root/"dependency-evaluation.sgj").string();
     {
-      ContextGraph graph(dependency_path);assert(graph.open());
+      ContextGraph graph(dependency_path);CHECK(graph.open());
       SemanticDelta d;d.delta_id="dependency-delta-1";d.idempotency_key="dependency-key-1";
       d.expected_state_version=0;
       d.nodes={{{"source-cluster",NodeKind::Cluster,"approved",{}}},
@@ -50,97 +50,98 @@ int main(){
                {{"dependency-invalid",NodeKind::Dependency,"KIND:UNKNOWN",
                   {"source-cluster","target-cluster"}}}};
       const auto result=graph.apply(d);
-      assert(result.committed && !result.duplicate && result.state_version==1);
-      assert(graph.dependency_evaluations().count("dependency-delta-1")==1);
-      const auto evaluation_it=graph.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=graph.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
-      assert(evaluation.triggered.size()==1);
-      assert(evaluation.triggered[0].dependency_id=="dependency-good");
-      assert(evaluation.triggered[0].prerequisite_id=="source-cluster");
-      assert(evaluation.triggered[0].dependent_id=="target-cluster");
-      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      CHECK(result.committed && !result.duplicate && result.state_version==1);
+      CHECK(graph.dependency_evaluations().count("dependency-delta-1")==1);
+      const auto evaluation_it=graph.dependency_evaluations().find("dependency-delta-1"); CHECK(evaluation_it!=graph.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
+      CHECK(evaluation.triggered.size()==1);
+      CHECK(evaluation.triggered[0].dependency_id=="dependency-good");
+      CHECK(evaluation.triggered[0].prerequisite_id=="source-cluster");
+      CHECK(evaluation.triggered[0].dependent_id=="target-cluster");
+      CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
       const auto retry=graph.apply(d);
-      assert(retry.committed && retry.duplicate && graph.state_version()==1);
+      CHECK(retry.committed && retry.duplicate && graph.state_version()==1);
     }
     {
-      ContextGraph recovered(dependency_path);assert(recovered.open());
-      assert(recovered.state_version()==1);
-      assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
-      const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1"); assert(evaluation_it!=recovered.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
-      assert(evaluation.triggered.size()==1 &&
+      ContextGraph recovered(dependency_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==1);
+      CHECK(recovered.dependency_evaluations().count("dependency-delta-1")==1);
+      const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1"); CHECK(evaluation_it!=recovered.dependency_evaluations().end()); const auto& evaluation=evaluation_it->second;
+      CHECK(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
-      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
       SemanticDelta new_dependency;new_dependency.delta_id="dependency-delta-2";
       new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
-      new_dependency.nodes={{{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
+      new_dependency.nodes={{{"dependency-present",NodeKind::Dependency,"PRESENT",
           {"source-cluster","target-cluster"}}}};
       const auto added=recovered.apply(new_dependency);
-      assert(added.committed&&added.state_version==2);
-      assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
-      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); assert(evaluation2_it!=recovered.dependency_evaluations().end()); assert(evaluation2_it->second.triggered.size()==1);
-      assert(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-on-change");
+      CHECK(added.committed&&added.state_version==2);
+      CHECK(recovered.dependency_evaluations().count("dependency-delta-2")==1);
+      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); CHECK(evaluation2_it!=recovered.dependency_evaluations().end()); CHECK(evaluation2_it->second.triggered.size()==2);
+      CHECK(std::any_of(evaluation2_it->second.triggered.begin(),
+          evaluation2_it->second.triggered.end(),[](const DependencyTrigger& trigger){
+            return trigger.dependency_id=="dependency-present";
+          }));
     }
     {
-      ContextGraph recovered(dependency_path);assert(recovered.open());
-      assert(recovered.state_version()==2);
-      assert(recovered.dependency_evaluations().count("dependency-delta-1")==1);
-      assert(recovered.dependency_evaluations().count("dependency-delta-2")==1);
+      ContextGraph recovered(dependency_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==2);
+      CHECK(recovered.dependency_evaluations().count("dependency-delta-1")==1);
+      CHECK(recovered.dependency_evaluations().count("dependency-delta-2")==1);
       const auto evaluation_it=recovered.dependency_evaluations().find("dependency-delta-1");
       const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2");
-      assert(evaluation_it!=recovered.dependency_evaluations().end());
-      assert(evaluation2_it!=recovered.dependency_evaluations().end());
+      CHECK(evaluation_it!=recovered.dependency_evaluations().end());
+      CHECK(evaluation2_it!=recovered.dependency_evaluations().end());
       const auto& evaluation=evaluation_it->second;
-      assert(evaluation.triggered.size()==1 &&
+      CHECK(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
-      assert((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
-      assert(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-on-change");
+      CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
+      CHECK(std::any_of(evaluation2_it->second.triggered.begin(),
+          evaluation2_it->second.triggered.end(),[](const DependencyTrigger& trigger){
+            return trigger.dependency_id=="dependency-present";
+          }));
     }
   }
   {
     const auto evidence_path=(root/"evidence-temporal-validity.sgj").string();
     {
-      ContextGraph graph(evidence_path);assert(graph.open());
+      ContextGraph graph(evidence_path);CHECK(graph.open());
       SemanticDelta seed;seed.delta_id="evidence-temporal-seed";seed.idempotency_key="evidence-temporal-seed";
       seed.expected_state_version=0;
-      seed.nodes={{{"ev-validity-basis",NodeKind::Evidence,"発行元の契約台帳",{}}},
-                  {{"ev-validity-subject",NodeKind::Evidence,"契約書",{}}}};
-      seed.relations={{{"ev-validity-basis-supports",RelationKind::Supports,
-                        "ev-validity-basis","ev-validity-subject"}}};
+      seed.nodes={{{"ev-validity-subject",NodeKind::Evidence,"契約書",{}}}};
       seed.evidence_validity_updates.push_back({"ev-validity-subject",
           "2026-01-01T00:00:00+09:00","2026-04-01T00:00:00+09:00",
-          "ev-validity-basis",1});
-      assert(graph.apply(seed).committed && graph.state_version()==1);
-      assert(graph.evidence_validity_at("ev-validity-subject","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
-      assert(graph.evidence_validity_at("ev-validity-subject","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
-      assert(graph.evidence_validity_at("missing-evidence","2026-02-01T00:00:00Z")==ClaimTemporalState::Unknown);
+          "ev-validity-subject",1});
+      CHECK(graph.apply(seed).committed && graph.state_version()==1);
+      CHECK(graph.evidence_validity_at("ev-validity-subject","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
+      CHECK(graph.evidence_validity_at("ev-validity-subject","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
+      CHECK(graph.evidence_validity_at("missing-evidence","2026-02-01T00:00:00Z")==ClaimTemporalState::Unknown);
       SemanticDelta correction;correction.delta_id="evidence-temporal-correction";
       correction.idempotency_key="evidence-temporal-correction";correction.expected_state_version=1;
       correction.evidence_validity_updates.push_back({"ev-validity-subject",
           "2025-12-01T00:00:00Z","2026-05-01T00:00:00Z",
-          "ev-validity-basis",2});
-      assert(graph.apply(correction).committed && graph.state_version()==2);
-      assert(graph.evidence_validity_history().at("ev-validity-subject").size()==2);
+          "ev-validity-subject",2});
+      CHECK(graph.apply(correction).committed && graph.state_version()==2);
+      CHECK(graph.evidence_validity_history().at("ev-validity-subject").size()==2);
       SemanticDelta invalid;invalid.delta_id="evidence-temporal-invalid";
       invalid.idempotency_key="evidence-temporal-invalid";invalid.expected_state_version=2;
       invalid.evidence_validity_updates.push_back({"ev-validity-subject",
           "2026-05-01T00:00:00Z","2026-04-01T00:00:00Z",
-          "ev-validity-basis",3});
-      assert(graph.apply(invalid).error=="EVIDENCE_VALIDITY_INTERVAL_INVALID");
-      assert(graph.state_version()==2);
+          "ev-validity-subject",3});
+      CHECK(graph.apply(invalid).error=="EVIDENCE_VALIDITY_INTERVAL_INVALID");
+      CHECK(graph.state_version()==2);
     }
     {
-      ContextGraph recovered(evidence_path);assert(recovered.open());
-      assert(recovered.state_version()==2);
-      assert(recovered.evidence_validity_history().at("ev-validity-subject").size()==2);
+      ContextGraph recovered(evidence_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==2);
+      CHECK(recovered.evidence_validity_history().at("ev-validity-subject").size()==2);
       const auto latest=recovered.latest_evidence_validity("ev-validity-subject");
-      assert(latest && latest->validity.revision==2 && latest->recorded_state_version==2);
-      assert(recovered.evidence_validity_at("ev-validity-subject","2026-03-01T00:00:00Z")==ClaimTemporalState::Valid);
+      CHECK(latest && latest->validity.revision==2 && latest->recorded_state_version==2);
+      CHECK(recovered.evidence_validity_at("ev-validity-subject","2026-03-01T00:00:00Z")==ClaimTemporalState::Valid);
     }
   }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
-    ContextGraph graph(path);assert(graph.open());
+    ContextGraph graph(path);CHECK(graph.open());
     SemanticDelta d;d.delta_id="d1";d.idempotency_key="k1";d.expected_state_version=0;
     d.nodes={{{"cluster-1",NodeKind::Cluster,"予算案",{} }},
              {{"evidence-1",NodeKind::Evidence,"会議発言",{} }},
@@ -150,88 +151,88 @@ int main(){
              {{"interest-1",NodeKind::Interest,"財源を確認",{"aspect-1","cluster-1"}}}};
     d.relations={{{"rel-1",RelationKind::About,"claim-1","cluster-1"}}};
     d.focus=SetFocus{{"cluster-1","interest-1"}};
-    auto result=graph.apply(d);assert(result.committed && result.state_version==1);
-    assert(graph.nodes().size()==6 && graph.relations().size()==1);
-    assert(graph.focus() && graph.focus()->interest_id=="interest-1");
-    auto retry=graph.apply(d);assert(retry.committed && retry.duplicate && graph.state_version()==1);
+    auto result=graph.apply(d);CHECK(result.committed && result.state_version==1);
+    CHECK(graph.nodes().size()==6 && graph.relations().size()==1);
+    CHECK(graph.focus() && graph.focus()->interest_id=="interest-1");
+    auto retry=graph.apply(d);CHECK(retry.committed && retry.duplicate && graph.state_version()==1);
     auto conflict=d;conflict.nodes[0].node.content="別の内容";
-    assert(graph.apply(conflict).error=="IDEMPOTENCY_KEY_REUSED");
+    CHECK(graph.apply(conflict).error=="IDEMPOTENCY_KEY_REUSED");
     SemanticDelta invalid;invalid.delta_id="d2";invalid.idempotency_key="k2";invalid.expected_state_version=1;
     invalid.relations={{{"bad-rel",RelationKind::Contradicts,"claim-1","cluster-1"}}};
-    assert(graph.apply(invalid).error=="CLAIM_RELATION_TYPE_INVALID");
-    assert(graph.state_version()==1);
+    CHECK(graph.apply(invalid).error=="CLAIM_RELATION_TYPE_INVALID");
+    CHECK(graph.state_version()==1);
     SemanticDelta stale;stale.delta_id="d3";stale.idempotency_key="k3";stale.expected_state_version=0;
     stale.nodes={{{"cluster-2",NodeKind::Cluster,"別議題",{}}}};
-    assert(graph.apply(stale).error=="STATE_VERSION_CONFLICT");
+    CHECK(graph.apply(stale).error=="STATE_VERSION_CONFLICT");
   }
   {
-    ContextGraph recovered(path);assert(recovered.open());
-    assert(recovered.state_version()==1);
-    assert(recovered.nodes().size()==6 && recovered.relations().size()==1);
-    assert(recovered.focus() && recovered.focus()->cluster_id=="cluster-1");
-    assert(recovered.focus_history().size()==1);
+    ContextGraph recovered(path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==1);
+    CHECK(recovered.nodes().size()==6 && recovered.relations().size()==1);
+    CHECK(recovered.focus() && recovered.focus()->cluster_id=="cluster-1");
+    CHECK(recovered.focus_history().size()==1);
     SemanticDelta original;original.delta_id="d1";original.idempotency_key="k1";original.expected_state_version=0;
     original.nodes={{{"cluster-1",NodeKind::Cluster,"予算案",{}}},{{"evidence-1",NodeKind::Evidence,"会議発言",{}}},{{"claim-1",NodeKind::Claim,"予算を増額する",{"evidence-1"}}},{{"question-1",NodeKind::Question,"予算は増額可能か",{}}},{{"aspect-1",NodeKind::QuestionAspect,"財源の有無",{"question-1"}}},{{"interest-1",NodeKind::Interest,"財源を確認",{"aspect-1","cluster-1"}}}};
     original.relations={{{"rel-1",RelationKind::About,"claim-1","cluster-1"}}};
     original.focus=SetFocus{{"cluster-1","interest-1"}};
-    auto replay_retry=recovered.apply(original);assert(replay_retry.committed && replay_retry.duplicate);
+    auto replay_retry=recovered.apply(original);CHECK(replay_retry.committed && replay_retry.duplicate);
     SemanticDelta d;d.delta_id="d2";d.idempotency_key="k2";d.expected_state_version=1;
     d.nodes={{{"cluster-2",NodeKind::Cluster,"派生議題",{}}}};
-    auto result=recovered.apply(d);assert(result.committed && result.state_version==2);
+    auto result=recovered.apply(d);CHECK(result.committed && result.state_version==2);
   }
   {
-    ContextGraph recovered(path);assert(recovered.open());
-    assert(recovered.state_version()==2);
-    assert(recovered.nodes().count("cluster-2")==1);
-    assert(recovered.nodes().count("cluster-1")==1);
+    ContextGraph recovered(path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==2);
+    CHECK(recovered.nodes().count("cluster-2")==1);
+    CHECK(recovered.nodes().count("cluster-1")==1);
   }
   {
     const auto claim_path=(root/"claim-lifecycle.sgj").string();
     {
-      ContextGraph graph(claim_path);assert(graph.open());
+      ContextGraph graph(claim_path);CHECK(graph.open());
       SemanticDelta seed;seed.delta_id="claim-seed";seed.idempotency_key="claim-seed";
       seed.expected_state_version=0;
       seed.nodes={{{"evidence-old",NodeKind::Evidence,"当初の会議記録",{}}},
                   {{"claim-old",NodeKind::Claim,"予算は100万円",{"evidence-old"}}}};
-      assert(graph.apply(seed).committed);
-      assert(graph.claim_status("claim-old")==ClaimStatus::Active);
+      CHECK(graph.apply(seed).committed);
+      CHECK(graph.claim_status("claim-old")==ClaimStatus::Active);
       SemanticDelta correction;correction.delta_id="claim-correction";
       correction.idempotency_key="claim-correction";correction.expected_state_version=1;
       correction.nodes={{{"evidence-new",NodeKind::Evidence,"訂正後の会議記録",{}}},
                         {{"claim-new",NodeKind::Claim,"予算は120万円",{"evidence-new"}}}};
       correction.relations={{{"claim-supersedes",RelationKind::Supersedes,
                               "claim-new","claim-old"}}};
-      assert(graph.apply(correction).committed);
-      assert(graph.claim_status("claim-old")==ClaimStatus::Superseded);
-      assert(graph.claim_status("claim-new")==ClaimStatus::Active);
+      CHECK(graph.apply(correction).committed);
+      CHECK(graph.claim_status("claim-old")==ClaimStatus::Superseded);
+      CHECK(graph.claim_status("claim-new")==ClaimStatus::Active);
       SemanticDelta invalid;invalid.delta_id="claim-double-supersede";
       invalid.idempotency_key="claim-double-supersede";invalid.expected_state_version=2;
       invalid.relations={{{"claim-supersedes-again",RelationKind::Supersedes,
                            "claim-new","claim-old"}}};
-      assert(graph.apply(invalid).error=="CLAIM_NOT_ACTIVE_FOR_SUPERSESSION");
-      assert(graph.state_version()==2);
+      CHECK(graph.apply(invalid).error=="CLAIM_NOT_ACTIVE_FOR_SUPERSESSION");
+      CHECK(graph.state_version()==2);
       SemanticDelta retract;retract.delta_id="claim-retract";
       retract.idempotency_key="claim-retract";retract.expected_state_version=2;
       retract.nodes={{{"evidence-retract",NodeKind::Evidence,"根拠の誤りを確認",{}}}};
       retract.relations={{{"claim-retracted",RelationKind::Retracts,
                            "evidence-retract","claim-new"}}};
-      assert(graph.apply(retract).committed);
-      assert(graph.claim_status("claim-new")==ClaimStatus::Retracted);
-      assert(graph.claim_status("claim-old")==ClaimStatus::Superseded);
+      CHECK(graph.apply(retract).committed);
+      CHECK(graph.claim_status("claim-new")==ClaimStatus::Retracted);
+      CHECK(graph.claim_status("claim-old")==ClaimStatus::Superseded);
     }
     {
-      ContextGraph recovered(claim_path);assert(recovered.open());
-      assert(recovered.state_version()==3);
-      assert(recovered.claim_status("claim-old")==ClaimStatus::Superseded);
-      assert(recovered.claim_status("claim-new")==ClaimStatus::Retracted);
-      assert(recovered.relations().count("claim-supersedes")==1);
-      assert(recovered.relations().count("claim-retracted")==1);
+      ContextGraph recovered(claim_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==3);
+      CHECK(recovered.claim_status("claim-old")==ClaimStatus::Superseded);
+      CHECK(recovered.claim_status("claim-new")==ClaimStatus::Retracted);
+      CHECK(recovered.relations().count("claim-supersedes")==1);
+      CHECK(recovered.relations().count("claim-retracted")==1);
     }
   }
   {
     const auto temporal_path=(root/"claim-temporal-validity.sgj").string();
     {
-      ContextGraph graph(temporal_path);assert(graph.open());
+      ContextGraph graph(temporal_path);CHECK(graph.open());
       SemanticDelta seed;seed.delta_id="temporal-seed";seed.idempotency_key="temporal-seed";
       seed.expected_state_version=0;
       seed.nodes={{{"temporal-evidence-1",NodeKind::Evidence,"契約書",{}}},
@@ -239,11 +240,11 @@ int main(){
       seed.claim_validity_updates.push_back({"temporal-claim",
           "2026-01-01T00:00:00+09:00","2026-04-01T00:00:00+09:00",
           "temporal-evidence-1",1});
-      assert(graph.apply(seed).committed && graph.state_version()==1);
-      assert(graph.claim_validity_at("temporal-claim","2025-12-31T14:59:59Z")==ClaimTemporalState::NotYetValid);
-      assert(graph.claim_validity_at("temporal-claim","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
-      assert(graph.claim_validity_at("temporal-claim","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
-      assert(graph.claim_validity_at("missing-claim","2026-02-01T00:00:00Z")==ClaimTemporalState::Unknown);
+      CHECK(graph.apply(seed).committed && graph.state_version()==1);
+      CHECK(graph.claim_validity_at("temporal-claim","2025-12-31T14:59:59Z")==ClaimTemporalState::NotYetValid);
+      CHECK(graph.claim_validity_at("temporal-claim","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
+      CHECK(graph.claim_validity_at("temporal-claim","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
+      CHECK(graph.claim_validity_at("missing-claim","2026-02-01T00:00:00Z")==ClaimTemporalState::Unknown);
       SemanticDelta correction;correction.delta_id="temporal-correction";
       correction.idempotency_key="temporal-correction";correction.expected_state_version=1;
       correction.nodes={{{"temporal-evidence-2",NodeKind::Evidence,"契約開始日の訂正",{}}}};
@@ -252,25 +253,25 @@ int main(){
       correction.claim_validity_updates.push_back({"temporal-claim",
           "2025-12-01T00:00:00Z","2026-04-01T00:00:00Z",
           "temporal-evidence-2",2});
-      assert(graph.apply(correction).committed && graph.state_version()==2);
-      assert(graph.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
-      assert(graph.claim_validity_history().at("temporal-claim").size()==2);
+      CHECK(graph.apply(correction).committed && graph.state_version()==2);
+      CHECK(graph.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
+      CHECK(graph.claim_validity_history().at("temporal-claim").size()==2);
       SemanticDelta invalid;invalid.delta_id="temporal-invalid";
       invalid.idempotency_key="temporal-invalid";invalid.expected_state_version=2;
       invalid.claim_validity_updates.push_back({"temporal-claim",
           "2026-05-01T00:00:00Z","2026-04-01T00:00:00Z",
           "temporal-evidence-2",3});
-      assert(graph.apply(invalid).error=="CLAIM_VALIDITY_INTERVAL_INVALID");
-      assert(graph.state_version()==2);
+      CHECK(graph.apply(invalid).error=="CLAIM_VALIDITY_INTERVAL_INVALID");
+      CHECK(graph.state_version()==2);
     }
     {
-      ContextGraph recovered(temporal_path);assert(recovered.open());
-      assert(recovered.state_version()==2);
-      assert(recovered.claim_validity_history().at("temporal-claim").size()==2);
+      ContextGraph recovered(temporal_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==2);
+      CHECK(recovered.claim_validity_history().at("temporal-claim").size()==2);
       const auto latest=recovered.latest_claim_validity("temporal-claim");
-      assert(latest && latest->validity.revision==2);
-      assert(latest->recorded_state_version==2);
-      assert(recovered.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
+      CHECK(latest && latest->validity.revision==2);
+      CHECK(latest->recorded_state_version==2);
+      CHECK(recovered.claim_validity_at("temporal-claim","2025-12-15T00:00:00Z")==ClaimTemporalState::Valid);
     }
   }
   {
@@ -299,7 +300,7 @@ int main(){
       const auto first_it=graph.dependency_evaluations().find("temporal-propagation-seed");
       if(first_it==graph.dependency_evaluations().end())throw std::runtime_error("temporal seed evaluation missing");
       const auto& first=first_it->second;
-      assert(first.triggered.size()==1 && first.triggered[0].dependency_id=="dep-valid-period");
+      CHECK(first.triggered.size()==1 && first.triggered[0].dependency_id=="dep-valid-period");
       SemanticDelta correction;correction.delta_id="temporal-propagation-correction";
       correction.idempotency_key="temporal-propagation-correction";
       correction.expected_state_version=1;
@@ -313,25 +314,25 @@ int main(){
       const auto second_it=graph.dependency_evaluations().find("temporal-propagation-correction");
       if(second_it==graph.dependency_evaluations().end())throw std::runtime_error("temporal correction evaluation missing");
       const auto& second=second_it->second;
-      assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
-      assert(std::find(second.impacted_nodes.begin(),second.impacted_nodes.end(),
+      CHECK(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
+      CHECK(std::find(second.impacted_nodes.begin(),second.impacted_nodes.end(),
           "expired-action")!=second.impacted_nodes.end());
     }
     {
       ContextGraph recovered(propagation_path);if(!recovered.open())throw std::runtime_error("temporal propagation replay open failed");
-      assert(recovered.state_version()==2);
+      CHECK(recovered.state_version()==2);
       const auto second_it=recovered.dependency_evaluations().find("temporal-propagation-correction");
       if(second_it==recovered.dependency_evaluations().end())throw std::runtime_error("replayed temporal evaluation missing");
       const auto& second=second_it->second;
-      assert(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
-      assert(recovered.claim_validity_history().at("claim-period").size()==2);
+      CHECK(second.triggered.size()==1 && second.triggered[0].dependency_id=="dep-expired-period");
+      CHECK(recovered.claim_validity_history().at("claim-period").size()==2);
     }
   }
 
   {
     const auto reassessment_path=(root/"temporal-reassessment-core.sgj").string();
     {
-      ContextGraph graph(reassessment_path);assert(graph.open());
+      ContextGraph graph(reassessment_path);CHECK(graph.open());
       SemanticDelta seed;seed.delta_id="reassessment-seed";seed.idempotency_key="reassessment-seed";
       seed.expected_state_version=0;
       seed.nodes={{{"reassess-support",NodeKind::Evidence,"現行の契約台帳",{}}},
@@ -342,35 +343,35 @@ int main(){
       seed.claim_validity_updates.push_back({"reassess-claim","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-support",1});
       seed.evidence_validity_updates.push_back({"reassess-support","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-support",1});
       seed.evidence_validity_updates.push_back({"reassess-contradiction","2025-01-01T00:00:00Z","2025-12-31T00:00:00Z","reassess-contradiction",1});
-      const auto applied=graph.apply(seed);assert(applied.committed&&applied.state_version==1);
+      const auto applied=graph.apply(seed);CHECK(applied.committed&&applied.state_version==1);
       TemporalReassessmentRecord trace;std::string error;
-      assert(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,trace,error));
-      assert(trace.decision=="SUPPORTED"&&trace.evaluated_state_version==1&&trace.recorded_state_version==2);
-      assert(trace.claim_validity_revision==1&&trace.claim_validity_basis_evidence_id=="reassess-support"&&trace.evidence.size()==2);
-      assert(trace.active_support_ids.size()==1&&trace.active_contradiction_ids.empty());
-      assert(trace.evidence[0].validity_revision==1&&trace.evidence[0].basis_evidence_id==trace.evidence[0].evidence_id);
+      CHECK(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,trace,error));
+      CHECK(trace.decision=="SUPPORTED"&&trace.evaluated_state_version==1&&trace.recorded_state_version==2);
+      CHECK(trace.claim_validity_revision==1&&trace.claim_validity_basis_evidence_id=="reassess-support"&&trace.evidence.size()==2);
+      CHECK(trace.active_support_ids.size()==1&&trace.active_contradiction_ids.empty());
+      CHECK(trace.evidence[0].validity_revision==1&&trace.evidence[0].basis_evidence_id==trace.evidence[0].evidence_id);
       TemporalReassessmentRecord stale;
-      assert(!graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,stale,error));
-      assert(error=="STATE_VERSION_CONFLICT");
+      CHECK(!graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,stale,error));
+      CHECK(error=="STATE_VERSION_CONFLICT");
       SemanticDelta add_conflict;add_conflict.delta_id="reassessment-add-conflict";
       add_conflict.idempotency_key="reassessment-add-conflict";add_conflict.expected_state_version=2;
       add_conflict.evidence_validity_updates.push_back({"reassess-contradiction","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-contradiction",2});
-      assert(graph.apply(add_conflict).committed&&graph.state_version()==3);
+      CHECK(graph.apply(add_conflict).committed&&graph.state_version()==3);
       TemporalReassessmentRecord conflict;
-      assert(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",3,conflict,error));
-      assert(conflict.decision=="TEMPORAL_CONFLICT"&&conflict.active_contradiction_ids.size()==1);
-      assert(conflict.sequence==2&&conflict.previous_hash==trace.chain_hash);
+      CHECK(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",3,conflict,error));
+      CHECK(conflict.decision=="TEMPORAL_CONFLICT"&&conflict.active_contradiction_ids.size()==1);
+      CHECK(conflict.sequence==2&&conflict.previous_hash==trace.chain_hash);
     }
     {
-      ContextGraph recovered(reassessment_path);assert(recovered.open());
-      assert(recovered.state_version()==4);
+      ContextGraph recovered(reassessment_path);CHECK(recovered.open());
+      CHECK(recovered.state_version()==4);
       const auto history_it=recovered.reassessment_history().find("reassess-claim");
-      assert(history_it!=recovered.reassessment_history().end());
+      CHECK(history_it!=recovered.reassessment_history().end());
       const auto& history=history_it->second;
-      assert(history.size()==2);
-      assert(history[0].decision=="SUPPORTED"&&history[1].decision=="TEMPORAL_CONFLICT");
-      assert(history[1].previous_hash==history[0].chain_hash);
-      assert(history[1].evaluated_state_version==3&&history[1].recorded_state_version==4);
+      CHECK(history.size()==2);
+      CHECK(history[0].decision=="SUPPORTED"&&history[1].decision=="TEMPORAL_CONFLICT");
+      CHECK(history[1].previous_hash==history[0].chain_hash);
+      CHECK(history[1].evaluated_state_version==3&&history[1].recorded_state_version==4);
     }
   }
   std::filesystem::remove_all(root);

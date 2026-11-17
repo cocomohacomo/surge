@@ -13,6 +13,7 @@ struct TemporalBoundaryPending {
  std::vector<std::string> evidence_ids,packet_ids;
  std::vector<TemporalBoundaryCandidate> candidates;
  std::map<std::string,std::string> selected_candidate_ids;
+ std::map<std::string,std::string> selected_through_candidate_ids;
 };
 struct TemporalBoundaryLedgerResult {
  bool committed{false},duplicate{false}; std::uint64_t state_version{0};

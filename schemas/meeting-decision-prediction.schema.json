@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:meeting-decision-prediction:0.1",
+  "title": "Meeting decision adapter prediction record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "source_sha256", "decision", "items"],
+  "properties": {
+    "case_id": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "decision": {"enum": ["ACCEPT", "REVIEW", "ABSTAIN"]},
+    "items": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/item"}
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "owner", "deadline", "evidence_quote", "evidence_start", "evidence_end", "source_sha256"],
+      "properties": {
+        "action": {"type": "string", "minLength": 1},
+        "owner": {"type": ["string", "null"]},
+        "deadline": {"type": ["string", "null"]},
+        "evidence_quote": {"type": "string", "minLength": 1},
+        "evidence_start": {"type": "integer", "minimum": 0},
+        "evidence_end": {"type": "integer", "minimum": 1},
+        "source_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+      }
+    }
+  }
+}
