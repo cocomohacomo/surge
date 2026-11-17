@@ -1,7 +1,7 @@
-# SURGE v0.9 Implementation Map v0.1
+# SURGE Implementation Map v0.2
 
 **Snapshot:** main `9dd72cd8eac843083fd62b2966e049fde85b588d` (2026-11-17)  
-**Normative target:** `SPECIFICATION_v0.9.md`  
+**Normative target:** `SPECIFICATION_v1.0.md` (cognitive model), `SPECIFICATION_v0.9.md` (execution baseline)  
 **Purpose:** one-page entry point for adopters. A feature is "implemented" only when code, regression coverage and a passing CI path are present. Open PRs and design documents alone do not count.
 
 ## Status at a glance
@@ -20,7 +20,7 @@
 | Recognition scoring | ACCEPT / REVIEW / ABSTAIN | **Implemented policy boundary** | 50 authored regression cases are not an independent gold corpus |
 | Recognition Engine | text-to-Claim/ScopeSpan extraction | **Partially integrated** | provider adapter exists; independent semantic accuracy not established |
 | Benchmark / quality gate | immutable profile, coverage, risk, critical recall, invariants | **Evaluator implemented, corpus absent** | meeting-decision JSONL adapter/evaluator and schemas are present; no independent gold corpus or comparative result yet |
-| Persistence / operations | crash durability, lock, backup, migration | **Prototype only** | fsync, process lock, snapshot/compaction, restore drill, migration guarantees incomplete |
+| Chaos Cluster | open-world membership, lifecycle, associations, PatternHypothesis, promotion/fork/split | **C++ persistent ledger implemented (initial tranche)** | C ABI/Python bridge, score observations, Focus/retrieval integration, diversity ranking and full CC01-CC20 runtime suite remain open |\n| Persistence / operations | crash durability, lock, backup, migration | **Prototype only** | fsync, process lock, snapshot/compaction, restore drill, migration guarantees incomplete |
 | Model performance | end-to-end RTF, p99, RSS | **Unmeasured** | no production claim until measured on declared hardware/model |
 
 ## What currently runs
@@ -48,3 +48,4 @@
 5. Only after reproducible benefit is shown, close multi-process locking, crash durability, backup/restore and migration gaps before production deployment.
 
 Latest verified main CI: 15/15 CTest targets, 168/168 Python tests, 5/5 v0.9 schemas and 20/20 fixture structural contracts. The main CI run is associated with the snapshot commit above.\n\nSee [Meeting Decision Evaluation Protocol v0.1](../evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md).
+\n\n## Chaos Cluster v1.0 implementation increment\n\nSee [Chaos Cluster Core Implementation v1.0](CHAOS_CLUSTER_CORE_IMPLEMENTATION_v1.0.md). The C++ ledger now supports replayable cluster/member/association snapshots, append-only association review history, PatternHypothesis, subset promotion, fork and split. This does not yet mean all v1.0 operations are available through C ABI or Python.\n
