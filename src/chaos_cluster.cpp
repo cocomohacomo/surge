@@ -424,8 +424,12 @@ ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const
   return true;
  };
  if(!validate_refs(h.member_refs)||!validate_refs(h.excluded_member_refs)||
-    !validate_refs(h.counterexample_refs)||!validate_refs(h.alternative_hypothesis_refs))
+    !validate_refs(h.counterexample_refs))
   return{false,false,state_version(),"PATTERN_HYPOTHESIS_REFERENCE_INVALID"};
+ std::set<std::string>alternative_refs;
+ for(const auto&ref:h.alternative_hypothesis_refs)
+  if(ref.empty()||ref==h.hypothesis_id||!alternative_refs.insert(ref).second)
+   return{false,false,state_version(),"PATTERN_HYPOTHESIS_ALTERNATIVE_REFERENCE_INVALID"};
  for(const auto&reason:h.exclusion_reasons){
   if(reason.second.empty()||std::find(h.excluded_member_refs.begin(),h.excluded_member_refs.end(),reason.first)==h.excluded_member_refs.end())
    return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID"};
