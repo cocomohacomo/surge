@@ -48,3 +48,8 @@ This API never applies its proposals. It does not change QuestionAspect status, 
 The Python bridge method `apply_question_reevaluation_plan(plan, aspect_ids=None)` applies selected proposals in one EventJournal transaction. The plan State Version is mandatory. Core rejects stale plans, unknown or duplicate Aspect IDs, archived Question references, and invalid statuses. Before accepting RESOLVED, Core independently rebuilds the Question/Aspect topic association and verifies an ACTIVE Claim has SUPPORTS Evidence and no CONTRADICTS, CONFLICTS_WITH, or RETRACTS relation touches the associated Claims.
 
 All changed Aspect statuses are persisted as one QUESTION_ASPECT_STATUS_BATCH_SET event. Replay applies the batch as one state-version transition. An invalid member rejects the entire batch; no partial Aspect updates are visible. This operation does not alter Claim validity/status, Question memory, Focus, or dependency graph structure.
+
+
+## Retraction-aware Question reevaluation
+
+Question reevaluation proposals expose supporting Evidence IDs, retracted Claim IDs, and conflict Relation IDs used by the decision. A `RETRACTS` relation from Evidence to an associated Claim is reported as `RETRACTED_EVIDENCE` and keeps the Aspect OPEN. Core repeats this check at apply time and rejects a forged or stale RESOLVED proposal with `QUESTION_REEVALUATION_EVIDENCE_RETRACTED`. A retracted Claim cannot count as supporting evidence even if an earlier SUPPORTS relation remains in the graph.

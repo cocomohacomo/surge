@@ -442,6 +442,52 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 with self.assertRaisesRegex(PacketRejected, "STATE_VERSION_CONFLICT"):
                     core.apply_question_reevaluation_plan(plan)
 
+    def test_question_reevaluation_retracted_evidence_is_exposed_and_blocks_apply(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-retracted-evidence.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "retracted-seed", "idempotency_key": "retracted-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/retracted", "kind": "QUESTION", "content": "Is the claim still valid?"},
+                        {"id": "cl/retracted", "kind": "CLUSTER", "content": "Validity"},
+                        {"id": "a/retracted", "kind": "QUESTION_ASPECT", "content": "Validity", "references": ["q/retracted"]},
+                        {"id": "e/support", "kind": "EVIDENCE", "content": "Original record"},
+                        {"id": "c/target", "kind": "CLAIM", "content": "Original claim", "references": ["e/support"]},
+                        {"id": "e/retraction", "kind": "EVIDENCE", "content": "Withdrawal notice"},
+                        {"id": "c/retractor", "kind": "CLAIM", "content": "The original claim is withdrawn", "references": ["e/retraction"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "retracted-links", "idempotency_key": "retracted-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/question-topic", "kind": "ABOUT", "from": "q/retracted", "to": "cl/retracted"},
+                        {"id": "r/claim-topic", "kind": "ABOUT", "from": "c/target", "to": "cl/retracted"},
+                        {"id": "r/support", "kind": "SUPPORTS", "from": "e/support", "to": "c/target"},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "retracted-event", "idempotency_key": "retracted-event",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/retracts", "kind": "RETRACTS", "from": "e/retraction", "to": "c/target"},
+                    ],
+                })
+                plan = core.plan_question_reevaluation("q/retracted")
+                proposal = plan["aspect_proposals"][0]
+                self.assertEqual(proposal["proposed_status"], "OPEN")
+                self.assertEqual(proposal["reason"], "RETRACTED_EVIDENCE")
+                self.assertEqual(proposal["supporting_evidence_ids"], [])
+                self.assertEqual(proposal["retracted_claim_ids"], ["c/target"])
+                self.assertEqual(proposal["conflict_relation_ids"], ["r/retracts"])
+                forged = dict(plan)
+                forged["aspect_proposals"] = [dict(proposal, proposed_status="RESOLVED")]
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_REEVALUATION_EVIDENCE_RETRACTED"):
+                    core.apply_question_reevaluation_plan(forged)
+                self.assertEqual(core.get_question_aspect("a/retracted")["status"], "OPEN")
+
     def test_question_reevaluation_candidates_are_bounded_read_only_and_persistent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-reevaluation.sgj"

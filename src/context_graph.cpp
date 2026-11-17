@@ -477,7 +477,7 @@ bool ContextGraph::apply_question_aspect_statuses(
         if (source != state_.nodes.end() && source->second.kind == NodeKind::Claim) claims.insert(edge.from);
       }
     }
-    bool supported = false, contradicted = false;
+    bool supported = false, contradicted = false, retracted_support = false;
     for (const auto& rel : state_.relations) {
       const auto& edge = rel.second;
       if (edge.kind == RelationKind::Supports) {
@@ -490,11 +490,16 @@ bool ContextGraph::apply_question_aspect_statuses(
         if (claims.count(claim_id) && claim_status(claim_id) == ClaimStatus::Active) supported = true;
       }
       if (edge.kind == RelationKind::Contradicts || edge.kind == RelationKind::ConflictsWith ||
-          edge.kind == RelationKind::Retracts)
-        if (claims.count(edge.from) || claims.count(edge.to)) contradicted = true;
+          edge.kind == RelationKind::Retracts) {
+        if (claims.count(edge.from) || claims.count(edge.to)) {
+          contradicted = true;
+          if (edge.kind == RelationKind::Retracts) retracted_support = true;
+        }
+      }
     }
     if (!supported || contradicted) {
-      error = contradicted ? "QUESTION_REEVALUATION_CONFLICT_REMAINS" : "QUESTION_REEVALUATION_SUPPORT_MISSING";
+      error = retracted_support ? "QUESTION_REEVALUATION_EVIDENCE_RETRACTED" :
+          contradicted ? "QUESTION_REEVALUATION_CONFLICT_REMAINS" : "QUESTION_REEVALUATION_SUPPORT_MISSING";
       return false;
     }
   }
