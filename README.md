@@ -141,3 +141,10 @@ The Core can discover bounded, direct and transitive dependent Questions without
 
 Capacity enforcement can atomically demote the lowest-scoring active Questions when the configured active-memory limit is exceeded. Scores are required for every currently active Question; ties are resolved by Question ID. See [Question Memory Capacity Enforcement v0.1](docs/surge/QUESTION_MEMORY_CAPACITY_ENFORCEMENT_v0.1.md).
 \n\n## Core-derived Question memory planning\n\n`plan_question_memory_capacity(max_active)` is a read-only Core operation that ranks ACTIVE Questions from durable contradiction links, current Focus interest, QuestionAspect lifecycle, aspect-count recurrence proxy, and a neutral recency factor. Questions participating in a Question dependency edge receive a minimum retention score of 0.75. The result includes factor breakdowns and proposed DORMANT candidates; it never changes state. Recency is deliberately neutral because the Core does not infer wall-clock time. Apply a reviewed plan separately with `enforce_question_memory_capacity` and the returned `state_version`.\n
+
+## Compact Recognition Engine
+
+- **Compact local model interface v0.1:** [docs/surge/COMPACT_RECOGNITION_ENGINE_v0.1.md](docs/surge/COMPACT_RECOGNITION_ENGINE_v0.1.md)
+- Default model artifact ceiling: 30 MiB; target CPU RTF < 0.01, subject to hardware-specific benchmark.
+- Backend-neutral typed candidate interface, SHA-256 artifact identity, measured RTF reporting and deterministic fake-backend tests.
+- No model weights or inference runtime are bundled; the interface does not claim the target has been achieved until a real model is benchmarked.

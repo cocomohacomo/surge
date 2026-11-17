@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:schema:compact-model-profile:0.1.0",
+  "title": "SURGE Compact Recognition Model Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "model_id", "version", "artifact_bytes", "sha256", "runtime_id", "device", "target_rtf"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "model_id": {"type": "string", "minLength": 1},
+    "version": {"type": "string", "minLength": 1},
+    "artifact_bytes": {"type": "integer", "minimum": 1, "maximum": 31457280},
+    "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "runtime_id": {"type": "string", "minLength": 1},
+    "device": {"enum": ["CPU", "GPU", "NPU", "AUTO"]},
+    "target_rtf": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.01}
+  }
+}

@@ -1,0 +1,303 @@
+"""Compact, replaceable local Recognition Engine boundary.
+
+The backend is deliberately injected: this module does not bundle a model or
+runtime. It verifies the model artifact and measures end-to-end inference RTF
+against the source media duration supplied by the caller.
+"""
+from __future__ import annotations
+
+import hashlib
+import math
+import time
+import unicodedata
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol, Sequence
+from jsonschema import Draft202012Validator, FormatChecker
+
+
+DEFAULT_MODEL_LIMIT_BYTES = 30 * 1024 * 1024
+DEFAULT_RTF_TARGET = 0.01
+
+
+@dataclass(frozen=True)
+class CompactModelSpec:
+    model_id: str
+    version: str
+    artifact_path: str
+    artifact_bytes: int
+    sha256: str
+    runtime_id: str
+    device: str = "CPU"
+    max_model_bytes: int = DEFAULT_MODEL_LIMIT_BYTES
+    target_rtf: float = DEFAULT_RTF_TARGET
+
+    def verify_artifact(self) -> None:
+        path = Path(self.artifact_path)
+        if not path.is_file():
+            raise ValueError("MODEL_ARTIFACT_NOT_FOUND")
+        size = path.stat().st_size
+        if size != self.artifact_bytes or size <= 0 or size > self.max_model_bytes:
+            raise ValueError("MODEL_ARTIFACT_SIZE_CHANGED")
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != self.sha256:
+            raise ValueError("MODEL_ARTIFACT_DIGEST_CHANGED")
+
+    @classmethod
+    def inspect(cls, model_id: str, version: str, artifact_path: str, *,
+                runtime_id: str, device: str = "CPU",
+                max_model_bytes: int = DEFAULT_MODEL_LIMIT_BYTES,
+                target_rtf: float = DEFAULT_RTF_TARGET) -> "CompactModelSpec":
+        path = Path(artifact_path)
+        if not path.is_file():
+            raise ValueError("MODEL_ARTIFACT_NOT_FOUND")
+        size = path.stat().st_size
+        if size <= 0:
+            raise ValueError("MODEL_ARTIFACT_EMPTY")
+        if size > max_model_bytes:
+            raise ValueError("MODEL_ARTIFACT_SIZE_LIMIT")
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if not model_id or not version or not runtime_id:
+            raise ValueError("MODEL_DESCRIPTOR_REQUIRED")
+        if isinstance(max_model_bytes, bool) or not isinstance(max_model_bytes, int) or max_model_bytes <= 0:
+            raise ValueError("MODEL_SIZE_LIMIT_INVALID")
+        if device not in ("CPU", "GPU", "NPU", "AUTO"):
+            raise ValueError("MODEL_DEVICE_INVALID")
+        if isinstance(target_rtf, bool) or not math.isfinite(target_rtf) or target_rtf <= 0:
+            raise ValueError("MODEL_RTF_TARGET_INVALID")
+        return cls(model_id, version, str(path.resolve()), size, digest.hexdigest(),
+                   runtime_id, device, max_model_bytes, float(target_rtf))
+
+
+@dataclass(frozen=True)
+class RecognitionCandidate:
+    kind: str
+    topic: str | None
+    proposition: str | None
+    polarity: str
+    conditional: bool
+    confidence: float
+    ambiguity: float
+    importance: float
+    start_offset: int = 0
+    end_offset: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.kind or self.polarity not in ("POSITIVE", "NEGATIVE", "UNKNOWN"):
+            raise ValueError("RECOGNITION_CANDIDATE_LABEL_INVALID")
+        if not isinstance(self.conditional, bool):
+            raise ValueError("RECOGNITION_CANDIDATE_CONDITIONAL_INVALID")
+        for name in ("confidence", "ambiguity", "importance"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError("RECOGNITION_CANDIDATE_SCORE_INVALID:" + name)
+        if self.start_offset < 0 or self.end_offset < self.start_offset:
+            raise ValueError("RECOGNITION_CANDIDATE_OFFSET_INVALID")
+
+
+class CompactModelBackend(Protocol):
+    """Backend contract for ONNX Runtime, custom C/C++, or another local engine."""
+    def recognize(self, text: str, context: dict[str, Any] | None = None) -> Sequence[RecognitionCandidate]: ...
+
+
+@dataclass(frozen=True)
+class RecognitionExecution:
+    model_id: str
+    model_bytes: int
+    elapsed_seconds: float
+    audio_duration_seconds: float | None
+    rtf: float | None
+    target_rtf: float
+    performance_target_met: bool | None
+    candidates: tuple[RecognitionCandidate, ...]
+    source_digest: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "model_id": self.model_id,
+            "model_bytes": self.model_bytes,
+            "elapsed_seconds": self.elapsed_seconds,
+            "audio_duration_seconds": self.audio_duration_seconds,
+            "rtf": self.rtf,
+            "target_rtf": self.target_rtf,
+            "performance_target_met": self.performance_target_met,
+            "source_digest": self.source_digest,
+            "candidates": [
+                {
+                    "kind": c.kind, "topic": c.topic, "proposition": c.proposition,
+                    "polarity": c.polarity, "conditional": c.conditional,
+                    "confidence": c.confidence, "ambiguity": c.ambiguity,
+                    "importance": c.importance, "start_offset": c.start_offset,
+                    "end_offset": c.end_offset,
+                } for c in self.candidates
+            ],
+        }
+
+
+class CompactRecognitionRuntime:
+    """Runs a verified compact model and returns proposals, never Core writes."""
+    def __init__(self, spec: CompactModelSpec, backend: CompactModelBackend):
+        spec.verify_artifact()
+        self.spec = spec
+        self.backend = backend
+
+    def recognize(self, text: str, context: dict[str, Any] | None = None, *,
+                  audio_duration_seconds: float | None = None) -> RecognitionExecution:
+        if not isinstance(text, str) or not text.strip() or "\x00" in text:
+            raise ValueError("RECOGNITION_INPUT_INVALID")
+        if audio_duration_seconds is not None:
+            if (isinstance(audio_duration_seconds, bool) or
+                not isinstance(audio_duration_seconds, (int, float)) or
+                not math.isfinite(audio_duration_seconds) or audio_duration_seconds <= 0):
+                raise ValueError("AUDIO_DURATION_INVALID")
+        normalized_text = unicodedata.normalize("NFC", text)
+        started = time.perf_counter()
+        candidates = tuple(self.backend.recognize(normalized_text, context or {}))
+        elapsed = time.perf_counter() - started
+        if not all(isinstance(item, RecognitionCandidate) for item in candidates):
+            raise ValueError("BACKEND_CANDIDATE_TYPE_INVALID")
+        source_bytes = len(normalized_text.encode("utf-8"))
+        if any(item.end_offset > source_bytes for item in candidates):
+            raise ValueError("BACKEND_CANDIDATE_OFFSET_OUT_OF_RANGE")
+        rtf = elapsed / float(audio_duration_seconds) if audio_duration_seconds is not None else None
+        return RecognitionExecution(
+            self.spec.model_id, self.spec.artifact_bytes, elapsed,
+            float(audio_duration_seconds) if audio_duration_seconds is not None else None,
+            rtf, self.spec.target_rtf,
+            (rtf < self.spec.target_rtf) if rtf is not None else None,
+            candidates, hashlib.sha256(normalized_text.encode("utf-8")).hexdigest(),
+        )
+
+
+def summarize_rtf(executions: Sequence[RecognitionExecution]) -> dict[str, Any]:
+    """Aggregate measured executions; no synthetic timing or inferred duration."""
+    measured = [item.rtf for item in executions if item.rtf is not None]
+    if not measured:
+        return {"sample_count": len(executions), "measured_count": 0,
+                "target_rtf": executions[0].target_rtf if executions else DEFAULT_RTF_TARGET,
+                "mean_rtf": None, "max_rtf": None, "target_pass": None}
+    target = executions[0].target_rtf
+    if any(item.target_rtf != target for item in executions):
+        raise ValueError("BENCHMARK_TARGET_MISMATCH")
+    return {
+        "sample_count": len(executions), "measured_count": len(measured),
+        "target_rtf": target, "mean_rtf": sum(measured) / len(measured),
+        "max_rtf": max(measured), "target_pass": (all(value < target for value in measured) if len(measured) == len(executions) else None),
+    }
+
+
+@dataclass(frozen=True)
+class RecognitionPacketMetadata:
+    """Caller-owned source identity and Core context required to build a packet."""
+    packet_id: str
+    idempotency_key: str
+    context_id: str
+    source_id: str
+    block_ref: str
+    source_order: int
+    source_generation: str
+    source_sequence: int
+    state_version: int
+    adapter_id: str
+    adapter_version: str
+    capability_descriptor_ref: str
+    language: str = "ja"
+    finalization: str = "FINAL"
+    temporal_mode: str = "CURRENT"
+    retrieval_reason: str = "recognition-engine"
+    offset_basis: str = "UTF8_BYTE_NFC"
+    source_revision_sequence: int | None = None
+    revision_of_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class RecognitionPacketBuild:
+    packet: dict[str, Any]
+    proposal_batch: dict[str, Any]
+
+
+def build_recognition_packet(source_text: str, execution: RecognitionExecution,
+                             metadata: RecognitionPacketMetadata) -> RecognitionPacketBuild:
+    """Create a schema-valid packet plus a candidate sidecar anchored to it.
+
+    No SemanticDelta is created and no Core state is changed. The sidecar is
+    intentionally separate because v0.9 RecognitionPacket is source-centric.
+    """
+    if not isinstance(source_text, str) or not source_text.strip():
+        raise ValueError("PACKET_SOURCE_TEXT_INVALID")
+    if metadata.finalization not in ("PARTIAL", "FINAL", "CONTINUATION", "REVISION"):
+        raise ValueError("PACKET_FINALIZATION_INVALID")
+    if metadata.finalization == "REVISION" and (not metadata.source_revision_sequence or not metadata.revision_of_ref):
+        raise ValueError("PACKET_REVISION_LINEAGE_REQUIRED")
+    if metadata.finalization != "REVISION" and (metadata.source_revision_sequence is not None or metadata.revision_of_ref is not None):
+        raise ValueError("PACKET_REVISION_FIELDS_REQUIRE_REVISION")
+    normalized = unicodedata.normalize("NFC", source_text)
+    raw = normalized.encode("utf-8")
+    if any(c.end_offset > len(raw) for c in execution.candidates):
+        raise ValueError("PACKET_CANDIDATE_RANGE_INVALID")
+    digest = hashlib.sha256(raw).hexdigest()
+    if execution.source_digest != digest:
+        raise ValueError("PACKET_EXECUTION_SOURCE_MISMATCH")
+    packet = {
+        "schema_version": "0.9.0",
+        "packet_id": metadata.packet_id,
+        "idempotency_key": metadata.idempotency_key,
+        "context_id": metadata.context_id,
+        "source_id": metadata.source_id,
+        "source_position": {
+            "block_ref": metadata.block_ref,
+            "start_offset": 0,
+            "end_offset": len(raw),
+            "offset_basis": metadata.offset_basis,
+            "source_order": metadata.source_order,
+            "source_generation": metadata.source_generation,
+            "source_sequence": metadata.source_sequence,
+            "source_range_digest": digest,
+            **({"source_revision_sequence": metadata.source_revision_sequence, "revision_of_ref": metadata.revision_of_ref} if metadata.finalization == "REVISION" else {}),
+        },
+        "structural": {"block_type": "TRANSCRIPT_TURN", "semantic_role": "MAIN_CONTENT"},
+        "content": {
+            "text": normalized,
+            "normalized_digest": digest,
+            "language": metadata.language,
+        },
+        "context_hint": {
+            "state_version": metadata.state_version,
+            "temporal_mode": metadata.temporal_mode,
+            "retrieval_reason": metadata.retrieval_reason,
+        },
+        "coverage": {"completeness": "COMPLETE"},
+        "adapter": {
+            "adapter_id": metadata.adapter_id,
+            "adapter_version": metadata.adapter_version,
+            "capability_descriptor_ref": metadata.capability_descriptor_ref,
+        },
+        "finalization": metadata.finalization,
+    }
+    schema_path = Path(__file__).resolve().parents[1] / "schemas" / "surge-v0.9-input.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(packet)
+    proposal_batch = {
+        "schema_version": "0.1.0",
+        "packet_id": metadata.packet_id,
+        "source_digest": digest,
+        "model_id": execution.model_id,
+        "model_bytes": execution.model_bytes,
+        "candidates": [
+            {
+                "kind": c.kind, "topic": c.topic, "proposition": c.proposition,
+                "polarity": c.polarity, "conditional": c.conditional,
+                "confidence": c.confidence, "ambiguity": c.ambiguity,
+                "importance": c.importance, "start_offset": c.start_offset,
+                "end_offset": c.end_offset,
+            } for c in execution.candidates
+        ],
+    }
+    return RecognitionPacketBuild(packet, proposal_batch)

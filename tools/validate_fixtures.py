@@ -15,8 +15,8 @@ def load(path):
 
 def main():
     schema_paths = sorted((ROOT / "schemas").glob("surge-v0.9-*.schema.json"))
-    if len(schema_paths) != 4:
-        raise AssertionError(f"expected 4 v0.9 schemas, got {len(schema_paths)}")
+    if len(schema_paths) != 5:
+        raise AssertionError(f"expected 5 v0.9 schemas, got {len(schema_paths)}")
     for path in schema_paths:
         schema = load(path)
         Draft202012Validator.check_schema(schema)
@@ -81,7 +81,7 @@ def main():
         raise AssertionError("D19 zero denominator must be inconclusive")
     if by_id["D20"]["expected"]["error"] != "BENCHMARK_PROFILE_IMMUTABLE":
         raise AssertionError("D20 profile immutability expectation missing")
-    print(f"JSON Schema Draft 2020-12: {len(schema_paths)}/3 schemas valid")
+    print(f"JSON Schema Draft 2020-12: {len(schema_paths)}/5 schemas valid")
     print(f"Conformance fixture inventory: {len(cases)}/20 cases valid")
     print(f"D01-D12 exact NFC UTF-8 ranges and SHA-256 digests derived: {packet_count} packets")
     print(f"D01-D20 fixture contract assertions: 20/20 structurally consistent")
