@@ -36,7 +36,7 @@ std::string ChaosClusterLedger::encode(const State&s){
  // Optional extension follows the v0.1-compatible base payload. Old snapshots remain readable.
  o<<"CC2 "<<s.size()<<' ';
  for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<on(c.organization)<<' ';wp(o,c.creation_provenance);
-  o<<c.associations.size()<<' ';for(const auto&x:c.associations){const auto&a=x.second;o<<std::quoted(a.first)<<' '<<a.second.history.size()<<' ';for(const auto&h:a.second.history){o<<sn(h.status)<<' ';wp(o,h.provenance);}}
+  o<<c.associations.size()<<' ';for(const auto&x:c.associations){const auto&a=x.second;o<<std::quoted(x.first)<<' '<<a.history.size()<<' ';for(const auto&h:a.history){o<<sn(h.status)<<' ';wp(o,h.provenance);}}
   o<<c.pattern_hypotheses.size()<<' ';for(const auto&x:c.pattern_hypotheses){const auto&h=x.second;o<<std::quoted(h.hypothesis_id)<<' '<<std::quoted(h.statement)<<' '<<std::quoted(h.epistemic_state)<<' '<<std::quoted(h.status)<<' ';auto vec=[&](const std::vector<std::string>&v){o<<v.size()<<' ';for(const auto&z:v)o<<std::quoted(z)<<' ';};vec(h.member_refs);vec(h.excluded_member_refs);vec(h.counterexample_refs);vec(h.alternative_hypothesis_refs);wp(o,h.provenance);}
  }
  return o.str();
@@ -49,9 +49,12 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   for(std::size_t x=0;x<nm;++x){ChaosMember m;if(!read_member(i,m)||!v.members.emplace(m.member_ref,m).second)return false;}
   if(!(i>>na)||na>1000000)return false;
   for(std::size_t x=0;x<na;++x){ChaosAssociation a;std::string t,st;if(!(i>>std::quoted(a.association_id)>>std::quoted(a.from_ref)>>std::quoted(a.to_ref)>>t>>st)||!pt(t,a.type)||!ps(st,a.status)||!rp(i,a.provenance)||a.association_id.empty()||!v.associations.emplace(a.association_id,a).second)return false;}
-  if(!(i>>np)||np>100000)return false;for(std::size_t x=0;x<np;++x){std::string a;if(!(i>>std::quoted(a)))return false;v.parent_refs.push_back(a);}
-  if(!(i>>nc)||nc>100000)return false;for(std::size_t x=0;x<nc;++x){std::string a;if(!(i>>std::quoted(a)))return false;v.child_refs.push_back(a);}
-  if(!(i>>npr)||npr>1000000)return false;for(std::size_t x=0;x<npr;++x){std::string a,b;if(!(i>>std::quoted(a)>>std::quoted(b))||!v.promoted_member_targets.emplace(a,b).second)return false;}
+  if(!(i>>np)||np>100000)return false;
+  for(std::size_t x=0;x<np;++x){std::string a;if(!(i>>std::quoted(a)))return false;v.parent_refs.push_back(a);}
+  if(!(i>>nc)||nc>100000)return false;
+  for(std::size_t x=0;x<nc;++x){std::string a;if(!(i>>std::quoted(a)))return false;v.child_refs.push_back(a);}
+  if(!(i>>npr)||npr>1000000)return false;
+  for(std::size_t x=0;x<npr;++x){std::string a,b;if(!(i>>std::quoted(a)>>std::quoted(b))||!v.promoted_member_targets.emplace(a,b).second)return false;}
  }
  std::string marker;if(!(i>>marker))return true;
  if(marker!="CC2")return false;
