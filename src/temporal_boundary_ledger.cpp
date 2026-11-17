@@ -35,8 +35,12 @@ void TemporalBoundaryLedger::refresh_pending(TemporalBoundaryPending&p)const{
    if(!selected){conflict=true;return nullptr;}
    // A later, conflicting contribution reopens review even after an earlier
    // candidate was selected. Selection is not a blanket waiver for new evidence.
-   for(auto*c:it->second)if(c->candidate_id!=selected->candidate_id&&
-      (c->valid_from!=selected->valid_from||c->valid_until!=selected->valid_until))conflict=true;
+   bool after_selected=false;
+   for(auto*c:it->second){
+    if(after_selected&&(c->valid_from!=selected->valid_from||c->valid_until!=selected->valid_until))
+     conflict=true;
+    if(c->candidate_id==selected->candidate_id)after_selected=true;
+   }
    return selected;
   }
   const auto&f=*it->second.front();for(auto*c:it->second)if(c->valid_from!=f.valid_from||c->valid_until!=f.valid_until)conflict=true;

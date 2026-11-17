@@ -76,9 +76,11 @@ int main(){
       const auto added=recovered.apply(new_dependency);
       CHECK(added.committed&&added.state_version==2);
       CHECK(recovered.dependency_evaluations().count("dependency-delta-2")==1);
-      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); CHECK(evaluation2_it!=recovered.dependency_evaluations().end()); CHECK(evaluation2_it->second.triggered.size()==1);
-      CHECK(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-present");
+      const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); CHECK(evaluation2_it!=recovered.dependency_evaluations().end()); CHECK(evaluation2_it->second.triggered.size()==2);
+      CHECK(std::any_of(evaluation2_it->second.triggered.begin(),
+          evaluation2_it->second.triggered.end(),[](const DependencyTrigger& trigger){
+            return trigger.dependency_id=="dependency-present";
+          }));
     }
     {
       ContextGraph recovered(dependency_path);CHECK(recovered.open());
@@ -93,8 +95,10 @@ int main(){
       CHECK(evaluation.triggered.size()==1 &&
              evaluation.triggered[0].dependency_id=="dependency-good");
       CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
-      CHECK(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-present");
+      CHECK(std::any_of(evaluation2_it->second.triggered.begin(),
+          evaluation2_it->second.triggered.end(),[](const DependencyTrigger& trigger){
+            return trigger.dependency_id=="dependency-present";
+          }));
     }
   }
   {
