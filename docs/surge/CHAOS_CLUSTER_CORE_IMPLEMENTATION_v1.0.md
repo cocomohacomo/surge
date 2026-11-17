@@ -74,3 +74,17 @@ membership revisions contribute to the response completeness flag and exact
 omission count. The C ABI and Python bridge expose the revision operation.
 Legacy snapshots without CC4 default to active UNCLASSIFIED membership with
 no synthesized history.
+
+
+## Entity-scoped orthogonal observations
+
+The optional `CC5` snapshot extension now stores score observations on
+individual members (Salience), associations (Confidence), and PatternHypotheses
+(Confidence), independently of cluster-level dimensions. All observations
+retain scorer identity/version, policy version, timestamp, and value, and are
+append-only with bounded histories. The generic C++ ledger operation is
+exposed as `surge_chaos_cluster_record_entity_observation` and through
+`SemanticCoreBridge.record_chaos_entity_observation`. The bounded JSON
+projection emits the latest schema observation plus a separate history object
+and includes omitted entity revisions in completeness metadata. Legacy
+snapshots without CC5 remain readable.
