@@ -1856,8 +1856,20 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
      <<",\"provenance\":"<<provenance(h.provenance)<<'}';
  }
  size_t omitted_observations=0;
+ auto observation_json=[](const surge::ChaosScoreObservation& v){
+  return std::string("{\"value\":")+([&](){std::ostringstream n;n<<std::setprecision(17)<<v.value;return n.str();})()+
+   ",\"scorer_id\":"+json_quote(v.scorer_id)+",\"scorer_version\":"+json_quote(v.scorer_version)+
+   ",\"policy_version\":"+json_quote(v.policy_version)+",\"observed_at\":"+json_quote(v.observed_at)+"}";
+ };
  out<<"],\"observations\":{";
  bool first_dimension=true;
+ for(const auto& dimension:c.observations){
+  if(dimension.second.empty())continue;
+  if(!first_dimension)out<<',';first_dimension=false;
+  out<<json_quote(dimension.first)<<':'<<observation_json(dimension.second.back());
+ }
+ out<<"},\"observation_history\":{";
+ first_dimension=true;
  for(const auto& dimension:c.observations){
   if(!first_dimension)out<<',';first_dimension=false;
   const auto& history=dimension.second;
@@ -1865,13 +1877,10 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   const size_t start=history.size()-count;
   omitted_observations+=start;
   out<<json_quote(dimension.first)<<":{\"history_offset\":"<<start<<",\"history\":[";
-  for(size_t i=start;i<history.size();++i){if(i>start)out<<',';const auto&v=history[i];
-   out<<"{\"value\":"<<std::setprecision(17)<<v.value<<",\"scorer_id\":"<<json_quote(v.scorer_id)
-      <<",\"scorer_version\":"<<json_quote(v.scorer_version)<<",\"policy_version\":"<<json_quote(v.policy_version)
-      <<",\"observed_at\":"<<json_quote(v.observed_at)<<'}';
-  }
+  for(size_t i=start;i<history.size();++i){if(i>start)out<<',';out<<observation_json(history[i]);}
   out<<"]}";
  }
+ out<<'}';
  out<<"],\"parent_refs\":[";
  for(size_t i=0;i<c.parent_refs.size();++i){if(i)out<<',';out<<json_quote(c.parent_refs[i]);}
  out<<"],\"child_refs\":[";
