@@ -195,20 +195,26 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                         observation={"value": value, "scorer_id": "retrieval-scorer",
                                      "scorer_version": "1", "policy_version": "salience-v1",
                                      "observed_at": f"2026-11-18T00:1{member_ref[-1]}:00Z"})
+                core.revise_chaos_membership(
+                    operation_id="remove-m3", idempotency_key="remove-m3",
+                    expected_state_version=core.state_version, cluster_id="chaos/focus",
+                    member_ref="m3", status="PROVISIONAL", active=False, provenance=provenance)
                 core.set_chaos_focus("chaos/focus", operation_id="focus",
                     idempotency_key="focus", expected_state_version=core.state_version)
-                result = ContextRetriever(core).retrieve_focus(max_members=3)
+                result = ContextRetriever(core).retrieve_focus(max_members=2)
                 self.assertEqual(result["target_kind"], "CHAOS_CLUSTER")
                 self.assertEqual([m["member_ref"] for m in result["target"]["members"]],
-                                 ["m1", "m2", "m3"])
+                                 ["m1", "m2"])
                 self.assertEqual(result["omitted_member_refs"], ["m0"])
+                self.assertEqual(result["excluded_inactive_member_refs"], ["m3"])
                 self.assertFalse(result["complete"])
                 self.assertEqual(result["retrieval_policy"], "SCORE_AWARE_DIVERSITY_ROUND_ROBIN")
             with SemanticCoreBridge(journal) as recovered:
                 result = ContextRetriever(recovered).retrieve_focus(max_members=10)
                 self.assertTrue(result["complete"])
                 self.assertEqual(result["target"]["cluster_id"], "chaos/focus")
-                self.assertEqual(len(result["target"]["members"]), 4)
+                self.assertEqual(len(result["target"]["members"]), 3)
+                self.assertEqual(result["excluded_inactive_member_refs"], ["m3"])
 
     def test_focus_retrieval_without_active_focus_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
