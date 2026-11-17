@@ -28,7 +28,17 @@ void TemporalBoundaryLedger::refresh_pending(TemporalBoundaryPending&p)const{
  for(const auto&c:p.candidates) { g[c.role].push_back(&c); }
  bool conflict=false;
  auto choose=[&](const std::string&r)->const TemporalBoundaryCandidate*{auto it=g.find(r);if(it==g.end()||it->second.empty())return nullptr;
-  auto sel=p.selected_candidate_ids.find(r);if(sel!=p.selected_candidate_ids.end()){for(auto*c:it->second)if(c->candidate_id==sel->second)return c;conflict=true;return nullptr;}
+  auto sel=p.selected_candidate_ids.find(r);
+  if(sel!=p.selected_candidate_ids.end()){
+   const TemporalBoundaryCandidate* selected=nullptr;
+   for(auto*c:it->second)if(c->candidate_id==sel->second){selected=c;break;}
+   if(!selected){conflict=true;return nullptr;}
+   // A later, conflicting contribution reopens review even after an earlier
+   // candidate was selected. Selection is not a blanket waiver for new evidence.
+   for(auto*c:it->second)if(c->candidate_id!=selected->candidate_id&&
+      (c->valid_from!=selected->valid_from||c->valid_until!=selected->valid_until))conflict=true;
+   return selected;
+  }
   const auto&f=*it->second.front();for(auto*c:it->second)if(c->valid_from!=f.valid_from||c->valid_until!=f.valid_until)conflict=true;
   return conflict&&it->second.size()>1?nullptr:&f;};
  const auto*iv=choose("INTERVAL");const auto*vf=choose("VALID_FROM");const auto*vu=choose("VALID_UNTIL");

@@ -45,10 +45,12 @@ int main(){
   CHECK((evaluated.triggered_dependencies == std::vector<std::string>{"dep-1", "dep-2", "dep-3", "dep-5"}));
   CHECK((evaluated.rejected_dependencies == std::vector<std::string>{"dep-4"}));
   CHECK(std::find(evaluated.impacted_nodes.begin(), evaluated.impacted_nodes.end(), "E") != evaluated.impacted_nodes.end());
-  auto level_triggered = DependencyEngine::evaluate(eval_nodes, {"C"}, 10);
+  auto level_triggered_nodes = eval_nodes;
+  level_triggered_nodes["dep-1"].content = "CONTENT_EQUALS:not-approved";
+  auto level_triggered = DependencyEngine::evaluate(level_triggered_nodes, {"C"}, 10);
   CHECK(level_triggered.complete);
-  // CONTENT_EQUALS is level-triggered; ON_CHANGE only fires for its changed prerequisite.
-  CHECK(std::find(level_triggered.triggered_dependencies.begin(), level_triggered.triggered_dependencies.end(), "dep-1") != level_triggered.triggered_dependencies.end());
+  // CONTENT_EQUALS is level-triggered; ON_CHANGE waits for its prerequisite.
+  CHECK(std::find(level_triggered.triggered_dependencies.begin(), level_triggered.triggered_dependencies.end(), "dep-1") == level_triggered.triggered_dependencies.end());
   CHECK(std::find(level_triggered.triggered_dependencies.begin(), level_triggered.triggered_dependencies.end(), "dep-2") == level_triggered.triggered_dependencies.end());
   auto eval_limited = DependencyEngine::evaluate(eval_nodes, {"A"}, 2);
   CHECK(!eval_limited.complete && eval_limited.error == "DEPENDENCY_EVALUATION_BUDGET_EXCEEDED");

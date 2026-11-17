@@ -71,15 +71,14 @@ int main(){
       CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
       SemanticDelta new_dependency;new_dependency.delta_id="dependency-delta-2";
       new_dependency.idempotency_key="dependency-key-2";new_dependency.expected_state_version=1;
-      new_dependency.nodes={{{"changed-prerequisite",NodeKind::Cluster,"changed",{}}},
-          {{"dependency-on-change",NodeKind::Dependency,"ON_CHANGE",
-          {"changed-prerequisite","target-cluster"}}}};
+      new_dependency.nodes={{{"dependency-present",NodeKind::Dependency,"PRESENT",
+          {"source-cluster","target-cluster"}}}};
       const auto added=recovered.apply(new_dependency);
       CHECK(added.committed&&added.state_version==2);
       CHECK(recovered.dependency_evaluations().count("dependency-delta-2")==1);
       const auto evaluation2_it=recovered.dependency_evaluations().find("dependency-delta-2"); CHECK(evaluation2_it!=recovered.dependency_evaluations().end()); CHECK(evaluation2_it->second.triggered.size()==1);
       CHECK(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-on-change");
+          "dependency-present");
     }
     {
       ContextGraph recovered(dependency_path);CHECK(recovered.open());
@@ -95,7 +94,7 @@ int main(){
              evaluation.triggered[0].dependency_id=="dependency-good");
       CHECK((evaluation.rejected_dependencies==std::vector<std::string>{"dependency-invalid"}));
       CHECK(evaluation2_it->second.triggered[0].dependency_id==
-          "dependency-on-change");
+          "dependency-present");
     }
   }
   {
