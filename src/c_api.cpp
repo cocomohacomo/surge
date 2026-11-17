@@ -573,7 +573,7 @@ int surge_packet_core_admit_and_apply_with_metadata(
     }
     if(provenance){
       if(!provenance->evidence_id||!*provenance->evidence_id||
-         provenance->revision==0||
+         std::strlen(provenance->evidence_id)>256||provenance->revision==0||
          (provenance->observed_at&&!*provenance->observed_at)||
          (provenance->source_published_at&&!*provenance->source_published_at)||
          (provenance->source_retrieved_at&&!*provenance->source_retrieved_at)){
