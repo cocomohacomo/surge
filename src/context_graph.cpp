@@ -101,14 +101,15 @@ std::string reassessment_snapshot_payload(const TemporalReassessmentRecord& r) {
  std::ostringstream out;out<<std::quoted(r.trace_id)<<' '<<std::quoted(r.claim_id)<<' '
  <<std::quoted(r.reference_at)<<' '<<std::quoted(r.decision)<<' '
  <<std::quoted(r.claim_valid_from)<<' '<<std::quoted(r.claim_valid_until)<<' '
- <<std::quoted(r.reason_code)<<' '<<r.claim_validity_revision<<' '
+ <<std::quoted(r.claim_validity_basis_evidence_id)<<' '<<std::quoted(r.reason_code)<<' '<<r.claim_validity_revision<<' '
  <<r.claim_validity_recorded_state_version<<' '<<r.evaluated_state_version<<' '
  <<r.recorded_state_version<<' '<<r.sequence<<' '<<static_cast<int>(r.lifecycle)<<' '
  <<static_cast<int>(r.claim_temporal_state)<<' '<<r.evidence.size();
  for(const auto& e:r.evidence)out<<' '<<std::quoted(e.evidence_id)<<' '<<std::quoted(e.relation_id)
   <<' '<<static_cast<int>(e.relation)<<' '<<e.validity_revision<<' '
   <<e.validity_recorded_state_version<<' '<<std::quoted(e.valid_from)<<' '
-  <<std::quoted(e.valid_until)<<' '<<static_cast<int>(e.temporal_state)<<' '<<e.eligible;
+  <<std::quoted(e.valid_until)<<' '<<std::quoted(e.basis_evidence_id)<<' '
+  <<static_cast<int>(e.temporal_state)<<' '<<e.eligible;
  out<<' '<<r.active_support_ids.size();for(const auto& id:r.active_support_ids)out<<' '<<std::quoted(id);
  out<<' '<<r.active_contradiction_ids.size();for(const auto& id:r.active_contradiction_ids)out<<' '<<std::quoted(id);
  return out.str();
@@ -124,14 +125,14 @@ bool decode_reassessment(const std::string& payload,TemporalReassessmentRecord& 
  std::istringstream s(snapshot);int lifecycle=0,claim_state=0;std::size_t n=0;
  if(!(s>>std::quoted(r.trace_id)>>std::quoted(r.claim_id)>>std::quoted(r.reference_at)>>
   std::quoted(r.decision)>>std::quoted(r.claim_valid_from)>>std::quoted(r.claim_valid_until)>>
-  std::quoted(r.reason_code)>>r.claim_validity_revision>>r.claim_validity_recorded_state_version>>
+  std::quoted(r.claim_validity_basis_evidence_id)>>std::quoted(r.reason_code)>>r.claim_validity_revision>>r.claim_validity_recorded_state_version>>
   r.evaluated_state_version>>r.recorded_state_version>>r.sequence>>lifecycle>>claim_state>>n)||n>4096)return false;
  if(lifecycle<0||lifecycle>2||claim_state<0||claim_state>3)return false;
  r.lifecycle=static_cast<ClaimStatus>(lifecycle);r.claim_temporal_state=static_cast<ClaimTemporalState>(claim_state);
  for(std::size_t i=0;i<n;++i){ReassessmentEvidenceSnapshot e;int rel=0,state=0;
   if(!(s>>std::quoted(e.evidence_id)>>std::quoted(e.relation_id)>>rel>>
     e.validity_revision>>e.validity_recorded_state_version>>std::quoted(e.valid_from)>>
-    std::quoted(e.valid_until)>>state>>e.eligible)||rel<0||rel>9||state<0||state>3)return false;
+    std::quoted(e.valid_until)>>std::quoted(e.basis_evidence_id)>>state>>e.eligible)||rel<0||rel>9||state<0||state>3)return false;
   e.relation=static_cast<RelationKind>(rel);e.temporal_state=static_cast<ClaimTemporalState>(state);r.evidence.push_back(e);}
  if(!(s>>n)||n>4096)return false;
  for(std::size_t i=0;i<n;++i){std::string id;if(!(s>>std::quoted(id)))return false;r.active_support_ids.push_back(id);}
@@ -255,6 +256,7 @@ bool ContextGraph::build_reassessment(const State& s,const std::string& claim_id
   const auto& latest=cv->second.back();out.claim_validity_revision=latest.validity.revision;
   out.claim_validity_recorded_state_version=latest.recorded_state_version;
   out.claim_valid_from=latest.validity.valid_from;out.claim_valid_until=latest.validity.valid_until;
+  out.claim_validity_basis_evidence_id=latest.validity.basis_evidence_id;
   out.claim_temporal_state=evaluate_claim_validity(latest,reference_at);
  }
  for(const auto& item:s.relations){const auto& rel=item.second;
@@ -267,6 +269,7 @@ bool ContextGraph::build_reassessment(const State& s,const std::string& claim_id
    const auto& latest=ev->second.back();e.validity_revision=latest.validity.revision;
    e.validity_recorded_state_version=latest.recorded_state_version;
    e.valid_from=latest.validity.valid_from;e.valid_until=latest.validity.valid_until;
+   e.basis_evidence_id=latest.validity.basis_evidence_id;
    ClaimValidityRecord compatible;compatible.validity.valid_from=e.valid_from;compatible.validity.valid_until=e.valid_until;
    e.temporal_state=evaluate_claim_validity(compatible,reference_at);
   }

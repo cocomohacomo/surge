@@ -69,13 +69,13 @@ struct ReassessmentEvidenceSnapshot {
   std::string evidence_id, relation_id;
   RelationKind relation{RelationKind::Supports};
   std::uint64_t validity_revision{0}, validity_recorded_state_version{0};
-  std::string valid_from, valid_until;
+  std::string valid_from, valid_until, basis_evidence_id;
   ClaimTemporalState temporal_state{ClaimTemporalState::Unknown};
   bool eligible{false};
 };
 struct TemporalReassessmentRecord {
   std::string trace_id, claim_id, reference_at, decision;
-  std::string claim_valid_from, claim_valid_until, reason_code;
+  std::string claim_valid_from, claim_valid_until, claim_validity_basis_evidence_id, reason_code;
   std::uint64_t claim_validity_revision{0}, claim_validity_recorded_state_version{0};
   std::uint64_t evaluated_state_version{0}, recorded_state_version{0}, sequence{0};
   ClaimStatus lifecycle{ClaimStatus::Active};

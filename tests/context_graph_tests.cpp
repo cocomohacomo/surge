@@ -346,9 +346,9 @@ int main(){
       TemporalReassessmentRecord trace;std::string error;
       assert(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,trace,error));
       assert(trace.decision=="SUPPORTED"&&trace.evaluated_state_version==1&&trace.recorded_state_version==2);
-      assert(trace.claim_validity_revision==1&&trace.evidence.size()==2);
+      assert(trace.claim_validity_revision==1&&trace.claim_validity_basis_evidence_id=="reassess-support"&&trace.evidence.size()==2);
       assert(trace.active_support_ids.size()==1&&trace.active_contradiction_ids.empty());
-      assert(trace.evidence[0].validity_revision==1);
+      assert(trace.evidence[0].validity_revision==1&&trace.evidence[0].basis_evidence_id==trace.evidence[0].evidence_id);
       TemporalReassessmentRecord stale;
       assert(!graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,stale,error));
       assert(error=="STATE_VERSION_CONFLICT");

@@ -11,10 +11,10 @@ state version. A mismatch returns `STATE_VERSION_CONFLICT`; no trace is written.
 ## Captured decision grounds
 
 Each record stores the Claim lifecycle, selected ClaimValidity revision and
-transaction version, evaluated interval and temporal state. It stores every
+transaction version, validity-basis Evidence ID, evaluated interval and temporal state. It stores every
 Evidence relation to the Claim for SUPPORTS, CONTRADICTS and RETRACTS, including
 the relation ID, selected EvidenceValidity revision and transaction version,
-valid-time interval, point-in-time state and eligibility. The active support
+valid-time interval, basis Evidence ID, point-in-time state and eligibility. The active support
 and contradiction sets are stored separately.
 
 Evidence without explicit valid-time metadata remains UNKNOWN and is never
