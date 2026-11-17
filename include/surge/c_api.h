@@ -5,6 +5,26 @@
 extern "C" {
 #endif
 
+typedef struct SurgeChaosProvenanceInput {
+  const char* producer_id;
+  const char* producer_version;
+  const char* policy_version;
+  const char* recorded_at;
+} SurgeChaosProvenanceInput;
+typedef struct SurgeChaosMemberInput {
+  const char* member_ref;
+  const char* event_ref;
+  const char* admission_reason;
+  const char* admitted_at;
+  const char* source_digest;
+} SurgeChaosMemberInput;
+typedef struct SurgeChaosAssociationInput {
+  const char* association_id;
+  const char* from_member_ref;
+  const char* to_member_ref;
+  const char* association_type;
+} SurgeChaosAssociationInput;
+
 typedef struct SurgeRecognitionPacketInput {
   const char* packet_id;
   const char* idempotency_key;
@@ -198,6 +218,14 @@ size_t surge_context_graph_scope_count(void* handle);
 int surge_context_graph_claim_validity_at(void* handle, const char* claim_id,
     const char* instant, char* output, size_t output_capacity,
     char* error, size_t error_capacity);
+
+// Journal-backed Chaos Cluster C ABI. Membership does not imply shared topic.
+int surge_chaos_cluster_create(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_admit_member(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosMemberInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_propose_association(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_transition(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_promote_subset(void*,const char*,const char*,uint64_t,const char*,const char* const*,const char* const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_get(void*,const char*,char*,size_t,size_t*,char*,size_t);
 
 // Read-only deterministic lexical retrieval over replayed durable graph state.
 // kinds_csv is a comma-separated allow-list (e.g. CLUSTER,CLAIM,SCOPE_SPAN); empty means all.
