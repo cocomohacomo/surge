@@ -264,6 +264,118 @@ class ContextRetriever:
         }
 
 
+
+    def retrieve_focus(self, *, max_members: int = 100,
+                       max_associations: int = 1000,
+                       diversity_first: bool = True) -> dict[str, Any]:
+        """Retrieve the active typed Focus and its authoritative target.
+
+        Chaos Cluster content is read from ChaosClusterLedger, never inferred
+        from the graph projection. Member truncation is deterministic and
+        diversity-first by admission reason; omitted references are explicit.
+        """
+        for value, low, high, code in (
+            (max_members, 1, 1000, "FOCUS_MEMBER_BUDGET_INVALID"),
+            (max_associations, 0, 10000, "FOCUS_ASSOCIATION_BUDGET_INVALID"),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+                raise ValueError(code)
+        if not isinstance(diversity_first, bool):
+            raise ValueError("FOCUS_DIVERSITY_OPTION_INVALID")
+
+        before = int(self._core.state_version)
+        focus = self._core.get_focus()
+        if focus is None:
+            if int(self._core.state_version) != before:
+                raise PacketRejected("RETRIEVAL_STATE_VERSION_CHANGED")
+            return {"found": False, "state_version": before, "target": None}
+
+        target_id = focus.get("cluster_id")
+        target_kind = focus.get("target_kind", "CLUSTER")
+        if not isinstance(target_id, str) or not target_id:
+            raise PacketRejected("FOCUS_RESPONSE_INVALID")
+
+        if target_kind == "CHAOS_CLUSTER":
+            target = self._core.get_chaos_cluster(target_id)
+            members = target.get("members", [])
+            if not isinstance(members, list):
+                raise PacketRejected("FOCUS_CHAOS_MEMBERS_INVALID")
+            if diversity_first:
+                groups: dict[str, list[dict[str, Any]]] = {}
+                for member in members:
+                    if not isinstance(member, dict):
+                        raise PacketRejected("FOCUS_CHAOS_MEMBER_INVALID")
+                    reason = member.get("admission_reason", "")
+                    groups.setdefault(str(reason), []).append(member)
+                for group in groups.values():
+                    group.sort(key=lambda item: str(item.get("member_ref", "")))
+                ordered: list[dict[str, Any]] = []
+                depth = 0
+                while True:
+                    added = False
+                    for reason in sorted(groups):
+                        if depth < len(groups[reason]):
+                            ordered.append(groups[reason][depth])
+                            added = True
+                    if not added:
+                        break
+                    depth += 1
+            else:
+                ordered = sorted(members, key=lambda item: str(item.get("member_ref", "")))
+
+            selected = ordered[:max_members]
+            selected_refs = {str(item.get("member_ref", "")) for item in selected}
+            omitted_members = [str(item.get("member_ref", "")) for item in ordered[max_members:]]
+            associations = target.get("associations", [])
+            if not isinstance(associations, list):
+                raise PacketRejected("FOCUS_CHAOS_ASSOCIATIONS_INVALID")
+            relevant_associations = [
+                item for item in associations
+                if isinstance(item, dict)
+                and item.get("from_ref") in selected_refs
+                and item.get("to_ref") in selected_refs
+            ]
+            omitted_associations = max(0, len(relevant_associations) - max_associations)
+            selected_associations = relevant_associations[:max_associations]
+            target = dict(target)
+            target["members"] = selected
+            target["associations"] = selected_associations
+            result = {
+                "found": True, "state_version": before,
+                "target_kind": "CHAOS_CLUSTER", "focus": focus, "target": target,
+                "omitted_member_refs": omitted_members,
+                "omitted_association_count": omitted_associations,
+                "complete": not omitted_members and omitted_associations == 0,
+                "retrieval_policy": "ADMISSION_REASON_ROUND_ROBIN" if diversity_first else "MEMBER_REF_ORDER",
+            }
+        elif target_kind == "CLUSTER":
+            page = self.search(target_id, kinds=["CLUSTER"], limit=1000)
+            target = next((item for item in page.get("items", [])
+                           if item.get("id") == target_id), None)
+            if target is None:
+                raise PacketRejected("FOCUS_TARGET_NOT_FOUND")
+            interest = None
+            interest_id = focus.get("interest_id")
+            if isinstance(interest_id, str) and interest_id:
+                interest_page = self.search(interest_id, kinds=["INTEREST"], limit=1000)
+                interest = next((item for item in interest_page.get("items", [])
+                                 if item.get("id") == interest_id), None)
+            result = {
+                "found": True, "state_version": before,
+                "target_kind": "CLUSTER", "focus": focus,
+                "target": target, "interest": interest,
+                "omitted_member_refs": [], "omitted_association_count": 0,
+                "complete": True, "retrieval_policy": "EXACT_TYPED_TARGET",
+            }
+        else:
+            raise PacketRejected("FOCUS_TARGET_KIND_UNSUPPORTED")
+
+        after = int(self._core.state_version)
+        if after != before:
+            raise PacketRejected("RETRIEVAL_STATE_VERSION_CHANGED")
+        result["state_version"] = after
+        return result
+
     def set_question_aspect_status(self, aspect_id: str, status: str,
                                     expected_state_version: int | None = None) -> int:
         """Durably transition a QuestionAspect lifecycle state."""
