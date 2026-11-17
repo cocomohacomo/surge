@@ -1110,11 +1110,39 @@ class SemanticCoreBridge(CppCoreBridge):
         values = [association.get(k) for k in fields]
         if any(not isinstance(x, str) or not x.strip() for x in values):
             raise PacketRejected("CHAOS_ASSOCIATION_INVALID")
+        valid_from = association.get("valid_from_utc") or ""
+        valid_until = association.get("valid_until_utc") or ""
+        for timestamp in (valid_from, valid_until):
+            if timestamp and (not isinstance(timestamp, str) or len(timestamp) != 20
+                              or timestamp[4] != "-" or timestamp[7] != "-"
+                              or timestamp[10] != "T" or timestamp[13] != ":"
+                              or timestamp[16] != ":" or timestamp[19] != "Z"):
+                raise PacketRejected("CHAOS_ASSOCIATION_VALID_TIME_INVALID")
+        if valid_from and valid_until and valid_from >= valid_until:
+            raise PacketRejected("CHAOS_ASSOCIATION_VALID_TIME_INVALID")
         p = self._chaos_provenance(provenance)
-        item = _ChaosAssociation(*(x.encode("utf-8") for x in values))
+        item = _ChaosAssociation(*(x.encode("utf-8") for x in values),
+                                 valid_from.encode("ascii") if valid_from else None,
+                                 valid_until.encode("ascii") if valid_until else None)
         return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def expire_due_chaos_associations(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, as_of_utc: str,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Expire nonterminal associations whose valid_until is due."""
+        if (not isinstance(as_of_utc, str) or len(as_of_utc) != 20
+                or as_of_utc[4:5] != "-" or as_of_utc[7:8] != "-"
+                or as_of_utc[10:11] != "T" or as_of_utc[13:14] != ":"
+                or as_of_utc[16:17] != ":" or not as_of_utc.endswith("Z")):
+            raise PacketRejected("CHAOS_ASSOCIATION_EXPIRY_INPUT_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_expire_due_associations,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), as_of_utc.encode("ascii"), ctypes.byref(p)))
 
     def revise_chaos_membership(
         self, *, operation_id: str, idempotency_key: str,
