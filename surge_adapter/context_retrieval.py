@@ -5,6 +5,7 @@ import ctypes
 import json
 import hashlib
 import unicodedata
+from datetime import datetime
 from typing import Any
 
 from surge_adapter.packet_ingest import PacketRejected
@@ -446,6 +447,8 @@ class ContextRetriever:
         association_types: list[str] | None = None,
         association_statuses: list[str] | None = None,
         valid_at_utc: str | None = None,
+        member_admitted_after_utc: str | None = None,
+        member_admitted_before_utc: str | None = None,
         producer_ids: list[str] | None = None,
         member_refs: list[str] | None = None,
         include_hypotheses: bool = True,
@@ -491,13 +494,22 @@ class ContextRetriever:
 
         producer_filter = normalize_refs(producer_ids, "CHAOS_PRODUCER_FILTER_INVALID")
         member_filter = normalize_refs(member_refs, "CHAOS_MEMBER_FILTER_INVALID")
-        if valid_at_utc is not None:
-            if (not isinstance(valid_at_utc, str) or len(valid_at_utc) != 20
-                    or valid_at_utc[4:5] != "-" or valid_at_utc[7:8] != "-"
-                    or valid_at_utc[10:11] != "T" or valid_at_utc[13:14] != ":"
-                    or valid_at_utc[16:17] != ":" or not valid_at_utc.endswith("Z")
-                    or not valid_at_utc[:4].isdigit()):
-                raise ValueError("CHAOS_VALID_AT_INVALID")
+        def validate_utc(value: str | None, code: str) -> None:
+            if value is None:
+                return
+            try:
+                if not isinstance(value, str):
+                    raise ValueError
+                datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError as exc:
+                raise ValueError(code) from exc
+
+        validate_utc(valid_at_utc, "CHAOS_VALID_AT_INVALID")
+        validate_utc(member_admitted_after_utc, "CHAOS_MEMBER_ADMITTED_AFTER_INVALID")
+        validate_utc(member_admitted_before_utc, "CHAOS_MEMBER_ADMITTED_BEFORE_INVALID")
+        if (member_admitted_after_utc and member_admitted_before_utc
+                and member_admitted_after_utc > member_admitted_before_utc):
+            raise ValueError("CHAOS_MEMBER_ADMISSION_RANGE_INVALID")
 
         before = int(self._core.state_version)
         target = self._core.get_chaos_cluster(
@@ -525,6 +537,8 @@ class ContextRetriever:
             item for item in members
             if (member_filter is None or item.get("member_ref") in member_filter)
             and (producer_filter is None or producer_of(item) in producer_filter)
+            and (member_admitted_after_utc is None or item.get("admitted_at", "") >= member_admitted_after_utc)
+            and (member_admitted_before_utc is None or item.get("admitted_at", "") <= member_admitted_before_utc)
             and item.get("membership_active", True) is True
         ]
         selected_member_refs = {item.get("member_ref") for item in filtered_members}
@@ -618,6 +632,8 @@ class ContextRetriever:
                 "association_types": sorted(type_filter) if type_filter is not None else None,
                 "association_statuses": sorted(status_filter) if status_filter is not None else None,
                 "valid_at_utc": valid_at_utc,
+                "member_admitted_after_utc": member_admitted_after_utc,
+                "member_admitted_before_utc": member_admitted_before_utc,
                 "producer_ids": sorted(producer_filter) if producer_filter is not None else None,
                 "member_refs": sorted(member_filter) if member_filter is not None else None,
                 "include_hypotheses": include_hypotheses,
