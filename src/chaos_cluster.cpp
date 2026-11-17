@@ -76,9 +76,9 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   if(!(i>>nh)||nh>100000)return false;
   for(std::size_t x=0;x<nh;++x){ChaosPatternHypothesis h;if(!(i>>std::quoted(h.hypothesis_id)>>std::quoted(h.statement)>>std::quoted(h.epistemic_state)>>std::quoted(h.status))||h.hypothesis_id.empty())return false;auto vec=[&](std::vector<std::string>&v){std::size_t count=0;if(!(i>>count)||count>100000)return false;for(std::size_t q=0;q<count;++q){std::string value;if(!(i>>std::quoted(value)))return false;v.push_back(std::move(value));}return true;};if(!vec(h.member_refs)||!vec(h.excluded_member_refs)||!vec(h.counterexample_refs)||!vec(h.alternative_hypothesis_refs)||!rp(i,h.provenance)||!c.pattern_hypotheses.emplace(h.hypothesis_id,std::move(h)).second)return false;}
  }
- std::string marker;
- if(!(i>>marker))return true;
- if(marker!="CC3")return false;
+ std::string extension_marker;
+ if(!(i>>extension_marker))return true;
+ if(extension_marker!="CC3")return false;
  std::size_t count=0;if(!(i>>count)||count!=s.size())return false;
  for(std::size_t z=0;z<count;++z){std::string id;std::size_t dimensions=0;
   if(!(i>>std::quoted(id)>>dimensions)||!s.count(id)||dimensions>32)return false;
