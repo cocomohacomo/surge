@@ -47,7 +47,7 @@ as an audio RTF result.
   deployment profiles.
 - Default target: RTF < 0.01, strictly less than the threshold.
 - Model SHA-256 and byte size are recorded with every execution.
-- RTF = measured inference wall time / supplied source audio duration.
+- RTF = measured model-inference wall time / supplied source audio duration. This is an inference-only metric, not full SURGE pipeline RTF; packetization, scoring, graph validation and journal commit require a separate end-to-end benchmark.
 - Benchmark summaries report sample count, mean RTF, maximum RTF and whether
   every measured sample met the target. No result is fabricated for missing
   durations.

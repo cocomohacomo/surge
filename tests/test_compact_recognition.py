@@ -85,9 +85,22 @@ class CompactRecognitionTests(unittest.TestCase):
             unmeasured = runtime.recognize("text")
             self.assertIsNone(summarize_rtf([unmeasured])["target_pass"])
             measured = runtime.recognize("text", audio_duration_seconds=1000)
+            self.assertIsNone(summarize_rtf([unmeasured, measured])["target_pass"])
+            measured = runtime.recognize("text", audio_duration_seconds=1000)
             report = summarize_rtf([measured])
             self.assertEqual(report["measured_count"], 1)
             self.assertEqual(report["target_pass"], measured.rtf < .01)
+
+    def test_backend_offsets_must_fit_utf8_source(self):
+        class BadOffsetBackend:
+            def recognize(self, text, context=None):
+                return [RecognitionCandidate("CLAIM", None, "x", "POSITIVE", False, .9, .1, .9, 0, 999)]
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"model")
+            runtime = CompactRecognitionRuntime(self.make_spec(model), BadOffsetBackend())
+            with self.assertRaisesRegex(ValueError, "BACKEND_CANDIDATE_OFFSET_OUT_OF_RANGE"):
+                runtime.recognize("日本語")
 
     def test_backend_cannot_return_untyped_candidates(self):
         class BadBackend:

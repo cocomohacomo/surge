@@ -63,6 +63,8 @@ class CompactModelSpec:
                 digest.update(chunk)
         if not model_id or not version or not runtime_id:
             raise ValueError("MODEL_DESCRIPTOR_REQUIRED")
+        if isinstance(max_model_bytes, bool) or not isinstance(max_model_bytes, int) or max_model_bytes <= 0:
+            raise ValueError("MODEL_SIZE_LIMIT_INVALID")
         if device not in ("CPU", "GPU", "NPU", "AUTO"):
             raise ValueError("MODEL_DEVICE_INVALID")
         if isinstance(target_rtf, bool) or not math.isfinite(target_rtf) or target_rtf <= 0:
@@ -155,6 +157,9 @@ class CompactRecognitionRuntime:
         elapsed = time.perf_counter() - started
         if not all(isinstance(item, RecognitionCandidate) for item in candidates):
             raise ValueError("BACKEND_CANDIDATE_TYPE_INVALID")
+        source_bytes = len(text.encode("utf-8"))
+        if any(item.end_offset > source_bytes for item in candidates):
+            raise ValueError("BACKEND_CANDIDATE_OFFSET_OUT_OF_RANGE")
         rtf = elapsed / float(audio_duration_seconds) if audio_duration_seconds is not None else None
         return RecognitionExecution(
             self.spec.model_id, self.spec.artifact_bytes, elapsed,
@@ -178,5 +183,5 @@ def summarize_rtf(executions: Sequence[RecognitionExecution]) -> dict[str, Any]:
     return {
         "sample_count": len(executions), "measured_count": len(measured),
         "target_rtf": target, "mean_rtf": sum(measured) / len(measured),
-        "max_rtf": max(measured), "target_pass": all(value < target for value in measured),
+        "max_rtf": max(measured), "target_pass": (all(value < target for value in measured) if len(measured) == len(executions) else None),
     }
