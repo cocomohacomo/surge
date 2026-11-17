@@ -20,6 +20,14 @@ int main(){
  CHECK(surge_chaos_cluster_transition(h,"cc-review","cc-review-key",4,"chaos-c-api","REVIEWABLE","candidate pattern",&p,&version,error,sizeof(error))==1);
  const char* refs[]={"m1"};const char* targets[]={"topic-1"};
  CHECK(surge_chaos_cluster_promote_subset(h,"cc-promote","cc-promote-key",5,"chaos-c-api",refs,targets,1,&p,&version,error,sizeof(error))==1);
+ CHECK(surge_chaos_cluster_focus_set(h,"cc-focus","cc-focus-key",6,"chaos-c-api","interest-c-api","inspect unresolved material",&p,&version,error,sizeof(error))==1);
+ char focus_output[1024]{};size_t focus_required=0;
+ CHECK(surge_chaos_cluster_focus_get(h,focus_output,sizeof(focus_output),&focus_required,error,sizeof(error))==1);
+ CHECK(std::string(focus_output).find("chaos-c-api")!=std::string::npos);
+ char retrieval_output[4096]{};size_t retrieval_required=0;
+ CHECK(surge_chaos_cluster_retrieve(h,"chaos-c-api",1,1,retrieval_output,sizeof(retrieval_output),&retrieval_required,error,sizeof(error))==1);
+ CHECK(std::string(retrieval_output).find("\\\"complete\\\":false")!=std::string::npos);
+ CHECK(std::string(retrieval_output).find("omitted_member_refs")!=std::string::npos);
  char output[4096]{};size_t required=0;
  CHECK(surge_chaos_cluster_get(h,"chaos-c-api",output,sizeof(output),&required,error,sizeof(error))==1);
  CHECK(std::string(output).find("NO_STABLE_TOPIC")!=std::string::npos);
