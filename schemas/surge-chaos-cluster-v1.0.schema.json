@@ -1,0 +1,449 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocomohacomo.github.io/surge/schemas/surge-chaos-cluster-v1.0.schema.json",
+  "title": "SURGE Chaos Cluster v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cluster_id",
+    "cluster_kind",
+    "lifecycle",
+    "organization_state",
+    "members",
+    "associations",
+    "provenance",
+    "state_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "cluster_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "cluster_kind": {
+      "const": "CHAOS"
+    },
+    "lifecycle": {
+      "enum": [
+        "OPEN",
+        "ACCUMULATING",
+        "EMERGING",
+        "REVIEWABLE",
+        "PROMOTED",
+        "FORKED",
+        "DORMANT",
+        "ARCHIVED"
+      ]
+    },
+    "organization_state": {
+      "enum": [
+        "UNORDERED",
+        "PROVISIONAL",
+        "MULTI_PATTERN",
+        "PARTIALLY_STRUCTURED"
+      ]
+    },
+    "state_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "parent_cluster_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "child_cluster_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/member"
+      }
+    },
+    "associations": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/association"
+      }
+    },
+    "pattern_hypotheses": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/pattern"
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organization": {
+          "$ref": "#/$defs/observation"
+        },
+        "salience": {
+          "$ref": "#/$defs/observation"
+        },
+        "recognition_confidence": {
+          "$ref": "#/$defs/observation"
+        },
+        "novelty": {
+          "$ref": "#/$defs/observation"
+        },
+        "diversity": {
+          "$ref": "#/$defs/observation"
+        },
+        "ambiguity": {
+          "$ref": "#/$defs/observation"
+        },
+        "utility": {
+          "$ref": "#/$defs/observation"
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "policy_version",
+        "selected_member_refs",
+        "decision_provenance"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "NONE",
+            "PROMOTE_SUBSET",
+            "PROMOTE_ALL",
+            "FORK",
+            "SPLIT"
+          ]
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_member_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "target_cluster_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "decision_provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "expected_state_version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retention_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dormant_since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_manifest_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "tombstone": {
+          "type": "boolean"
+        }
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    }
+  },
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer_id",
+        "producer_version",
+        "policy_version",
+        "recorded_at"
+      ],
+      "properties": {
+        "producer_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "producer_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "scorer_id",
+        "scorer_version",
+        "policy_version",
+        "observed_at"
+      ],
+      "properties": {
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scorer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scorer_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "member_ref",
+        "event_ref",
+        "membership_status",
+        "admission_reason",
+        "admitted_at",
+        "provenance"
+      ],
+      "properties": {
+        "member_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "event_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "source_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "membership_status": {
+          "enum": [
+            "UNCLASSIFIED",
+            "PROVISIONAL",
+            "REVIEWED"
+          ]
+        },
+        "admission_reason": {
+          "enum": [
+            "NO_STABLE_TOPIC",
+            "MULTIPLE_CANDIDATES",
+            "LOW_COHERENCE",
+            "HIGH_NOVELTY",
+            "HIGH_SALIENCE",
+            "CONTRADICTION",
+            "CREATIVE_EXPLORATION",
+            "EXPLICIT_RETENTION"
+          ]
+        },
+        "admitted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "salience": {
+          "$ref": "#/$defs/observation"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "association": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "association_id",
+        "from_ref",
+        "to_ref",
+        "association_type",
+        "status",
+        "provenance"
+      ],
+      "properties": {
+        "association_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "from_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "to_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "association_type": {
+          "enum": [
+            "CO_OCCURS",
+            "ANALOGY",
+            "HYPOTHESIS",
+            "QUESTION",
+            "CONTRADICTION",
+            "TEMPORAL_NEARNESS",
+            "UNCLASSIFIED",
+            "CREATIVE_SYNTHESIS"
+          ]
+        },
+        "status": {
+          "enum": [
+            "PROVISIONAL",
+            "REVIEWED",
+            "REJECTED",
+            "EXPIRED"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/observation"
+        },
+        "valid_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hypothesis_id",
+        "statement",
+        "member_refs",
+        "epistemic_state",
+        "status",
+        "provenance"
+      ],
+      "properties": {
+        "hypothesis_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "member_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "excluded_member_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "counterexample_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "alternative_hypothesis_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "epistemic_state": {
+          "enum": [
+            "HYPOTHETICAL",
+            "UNVERIFIED",
+            "CONTRADICTED",
+            "REJECTED"
+          ]
+        },
+        "status": {
+          "enum": [
+            "PROVISIONAL",
+            "REVIEWABLE",
+            "REJECTED",
+            "PROMOTED_TO_EVIDENCE_REVIEW"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/observation"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    }
+  }
+}
