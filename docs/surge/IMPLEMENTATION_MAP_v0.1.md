@@ -1,6 +1,6 @@
 # SURGE v0.9 Implementation Map v0.1
 
-**Snapshot:** main `7dbca5b140e083dee764d2bd5088483e79bc303f` (2026-11-17)  
+**Snapshot:** main `9dd72cd8eac843083fd62b2966e049fde85b588d` (2026-11-17)  
 **Normative target:** `SPECIFICATION_v0.9.md`  
 **Purpose:** one-page entry point for adopters. A feature is "implemented" only when code, regression coverage and a passing CI path are present. Open PRs and design documents alone do not count.
 
@@ -19,7 +19,7 @@
 | Evidence provenance | observed/published/retrieved clocks, revisions, atomic packet integration | **Implemented in main** | clocks are caller-supplied; no timestamp inference |
 | Recognition scoring | ACCEPT / REVIEW / ABSTAIN | **Implemented policy boundary** | 50 authored regression cases are not an independent gold corpus |
 | Recognition Engine | text-to-Claim/ScopeSpan extraction | **Partially integrated** | provider adapter exists; independent semantic accuracy not established |
-| Benchmark / quality gate | immutable profile, coverage, risk, critical recall, invariants | **Partial** | independent labelled corpus and full metric runner were not established at snapshot |
+| Benchmark / quality gate | immutable profile, coverage, risk, critical recall, invariants | **Evaluator implemented, corpus absent** | meeting-decision JSONL adapter/evaluator and schemas are present; no independent gold corpus or comparative result yet |
 | Persistence / operations | crash durability, lock, backup, migration | **Prototype only** | fsync, process lock, snapshot/compaction, restore drill, migration guarantees incomplete |
 | Model performance | end-to-end RTF, p99, RSS | **Unmeasured** | no production claim until measured on declared hardware/model |
 
@@ -30,13 +30,13 @@
 - ContextGraph, QuestionRouter, DependencyEngine, ScopeSpanValidator and ContextHint paths.
 - Claim/Evidence temporal ledgers, reassessment history and Evidence provenance.
 - Python RecognitionPacket and LLM adapters, deterministic provider tests.
-- CMake/CTest, Draft 2020-12 schema and fixture validation in GitHub Actions.
+- CMake/CTest, Draft 2020-12 schema and fixture validation in GitHub Actions.\n- 14 C++ test programs now use a Release-safe `CHECK` assertion mechanism (532 checks); a deliberate-failure probe proves checks remain active with `NDEBUG`.\n- Meeting-decision adapter runner, deterministic explicit-field smoke adapter, evidence-span evaluator and gold/prediction JSON Schemas.
 
 ## What is not evidence of semantic quality
 
 - D01-D20 are structural/conformance fixtures; they are not 20 end-to-end semantic accuracy trials.
 - The 50 Japanese scoring examples are policy regression cases; they are not independently labelled production data.
-- CI passing proves exercised code paths pass tests. It does not prove extraction precision/recall, end-to-end RTF, p99 latency, peak RSS, multi-process safety or power-loss durability.
+- CI passing proves exercised code paths pass tests. It does not prove extraction precision/recall, end-to-end RTF, p99 latency, peak RSS, multi-process safety or power-loss durability. The current independent-gold corpus is intentionally empty.
 - A PR branch, a design document or a green workflow on an unmerged branch is not a main-branch capability.
 
 ## Recommended adoption path
@@ -47,4 +47,4 @@
 4. Compare semantic metrics and performance separately; include abstention coverage and selective risk.
 5. Only after reproducible benefit is shown, close multi-process locking, crash durability, backup/restore and migration gaps before production deployment.
 
-See [Meeting Decision Evaluation Protocol v0.1](../evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md).
+Latest verified main CI: 15/15 CTest targets, 168/168 Python tests, 5/5 v0.9 schemas and 20/20 fixture structural contracts. The main CI run is associated with the snapshot commit above.\n\nSee [Meeting Decision Evaluation Protocol v0.1](../evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md).

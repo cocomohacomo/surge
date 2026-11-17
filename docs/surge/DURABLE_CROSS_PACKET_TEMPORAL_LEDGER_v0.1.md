@@ -48,3 +48,14 @@ Replay restores committed events only. A partial transaction is discarded by
 EventJournal recovery. The journal's existing CRC32 and flush semantics apply;
 this component does not claim fsync-level power-loss durability or cryptographic
 tamper evidence.
+
+
+## Selection watermark and later conflict reopening
+
+Candidate selection is bound to the latest candidate ID for the selected role
+at the time of the selection event. The watermark is persisted in selection
+event version 2; replay remains compatible with version 1 by deriving the
+watermark from candidates present at that historical point. Candidates added
+after the watermark are evaluated against the selected interval. A later
+conflicting candidate reopens review, while conflicts already present at the
+time of selection remain resolved by that explicit selection.

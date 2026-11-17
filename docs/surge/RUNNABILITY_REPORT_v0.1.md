@@ -90,3 +90,36 @@ examples, not an independent gold-standard
 corpus or a model-quality claim. Importance remains separate from confidence;
 ambiguous or low-confidence cases are abstained rather than converted into
 guessed semantic state.
+
+
+## Quality foundation recovery (2026-11-17)
+
+The Release configuration defines `NDEBUG`, which had disabled the standard
+C++ `assert` checks in the original test executables. The quality foundation
+increment replaced 532 such checks across 14 C++ test programs with the
+project-owned `CHECK` macro. A fifteenth CTest probe intentionally executes a
+failed check and is registered with `WILL_FAIL`; this confirms that the test
+mechanism remains active in Release.
+
+Enabling checks exposed five previously hidden failures. They were isolated
+by CTest target and fixed:
+- SourceSequencer expected status corrected to `READY_BUT_BLOCKED`.
+- ContextGraph dependency fixture corrected to assert a dependency that is
+  actually eligible for evaluation.
+- DependencyEngine test now distinguishes level-triggered predicates from
+  `ON_CHANGE` and their causal propagation.
+- PacketAdmission invalid-UTF-8 fixture now passes an actual `0xFF` byte and
+  the packet-ID reuse fixture changes its canonical request digest.
+- TemporalQuestion retry now reuses the original committed event payload.
+  Temporal boundary selection now records a candidate watermark so a later
+  conflicting contribution reopens review without invalidating the explicit
+  earlier selection.
+
+Verified on the PR head and subsequently merged to main:
+- CTest: 15/15
+- Python unittest: 168/168
+- v0.9 schemas: 5/5
+- D01-D20 structural fixture contracts: 20/20
+
+These are conformance and harness checks, not independent semantic accuracy
+or production durability results.
