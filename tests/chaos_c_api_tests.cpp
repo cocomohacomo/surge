@@ -29,6 +29,8 @@ int main(){
    "chaos-c-api","m1","REVIEWED",1,&p,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_record_observation(h,"cc-score","cc-score-key",version,
    "chaos-c-api","novelty",&score,&version,error,sizeof(error))==1);
+ CHECK(surge_chaos_cluster_record_entity_observation(h,"cc-member-score","cc-member-score-key",version,
+   "chaos-c-api","MEMBER","m1",&score,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_add_pattern_hypothesis(h,"cc-hyp","cc-hyp-key",version,
    "chaos-c-api",&hypothesis,&p,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_transition(h,"cc-review","cc-review-key",version,"chaos-c-api","REVIEWABLE","candidate pattern",&p,&version,error,sizeof(error))==1);
@@ -46,6 +48,7 @@ int main(){
  CHECK(std::string(output).find("counterexample_refs")!=std::string::npos);
  CHECK(std::string(output).find("\"observations\"")!=std::string::npos);
  CHECK(std::string(output).find("c-api-scorer")!=std::string::npos);
+ CHECK(std::string(output).find("\"salience\"")!=std::string::npos);
  CHECK(std::string(output).find("\"membership_history\"")!=std::string::npos);
  CHECK(std::string(output).find("\"membership_active\":true")!=std::string::npos);
  char truncated[8192]{};required=0;
