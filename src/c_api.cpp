@@ -861,7 +861,6 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
      if(claims.count(claim_id)&&graph.claim_status(claim_id)==surge::ClaimStatus::Active){++supporting;support_evidence.insert(evidence_id);}
     }
     if(r.kind==surge::RelationKind::Contradicts||r.kind==surge::RelationKind::ConflictsWith||r.kind==surge::RelationKind::Retracts){
-     auto from=graph.nodes().find(r.from),to=graph.nodes().find(r.to);
      bool touches_claim=claims.count(r.from)||claims.count(r.to);
      if(touches_claim){++contradicting;conflict_refs.insert(r.from);conflict_refs.insert(r.to);}
     }
@@ -872,7 +871,8 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
    std::string proposed=status_name(current),reason="INSUFFICIENT_EVIDENCE";
    if(contradicting>0){proposed="OPEN";reason="CONTRADICTORY_EVIDENCE";}
    else if(supporting>0){proposed="RESOLVED";reason="SUPPORTED_EVIDENCE";}
-   if(!first)rows<<',';first=false;
+   if(!first) rows<<',';
+   first=false;
    rows<<"{\"aspect_id\":"<<json_quote(aspect->id)<<",\"question_ids\":[";
    bool qfirst=true;for(const auto&ref:aspect->references)if(questions.count(ref)){if(!qfirst)rows<<',';qfirst=false;rows<<json_quote(ref);}
    rows<<"],\"current_status\":"<<json_quote(status_name(current))<<",\"proposed_status\":"<<json_quote(proposed)<<",\"reason\":"<<json_quote(reason)<<",\"supporting_evidence_count\":"<<supporting<<",\"contradicting_relation_count\":"<<contradicting<<",\"claim_ids\":[";
