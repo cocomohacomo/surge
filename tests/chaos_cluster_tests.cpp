@@ -63,6 +63,13 @@ int main(){
   CHECK(l.record_observation("score-novelty","ik-score-novelty",score_version,"chaos-score","novelty",novelty).committed);
   novelty.value=0.84;novelty.observed_at="2026-11-17T00:02:00Z";
   CHECK(l.record_observation("score-novelty-2","ik-score-novelty-2",l.state_version(),"chaos-score","novelty",novelty).committed);
+  surge::ChaosScoreObservation entity_score{0.77,"entity-scorer","3.0","entity-policy","2026-11-17T00:04:00Z"};
+  CHECK(l.record_entity_observation("member-salience","ik-member-salience",l.state_version(),
+    "chaos-1","MEMBER","m1",entity_score).committed);
+  CHECK(l.record_entity_observation("association-confidence","ik-association-confidence",l.state_version(),
+    "chaos-1","ASSOCIATION","a1",entity_score).committed);
+  CHECK(l.record_entity_observation("hypothesis-confidence","ik-hypothesis-confidence",l.state_version(),
+    "chaos-1","HYPOTHESIS","hyp-1",entity_score).committed);
   auto invalid=novelty;invalid.value=1.01;
   auto bad_score=l.record_observation("score-invalid","ik-score-invalid",l.state_version(),"chaos-score","salience",invalid);
   CHECK(!bad_score.committed&&bad_score.error=="CHAOS_SCORE_OBSERVATION_INVALID");
@@ -84,6 +91,9 @@ int main(){
   CHECK(c.members.at("score-member").membership_history.size()==3);
   CHECK(c.members.at("score-member").membership_history[1].active==false);
   CHECK(c.members.at("score-member").membership_history[2].active==true);
+  CHECK(c.members.at("m1").salience_observations.size()==1);
+  CHECK(c.associations.at("a1").confidence_observations.size()==1);
+  CHECK(c.pattern_hypotheses.at("hyp-1").confidence_observations.size()==1);
   const auto v=l.state_version();
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
