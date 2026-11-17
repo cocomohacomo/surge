@@ -91,6 +91,7 @@ int main(){
   CHECK(c.members.at("score-member").membership_history.size()==3);
   CHECK(c.members.at("score-member").membership_history[1].active==false);
   CHECK(c.members.at("score-member").membership_history[2].active==true);
+  CHECK(l.get("chaos-1",c));
   CHECK(c.members.at("m1").salience_observations.size()==1);
   CHECK(c.associations.at("a1").confidence_observations.size()==1);
   CHECK(c.pattern_hypotheses.at("hyp-1").confidence_observations.size()==1);
