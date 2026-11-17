@@ -1943,11 +1943,26 @@ int surge_chaos_cluster_admit_member(void* opaque,const char* op,const char* key
 }
 int surge_chaos_cluster_propose_association(void* opaque,const char* op,const char* key,uint64_t expected,const char* id,const SurgeChaosAssociationInput* input,const SurgeChaosProvenanceInput* provenance,uint64_t* version,char* error,size_t cap) {
  try {surge::ChaosProvenance p;surge::ChaosAssociationType type;if(!opaque||!op||!key||!id||!input||!input->association_id||!input->from_member_ref||!input->to_member_ref||!chaos_get_type(input->association_type,type)||!chaos_get_provenance(provenance,p)){copy_text(error,cap,"CHAOS_ASSOCIATION_ARGUMENT_INVALID");return 0;}
+  if((input->valid_from_utc&&std::strlen(input->valid_from_utc)>20)||(input->valid_until_utc&&std::strlen(input->valid_until_utc)>20)){copy_text(error,cap,"CHAOS_ASSOCIATION_VALID_TIME_INVALID");return 0;}
   surge::ChaosAssociation a;a.association_id=input->association_id;a.from_ref=input->from_member_ref;a.to_ref=input->to_member_ref;a.type=type;a.provenance=p;
+  a.valid_from=input->valid_from_utc?input->valid_from_utc:"";a.valid_until=input->valid_until_utc?input->valid_until_utc:"";
   auto r=static_cast<Handle*>(opaque)->chaos.propose_association(op,key,expected,id,a);if(version) *version=r.state_version;
   copy_text(error,cap,r.error);
   return r.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_expire_due_associations(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* id,const char* as_of,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!id||!as_of||std::strlen(as_of)>20||!chaos_get_provenance(input,p)){
+   copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_ARGUMENT_INVALID");return 0;
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.expire_due_associations(op,key,expected,id,as_of,p);
+  if(version)*version=result.state_version;copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_UNKNOWN_EXCEPTION");return 0;}
 }
 int surge_chaos_cluster_transition(void* opaque,const char* op,const char* key,uint64_t expected,const char* id,const char* target,const char* reason,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
  try {surge::ChaosProvenance p;surge::ChaosLifecycle lifecycle;if(!opaque||!op||!key||!id||!reason||!chaos_get_lifecycle(target,lifecycle)||!chaos_get_provenance(input,p)){copy_text(error,cap,"CHAOS_TRANSITION_ARGUMENT_INVALID");return 0;}
