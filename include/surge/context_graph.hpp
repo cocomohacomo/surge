@@ -99,6 +99,8 @@ class ContextGraph {
   }
   bool set_question_aspect_status(const std::string& id, QuestionAspectStatus status,
                                   std::uint64_t expected_state_version, std::string& error);
+  bool apply_question_aspect_statuses(const std::vector<std::pair<std::string, QuestionAspectStatus>>& updates,
+      std::uint64_t expected_state_version, std::string& error);
  private:
   struct State {
     std::map<std::string, GraphNode> nodes;

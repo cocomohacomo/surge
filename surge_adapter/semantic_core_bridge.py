@@ -69,6 +69,11 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_context_graph_apply_scoped.restype = ctypes.c_int
         lib.surge_context_graph_scope_count.argtypes = [ctypes.c_void_p]
         lib.surge_context_graph_scope_count.restype = ctypes.c_size_t
+        lib.surge_question_aspect_set_status_batch.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p),
+            ctypes.c_size_t, ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_question_aspect_set_status_batch.restype = ctypes.c_int
         lib.surge_question_aspect_set_status.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
@@ -701,6 +706,48 @@ class SemanticCoreBridge(CppCoreBridge):
             self._lib.surge_question_get_reevaluation_candidates,
             (self._handle, question_id.encode(), max_depth, max_nodes),
             "QUESTION_REEVALUATION_BUFFER_TOO_SMALL")
+
+    def apply_question_reevaluation_plan(self, plan: dict[str, Any],
+                                         aspect_ids: list[str] | None = None) -> dict[str, Any]:
+        """Atomically apply selected proposals after Core revalidates current evidence."""
+        if not isinstance(plan, dict) or not plan.get("read_only"):
+            raise PacketRejected("QUESTION_REEVALUATION_PLAN_INVALID")
+        expected = plan.get("state_version")
+        if not isinstance(expected, int) or isinstance(expected, bool):
+            raise PacketRejected("QUESTION_REEVALUATION_PLAN_VERSION_INVALID")
+        proposals = plan.get("aspect_proposals")
+        if not isinstance(proposals, list) or not proposals:
+            raise PacketRejected("QUESTION_REEVALUATION_PLAN_EMPTY")
+        selected = set(aspect_ids) if aspect_ids is not None else None
+        updates, seen = [], set()
+        for proposal in proposals:
+            if not isinstance(proposal, dict):
+                raise PacketRejected("QUESTION_REEVALUATION_PROPOSAL_INVALID")
+            aspect_id, status = proposal.get("aspect_id"), proposal.get("proposed_status")
+            if not isinstance(aspect_id, str) or not aspect_id or aspect_id in seen:
+                raise PacketRejected("QUESTION_REEVALUATION_PROPOSAL_INVALID")
+            seen.add(aspect_id)
+            if selected is not None and aspect_id not in selected:
+                continue
+            if status not in ("OPEN", "RESOLVED", "DEFERRED"):
+                raise PacketRejected("QUESTION_REEVALUATION_PROPOSAL_INVALID")
+            updates.append((aspect_id, status))
+        if selected is not None and selected - seen:
+            raise PacketRejected("QUESTION_REEVALUATION_ASPECT_NOT_IN_PLAN")
+        if not updates:
+            raise PacketRejected("QUESTION_REEVALUATION_PLAN_EMPTY")
+        ids = (ctypes.c_char_p * len(updates))(*(x[0].encode("utf-8") for x in updates))
+        statuses = (ctypes.c_char_p * len(updates))(*(x[1].encode("ascii") for x in updates))
+        error = ctypes.create_string_buffer(512)
+        committed_version = ctypes.c_uint64(0)
+        ok = self._lib.surge_question_aspect_set_status_batch(
+            self._handle, ids, statuses, len(updates), expected,
+            ctypes.byref(committed_version), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if not ok or detail:
+            raise PacketRejected(detail or "QUESTION_REEVALUATION_APPLY_REJECTED")
+        return {"applied_aspect_ids": [x[0] for x in updates],
+                "state_version": committed_version.value, "atomic": True}
 
     def set_question_aspect_status(self, aspect_id: str, status: str,
                                    expected_state_version: int | None = None) -> int:

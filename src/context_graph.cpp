@@ -250,6 +250,20 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="QUESTION_MEMORY_STATE_SET"){
   std::istringstream in(e.payload);std::string id,status,extra;if(!(in>>std::quoted(id)>>status)||(in>>extra)){error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}const auto q=s.nodes.find(id);if(q==s.nodes.end()||q->second.kind!=NodeKind::Question){error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}QuestionMemoryState v;if(status=="ACTIVE")v=QuestionMemoryState::Active;else if(status=="DORMANT")v=QuestionMemoryState::Dormant;else if(status=="ARCHIVED")v=QuestionMemoryState::Archived;else{error="JOURNAL_QUESTION_MEMORY_STATE_INVALID";return false;}s.question_memory_states[id]=v;return true;
  }
+ if(e.kind=="QUESTION_ASPECT_STATUS_BATCH_SET"){
+  std::istringstream in(e.payload);std::size_t count=0;
+  if(!(in>>count)||count==0||count>4096){error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+  std::map<std::string,QuestionAspectStatus> updates;
+  for(std::size_t i=0;i<count;++i){
+   std::string id,status;if(!(in>>std::quoted(id)>>status)||id.empty()){error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+   const auto aspect=s.nodes.find(id);if(aspect==s.nodes.end()||aspect->second.kind!=NodeKind::QuestionAspect){error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+   QuestionAspectStatus value;if(status=="OPEN")value=QuestionAspectStatus::Open;else if(status=="RESOLVED")value=QuestionAspectStatus::Resolved;else if(status=="DEFERRED")value=QuestionAspectStatus::Deferred;else{error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+   if(!updates.emplace(id,value).second){error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+  }
+  std::string extra;if(in>>extra){error="JOURNAL_QUESTION_ASPECT_BATCH_INVALID";return false;}
+  for(const auto& item:updates)s.question_aspect_statuses[item.first]=item.second;
+  return true;
+ }
  if(e.kind=="QUESTION_ASPECT_STATUS_SET"){
   std::istringstream in(e.payload);std::string id,status,extra;
   if(!(in>>std::quoted(id)>>status)||(in>>extra)){error="JOURNAL_QUESTION_ASPECT_STATUS_INVALID";return false;}
@@ -277,7 +291,7 @@ bool ContextGraph::replay(){
   if(e.kind=="TEMPORAL_BOUNDARY_CONTRIBUTION_V1"||e.kind=="TEMPORAL_BOUNDARY_CLEARED_V1"||e.kind=="TEMPORAL_BOUNDARY_CANDIDATE_SELECTED_V1"||e.kind=="TEMPORAL_QUESTION_SNAPSHOT_V1"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
-  if(e.kind=="QUESTION_MEMORY_REFERENCED"||e.kind=="QUESTION_MEMORY_REFERENCE_CASCADE"||e.kind=="QUESTION_MEMORY_STATE_SET"||e.kind=="QUESTION_ASPECT_STATUS_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_MEMORY_EVENT_INVALID:"+last_error_;return false;}++version;continue;}
+  if(e.kind=="QUESTION_MEMORY_REFERENCED"||e.kind=="QUESTION_MEMORY_REFERENCE_CASCADE"||e.kind=="QUESTION_MEMORY_STATE_SET"||e.kind=="QUESTION_ASPECT_STATUS_SET"||e.kind=="QUESTION_ASPECT_STATUS_BATCH_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_MEMORY_EVENT_INVALID:"+last_error_;return false;}++version;continue;}
   if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!have_meta||!decode_claim_validity(e.payload,record)||record.recorded_state_version!=version+1){last_error_="JOURNAL_CLAIM_VALIDITY_VERSION_INVALID";return false;}}
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
@@ -413,6 +427,92 @@ bool ContextGraph::set_question_aspect_status(const std::string& id,
       {{key + "/event", "QUESTION_ASPECT_STATUS_SET", payload.str()}});
   if (!committed.committed) { error = committed.error; return false; }
   state_.question_aspect_statuses[id] = status;
+  return true;
+}
+
+
+bool ContextGraph::apply_question_aspect_statuses(
+    const std::vector<std::pair<std::string, QuestionAspectStatus>>& updates,
+    std::uint64_t expected, std::string& error) {
+  error.clear();
+  if (updates.empty()) { error = "QUESTION_ASPECT_BATCH_EMPTY"; return false; }
+  if (expected != state_version()) { error = "STATE_VERSION_CONFLICT"; return false; }
+  std::map<std::string, QuestionAspectStatus> unique;
+  for (const auto& update : updates) {
+    const auto& id = update.first;
+    const auto found = state_.nodes.find(id);
+    if (id.empty() || found == state_.nodes.end() || found->second.kind != NodeKind::QuestionAspect) {
+      error = "QUESTION_ASPECT_NOT_FOUND"; return false;
+    }
+    if (!unique.emplace(id, update.second).second) { error = "QUESTION_ASPECT_DUPLICATE"; return false; }
+    for (const auto& ref : found->second.references) {
+      const auto q = state_.nodes.find(ref);
+      if (q != state_.nodes.end() && q->second.kind == NodeKind::Question &&
+          question_memory_state(ref) == QuestionMemoryState::Archived) {
+        error = "QUESTION_ARCHIVED"; return false;
+      }
+    }
+  }
+  for (const auto& update : unique) {
+    if (update.second != QuestionAspectStatus::Resolved ||
+        question_aspect_status(update.first) == QuestionAspectStatus::Resolved) continue;
+    const auto& aspect = state_.nodes.at(update.first);
+    std::set<std::string> anchors{update.first}, clusters, claims;
+    for (const auto& ref : aspect.references) {
+      const auto q = state_.nodes.find(ref);
+      if (q != state_.nodes.end() && q->second.kind == NodeKind::Question) anchors.insert(ref);
+    }
+    for (const auto& rel : state_.relations) {
+      const auto& edge = rel.second;
+      if (edge.kind == RelationKind::About && anchors.count(edge.from)) {
+        const auto target = state_.nodes.find(edge.to);
+        if (target != state_.nodes.end() && (target->second.kind == NodeKind::Cluster || target->second.kind == NodeKind::Entity))
+          clusters.insert(edge.to);
+      }
+    }
+    for (const auto& rel : state_.relations) {
+      const auto& edge = rel.second;
+      if (edge.kind == RelationKind::About && clusters.count(edge.to)) {
+        const auto source = state_.nodes.find(edge.from);
+        if (source != state_.nodes.end() && source->second.kind == NodeKind::Claim) claims.insert(edge.from);
+      }
+    }
+    bool supported = false, contradicted = false;
+    for (const auto& rel : state_.relations) {
+      const auto& edge = rel.second;
+      if (edge.kind == RelationKind::Supports) {
+        const auto from = state_.nodes.find(edge.from), to = state_.nodes.find(edge.to);
+        std::string claim_id;
+        if (from != state_.nodes.end() && to != state_.nodes.end() &&
+            from->second.kind == NodeKind::Evidence && to->second.kind == NodeKind::Claim) claim_id = edge.to;
+        else if (from != state_.nodes.end() && to != state_.nodes.end() &&
+            from->second.kind == NodeKind::Claim && to->second.kind == NodeKind::Evidence) claim_id = edge.from;
+        if (claims.count(claim_id) && claim_status(claim_id) == ClaimStatus::Active) supported = true;
+      }
+      if (edge.kind == RelationKind::Contradicts || edge.kind == RelationKind::ConflictsWith ||
+          edge.kind == RelationKind::Retracts)
+        if (claims.count(edge.from) || claims.count(edge.to)) contradicted = true;
+    }
+    if (!supported || contradicted) {
+      error = contradicted ? "QUESTION_REEVALUATION_CONFLICT_REMAINS" : "QUESTION_REEVALUATION_SUPPORT_MISSING";
+      return false;
+    }
+  }
+  std::vector<std::pair<std::string, QuestionAspectStatus>> changed;
+  for (const auto& item : unique)
+    if (question_aspect_status(item.first) != item.second) changed.push_back(item);
+  if (changed.empty()) return true;
+  std::ostringstream payload; payload << changed.size();
+  for (const auto& item : changed) {
+    const char* status = item.second == QuestionAspectStatus::Open ? "OPEN" :
+        item.second == QuestionAspectStatus::Resolved ? "RESOLVED" : "DEFERRED";
+    payload << ' ' << std::quoted(item.first) << ' ' << status;
+  }
+  const auto key = "question-aspect/batch/" + std::to_string(expected + 1);
+  const auto committed = journal_->commit(key, key, expected,
+      {{key + "/event", "QUESTION_ASPECT_STATUS_BATCH_SET", payload.str()}});
+  if (!committed.committed) { error = committed.error; return false; }
+  for (const auto& item : changed) state_.question_aspect_statuses[item.first] = item.second;
   return true;
 }
 

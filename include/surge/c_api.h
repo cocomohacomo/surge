@@ -117,6 +117,9 @@ int surge_context_graph_apply_claim_validity_reviewed(void* handle,
     const char* review_evidence_id, const char* reviewer_id,
     int* duplicate, uint64_t* state_version, char* error, size_t error_capacity);
 
+int surge_question_aspect_set_status_batch(void* handle, const char* const* aspect_ids,
+    const char* const* statuses, size_t count, uint64_t expected_state_version,
+    uint64_t* state_version, char* error, size_t error_capacity);
 int surge_question_aspect_set_status(void* handle, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity);
 int surge_question_aspect_get_status(void* handle, const char* aspect_id,

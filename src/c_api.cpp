@@ -1046,6 +1046,38 @@ int surge_question_route_contradiction_scoped(void* opaque, const char* relation
     catch (...) { copy_text(error, error_capacity, "QUESTION_ROUTE_UNKNOWN_EXCEPTION"); return 0; }
 }
 
+int surge_question_aspect_set_status_batch(void* opaque, const char* const* aspect_ids,
+    const char* const* statuses, size_t count, uint64_t expected_state_version,
+    uint64_t* state_version, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !aspect_ids || !statuses || count == 0 || count > 4096) {
+      copy_text(error, error_capacity, "QUESTION_ASPECT_BATCH_ARGUMENT_INVALID"); return 0;
+    }
+    std::vector<std::pair<std::string, surge::QuestionAspectStatus>> updates;
+    updates.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      if (!aspect_ids[i] || !*aspect_ids[i] || !statuses[i]) {
+        copy_text(error, error_capacity, "QUESTION_ASPECT_BATCH_ARGUMENT_INVALID"); return 0;
+      }
+      const std::string status(statuses[i]);
+      surge::QuestionAspectStatus value;
+      if (status == "OPEN") value = surge::QuestionAspectStatus::Open;
+      else if (status == "RESOLVED") value = surge::QuestionAspectStatus::Resolved;
+      else if (status == "DEFERRED") value = surge::QuestionAspectStatus::Deferred;
+      else { copy_text(error, error_capacity, "QUESTION_ASPECT_STATUS_INVALID"); return 0; }
+      updates.emplace_back(aspect_ids[i], value);
+    }
+    auto& graph = static_cast<Handle*>(opaque)->graph;
+    std::string message;
+    const bool ok = graph.apply_question_aspect_statuses(updates, expected_state_version, message);
+    copy_text(error, error_capacity, message);
+    if (!ok) return 0;
+    if (state_version) *state_version = graph.state_version();
+    return 1;
+  } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
+    catch (...) { copy_text(error, error_capacity, "QUESTION_ASPECT_BATCH_UNKNOWN_EXCEPTION"); return 0; }
+}
+
 int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     const char* status, uint64_t expected_state_version, char* error, size_t error_capacity) {
   try {

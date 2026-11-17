@@ -41,3 +41,10 @@ When a Question is referenced, `record_question_reference_with_dependents` may t
 A proposal becomes RESOLVED only when at least one ACTIVE Claim has explicit SUPPORTS Evidence and no conflict relation touches the associated Claims. Any conflict proposes OPEN. Without sufficient evidence, the current status is preserved. The plan reports the current State Version, reason codes, supporting/conflicting counts, associated Claim IDs, and bounded node count.
 
 This API never applies its proposals. It does not change QuestionAspect status, Claim status or validity, Question memory state, Focus, or EventJournal state. A later explicit apply operation must validate the proposal's State Version and re-check the evidence in the Core transaction. Traversal and selected context are bounded by max_depth (1..64) and max_nodes (1..4096); overflow fails closed.
+
+
+## Atomic application of Question reevaluation proposals
+
+The Python bridge method `apply_question_reevaluation_plan(plan, aspect_ids=None)` applies selected proposals in one EventJournal transaction. The plan State Version is mandatory. Core rejects stale plans, unknown or duplicate Aspect IDs, archived Question references, and invalid statuses. Before accepting RESOLVED, Core independently rebuilds the Question/Aspect topic association and verifies an ACTIVE Claim has SUPPORTS Evidence and no CONTRADICTS, CONFLICTS_WITH, or RETRACTS relation touches the associated Claims.
+
+All changed Aspect statuses are persisted as one QUESTION_ASPECT_STATUS_BATCH_SET event. Replay applies the batch as one state-version transition. An invalid member rejects the entire batch; no partial Aspect updates are visible. This operation does not alter Claim validity/status, Question memory, Focus, or dependency graph structure.
