@@ -171,8 +171,8 @@ The repository implementation now includes:
   explicit selection rationale and inactive-member exclusion.
 
 This is not yet a full v1.0 conformance claim. Remaining work includes the
-complete CC01-CC20 semantic matrix and hostile-input/replay cases, all requested
-retrieval filters and multi-hop lineage traversal, broader score-aware ranking,
+complete CC01-CC20 semantic matrix and hostile-input/replay cases, pagination
+and complete retrieval-budget conformance, broader score-aware ranking,
 memory compaction/manifests/tombstones, multi-process/crash/power-loss testing,
 fuzzing/sanitizers, and target-hardware performance measurements. The audit
 document is authoritative for the current gap list.
