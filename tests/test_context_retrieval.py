@@ -325,6 +325,14 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     "query-root", association_types=["CONTRADICTION"])
                 self.assertEqual(no_match["target"]["associations"], [])
                 self.assertEqual(core.state_version, before)
+                time_filtered = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", member_admitted_after_utc="2026-11-18T03:00:02Z",
+                    member_admitted_before_utc="2026-11-18T03:00:03Z")
+                self.assertEqual(time_filtered["target"]["members"], [])
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", valid_at_utc="2026-11-18T25:00:00Z")
+
 
 
     def test_focus_retrieval_without_active_focus_is_empty(self):
