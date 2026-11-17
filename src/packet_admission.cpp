@@ -92,6 +92,7 @@ bool PacketAdmissionCoordinator::apply_recovered(
   state.sequence_packets[p.source_sequence] = p.packet_id;
   state.sequencer.observe(p.source_sequence);
   packet_digests_[p.packet_id] = p.canonical_request_digest;
+  packet_encodings_[p.packet_id] = encode(p);
   idempotency_packets_[p.idempotency_key] = p.packet_id;
   return true;
 }
@@ -99,6 +100,7 @@ bool PacketAdmissionCoordinator::apply_recovered(
 bool PacketAdmissionCoordinator::recover() {
   streams_.clear();
   packet_digests_.clear();
+  packet_encodings_.clear();
   idempotency_packets_.clear();
   if (journal_.state_version() == 0 && journal_.committed_events().empty()) {
     recovered_ = true;
@@ -152,7 +154,9 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
       result.error = "PACKET_ALREADY_ADMITTED_SEMANTIC_NOT_COMMITTED";
       return result;
     }
-    if (existing_packet->second != p.canonical_request_digest) {
+    const auto encoded = packet_encodings_.find(p.packet_id);
+    if (existing_packet->second != p.canonical_request_digest ||
+        encoded == packet_encodings_.end() || encoded->second != encode(p)) {
       result.error = "PACKET_ID_REUSED"; return result;
     }
     result.admitted = true;
@@ -238,6 +242,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
 
   streams_[skey] = std::move(staged);
   packet_digests_[p.packet_id] = p.canonical_request_digest;
+  packet_encodings_[p.packet_id] = encode(p);
   idempotency_packets_[p.idempotency_key] = p.packet_id;
   result.admitted = true;
   result.state_version = committed.state_version;

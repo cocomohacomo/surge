@@ -173,3 +173,9 @@ The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEM
 
 
 - **Core Temporal Reassessment v0.1:** Core now persists version-pinned Claim/Evidence reassessment snapshots in the EventJournal with SHA-256 hash chaining and replay validation. See [TEMPORAL_REASSESSMENT_CORE_v0.1.md](docs/surge/TEMPORAL_REASSESSMENT_CORE_v0.1.md).
+
+
+## Cognitive model and security review
+
+- [Chaos Cluster Model v0.1](docs/surge/CHAOS_CLUSTER_MODEL_v0.1.md): preserves unstructured, weakly associated and competing interpretations without forced topic assignment.
+- [Whole-Codebase Review v0.1](docs/security/WHOLE_CODEBASE_REVIEW_v0.1.md): static review findings, severity and hardening priorities.

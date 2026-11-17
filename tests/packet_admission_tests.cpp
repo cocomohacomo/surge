@@ -51,6 +51,10 @@ int main() {
     auto collision=packet("p1","i-new",7,"abc"); collision.block_ref="b6";
     collision.canonical_request_digest="changed-canonical-request";
     CHECK(coordinator.admit(collision,"abc").error=="PACKET_ID_REUSED");
+    // A caller-controlled digest must not make a different envelope look identical.
+    auto forged_digest=packet("p1","i-forged",7,"abc"); forged_digest.block_ref="b7";
+    forged_digest.canonical_request_digest="canonical-p1";
+    CHECK(coordinator.admit(forged_digest,"abc").error=="PACKET_ID_REUSED");
     CHECK(coordinator.packet_count()==3);
   }
   {

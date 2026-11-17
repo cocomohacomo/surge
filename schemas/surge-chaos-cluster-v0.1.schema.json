@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocomohacomo.github.io/surge/schemas/surge-chaos-cluster-v0.1.schema.json",
+  "title": "SURGE Chaos Cluster descriptor v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cluster_id",
+    "cluster_kind",
+    "lifecycle",
+    "organization_state",
+    "members",
+    "associations",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "cluster_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "cluster_kind": {
+      "const": "CHAOS"
+    },
+    "lifecycle": {
+      "enum": [
+        "OPEN",
+        "ACCUMULATING",
+        "EMERGING",
+        "REVIEWABLE",
+        "PROMOTED",
+        "FORKED",
+        "DORMANT",
+        "ARCHIVED"
+      ]
+    },
+    "organization_state": {
+      "enum": [
+        "UNORDERED",
+        "PROVISIONAL",
+        "MULTI_PATTERN",
+        "PARTIALLY_STRUCTURED"
+      ]
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_ref",
+          "membership_status"
+        ],
+        "properties": {
+          "event_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "membership_status": {
+            "enum": [
+              "UNCLASSIFIED",
+              "PROVISIONAL",
+              "REVIEWED"
+            ]
+          },
+          "source_digest": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "salience": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "retained_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "associations": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "association_id",
+          "from_ref",
+          "to_ref",
+          "association_type",
+          "status",
+          "confidence",
+          "provenance"
+        ],
+        "properties": {
+          "association_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "from_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "to_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "association_type": {
+            "enum": [
+              "CO_OCCURS",
+              "ANALOGY",
+              "HYPOTHESIS",
+              "QUESTION",
+              "CONTRADICTION",
+              "TEMPORAL_NEARNESS",
+              "UNCLASSIFIED"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PROVISIONAL",
+              "REVIEWED",
+              "REJECTED"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "provenance": {
+            "$ref": "#/$defs/provenance"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "coherence_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "topical": {
+          "$ref": "#/$defs/score"
+        },
+        "causal": {
+          "$ref": "#/$defs/score"
+        },
+        "temporal": {
+          "$ref": "#/$defs/score"
+        },
+        "evidential": {
+          "$ref": "#/$defs/score"
+        }
+      }
+    },
+    "exploration_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "novelty": {
+          "$ref": "#/$defs/score"
+        },
+        "diversity": {
+          "$ref": "#/$defs/score"
+        },
+        "salience": {
+          "$ref": "#/$defs/score"
+        },
+        "ambiguity": {
+          "$ref": "#/$defs/score"
+        }
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "policy_version"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "NONE",
+            "PROMOTE_SUBSET",
+            "PROMOTE_ALL",
+            "FORK",
+            "SPLIT"
+          ]
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_cluster_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retention_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dormant_since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_manifest_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "model_id",
+        "model_version",
+        "policy_version",
+        "observed_at"
+      ],
+      "properties": {
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer_id",
+        "producer_version",
+        "recorded_at"
+      ],
+      "properties": {
+        "producer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -69,6 +69,9 @@ class PacketAdmissionCoordinator {
   EventJournal& journal_;
   std::map<std::string, StreamState> streams_;
   std::map<std::string, std::string> packet_digests_;
+  // Compare the complete durable packet envelope as well as the caller digest.
+  // The digest is an optimization/integrity field, not an identity authority.
+  std::map<std::string, std::string> packet_encodings_;
   std::map<std::string, std::string> idempotency_packets_;
   bool recovered_{false};
 };
