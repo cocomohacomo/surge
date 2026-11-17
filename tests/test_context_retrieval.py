@@ -229,6 +229,17 @@ class PersistentContextRetrievalTests(unittest.TestCase):
             with SemanticCoreBridge(journal) as core:
                 core.create_chaos_cluster(operation_id="create", idempotency_key="create",
                     expected_state_version=0, cluster_id="chaos/scores", provenance=provenance)
+                core.admit_chaos_member(operation_id="member-add", idempotency_key="member-add",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member={"member_ref": "score-member", "event_ref": "score-event",
+                            "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T00:00:01Z"},
+                    provenance=provenance)
+                core.revise_chaos_membership(operation_id="member-remove", idempotency_key="member-remove",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member_ref="score-member", status="PROVISIONAL", active=False, provenance=provenance)
+                core.revise_chaos_membership(operation_id="member-restore", idempotency_key="member-restore",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member_ref="score-member", status="REVIEWED", active=True, provenance=provenance)
                 for index, value in enumerate((0.91, 0.84)):
                     core.record_chaos_score_observation(
                         operation_id=f"score-{index}", idempotency_key=f"score-{index}",
@@ -243,6 +254,10 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(history[0]["scorer_id"], "recognizer")
                 self.assertEqual(result["observations"]["novelty"]["value"], 0.84)
                 self.assertEqual(result["omitted"]["score_observation_revisions"], 0)
+                membership = result["members"][0]
+                self.assertEqual(membership["membership_status"], "REVIEWED")
+                self.assertEqual([item["active"] for item in membership["membership_history"]],
+                                 [True, False, True])
                 bounded = core.get_chaos_cluster("chaos/scores", max_history_per_association=1)
                 self.assertFalse(bounded["complete"])
                 self.assertEqual(bounded["observation_history"]["novelty"]["history_offset"], 1)
@@ -258,6 +273,7 @@ class PersistentContextRetrievalTests(unittest.TestCase):
             with SemanticCoreBridge(journal) as recovered:
                 result = recovered.get_chaos_cluster("chaos/scores")
                 self.assertEqual(len(result["observation_history"]["novelty"]["history"]), 2)
+                self.assertEqual(result["members"][0]["membership_history"][-1]["status"], "REVIEWED")
 
 
 if __name__ == "__main__":
