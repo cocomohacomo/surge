@@ -103,7 +103,10 @@ std::string ChaosClusterLedger::encode(const State&s){
  // CC8 persists explicit lifecycle transition reasons and provenance.
  o<<"CC8 "<<s.size()<<' ';
  for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.lifecycle_history.size()<<' ';
-  for(const auto&revision:c.lifecycle_history)o<<std::quoted(revision.lifecycle)<<' '<<std::quoted(revision.reason)<<' ',wp(o,revision.provenance);
+  for(const auto&revision:c.lifecycle_history){
+   o<<std::quoted(revision.lifecycle)<<' '<<std::quoted(revision.reason)<<' ';
+   wp(o,revision.provenance);
+  }
  }
  return o.str();
 }
