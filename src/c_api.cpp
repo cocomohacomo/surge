@@ -1862,7 +1862,8 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   const size_t history_start=a.history.size()-history_count;omitted_history+=history_start;
   out<<"{\"association_id\":"<<json_quote(a.association_id)<<",\"from_ref\":"<<json_quote(a.from_ref)
      <<",\"to_ref\":"<<json_quote(a.to_ref)<<",\"type\":"<<json_quote(type(a.type))
-     <<",\"status\":"<<json_quote(status(a.status))<<",\"provenance\":"<<provenance(a.provenance)
+     <<",\"status\":"<<json_quote(status(a.status))<<",\"valid_from\":"<<json_quote(a.valid_from)
+     <<",\"valid_until\":"<<json_quote(a.valid_until)<<",\"provenance\":"<<provenance(a.provenance)
      <<",\"history_offset\":"<<history_start<<",\"history\":[";
   for(size_t h=history_start;h<a.history.size();++h){if(h>history_start)out<<',';const auto&rev=a.history[h];
    out<<"{\"status\":"<<json_quote(status(rev.status))<<",\"provenance\":"<<provenance(rev.provenance)<<'}';}
