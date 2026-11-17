@@ -172,6 +172,27 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertTrue(cleared["committed"])
                 self.assertIsNone(recovered.get_temporal_boundary("claim/bridge"))
 
+    def test_chaos_cluster_can_become_focus_without_topic_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-focus.sgj"
+            provenance = {"producer_id": "focus-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T00:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="chaos-create", idempotency_key="chaos-create",
+                    expected_state_version=0, cluster_id="chaos-focus", provenance=provenance)
+                focused = core.set_chaos_focus("chaos-focus", operation_id="focus-chaos",
+                    idempotency_key="focus-chaos", expected_state_version=1)
+                self.assertTrue(focused["committed"])
+                self.assertEqual(focused["target_kind"], "CHAOS_CLUSTER")
+                focus = core.get_focus()
+                self.assertEqual(focus["cluster_id"], "chaos-focus")
+                self.assertEqual(focus["target_kind"], "CHAOS_CLUSTER")
+                self.assertEqual(core.state_version, 2)
+            with SemanticCoreBridge(journal) as recovered:
+                focus = recovered.get_focus()
+                self.assertEqual(focus["target_kind"], "CHAOS_CLUSTER")
+                self.assertEqual(focus["cluster_id"], "chaos-focus")
+
     def test_temporal_question_routes_focus_to_single_linked_cluster(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "temporal-question-focus.sgj"

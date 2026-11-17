@@ -58,7 +58,7 @@ direct relation edges. A matching ScopeSpan includes its kind, opener text,
 closed/unresolved status, effect, target/antecedent/packet references,
 source digest, offset basis, and unconditional-claim safety flag.
 
-Supported filters: CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION,
+Supported filters: CLUSTER, CHAOS_CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION,
 QUESTION_ASPECT, DEPENDENCY, INTEREST, SCOPE_SPAN. An omitted/empty filter
 searches all supported record types. Each page limit is 1..1000. The paginated C ABI accepts an offset and returns
 next_offset; the original non-paginated C ABI remains as a compatibility wrapper
@@ -142,3 +142,8 @@ Conformance covers retrieval across 1,105 records, stable multi-page ordering,
 and Japanese particle-gap matching. Search remains read-only and all pages
 report the graph state version used for ranking.
 
+
+
+## Chaos Cluster retrieval boundary
+
+`CHAOS_CLUSTER` nodes are discoverable as typed Focus targets through ordinary graph retrieval. The graph node is only a navigation projection; retrieve full membership, association history and hypotheses from the authoritative ChaosClusterLedger. A graph search result is not a full Chaos Cluster record.

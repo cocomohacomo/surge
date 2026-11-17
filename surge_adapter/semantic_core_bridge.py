@@ -238,6 +238,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_focus_get.restype = ctypes.c_int
+        lib.surge_context_graph_focus_set_chaos.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_context_graph_focus_set_chaos.restype = ctypes.c_int
 
         lib.surge_chaos_cluster_create.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
@@ -1116,6 +1121,26 @@ class SemanticCoreBridge(CppCoreBridge):
         if not isinstance(value, dict) or value.get("cluster_id") != cluster_id:
             raise PacketRejected("CHAOS_CLUSTER_RESPONSE_INVALID")
         return value
+
+    def set_chaos_focus(self, cluster_id: str, *, operation_id: str,
+                        idempotency_key: str, expected_state_version: int | None = None,
+                        interest_id: str | None = None) -> dict[str, Any]:
+        """Focus a durable Chaos Cluster without converting it to an ordinary topic cluster."""
+        if not isinstance(cluster_id, str) or not cluster_id.strip():
+            raise PacketRejected("CHAOS_FOCUS_TARGET_REQUIRED")
+        self.get_chaos_cluster(cluster_id)
+        expected = self.state_version if expected_state_version is None else expected_state_version
+        duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_context_graph_focus_set_chaos(
+            self._handle, operation_id.encode(), idempotency_key.encode(), int(expected),
+            cluster_id.encode(), (interest_id or "").encode(), ctypes.byref(duplicate),
+            ctypes.byref(version), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or "CHAOS_FOCUS_SET_FAILED")
+        return {"committed": True, "duplicate": bool(duplicate.value),
+                "state_version": int(version.value), "cluster_id": cluster_id,
+                "target_kind": "CHAOS_CLUSTER"}
 
     def get_focus(self) -> dict[str, Any] | None:
         result = self._temporal_ledger_call(
