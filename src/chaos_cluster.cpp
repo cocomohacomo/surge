@@ -48,6 +48,17 @@ std::string ChaosClusterLedger::encode(const State&s){
     <<std::quoted(v.scorer_version)<<' '<<std::quoted(v.policy_version)<<' '<<std::quoted(v.observed_at)<<' ';}
   }
  }
+ // CC4 persists append-only membership state and explicit unmembership revisions.
+ o<<"CC4 "<<s.size()<<' ';
+ for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.members.size()<<' ';
+  for(const auto&member:c.members){const auto&m=member.second;
+   o<<std::quoted(member.first)<<' '<<std::quoted(m.membership_status)<<' '
+    <<(m.membership_active?1:0)<<' '<<m.membership_history.size()<<' ';
+   for(const auto&revision:m.membership_history){
+    o<<std::quoted(revision.status)<<' '<<(revision.active?1:0)<<' ';wp(o,revision.provenance);
+   }
+  }
+ }
  return o.str();
 }
 bool ChaosClusterLedger::decode(const std::string&p,State&s){
@@ -97,13 +108,50 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
    }
   }
  }
+ std::string membership_marker;
+ if(!(i>>membership_marker))return true;
+ if(membership_marker!="CC4")return false;
+ std::size_t cluster_count=0;if(!(i>>cluster_count)||cluster_count!=s.size())return false;
+ for(std::size_t z=0;z<cluster_count;++z){std::string cluster_id;std::size_t member_count=0;
+  if(!(i>>std::quoted(cluster_id)>>member_count)||!s.count(cluster_id)||member_count!=s.at(cluster_id).members.size())return false;
+  auto&members=s.at(cluster_id).members;
+  for(std::size_t x=0;x<member_count;++x){std::string member_ref,status;int active=0;std::size_t revisions=0;
+   if(!(i>>std::quoted(member_ref)>>std::quoted(status)>>active>>revisions)||
+      !members.count(member_ref)||(status!="UNCLASSIFIED"&&status!="PROVISIONAL"&&status!="REVIEWED")||
+      (active!=0&&active!=1)||revisions>100000)return false;
+   auto&m=members.at(member_ref);m.membership_status=status;m.membership_active=active==1;
+   for(std::size_t y=0;y<revisions;++y){ChaosMembershipRevision revision;int revision_active=0;
+    if(!(i>>std::quoted(revision.status)>>revision_active)|| 
+       (revision.status!="UNCLASSIFIED"&&revision.status!="PROVISIONAL"&&revision.status!="REVIEWED")||
+       (revision_active!=0&&revision_active!=1)||!rp(i,revision.provenance))return false;
+    revision.active=revision_active==1;m.membership_history.push_back(std::move(revision));
+   }
+   if(!m.membership_history.empty()&&
+      (m.membership_history.back().status!=m.membership_status||
+       m.membership_history.back().active!=m.membership_active))return false;
+  }
+ }
  std::string extra;return !(i>>extra);
 }
 bool ChaosClusterLedger::replay(){State staged;for(const auto&e:journal_->committed_events())if(e.kind=="CHAOS_CLUSTER_SNAPSHOT"){State next;if(!decode(e.payload,next))return false;staged=std::move(next);}state_=std::move(staged);return true;}
 bool ChaosClusterLedger::open(){std::lock_guard<std::mutex>lock(mutex_);return journal_&&journal_->open()&&replay();}
 ChaosResult ChaosClusterLedger::commit_snapshot(const std::string&op,const std::string&key,std::uint64_t expected,State&&s,const std::string&err){if(!err.empty())return{false,false,journal_->state_version(),err};for(auto&x:s)x.second.state_version=expected+1;JournalEvent e{op,"CHAOS_CLUSTER_SNAPSHOT",encode(s)};auto r=journal_->commit(op,key,expected,{e});if(!r.committed)return{false,r.duplicate,r.state_version,r.error};state_=std::move(s);return{true,r.duplicate,r.state_version,{}};}
 ChaosResult ChaosClusterLedger::create(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);if(id.empty()||!vp(p))return{false,false,state_version(),"INVALID_CLUSTER_OR_PROVENANCE"};State s=state_;auto old=s.find(id);if(old!=s.end())return{same_provenance(old->second.creation_provenance,p),true,state_version(),same_provenance(old->second.creation_provenance,p)?std::string():"CHAOS_CLUSTER_ID_CONFLICT"};ChaosCluster c;c.cluster_id=id;c.creation_provenance=p;s.emplace(id,std::move(c));return commit_snapshot(o,k,v,std::move(s),{});}
-ChaosResult ChaosClusterLedger::admit_member(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosMember&m){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(it->second.lifecycle==ChaosLifecycle::Archived)return{false,false,state_version(),"CHAOS_CLUSTER_ARCHIVED"};if(m.member_ref.empty()||m.event_ref.empty()||m.admission_reason.empty()||m.admitted_at.empty()||!vp(m.provenance))return{false,false,state_version(),"INVALID_CHAOS_MEMBER"};auto old=it->second.members.find(m.member_ref);if(old!=it->second.members.end())return{same_member(old->second,m),true,state_version(),same_member(old->second,m)?std::string():"CHAOS_MEMBER_ID_CONFLICT"};it->second.members.emplace(m.member_ref,m);if(it->second.lifecycle==ChaosLifecycle::Open)it->second.lifecycle=ChaosLifecycle::Accumulating;return commit_snapshot(o,k,v,std::move(s),{});}
+ChaosResult ChaosClusterLedger::admit_member(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosMember&m){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(it->second.lifecycle==ChaosLifecycle::Archived)return{false,false,state_version(),"CHAOS_CLUSTER_ARCHIVED"};if(m.member_ref.empty()||m.event_ref.empty()||m.admission_reason.empty()||m.admitted_at.empty()||!vp(m.provenance))return{false,false,state_version(),"INVALID_CHAOS_MEMBER"};auto old=it->second.members.find(m.member_ref);if(old!=it->second.members.end())return{same_member(old->second,m),true,state_version(),same_member(old->second,m)?std::string():"CHAOS_MEMBER_ID_CONFLICT"};auto member=m;if(member.membership_status!="UNCLASSIFIED"&&member.membership_status!="PROVISIONAL"&&member.membership_status!="REVIEWED")return{false,false,state_version(),"CHAOS_MEMBERSHIP_STATUS_INVALID"};if(member.membership_history.empty())member.membership_history.push_back({member.membership_status,true,member.provenance});it->second.members.emplace(m.member_ref,std::move(member));if(it->second.lifecycle==ChaosLifecycle::Open)it->second.lifecycle=ChaosLifecycle::Accumulating;return commit_snapshot(o,k,v,std::move(s),{});}
+ChaosResult ChaosClusterLedger::revise_membership(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&member_ref,const std::string&status,bool active,const ChaosProvenance&p){
+ std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto cluster=s.find(id);
+ if(cluster==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};
+ auto member=cluster->second.members.find(member_ref);
+ if(member==cluster->second.members.end())return{false,false,state_version(),"CHAOS_MEMBER_NOT_FOUND"};
+ if((status!="UNCLASSIFIED"&&status!="PROVISIONAL"&&status!="REVIEWED")||!vp(p))
+  return{false,false,state_version(),"CHAOS_MEMBERSHIP_REVISION_INVALID"};
+ auto&m=member->second;
+ if(m.membership_status==status&&m.membership_active==active)return{true,true,state_version(),{}};
+ if(m.membership_history.size()>=100000)return{false,false,state_version(),"CHAOS_MEMBERSHIP_HISTORY_LIMIT"};
+ m.membership_status=status;m.membership_active=active;
+ m.membership_history.push_back({status,active,p});
+ return commit_snapshot(o,k,v,std::move(s),{});
+}
 ChaosResult ChaosClusterLedger::propose_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosAssociation&a){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(a.association_id.empty()||a.from_ref==a.to_ref||!vp(a.provenance))return{false,false,state_version(),"INVALID_CHAOS_ASSOCIATION"};if(!it->second.members.count(a.from_ref)||!it->second.members.count(a.to_ref))return{false,false,state_version(),"CHAOS_ASSOCIATION_MEMBER_NOT_FOUND"};auto old=it->second.associations.find(a.association_id);if(old!=it->second.associations.end()){const bool same=old->second.from_ref==a.from_ref&&old->second.to_ref==a.to_ref&&old->second.type==a.type&&!old->second.history.empty()&&same_provenance(old->second.history.front().provenance,a.provenance);return{same,true,state_version(),same?std::string():"CHAOS_ASSOCIATION_ID_CONFLICT"};}auto x=a;x.status=ChaosAssociationStatus::Provisional;x.history.push_back({ChaosAssociationStatus::Provisional,a.provenance});it->second.associations.emplace(x.association_id,std::move(x));return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::review_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&aid,ChaosAssociationStatus st,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};auto a=it->second.associations.find(aid);if(a==it->second.associations.end())return{false,false,state_version(),"CHAOS_ASSOCIATION_NOT_FOUND"};if(st==ChaosAssociationStatus::Provisional||!vp(p))return{false,false,state_version(),"INVALID_ASSOCIATION_REVIEW"};if(a->second.status==st)return{true,true,state_version(),{}};if(a->second.status!=ChaosAssociationStatus::Provisional)return{false,false,state_version(),"CHAOS_ASSOCIATION_REVIEW_TERMINAL"};a->second.status=st;a->second.provenance=p;a->second.history.push_back({st,p});return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosPatternHypothesis&h){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(h.hypothesis_id.empty()||h.statement.empty()||h.member_refs.empty()||!vp(h.provenance)||(h.epistemic_state!="HYPOTHETICAL"&&h.epistemic_state!="UNVERIFIED"&&h.epistemic_state!="CONTRADICTED"&&h.epistemic_state!="REJECTED"))return{false,false,state_version(),"PATTERN_HYPOTHESIS_INVALID"};std::set<std::string>seen;for(const auto&r:h.member_refs)if(!it->second.members.count(r)||!seen.insert(r).second)return{false,false,state_version(),"PATTERN_HYPOTHESIS_MEMBER_INVALID"};for(const auto&r:h.counterexample_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_COUNTEREXAMPLE_INVALID"};auto old=it->second.pattern_hypotheses.find(h.hypothesis_id);if(old!=it->second.pattern_hypotheses.end())return{old->second.statement==h.statement,true,state_version(),old->second.statement==h.statement?std::string():"PATTERN_HYPOTHESIS_ID_CONFLICT"};it->second.pattern_hypotheses.emplace(h.hypothesis_id,h);if(it->second.organization==ChaosOrganization::Unordered)it->second.organization=ChaosOrganization::Provisional;return commit_snapshot(o,k,v,std::move(s),{});}
