@@ -107,13 +107,10 @@ int main(){
       ContextGraph graph(evidence_path);CHECK(graph.open());
       SemanticDelta seed;seed.delta_id="evidence-temporal-seed";seed.idempotency_key="evidence-temporal-seed";
       seed.expected_state_version=0;
-      seed.nodes={{{"ev-validity-basis",NodeKind::Evidence,"発行元の契約台帳",{}}},
-                  {{"ev-validity-subject",NodeKind::Evidence,"契約書",{}}}};
-      seed.relations={{{"ev-validity-basis-supports",RelationKind::Supports,
-                        "ev-validity-basis","ev-validity-subject"}}};
+      seed.nodes={{{"ev-validity-subject",NodeKind::Evidence,"契約書",{}}}};
       seed.evidence_validity_updates.push_back({"ev-validity-subject",
           "2026-01-01T00:00:00+09:00","2026-04-01T00:00:00+09:00",
-          "ev-validity-basis",1});
+          "ev-validity-subject",1});
       CHECK(graph.apply(seed).committed && graph.state_version()==1);
       CHECK(graph.evidence_validity_at("ev-validity-subject","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
       CHECK(graph.evidence_validity_at("ev-validity-subject","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
@@ -122,14 +119,14 @@ int main(){
       correction.idempotency_key="evidence-temporal-correction";correction.expected_state_version=1;
       correction.evidence_validity_updates.push_back({"ev-validity-subject",
           "2025-12-01T00:00:00Z","2026-05-01T00:00:00Z",
-          "ev-validity-basis",2});
+          "ev-validity-subject",2});
       CHECK(graph.apply(correction).committed && graph.state_version()==2);
       CHECK(graph.evidence_validity_history().at("ev-validity-subject").size()==2);
       SemanticDelta invalid;invalid.delta_id="evidence-temporal-invalid";
       invalid.idempotency_key="evidence-temporal-invalid";invalid.expected_state_version=2;
       invalid.evidence_validity_updates.push_back({"ev-validity-subject",
           "2026-05-01T00:00:00Z","2026-04-01T00:00:00Z",
-          "ev-validity-basis",3});
+          "ev-validity-subject",3});
       CHECK(graph.apply(invalid).error=="EVIDENCE_VALIDITY_INTERVAL_INVALID");
       CHECK(graph.state_version()==2);
     }

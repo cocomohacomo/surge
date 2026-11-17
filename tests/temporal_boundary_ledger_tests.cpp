@@ -64,7 +64,12 @@ int main() {
         "claim/A", "VALID_FROM", "event-1");
     CHECK(resolved.committed && resolved.status == "CONFLICT_RESOLVED_PENDING_APPROVAL");
     CHECK(resolved.pending.valid_from == "2026-04-01T00:00:00+09:00");
-    auto cleared = ledger.clear("tx-5", "idem-5", "event-5", 4, "claim/A");
+    auto later_conflict = ledger.add("tx-5", "idem-5", "event-5", 4,
+        {"claim/A", "VALID_FROM", "2026-02-15T00:00:00+09:00", "",
+         "evidence/4", "packet/4"});
+    CHECK(later_conflict.committed &&
+          later_conflict.status == "BOUNDARY_CONFLICT_REVIEW_REQUIRED");
+    auto cleared = ledger.clear("tx-6", "idem-6", "event-6", 5, "claim/A");
     CHECK(cleared.committed && cleared.status == "CLEARED");
     CHECK(ledger.pending_claim_count() == 0);
   }

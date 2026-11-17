@@ -177,7 +177,8 @@ def main() -> None:
             parser.error("thresholds must be finite fractions in [0,1]")
     result = evaluate(read_jsonl(args.cases), read_jsonl(args.gold),
                       read_jsonl(args.predictions), args.min_coverage,
-                      args.min_critical_recall, args.max_selective_risk)
+                      args.min_critical_recall, args.max_selective_risk,
+                      args.min_evidence_grounding)
     rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")

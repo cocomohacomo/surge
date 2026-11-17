@@ -9,8 +9,8 @@ std::string enc_add(const TemporalBoundaryContribution& v){std::ostringstream o;
 bool dec_add(const std::string&p,TemporalBoundaryContribution&v){std::istringstream i(p);int n=0;if(!(i>>n>>std::quoted(v.claim_id)>>std::quoted(v.role)>>std::quoted(v.valid_from)>>std::quoted(v.valid_until)>>std::quoted(v.evidence_id)>>std::quoted(v.packet_id))||n!=1)return false;i>>std::ws;return i.eof();}
 std::string enc_clear(const std::string&c){std::ostringstream o;o<<"1 "<<std::quoted(c);return o.str();}
 bool dec_clear(const std::string&p,std::string&c){std::istringstream i(p);int n=0;if(!(i>>n>>std::quoted(c))||n!=1||c.empty())return false;i>>std::ws;return i.eof();}
-std::string enc_select(const std::string&c,const std::string&r,const std::string&id){std::ostringstream o;o<<"1 "<<std::quoted(c)<<' '<<std::quoted(r)<<' '<<std::quoted(id);return o.str();}
-bool dec_select(const std::string&p,std::string&c,std::string&r,std::string&id){std::istringstream i(p);int n=0;if(!(i>>n>>std::quoted(c)>>std::quoted(r)>>std::quoted(id))||n!=1||c.empty()||r.empty()||id.empty())return false;i>>std::ws;return i.eof();}
+std::string enc_select(const std::string&c,const std::string&r,const std::string&id,const std::string&through){std::ostringstream o;o<<"2 "<<std::quoted(c)<<' '<<std::quoted(r)<<' '<<std::quoted(id)<<' '<<std::quoted(through);return o.str();}
+bool dec_select(const std::string&p,std::string&c,std::string&r,std::string&id,std::string&through){std::istringstream i(p);int n=0;if(!(i>>n>>std::quoted(c)>>std::quoted(r)>>std::quoted(id))||(n!=1&&n!=2)||c.empty()||r.empty()||id.empty())return false;if(n==2){if(!(i>>std::quoted(through))||through.empty())return false;}i>>std::ws;return i.eof();}
 void unique_add(std::vector<std::string>&v,const std::string&x){for(const auto&y:v)if(y==x)return;v.push_back(x);}
 }
 TemporalBoundaryLedger::TemporalBoundaryLedger(EventJournal&j,std::size_t m):journal_(j),max_claims_(m){}
@@ -35,12 +35,15 @@ void TemporalBoundaryLedger::refresh_pending(TemporalBoundaryPending&p)const{
    if(!selected){conflict=true;return nullptr;}
    // A later, conflicting contribution reopens review even after an earlier
    // candidate was selected. Selection is not a blanket waiver for new evidence.
-   bool after_selected=false;
+   const auto watermark=p.selected_through_candidate_ids.find(r);
+   if(watermark==p.selected_through_candidate_ids.end()){conflict=true;return nullptr;}
+   bool after_watermark=false,watermark_found=false;
    for(auto*c:it->second){
-    if(after_selected&&(c->valid_from!=selected->valid_from||c->valid_until!=selected->valid_until))
+    if(c->candidate_id==watermark->second){after_watermark=true;watermark_found=true;continue;}
+    if(after_watermark&&(c->valid_from!=selected->valid_from||c->valid_until!=selected->valid_until))
      conflict=true;
-    if(c->candidate_id==selected->candidate_id)after_selected=true;
    }
+   if(!watermark_found){conflict=true;return nullptr;}
    return selected;
   }
   const auto&f=*it->second.front();for(auto*c:it->second)if(c->valid_from!=f.valid_from||c->valid_until!=f.valid_until)conflict=true;
@@ -54,7 +57,7 @@ void TemporalBoundaryLedger::refresh_pending(TemporalBoundaryPending&p)const{
 }
 bool TemporalBoundaryLedger::apply_event(const JournalEvent&e){
  if(e.kind==K_CLEAR){std::string c;if(!dec_clear(e.payload,c))return false;pending_.erase(c);return true;}
- if(e.kind==K_SELECT){std::string c,r,id;if(!dec_select(e.payload,c,r,id))return false;auto f=pending_.find(c);if(f==pending_.end())return false;bool ok=false;for(const auto&x:f->second.candidates)if(x.candidate_id==id&&x.role==r)ok=true;if(!ok)return false;f->second.selected_candidate_ids[r]=id;refresh_pending(f->second);return true;}
+ if(e.kind==K_SELECT){std::string c,r,id,through;if(!dec_select(e.payload,c,r,id,through))return false;auto f=pending_.find(c);if(f==pending_.end())return false;bool ok=false;std::string latest;for(const auto&x:f->second.candidates)if(x.role==r){latest=x.candidate_id;if(x.candidate_id==id)ok=true;}if(!ok)return false;if(through.empty())through=latest;if(through!=latest)return false;bool watermark_exists=false;for(const auto&x:f->second.candidates)if(x.role==r&&x.candidate_id==through)watermark_exists=true;if(!watermark_exists)return false;f->second.selected_candidate_ids[r]=id;f->second.selected_through_candidate_ids[r]=through;refresh_pending(f->second);return true;}
  TemporalBoundaryContribution c;if(!dec_add(e.payload,c))return false;std::string s;if(!validate_contribution(c,s))return false;
  auto ins=pending_.emplace(c.claim_id,TemporalBoundaryPending{});auto&p=ins.first->second;p.claim_id=c.claim_id;
  for(const auto&x:p.candidates)if(x.candidate_id==e.event_id)return x.role==c.role&&x.valid_from==c.valid_from&&x.valid_until==c.valid_until&&x.evidence_id==c.evidence_id&&x.packet_id==c.packet_id;
@@ -62,7 +65,9 @@ bool TemporalBoundaryLedger::apply_event(const JournalEvent&e){
 }
 TemporalBoundaryLedgerResult TemporalBoundaryLedger::result_for(const std::string&id,const JournalCommitResult&c)const{TemporalBoundaryLedgerResult r;r.committed=c.committed;r.duplicate=c.duplicate;r.state_version=c.state_version;r.error=c.error;auto f=pending_.find(id);if(f!=pending_.end()){r.pending=f->second;r.status=f->second.status;}else{r.pending.claim_id=id;r.status="CLEARED";}return r;}
 TemporalBoundaryLedgerResult TemporalBoundaryLedger::add(const std::string&tx,const std::string&ik,const std::string&eid,std::uint64_t v,const TemporalBoundaryContribution&c){std::string s;if(!validate_contribution(c,s)){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status=s;r.error=s;return r;}JournalEvent e{eid,K_ADD,enc_add(c)};auto cm=journal_.commit(tx,ik,v,{e});if(cm.committed&&!cm.duplicate&&!apply_event(e)){TemporalBoundaryLedgerResult r;r.state_version=cm.state_version;r.status="COMMITTED_REPLAY_REQUIRED";r.error=r.status;return r;}return result_for(c.claim_id,cm);}
-TemporalBoundaryLedgerResult TemporalBoundaryLedger::resolve_candidate(const std::string&tx,const std::string&ik,const std::string&eid,std::uint64_t v,const std::string&claim,const std::string&role,const std::string&id){auto f=pending_.find(claim);if(f==pending_.end()){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CLAIM_NOT_FOUND";r.error=r.status;return r;}bool ok=false;for(const auto&c:f->second.candidates)if(c.candidate_id==id&&c.role==role)ok=true;if(!ok){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CANDIDATE_NOT_FOUND";r.error=r.status;return r;}JournalEvent e{eid,K_SELECT,enc_select(claim,role,id)};auto cm=journal_.commit(tx,ik,v,{e});if(cm.committed&&!cm.duplicate&&!apply_event(e)){TemporalBoundaryLedgerResult r;r.state_version=cm.state_version;r.status="COMMITTED_REPLAY_REQUIRED";r.error=r.status;return r;}return result_for(claim,cm);}
+TemporalBoundaryLedgerResult TemporalBoundaryLedger::resolve_candidate(const std::string&tx,const std::string&ik,const std::string&eid,std::uint64_t v,const std::string&claim,const std::string&role,const std::string&id){auto f=pending_.find(claim);if(f==pending_.end()){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CLAIM_NOT_FOUND";r.error=r.status;return r;}bool ok=false;for(const auto&c:f->second.candidates)if(c.candidate_id==id&&c.role==role)ok=true;if(!ok){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CANDIDATE_NOT_FOUND";r.error=r.status;return r;}std::string through;for(const auto& candidate:f->second.candidates)if(candidate.role==role)through=candidate.candidate_id;
+ if(through.empty()){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CANDIDATE_NOT_FOUND";r.error=r.status;return r;}
+ JournalEvent e{eid,K_SELECT,enc_select(claim,role,id,through)};auto cm=journal_.commit(tx,ik,v,{e});if(cm.committed&&!cm.duplicate&&!apply_event(e)){TemporalBoundaryLedgerResult r;r.state_version=cm.state_version;r.status="COMMITTED_REPLAY_REQUIRED";r.error=r.status;return r;}return result_for(claim,cm);}
 TemporalBoundaryLedgerResult TemporalBoundaryLedger::clear(const std::string&tx,const std::string&ik,const std::string&eid,std::uint64_t v,const std::string&claim){if(claim.empty()){TemporalBoundaryLedgerResult r;r.state_version=journal_.state_version();r.status="CLAIM_ID_REQUIRED";r.error=r.status;return r;}JournalEvent e{eid,K_CLEAR,enc_clear(claim)};auto cm=journal_.commit(tx,ik,v,{e});if(cm.committed&&!cm.duplicate)pending_.erase(claim);return result_for(claim,cm);}
 bool TemporalBoundaryLedger::get(const std::string&id,TemporalBoundaryPending&o)const{auto f=pending_.find(id);if(f==pending_.end())return false;o=f->second;return true;}
 std::size_t TemporalBoundaryLedger::pending_claim_count()const{return pending_.size();}
