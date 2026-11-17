@@ -509,7 +509,9 @@ class ContextRetriever:
         members = target.get("members", [])
         associations = target.get("associations", [])
         hypotheses = target.get("pattern_hypotheses", [])
-        if not all(isinstance(values, list) for values in (members, associations, hypotheses)):
+        if (not all(isinstance(values, list) for values in (members, associations, hypotheses))
+                or any(not isinstance(item, dict) for values in (members, associations, hypotheses)
+                       for item in values)):
             raise PacketRejected("CHAOS_RETRIEVAL_PROJECTION_INVALID")
 
         def producer_of(item: dict[str, Any]) -> str | None:
@@ -573,7 +575,7 @@ class ContextRetriever:
         unresolved_lineage_refs: list[str] = []
         omitted_lineage_refs: list[str] = []
         visited = {cluster_id}
-        frontier = [(target, 0)]
+        frontier = [(target, 0)] if lineage_depth > 0 else []
         while frontier:
             current, depth = frontier.pop(0)
             neighbors = sorted(set(current.get("parent_refs", [])) | set(current.get("child_refs", [])))
