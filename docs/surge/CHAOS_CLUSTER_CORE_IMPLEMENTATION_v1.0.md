@@ -13,8 +13,8 @@ The persistent C++ `ChaosClusterLedger` now extends the v0.1 snapshot format com
 
 ## Compatibility and limits
 
-The C++ ledger API is persistent and replayable, but the Chaos Cluster operations are not yet exposed through the public C ABI/Python bridge. Score observations, diversity-aware retrieval, Question/Interest/Focus graph edges and full CC01-CC20 executable semantics remain follow-up work. The current serialization uses a backward-compatible optional extension marker, not a general-purpose public interchange encoding.
+The C++ ledger API is persistent and replayable. The public C ABI and Python bridge currently expose create, member admission, provisional association, lifecycle transition, subset promotion and bounded readback. Fork/split, association review, PatternHypothesis creation, Focus targeting, score observations, diversity-aware retrieval and full CC01-CC20 executable semantics remain follow-up work. The current serialization uses a backward-compatible optional extension marker, not a general-purpose public interchange encoding.
 
 ## Verification
 
-The dedicated C++ test covers create/member retry, provisional association and terminal review history, PatternHypothesis, subset promotion, fork, split, restart replay, stale-version rejection and invalid lifecycle rejection. CI remains the authority for platform/compiler verification.
+The dedicated C++ test covers create/member retry, provisional association and terminal review history, PatternHypothesis, subset promotion, fork, split, restart replay, stale-version rejection and invalid lifecycle rejection. The public C ABI is covered by `surge_chaos_c_api_tests`; the Python `SemanticCoreBridge` now exposes create, member admission, provisional association, lifecycle transition, subset promotion and bounded JSON readback. Its integration test exercises the complete C ABI-to-Python path and restart replay. CI remains the authority for platform/compiler verification.

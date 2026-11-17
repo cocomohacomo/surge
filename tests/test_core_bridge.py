@@ -69,13 +69,18 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                                  "to_member_ref": "m2", "association_type": "ANALOGY"},
                     provenance=provenance)
                 core.transition_chaos_cluster(
-                    operation_id="py-review", idempotency_key="py-review-key",
+                    operation_id="py-accumulate", idempotency_key="py-accumulate-key",
                     expected_state_version=4, cluster_id="chaos-python",
+                    target_lifecycle="ACCUMULATING", reason="begin organizing",
+                    provenance=provenance)
+                core.transition_chaos_cluster(
+                    operation_id="py-review", idempotency_key="py-review-key",
+                    expected_state_version=5, cluster_id="chaos-python",
                     target_lifecycle="REVIEWABLE", reason="test review",
                     provenance=provenance)
                 core.promote_chaos_subset(
                     operation_id="py-promote", idempotency_key="py-promote-key",
-                    expected_state_version=5, cluster_id="chaos-python",
+                    expected_state_version=6, cluster_id="chaos-python",
                     member_targets={"m1": "topic-1"}, provenance=provenance)
                 value = core.get_chaos_cluster("chaos-python")
                 self.assertIn("event-2", str(value))
