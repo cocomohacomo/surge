@@ -684,6 +684,58 @@
               }
             }
           }
+        },
+        "exclusion_reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "history_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "epistemic_state",
+              "exclusion_reasons",
+              "provenance"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "PROVISIONAL",
+                  "REVIEWABLE",
+                  "REJECTED",
+                  "PROMOTED_TO_EVIDENCE_REVIEW"
+                ]
+              },
+              "epistemic_state": {
+                "enum": [
+                  "HYPOTHETICAL",
+                  "UNVERIFIED",
+                  "CONTRADICTED",
+                  "REJECTED"
+                ]
+              },
+              "exclusion_reasons": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "provenance": {
+                "$ref": "#/$defs/provenance"
+              }
+            }
+          }
         }
       }
     }
