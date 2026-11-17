@@ -851,7 +851,7 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
    std::set<std::string> claims;
    for(const auto&item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&clusters.count(r.to)){auto n=graph.nodes().find(r.from);if(n!=graph.nodes().end()&&n->second.kind==surge::NodeKind::Claim)claims.insert(r.from);}}
    for(const auto&claim:claims)included.insert(claim);
-   size_t supporting=0,contradicting=0;std::set<std::string> support_evidence,conflict_refs;
+   size_t supporting=0,contradicting=0;std::set<std::string> support_evidence,conflict_refs,retracted_claims,conflict_relation_ids;
    for(const auto&item:graph.relations()){
     const auto&r=item.second;
     if(r.kind==surge::RelationKind::Supports){
@@ -863,20 +863,27 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
     }
     if(r.kind==surge::RelationKind::Contradicts||r.kind==surge::RelationKind::ConflictsWith||r.kind==surge::RelationKind::Retracts){
      bool touches_claim=claims.count(r.from)||claims.count(r.to);
-     if(touches_claim){++contradicting;conflict_refs.insert(r.from);conflict_refs.insert(r.to);}
+     if(touches_claim){++contradicting;conflict_refs.insert(r.from);conflict_refs.insert(r.to);conflict_relation_ids.insert(r.id);if(r.kind==surge::RelationKind::Retracts&&claims.count(r.to))retracted_claims.insert(r.to);}
     }
    }
    for(const auto&id:support_evidence)if(!id.empty())included.insert(id);
    for(const auto&id:conflict_refs)if(graph.nodes().count(id))included.insert(id);
    auto current=graph.question_aspect_status(aspect->id);
    std::string proposed=status_name(current),reason="INSUFFICIENT_EVIDENCE";
-   if(contradicting>0){proposed="OPEN";reason="CONTRADICTORY_EVIDENCE";}
+   if(!retracted_claims.empty()){proposed="OPEN";reason="RETRACTED_EVIDENCE";}
+   else if(contradicting>0){proposed="OPEN";reason="CONTRADICTORY_EVIDENCE";}
    else if(supporting>0){proposed="RESOLVED";reason="SUPPORTED_EVIDENCE";}
    if(!first) rows<<',';
    first=false;
    rows<<"{\"aspect_id\":"<<json_quote(aspect->id)<<",\"question_ids\":[";
    bool qfirst=true;for(const auto&ref:aspect->references)if(questions.count(ref)){if(!qfirst)rows<<',';qfirst=false;rows<<json_quote(ref);}
-   rows<<"],\"current_status\":"<<json_quote(status_name(current))<<",\"proposed_status\":"<<json_quote(proposed)<<",\"reason\":"<<json_quote(reason)<<",\"supporting_evidence_count\":"<<supporting<<",\"contradicting_relation_count\":"<<contradicting<<",\"claim_ids\":[";
+   rows<<"],\"contradicting_relation_count\":"<<contradicting<<",\"supporting_evidence_ids\":[";
+   bool efirst=true;for(const auto&id:support_evidence){if(!efirst)rows<<',';efirst=false;rows<<json_quote(id);}
+   rows<<"],\"retracted_claim_ids\":[";
+   bool rfirst=true;for(const auto&id:retracted_claims){if(!rfirst)rows<<',';rfirst=false;rows<<json_quote(id);}
+   rows<<"],\"conflict_relation_ids\":[";
+   bool xfirst=true;for(const auto&id:conflict_relation_ids){if(!xfirst)rows<<',';xfirst=false;rows<<json_quote(id);}
+   rows<<"],\"claim_ids\":[";
    bool cfirst=true;for(const auto&id:claims){if(!cfirst)rows<<',';cfirst=false;rows<<json_quote(id);}rows<<"]}";
   }
   if(included.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_REEVALUATION_NODE_LIMIT");return 0;}
