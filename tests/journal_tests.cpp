@@ -8,6 +8,18 @@ using namespace surge;
 int main() {
   const auto root = std::filesystem::temp_directory_path() / "surge-v09-journal-tests";
   std::filesystem::remove_all(root);
+  const auto lock_path = (root / "writer-lock.sgj").string();
+  {
+    EventJournal first(lock_path);
+    CHECK(first.open());
+    EventJournal competing(lock_path);
+    CHECK(!competing.open());
+    CHECK(competing.last_error() == "JOURNAL_WRITER_LOCKED");
+  }
+  {
+    EventJournal after_release(lock_path);
+    CHECK(after_release.open());
+  }
   const auto path = (root / "events.sgj").string();
   {
     EventJournal journal(path);
