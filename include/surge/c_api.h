@@ -23,6 +23,8 @@ typedef struct SurgeChaosAssociationInput {
   const char* from_member_ref;
   const char* to_member_ref;
   const char* association_type;
+  const char* valid_from_utc;
+  const char* valid_until_utc;
 } SurgeChaosAssociationInput;
 typedef struct SurgeChaosScoreObservationInput {
   double value;
@@ -245,6 +247,7 @@ int surge_chaos_cluster_create(void*,const char*,const char*,uint64_t,const char
 int surge_chaos_cluster_admit_member(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosMemberInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_propose_association(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_review_association(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_expire_due_associations(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_add_pattern_hypothesis(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosPatternHypothesisInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_record_observation(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_record_entity_observation(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t);
