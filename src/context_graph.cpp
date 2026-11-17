@@ -13,8 +13,8 @@
 
 namespace surge {
 namespace {
-const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";}return "UNKNOWN";}
-bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::ChaosCluster:return "CHAOS_CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";}return "UNKNOWN";}
+bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"CHAOS_CLUSTER",NodeKind::ChaosCluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";case RelationKind::Supersedes:return "SUPERSEDES";case RelationKind::Retracts:return "RETRACTS";case RelationKind::Duplicates:return "DUPLICATES";case RelationKind::Contains:return "CONTAINS";}return "UNKNOWN";}
 bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts},{"DUPLICATES",RelationKind::Duplicates},{"CONTAINS",RelationKind::Contains}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* scope_kind_name(ScopeKind k){switch(k){case ScopeKind::Negation:return "NEGATION";case ScopeKind::Condition:return "CONDITION";case ScopeKind::Modality:return "MODALITY";case ScopeKind::Concession:return "CONCESSION";case ScopeKind::Contrast:return "CONTRAST";case ScopeKind::Coreference:return "COREFERENCE";case ScopeKind::Anaphora:return "ANAPHORA";case ScopeKind::Quotation:return "QUOTATION";case ScopeKind::Temporal:return "TEMPORAL";case ScopeKind::ListContinuation:return "LIST_CONTINUATION";case ScopeKind::TableHeader:return "TABLE_HEADER";}return "UNKNOWN";}
@@ -94,8 +94,8 @@ std::string encode_anchor(const ScopeAnchor& a){std::ostringstream o;o<<std::quo
 bool decode_anchor(std::istream& i,ScopeAnchor& a){return static_cast<bool>(i>>std::quoted(a.anchor_id)>>std::quoted(a.source_digest)>>std::quoted(a.offset_basis)>>a.start_offset>>a.end_offset>>std::quoted(a.exact_text)>>std::quoted(a.packet_ref));}
 std::string encode_scope(const AddScopeSpan& add){const auto& s=add.span;std::ostringstream o;o<<std::quoted(s.span_id)<<' '<<scope_kind_name(s.kind)<<' '<<std::quoted(s.source_digest)<<' '<<std::quoted(s.offset_basis)<<' '<<encode_anchor(s.opener)<<' '<<(s.closer?1:0);if(s.closer)o<<' '<<encode_anchor(*s.closer);o<<' '<<s.target_refs.size();for(const auto& x:s.target_refs)o<<' '<<std::quoted(x);o<<' '<<s.antecedent_refs.size();for(const auto& x:s.antecedent_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(s.attribution_ref)<<' '<<std::quoted(s.modality_kind)<<' '<<std::quoted(s.temporal_role)<<' '<<std::quoted(s.parent_ref)<<' '<<s.packet_refs.size();for(const auto& x:s.packet_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(add.source_snapshot);return o.str();}
 bool decode_scope(const std::string& p,AddScopeSpan& add){std::istringstream i(p);auto& s=add.span;std::string kind;int has_closer=0;std::size_t n=0;if(!(i>>std::quoted(s.span_id)>>kind>>std::quoted(s.source_digest)>>std::quoted(s.offset_basis))||!parse_scope_kind(kind,s.kind)||!decode_anchor(i,s.opener)||!(i>>has_closer))return false;if(has_closer!=0&&has_closer!=1)return false;if(has_closer){ScopeAnchor a;if(!decode_anchor(i,a))return false;s.closer=std::move(a);}if(!(i>>n)||n>1024)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.target_refs.push_back(v);}if(!(i>>n)||n>1024)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.antecedent_refs.push_back(v);}if(!(i>>std::quoted(s.attribution_ref)>>std::quoted(s.modality_kind)>>std::quoted(s.temporal_role)>>std::quoted(s.parent_ref)>>n)||n>4096)return false;for(std::size_t x=0;x<n;++x){std::string v;if(!(i>>std::quoted(v)))return false;s.packet_refs.push_back(v);}std::string extra;if(!(i>>std::quoted(add.source_snapshot))||(i>>extra))return false;return true;}
-std::string encode_focus(const FocusRecord& f){std::ostringstream o;o<<std::quoted(f.cluster_id)<<' '<<std::quoted(f.interest_id);return o.str();}
-bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);std::string extra;if(!(i>>std::quoted(f.cluster_id)>>std::quoted(f.interest_id)))return false;return !(i>>extra);}
+std::string encode_focus(const FocusRecord& f){std::ostringstream o;o<<std::quoted(f.cluster_id)<<' '<<std::quoted(f.interest_id);if(f.chaos_cluster)o<<' '<<1;return o.str();}
+bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);int chaos=0;if(!(i>>std::quoted(f.cluster_id)>>std::quoted(f.interest_id)))return false;if(i>>chaos){if(chaos!=0&&chaos!=1)return false;f.chaos_cluster=chaos!=0;}else i.clear();std::string extra;return !(i>>extra);}
 std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
 std::string reassessment_snapshot_payload(const TemporalReassessmentRecord& r) {
  std::ostringstream out;out<<std::quoted(r.trace_id)<<' '<<std::quoted(r.claim_id)<<' '
@@ -167,7 +167,7 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
  };
  for(const auto& r:n.references)if(!s.nodes.count(r)){e="NODE_REFERENCE_NOT_FOUND";return false;}
  switch(n.kind){
- case NodeKind::Cluster:case NodeKind::Entity:case NodeKind::Evidence:case NodeKind::Question:if(!n.references.empty()){e="NODE_REFERENCE_SHAPE_INVALID";return false;}break;
+ case NodeKind::Cluster:case NodeKind::ChaosCluster:case NodeKind::Entity:case NodeKind::Evidence:case NodeKind::Question:if(!n.references.empty()){e="NODE_REFERENCE_SHAPE_INVALID";return false;}break;
  case NodeKind::Claim:
   if(n.references.empty()){e="CLAIM_REQUIRES_EVIDENCE";return false;}
   for(const auto& r:n.references){const auto found=s.nodes.find(r);
@@ -175,7 +175,7 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
   break;
  case NodeKind::QuestionAspect:if(n.references.size()!=1||!ref_kind(0,NodeKind::Question)){e="QUESTION_ASPECT_PARENT_INVALID";return false;}break;
  case NodeKind::Dependency:if(n.references.size()!=2||n.references[0]==n.references[1]){e="DEPENDENCY_ENDPOINTS_INVALID";return false;}break;
- case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!ref_kind(1,NodeKind::Cluster)){e="INTEREST_TARGET_INVALID";return false;}break;
+ case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!(ref_kind(1,NodeKind::Cluster)||ref_kind(1,NodeKind::ChaosCluster))){e="INTEREST_TARGET_INVALID";return false;}break;
  }s.nodes.emplace(n.id,n);if(n.kind==NodeKind::Claim)s.claim_statuses.emplace(n.id,ClaimStatus::Active);return true;
 }
 bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e)const{
@@ -328,8 +328,9 @@ bool ContextGraph::reassess_claim(const std::string& claim_id,const std::string&
  result=record;return true;
 }
 bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
- const auto cluster=s.nodes.find(f.cluster_id);
- if(cluster==s.nodes.end()||cluster->second.kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
+ const auto target=s.nodes.find(f.cluster_id);
+ const auto expected=f.chaos_cluster?NodeKind::ChaosCluster:NodeKind::Cluster;
+ if(target==s.nodes.end()||target->second.kind!=expected){e=f.chaos_cluster?"FOCUS_CHAOS_CLUSTER_INVALID":"FOCUS_CLUSTER_INVALID";return false;}
  if(!f.interest_id.empty()){
   const auto interest=s.nodes.find(f.interest_id);
   if(interest==s.nodes.end()||interest->second.kind!=NodeKind::Interest||

@@ -28,7 +28,7 @@ class ContextRetriever:
 
     ALLOWED_KINDS = {
         "CLUSTER", "ENTITY", "EVIDENCE", "CLAIM", "QUESTION",
-        "QUESTION_ASPECT", "DEPENDENCY", "INTEREST", "SCOPE_SPAN",
+        "QUESTION_ASPECT", "DEPENDENCY", "INTEREST", "CHAOS_CLUSTER", "SCOPE_SPAN",
     }
 
     def __init__(self, core: Any):

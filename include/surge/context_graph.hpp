@@ -10,7 +10,7 @@
 #include <utility>
 
 namespace surge {
-enum class NodeKind { Cluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
+enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
 enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts, Duplicates, Contains };
 enum class ClaimStatus { Active, Superseded, Retracted };
 enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
@@ -21,7 +21,7 @@ enum class QuestionMemoryState { Active, Dormant, Archived };
 enum class ScopeEffect { NegatedClaim, ConditionalRelation, ModalityQualified, ConcessionRelation, ContrastRelation, ReferenceCandidate, QuotationEvidence, TemporalQualifier, StructuralContinuation, TableHeaderScope };
 struct GraphNode { std::string id; NodeKind kind{NodeKind::Cluster}; std::string content; std::vector<std::string> references; };
 struct GraphRelation { std::string id; RelationKind kind{RelationKind::About}; std::string from; std::string to; };
-struct FocusRecord { std::string cluster_id; std::string interest_id; };
+struct FocusRecord { std::string cluster_id; std::string interest_id; bool chaos_cluster{false}; };
 struct ScopeAnchor {
   std::string anchor_id, source_digest, offset_basis;
   std::size_t start_offset{0}, end_offset{0};
