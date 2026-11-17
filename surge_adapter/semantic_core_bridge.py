@@ -56,6 +56,19 @@ class _Scope(ctypes.Structure):
                 ("temporal_role", ctypes.c_char_p), ("parent_ref", ctypes.c_char_p),
                 ("packet_refs", ctypes.POINTER(ctypes.c_char_p)), ("packet_count", ctypes.c_size_t)]
 
+class _ChaosProvenance(ctypes.Structure):
+    _fields_ = [("producer_id", ctypes.c_char_p), ("producer_version", ctypes.c_char_p),
+                ("policy_version", ctypes.c_char_p), ("recorded_at", ctypes.c_char_p)]
+
+class _ChaosMember(ctypes.Structure):
+    _fields_ = [("member_ref", ctypes.c_char_p), ("event_ref", ctypes.c_char_p),
+                ("admission_reason", ctypes.c_char_p), ("admitted_at", ctypes.c_char_p),
+                ("source_digest", ctypes.c_char_p)]
+
+class _ChaosAssociation(ctypes.Structure):
+    _fields_ = [("association_id", ctypes.c_char_p), ("from_member_ref", ctypes.c_char_p),
+                ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p)]
+
 class SemanticCoreBridge(CppCoreBridge):
     """Packet admission + typed SemanticDelta commit over one shared journal."""
 
@@ -225,6 +238,37 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_context_graph_focus_get.restype = ctypes.c_int
+
+        lib.surge_chaos_cluster_create.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_create.restype = ctypes.c_int
+        lib.surge_chaos_cluster_admit_member.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosMember), ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_admit_member.restype = ctypes.c_int
+        lib.surge_chaos_cluster_propose_association.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_propose_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_transition.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_transition.restype = ctypes.c_int
+        lib.surge_chaos_cluster_promote_subset.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p),
+            ctypes.c_size_t, ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_promote_subset.restype = ctypes.c_int
+        lib.surge_chaos_cluster_get.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_get.restype = ctypes.c_int
 
 
     @property
@@ -943,6 +987,136 @@ class SemanticCoreBridge(CppCoreBridge):
         result = json.loads(output.value.decode("utf-8"))
         if int(result.get("state_version", before_version)) > before_version: result["duplicate"] = False
         return result
+    @staticmethod
+    def _chaos_provenance(value: dict[str, Any]) -> _ChaosProvenance:
+        if not isinstance(value, dict):
+            raise PacketRejected("CHAOS_PROVENANCE_REQUIRED")
+        fields = ("producer_id", "producer_version", "policy_version", "recorded_at")
+        encoded = []
+        for field in fields:
+            item = value.get(field)
+            if not isinstance(item, str) or not item.strip():
+                raise PacketRejected("CHAOS_PROVENANCE_INVALID")
+            encoded.append(item.encode("utf-8"))
+        return _ChaosProvenance(*encoded)
+
+    def _chaos_mutation(self, function, args) -> dict[str, Any]:
+        version = ctypes.c_uint64(0)
+        error = ctypes.create_string_buffer(512)
+        ok = function(self._handle, *args, ctypes.byref(version), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if not ok:
+            raise PacketRejected(detail or "CHAOS_CLUSTER_MUTATION_REJECTED")
+        return {"committed": True, "state_version": int(version.value)}
+
+    def create_chaos_cluster(self, *, operation_id: str, idempotency_key: str,
+                             expected_state_version: int, cluster_id: str,
+                             provenance: dict[str, Any]) -> dict[str, Any]:
+        """Create a durable open-world exploration cluster."""
+        values = (operation_id, idempotency_key, cluster_id)
+        if any(not isinstance(x, str) or not x.strip() for x in values):
+            raise PacketRejected("CHAOS_CLUSTER_IDENTITY_REQUIRED")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_create,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), ctypes.byref(p)))
+
+    def admit_chaos_member(self, *, operation_id: str, idempotency_key: str,
+                           expected_state_version: int, cluster_id: str,
+                           member: dict[str, Any],
+                           provenance: dict[str, Any]) -> dict[str, Any]:
+        """Retain an immutable event reference without asserting a shared topic."""
+        if not isinstance(member, dict):
+            raise PacketRejected("CHAOS_MEMBER_INVALID")
+        fields = ("member_ref", "event_ref", "admission_reason", "admitted_at")
+        values = [member.get(k) for k in fields]
+        if any(not isinstance(x, str) or not x.strip() for x in values):
+            raise PacketRejected("CHAOS_MEMBER_INVALID")
+        digest = member.get("source_digest")
+        if digest is not None and not isinstance(digest, str):
+            raise PacketRejected("CHAOS_MEMBER_INVALID")
+        p = self._chaos_provenance(provenance)
+        item = _ChaosMember(*(x.encode("utf-8") for x in values),
+                            digest.encode("utf-8") if digest else None)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_admit_member,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def propose_chaos_association(self, *, operation_id: str, idempotency_key: str,
+                                  expected_state_version: int, cluster_id: str,
+                                  association: dict[str, Any],
+                                  provenance: dict[str, Any]) -> dict[str, Any]:
+        """Add a provisional association; association never becomes a core relation implicitly."""
+        if not isinstance(association, dict):
+            raise PacketRejected("CHAOS_ASSOCIATION_INVALID")
+        fields = ("association_id", "from_member_ref", "to_member_ref", "association_type")
+        values = [association.get(k) for k in fields]
+        if any(not isinstance(x, str) or not x.strip() for x in values):
+            raise PacketRejected("CHAOS_ASSOCIATION_INVALID")
+        p = self._chaos_provenance(provenance)
+        item = _ChaosAssociation(*(x.encode("utf-8") for x in values))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def transition_chaos_cluster(self, *, operation_id: str, idempotency_key: str,
+                                 expected_state_version: int, cluster_id: str,
+                                 target_lifecycle: str, reason: str,
+                                 provenance: dict[str, Any]) -> dict[str, Any]:
+        """Apply a version-pinned lifecycle transition."""
+        if not all(isinstance(x, str) and x.strip() for x in
+                   (operation_id, idempotency_key, cluster_id, target_lifecycle, reason)):
+            raise PacketRejected("CHAOS_TRANSITION_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_transition,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), target_lifecycle.encode(), reason.encode(), ctypes.byref(p)))
+
+    def promote_chaos_subset(self, *, operation_id: str, idempotency_key: str,
+                             expected_state_version: int, cluster_id: str,
+                             member_targets: dict[str, str],
+                             provenance: dict[str, Any]) -> dict[str, Any]:
+        """Promote only explicitly selected members and preserve the residual cluster."""
+        if not isinstance(member_targets, dict) or not member_targets or len(member_targets) > 4096:
+            raise PacketRejected("CHAOS_PROMOTION_SELECTION_INVALID")
+        if any(not isinstance(k, str) or not k.strip() or
+               not isinstance(v, str) or not v.strip() for k, v in member_targets.items()):
+            raise PacketRejected("CHAOS_PROMOTION_SELECTION_INVALID")
+        p = self._chaos_provenance(provenance)
+        refs = (ctypes.c_char_p * len(member_targets))(*(k.encode("utf-8") for k in member_targets))
+        targets = (ctypes.c_char_p * len(member_targets))(*(v.encode("utf-8") for v in member_targets.values()))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_promote_subset,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), refs, targets, len(member_targets), ctypes.byref(p)))
+
+    def get_chaos_cluster(self, cluster_id: str) -> dict[str, Any]:
+        """Read the persisted Chaos Cluster projection with bounded two-pass output sizing."""
+        if not isinstance(cluster_id, str) or not cluster_id.strip():
+            raise PacketRejected("CHAOS_CLUSTER_ID_REQUIRED")
+        fn = self._lib.surge_chaos_cluster_get
+        required, error = ctypes.c_size_t(0), ctypes.create_string_buffer(512)
+        ok = fn(self._handle, cluster_id.encode("utf-8"), None, 0,
+                ctypes.byref(required), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if ok or detail != "CHAOS_CLUSTER_BUFFER_TOO_SMALL":
+            raise PacketRejected(detail or "CHAOS_CLUSTER_SIZE_QUERY_FAILED")
+        if required.value <= 1 or required.value > 16 * 1024 * 1024:
+            raise PacketRejected("CHAOS_CLUSTER_RESPONSE_TOO_LARGE")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(512)
+        ok = fn(self._handle, cluster_id.encode("utf-8"), output, len(output),
+                ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CHAOS_CLUSTER_READ_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("CHAOS_CLUSTER_JSON_INVALID") from exc
+        if not isinstance(value, dict) or value.get("cluster_id") != cluster_id:
+            raise PacketRejected("CHAOS_CLUSTER_RESPONSE_INVALID")
+        return value
+
     def get_focus(self) -> dict[str, Any] | None:
         result = self._temporal_ledger_call(
             self._lib.surge_context_graph_focus_get, (self._handle,),
