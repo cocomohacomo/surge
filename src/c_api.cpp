@@ -582,7 +582,7 @@ int surge_packet_core_admit_and_apply_with_metadata(
       const std::string evidence_id=provenance->evidence_id;
       bool evidence_exists=false;
       const auto staged=std::find_if(delta.nodes.begin(),delta.nodes.end(),
-          [&](const surge::NodeProposal& item){return item.node.id==evidence_id;});
+          [&](const surge::AddNode& item){return item.node.id==evidence_id;});
       if(staged!=delta.nodes.end()){
         evidence_exists=staged->node.kind==surge::NodeKind::Evidence;
       }else{

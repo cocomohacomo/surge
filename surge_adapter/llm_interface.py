@@ -177,7 +177,8 @@ class LLMSemanticRuntime:
         return candidate["kind"] == "CLAIM" and score.decision == "ACCEPT"
 
     def process(self, text: str, core: SemanticCoreBridge, *,
-                reference_datetime=None, timezone_offset: str | None = None) -> dict[str, Any]:
+                reference_datetime=None, timezone_offset: str | None = None,
+                evidence_provenance: dict[str, Any] | None = None) -> dict[str, Any]:
         next_sequence = self.sequence + 1
         packet = self._packet(text, self.context_id, self.source_id,
                               self.source_generation, next_sequence)
@@ -256,6 +257,19 @@ class LLMSemanticRuntime:
                  "expected_state_version": core.state_version,
                  "nodes": nodes, "relations": relations,
                  "classification_proposal": proposal}
+        if evidence_provenance is not None:
+            if not isinstance(evidence_provenance, dict):
+                raise ValueError("evidence_provenance must be a mapping")
+            allowed = {"observed_at", "source_published_at", "source_retrieved_at", "revision"}
+            if set(evidence_provenance) - allowed:
+                raise ValueError("unsupported evidence provenance field")
+            delta["evidence_provenance"] = {
+                "evidence_id": evidence_id,
+                "revision": int(evidence_provenance.get("revision", 1)),
+                **{key: evidence_provenance.get(key) for key in
+                   ("observed_at", "source_published_at", "source_retrieved_at")
+                   if evidence_provenance.get(key) is not None},
+            }
         admission, committed = self.packet_adapter.admit_and_apply_to_core(packet, text, core, delta)
         self.sequence = next_sequence
         if staged_claim is not None:
