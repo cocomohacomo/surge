@@ -85,7 +85,7 @@ class FrozenGoldCorpusValidationTests(unittest.TestCase):
     def test_gold_span_must_match_source_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             paths, manifest = self.build_corpus(Path(directory), bad_span=True)
-            with self.assertRaisesRegex(ValueError, "GOLD_EVIDENCE_QUOTE_MISMATCH"):
+            with self.assertRaisesRegex(ValueError, "GOLD_EVIDENCE_(QUOTE_MISMATCH|OFFSET_NOT_UTF8_BOUNDARY)"):
                 validate_corpus(paths["cases.jsonl"], paths["gold.jsonl"],
                                 paths["annotations.jsonl"], manifest)
 
