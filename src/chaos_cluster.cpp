@@ -139,8 +139,8 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
  std::string extension_marker;
  if(!(i>>extension_marker))return true;
  if(extension_marker!="CC3")return false;
- std::size_t count=0;if(!(i>>count)||count!=s.size())return false;
- for(std::size_t z=0;z<count;++z){std::string id;std::size_t dimensions=0;
+ std::size_t base_cluster_count=0;if(!(i>>base_cluster_count)||base_cluster_count!=s.size())return false;
+ for(std::size_t z=0;z<base_cluster_count;++z){std::string id;std::size_t dimensions=0;
   if(!(i>>std::quoted(id)>>dimensions)||!s.count(id)||dimensions>32)return false;
   auto&observations=s.at(id).observations;
   for(std::size_t d=0;d<dimensions;++d){std::string dimension;std::size_t values=0;
