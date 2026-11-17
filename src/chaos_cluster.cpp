@@ -80,6 +80,11 @@ std::string ChaosClusterLedger::encode(const State&s){
   o<<c.pattern_hypotheses.size()<<' ';
   for(const auto&item:c.pattern_hypotheses){o<<std::quoted(item.first)<<' ';write_observations(item.second.confidence_observations);}
  }
+ // CC6 persists association valid-time bounds independently of status revisions.
+ o<<"CC6 "<<s.size()<<' ';
+ for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.associations.size()<<' ';
+  for(const auto&item:c.associations)o<<std::quoted(item.first)<<' '<<std::quoted(item.second.valid_from)<<' '<<std::quoted(item.second.valid_until)<<' ';
+ }
  return o.str();
 }
 bool ChaosClusterLedger::decode(const std::string&p,State&s){
@@ -175,6 +180,19 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   for(std::size_t x=0;x<count;++x){std::string ref;if(!(i>>std::quoted(ref))||!c.associations.count(ref)||!read_observations(c.associations.at(ref).confidence_observations))return false;}
   if(!(i>>count)||count!=c.pattern_hypotheses.size())return false;
   for(std::size_t x=0;x<count;++x){std::string ref;if(!(i>>std::quoted(ref))||!c.pattern_hypotheses.count(ref)||!read_observations(c.pattern_hypotheses.at(ref).confidence_observations))return false;}
+ }
+ std::string validity_marker;
+ if(!(i>>validity_marker))return true;
+ if(validity_marker!="CC6")return false;
+ std::size_t validity_clusters=0;if(!(i>>validity_clusters)||validity_clusters!=s.size())return false;
+ for(std::size_t z=0;z<validity_clusters;++z){std::string id;std::size_t count=0;
+  if(!(i>>std::quoted(id)>>count)||!s.count(id)||count!=s.at(id).associations.size())return false;
+  auto&associations=s.at(id).associations;
+  for(std::size_t x=0;x<count;++x){std::string ref,from,until;
+   if(!(i>>std::quoted(ref)>>std::quoted(from)>>std::quoted(until))||!associations.count(ref)||
+      !utc_timestamp(from)||!utc_timestamp(until)||(!from.empty()&&!until.empty()&&from>=until))return false;
+   associations.at(ref).valid_from=std::move(from);associations.at(ref).valid_until=std::move(until);
+  }
  }
  std::string extra;return !(i>>extra);
 }
