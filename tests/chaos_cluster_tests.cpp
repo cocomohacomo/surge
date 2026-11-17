@@ -98,6 +98,17 @@ int main(){
   CHECK(!bad_dimension.committed&&bad_dimension.error=="CHAOS_SCORE_OBSERVATION_INVALID");
   CHECK(l.get("chaos-score",c));
   CHECK(c.observations.at("novelty").size()==2&&c.observations.at("novelty").front().value==0.91);
+  CHECK(l.create("merge-target-create","ik-merge-target-create",l.state_version(),"merge-target",p).committed);
+  CHECK(l.create("merge-source-create","ik-merge-source-create",l.state_version(),"merge-source",p).committed);
+  surge::ChaosMember merge_member{"merge-member","merge-event","HIGH_NOVELTY","2026-11-17T00:05:00Z","",p};
+  CHECK(l.admit_member("merge-member-add","ik-merge-member-add",l.state_version(),"merge-source",merge_member).committed);
+  CHECK(l.transition("merge-source-review","ik-merge-source-review",l.state_version(),"merge-source",
+    surge::ChaosLifecycle::Reviewable,"ready for merge",p).committed);
+  CHECK(l.merge_clusters("merge","ik-merge",l.state_version(),"merge-target",{"merge-source"},p).committed);
+  CHECK(l.get("merge-target",c));
+  CHECK(c.members.count("merge-member")==1&&c.parent_refs.size()==1&&c.parent_refs[0]=="merge-source");
+  CHECK(l.get("merge-source",c));
+  CHECK(c.lifecycle==surge::ChaosLifecycle::Archived&&c.child_refs.size()==1&&c.child_refs[0]=="merge-target");
  }
  {
   surge::ChaosClusterLedger l(path);CHECK(l.open());
@@ -128,17 +139,6 @@ int main(){
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
   auto bad=l.transition("bad","ik-bad",v,"chaos-1",surge::ChaosLifecycle::Open,"backward",p);
   CHECK(!bad.committed&&bad.error=="CHAOS_LIFECYCLE_TRANSITION_INVALID");
-  CHECK(l.create("merge-target-create","ik-merge-target-create",l.state_version(),"merge-target",p).committed);
-  CHECK(l.create("merge-source-create","ik-merge-source-create",l.state_version(),"merge-source",p).committed);
-  surge::ChaosMember merge_member{"merge-member","merge-event","HIGH_NOVELTY","2026-11-17T00:05:00Z","",p};
-  CHECK(l.admit_member("merge-member-add","ik-merge-member-add",l.state_version(),"merge-source",merge_member).committed);
-  CHECK(l.transition("merge-source-review","ik-merge-source-review",l.state_version(),"merge-source",
-    surge::ChaosLifecycle::Reviewable,"ready for merge",p).committed);
-  CHECK(l.merge_clusters("merge","ik-merge",l.state_version(),"merge-target",{"merge-source"},p).committed);
-  CHECK(l.get("merge-target",c));
-  CHECK(c.members.count("merge-member")==1&&c.parent_refs.size()==1&&c.parent_refs[0]=="merge-source");
-  CHECK(l.get("merge-source",c));
-  CHECK(c.lifecycle==surge::ChaosLifecycle::Archived&&c.child_refs.size()==1&&c.child_refs[0]=="merge-target");
  }
  std::filesystem::remove_all(root);
  std::cout<<"SURGE Chaos Cluster v1 Core: persistence, replay, history, hypotheses, subset promotion, fork/split passed\n";
