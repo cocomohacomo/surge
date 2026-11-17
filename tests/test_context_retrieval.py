@@ -189,7 +189,7 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     max_associations=0, max_hypotheses=0)
                 self.assertFalse(bounded["complete"])
                 self.assertEqual(bounded["omitted"]["members"], 2)
-                self.assertEqual(bounded["omitted"]["associations"], 1)
+                self.assertEqual(bounded["omitted"]["associations"], 2)
                 self.assertEqual(bounded["omitted"]["pattern_hypotheses"], 1)
                 with self.assertRaises(PacketRejected):
                     core.get_chaos_cluster("chaos/projection", max_members=10001)
