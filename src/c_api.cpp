@@ -1725,6 +1725,7 @@ size_t surge_temporal_boundary_pending_count(void* opaque) {
 }
 
 
+extern "C++" {
 namespace {
 bool chaos_get_provenance(const SurgeChaosProvenanceInput* p,surge::ChaosProvenance& out) {
  if(!p||!p->producer_id||!p->producer_version||!p->policy_version||!p->recorded_at)return false;
@@ -1782,6 +1783,7 @@ std::string chaos_cluster_json(const surge::ChaosCluster& c) {
  out<<"],\"promoted_member_targets\":{";
  first=true;for(const auto& item:c.promoted_member_targets){if(!first)out<<',';first=false;out<<json_quote(item.first)<<':'<<json_quote(item.second);}
  out<<"}}";return out.str();
+}
 }
 }
 int surge_chaos_cluster_create(void* opaque,const char* op,const char* key,uint64_t expected,const char* id,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
