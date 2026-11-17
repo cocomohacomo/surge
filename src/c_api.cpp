@@ -825,6 +825,70 @@ int surge_question_get_context_bundle(void* opaque,const char* question_id,size_
  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_CONTEXT_UNKNOWN_EXCEPTION");return 0;}
 }
 
+int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,size_t max_depth,size_t max_nodes,char* output,size_t output_capacity,size_t* required_capacity,char* error,size_t error_capacity){
+ try{
+  if(!opaque||!question_id||!*question_id||max_depth==0||max_depth>64||max_nodes==0||max_nodes>4096){copy_text(error,error_capacity,"QUESTION_REEVALUATION_ARGUMENT_INVALID");return 0;}
+  const auto& graph=static_cast<Handle*>(opaque)->graph;
+  auto root=graph.nodes().find(question_id);
+  if(root==graph.nodes().end()||root->second.kind!=surge::NodeKind::Question){copy_text(error,error_capacity,"QUESTION_NOT_FOUND");return 0;}
+  std::map<std::string,std::vector<std::string>> reverse;
+  for(const auto& item:graph.relations()){const auto&r=item.second;if(r.kind!=surge::RelationKind::DependsOn)continue;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(a!=graph.nodes().end()&&b!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Question&&b->second.kind==surge::NodeKind::Question)reverse[r.to].push_back(r.from);}
+  for(auto& item:reverse)std::sort(item.second.begin(),item.second.end());
+  std::set<std::string> questions{question_id};std::vector<std::pair<std::string,size_t>> queue{{question_id,0}};
+  for(size_t i=0;i<queue.size();++i){auto cur=queue[i];if(cur.second>=max_depth)continue;for(const auto& next:reverse[cur.first])if(questions.insert(next).second){queue.push_back({next,cur.second+1});if(questions.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_REEVALUATION_NODE_LIMIT");return 0;}}}
+  std::vector<const surge::GraphNode*> aspects;
+  for(const auto& item:graph.nodes()){const auto&n=item.second;if(n.kind!=surge::NodeKind::QuestionAspect)continue;for(const auto&ref:n.references)if(questions.count(ref)){aspects.push_back(&n);break;}}
+  std::sort(aspects.begin(),aspects.end(),[](auto*a,auto*b){return a->id<b->id;});
+  std::set<std::string> included=questions;
+  std::ostringstream rows;bool first=true;
+  auto status_name=[](surge::QuestionAspectStatus s){return s==surge::QuestionAspectStatus::Open?"OPEN":s==surge::QuestionAspectStatus::Resolved?"RESOLVED":"DEFERRED";};
+  for(const auto* aspect:aspects){
+   included.insert(aspect->id);
+   std::set<std::string> anchors{aspect->id};for(const auto&ref:aspect->references)if(questions.count(ref))anchors.insert(ref);
+   std::set<std::string> clusters;
+   for(const auto&item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&anchors.count(r.from)){auto n=graph.nodes().find(r.to);if(n!=graph.nodes().end()&&(n->second.kind==surge::NodeKind::Cluster||n->second.kind==surge::NodeKind::Entity))clusters.insert(r.to);}}
+   for(const auto& cluster:clusters) included.insert(cluster);
+   std::set<std::string> claims;
+   for(const auto&item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&clusters.count(r.to)){auto n=graph.nodes().find(r.from);if(n!=graph.nodes().end()&&n->second.kind==surge::NodeKind::Claim)claims.insert(r.from);}}
+   for(const auto&claim:claims)included.insert(claim);
+   size_t supporting=0,contradicting=0;std::set<std::string> support_evidence,conflict_refs;
+   for(const auto&item:graph.relations()){
+    const auto&r=item.second;
+    if(r.kind==surge::RelationKind::Supports){
+     std::string evidence_id,claim_id;
+     auto from=graph.nodes().find(r.from),to=graph.nodes().find(r.to);
+     if(from!=graph.nodes().end()&&to!=graph.nodes().end()&&from->second.kind==surge::NodeKind::Evidence&&to->second.kind==surge::NodeKind::Claim){evidence_id=r.from;claim_id=r.to;}
+     else if(from!=graph.nodes().end()&&to!=graph.nodes().end()&&from->second.kind==surge::NodeKind::Claim&&to->second.kind==surge::NodeKind::Evidence){claim_id=r.from;evidence_id=r.to;}
+     if(claims.count(claim_id)&&graph.claim_status(claim_id)==surge::ClaimStatus::Active){++supporting;support_evidence.insert(evidence_id);}
+    }
+    if(r.kind==surge::RelationKind::Contradicts||r.kind==surge::RelationKind::ConflictsWith||r.kind==surge::RelationKind::Retracts){
+     bool touches_claim=claims.count(r.from)||claims.count(r.to);
+     if(touches_claim){++contradicting;conflict_refs.insert(r.from);conflict_refs.insert(r.to);}
+    }
+   }
+   for(const auto&id:support_evidence)if(!id.empty())included.insert(id);
+   for(const auto&id:conflict_refs)if(graph.nodes().count(id))included.insert(id);
+   auto current=graph.question_aspect_status(aspect->id);
+   std::string proposed=status_name(current),reason="INSUFFICIENT_EVIDENCE";
+   if(contradicting>0){proposed="OPEN";reason="CONTRADICTORY_EVIDENCE";}
+   else if(supporting>0){proposed="RESOLVED";reason="SUPPORTED_EVIDENCE";}
+   if(!first) rows<<',';
+   first=false;
+   rows<<"{\"aspect_id\":"<<json_quote(aspect->id)<<",\"question_ids\":[";
+   bool qfirst=true;for(const auto&ref:aspect->references)if(questions.count(ref)){if(!qfirst)rows<<',';qfirst=false;rows<<json_quote(ref);}
+   rows<<"],\"current_status\":"<<json_quote(status_name(current))<<",\"proposed_status\":"<<json_quote(proposed)<<",\"reason\":"<<json_quote(reason)<<",\"supporting_evidence_count\":"<<supporting<<",\"contradicting_relation_count\":"<<contradicting<<",\"claim_ids\":[";
+   bool cfirst=true;for(const auto&id:claims){if(!cfirst)rows<<',';cfirst=false;rows<<json_quote(id);}rows<<"]}";
+  }
+  if(included.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_REEVALUATION_NODE_LIMIT");return 0;}
+  std::ostringstream json;json<<"{\"question_id\":"<<json_quote(question_id)<<",\"state_version\":"<<graph.state_version()<<",\"question_ids\":[";
+  bool qfirst=true;for(const auto&id:questions){if(!qfirst)json<<',';qfirst=false;json<<json_quote(id);}
+  json<<"],\"aspect_proposals\":["<<rows.str()<<"],\"node_count\":"<<included.size()<<",\"read_only\":true}";
+  const auto value=json.str();if(required_capacity)*required_capacity=value.size()+1;
+  if(!output||output_capacity<value.size()+1){copy_text(error,error_capacity,"QUESTION_REEVALUATION_PLAN_BUFFER_TOO_SMALL");return 0;}
+  copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+ }catch(const std::exception&ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_REEVALUATION_PLAN_UNKNOWN_EXCEPTION");return 0;}
+}
+
 int surge_question_get_reevaluation_candidates(void* opaque, const char* question_id,
     size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {

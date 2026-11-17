@@ -324,6 +324,60 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 with self.assertRaisesRegex(PacketRejected, "QUESTION_CONTEXT_NODE_LIMIT"):
                     core.get_question_context_bundle("q/root", max_nodes=1)
 
+    def test_question_reevaluation_plan_is_evidence_based_bounded_and_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-reevaluation-plan.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "reeval-plan-seed", "idempotency_key": "reeval-plan-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/root", "kind": "QUESTION", "content": "Why did the value change?"},
+                        {"id": "q/dependent", "kind": "QUESTION", "content": "Was the source revised?"},
+                        {"id": "cl/topic", "kind": "CLUSTER", "content": "Input revision"},
+                        {"id": "cl/conflict", "kind": "CLUSTER", "content": "Conflicting source"},
+                        {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "Cause", "references": ["q/root"]},
+                        {"id": "a/dependent", "kind": "QUESTION_ASPECT", "content": "Source revision", "references": ["q/dependent"]},
+                        {"id": "e/support", "kind": "EVIDENCE", "content": "Revision log"},
+                        {"id": "c/supported", "kind": "CLAIM", "content": "The source was revised", "references": ["e/support"]},
+                        {"id": "e/conflict", "kind": "EVIDENCE", "content": "Conflicting record"},
+                        {"id": "c/conflicted", "kind": "CLAIM", "content": "The value was not revised", "references": ["e/conflict"]},
+                        {"id": "e/opposite", "kind": "EVIDENCE", "content": "Independent source record"},
+                        {"id": "c/opposite", "kind": "CLAIM", "content": "The source was not revised", "references": ["e/opposite"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "reeval-plan-links", "idempotency_key": "reeval-plan-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/dependent", "kind": "DEPENDS_ON", "from": "q/dependent", "to": "q/root"},
+                        {"id": "r/dependent-cluster", "kind": "ABOUT", "from": "q/dependent", "to": "cl/conflict"},
+                        {"id": "r/q-cluster", "kind": "ABOUT", "from": "q/root", "to": "cl/topic"},
+                        {"id": "r/c1-cluster", "kind": "ABOUT", "from": "c/supported", "to": "cl/topic"},
+                        {"id": "r/c2-cluster", "kind": "ABOUT", "from": "c/conflicted", "to": "cl/conflict"},
+                        {"id": "r/c3-cluster", "kind": "ABOUT", "from": "c/opposite", "to": "cl/conflict"},
+                        {"id": "r/support", "kind": "SUPPORTS", "from": "e/support", "to": "c/supported"},
+                        {"id": "r/contradiction", "kind": "CONTRADICTS", "from": "c/conflicted", "to": "c/opposite"},
+                    ],
+                })
+                before = core.state_version
+                plan = core.plan_question_reevaluation("q/root")
+                self.assertTrue(plan["read_only"])
+                self.assertEqual(plan["state_version"], before)
+                self.assertEqual(plan["question_ids"], ["q/dependent", "q/root"])
+                proposals = {x["aspect_id"]: x for x in plan["aspect_proposals"]}
+                self.assertEqual(proposals["a/root"]["proposed_status"], "RESOLVED")
+                self.assertEqual(proposals["a/root"]["reason"], "SUPPORTED_EVIDENCE")
+                self.assertEqual(proposals["a/dependent"]["proposed_status"], "OPEN")
+                self.assertEqual(proposals["a/dependent"]["reason"], "CONTRADICTORY_EVIDENCE")
+                self.assertEqual(core.state_version, before)
+                self.assertEqual(core.get_question_aspect("a/root")["status"], "OPEN")
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_REEVALUATION_NODE_LIMIT"):
+                    core.plan_question_reevaluation("q/root", max_nodes=1)
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, before)
+                self.assertEqual(recovered.get_question_aspect("a/root")["status"], "OPEN")
+
     def test_question_reevaluation_candidates_are_bounded_read_only_and_persistent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-reevaluation.sgj"
