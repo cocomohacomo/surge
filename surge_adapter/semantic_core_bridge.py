@@ -296,6 +296,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_expire_due_associations.restype = ctypes.c_int
+        lib.surge_chaos_cluster_merge.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t,
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_merge.restype = ctypes.c_int
         lib.surge_chaos_cluster_add_pattern_hypothesis.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
@@ -1145,6 +1151,26 @@ class SemanticCoreBridge(CppCoreBridge):
         return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association_temporal,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def merge_chaos_clusters(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, target_cluster_id: str,
+        source_cluster_ids: list[str], provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically merge reviewable/dormant sources into a retained target."""
+        if (not isinstance(source_cluster_ids, list) or not source_cluster_ids
+                or len(source_cluster_ids) > 1000
+                or any(not isinstance(item, str) or not item.strip() for item in source_cluster_ids)
+                or len(set(source_cluster_ids)) != len(source_cluster_ids)):
+            raise PacketRejected("CHAOS_MERGE_SOURCE_INVALID")
+        if not isinstance(target_cluster_id, str) or not target_cluster_id.strip():
+            raise PacketRejected("CHAOS_MERGE_TARGET_INVALID")
+        refs = [item.encode("utf-8") for item in source_cluster_ids]
+        array = (ctypes.c_char_p * len(refs))(*refs)
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_merge,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             target_cluster_id.encode(), array, len(refs), ctypes.byref(p)))
 
     def expire_due_chaos_associations(
         self, *, operation_id: str, idempotency_key: str,
