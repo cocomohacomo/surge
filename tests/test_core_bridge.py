@@ -296,7 +296,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "Temporal cause", "references": ["q/root"]},
                         {"id": "e/root", "kind": "EVIDENCE", "content": "Revision log"},
                         {"id": "e/unrelated", "kind": "EVIDENCE", "content": "Unrelated evidence"},
-                        {"id": "c/root", "kind": "CLAIM", "content": "The input was revised", "references": ["e/root"]},
+                        {"id": "c/root", "kind": "CLAIM", "content": "The input was revised", "references": ["e/root", "q/root"]},
                         {"id": "q/unrelated", "kind": "QUESTION", "content": "Unrelated"},
                         {"id": "c/unrelated", "kind": "CLAIM", "content": "Unrelated claim", "references": ["e/unrelated"]},
                     ],
@@ -306,7 +306,6 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     "expected_state_version": core.state_version, "nodes": [],
                     "relations": [
                         {"id": "r/child-root", "kind": "DEPENDS_ON", "from": "q/child", "to": "q/root"},
-                        {"id": "r/claim-root", "kind": "ABOUT", "from": "c/root", "to": "q/root"},
                         {"id": "r/evidence-claim", "kind": "SUPPORTS", "from": "e/root", "to": "c/root"},
                     ],
                 })
@@ -317,7 +316,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertFalse({"q/unrelated", "c/unrelated"} & ids)
                 self.assertEqual(bundle["question_id"], "q/root")
                 self.assertEqual(bundle["state_version"], before)
-                self.assertEqual(len(bundle["relations"]), 3)
+                self.assertEqual(len(bundle["relations"]), 2)
                 self.assertEqual(core.state_version, before)
                 with self.assertRaisesRegex(PacketRejected, "QUESTION_CONTEXT_NODE_LIMIT"):
                     core.get_question_context_bundle("q/root", max_nodes=1)
