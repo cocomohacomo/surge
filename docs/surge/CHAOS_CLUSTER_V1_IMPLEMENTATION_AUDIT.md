@@ -25,7 +25,7 @@ independent semantic-quality evaluation.
 |---|---|---|---|
 | P0 | Orthogonal score observations | Partial | Cluster, Member Salience, Association Confidence and PatternHypothesis Confidence now persist as scorer-bound append-only histories and are exposed through C ABI/Python bounded projections. Score-aware retrieval is missing. |
 | P0 | Membership status and unmembership | Partial | Native C++ ledger, CC4 replay, C ABI/Python revision endpoint, bounded JSON history and replay tests are implemented; exhaustive lifecycle/legacy-fixture tests remain. |
-| P1 | PatternHypothesis auditability | Partial | Member/excluded/counterexample/alternative refs persist. Exclusion reasons, confidence observations and append-only hypothesis review revisions are absent. |
+| P1 | PatternHypothesis auditability | Partial | Exclusion reasons, append-only review revisions and confidence observations now persist and are exposed in bounded JSON; negative/terminal transition and migration matrix still needs expansion. |
 | P1 | Association valid-time | Partial | UTC valid_from/valid_until persist in CC6; temporal C ABI/Python proposal and explicit as-of expiry transaction append EXPIRED provenance revisions. Automatic scheduling is intentionally external to Core. |
 | P1 | Retrieval diversity | Partial | Focus retrieval round-robins admission-reason groups. It does not rank or constrain by persisted novelty, salience, diversity, ambiguity or utility observations. |
 | P1 | Retrieval query dimensions | Partial | Bounded full-cluster projection and typed Focus retrieval exist. Dedicated filtering by association type/status, temporal range, provenance, hypotheses/counterexamples and lineage traversal is incomplete. |
@@ -92,3 +92,11 @@ separate versioned input structure. A caller-supplied UTC as-of timestamp drives
 an atomic expiry transaction, with append-only status/provenance history. The
 Core does not consult a hidden wall clock; scheduling and invocation remain
 host responsibilities.
+
+
+## Follow-up: PatternHypothesis auditability
+
+CC7 persists review status, epistemic-state revisions, per-member exclusion
+rationales, and provenance. C ABI/Python review operations enforce explicit
+excluded-member references and terminal review constraints. Bounded projection
+includes capped revision history and omission metadata.
