@@ -22,7 +22,7 @@ int main(){
  CHECK(surge_chaos_cluster_promote_subset(h,"cc-promote","cc-promote-key",5,"chaos-c-api",refs,targets,1,&p,&version,error,sizeof(error))==1);
  char output[4096]{};size_t required=0;
  CHECK(surge_chaos_cluster_get(h,"chaos-c-api",output,sizeof(output),&required,error,sizeof(error))==1);
- CHECK(std::string(output).find("CREATIVE_EXPLORATION")==std::string::npos);
+ CHECK(std::string(output).find("NO_STABLE_TOPIC")!=std::string::npos);
  CHECK(std::string(output).find("topic-1")!=std::string::npos);
  CHECK(std::string(output).find("event-2")!=std::string::npos);
  surge_packet_core_close(h);
