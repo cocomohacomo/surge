@@ -1827,7 +1827,7 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   for(size_t i=0;i<n;++i){if(i)j<<',';j<<json_quote(refs[i]);}
   j<<']';omitted+=refs.size()-n;return j.str();
  };
- size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0,omitted_entity_observations=0;
+ size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0,omitted_entity_observations=0,omitted_hypothesis_history=0;
  const size_t member_count=std::min(c.members.size(),max_members);
  const size_t association_count=std::min(c.associations.size(),max_associations);
  const size_t hypothesis_count=std::min(c.pattern_hypotheses.size(),max_hypotheses);
@@ -1882,7 +1882,18 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
      <<",\"alternative_hypothesis_refs\":"<<refs_json(h.alternative_hypothesis_refs,omitted_hypothesis_refs)
      <<",\"confidence_history\":"<<observation_history_json(h.confidence_observations,omitted_entity_observations);
   if(!h.confidence_observations.empty())out<<",\"confidence\":"<<observation_json(h.confidence_observations.back());
-  out<<",\"provenance\":"<<provenance(h.provenance)<<'}';
+  out<<",\"exclusion_reasons\":{";
+  bool first_reason=true;for(const auto&reason:h.exclusion_reasons){if(!first_reason)out<<',';first_reason=false;out<<json_quote(reason.first)<<':'<<json_quote(reason.second);}
+  const size_t revision_count=std::min(h.history.size(),max_history),revision_start=h.history.size()-revision_count;
+  omitted_hypothesis_history+=revision_start;
+  out<<"},\"history_offset\":"<<revision_start<<",\"history\":[";
+  for(size_t ri=revision_start;ri<h.history.size();++ri){if(ri>revision_start)out<<',';const auto&revision=h.history[ri];
+   out<<"{\"status\":"<<json_quote(revision.status)<<",\"epistemic_state\":"<<json_quote(revision.epistemic_state)
+      <<",\"exclusion_reasons\":{";
+   bool first_revision_reason=true;for(const auto&reason:revision.exclusion_reasons){if(!first_revision_reason)out<<',';first_revision_reason=false;out<<json_quote(reason.first)<<':'<<json_quote(reason.second);}
+   out<<"},\"provenance\":"<<provenance(revision.provenance)<<'}';
+  }
+  out<<"],\"provenance\":"<<provenance(h.provenance)<<'}';
  }
  size_t omitted_observations=0;
  out<<"],\"observations\":{";
@@ -1915,14 +1926,15 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  bool first=true;for(const auto& item:c.promoted_member_targets){if(!first)out<<',';first=false;out<<json_quote(item.first)<<':'<<json_quote(item.second);}
  const size_t omitted_members=c.members.size()-member_count, omitted_associations=c.associations.size()-association_count;
  const size_t omitted_hypotheses=c.pattern_hypotheses.size()-hypothesis_count;
- out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history||omitted_entity_observations)?"false":"true")
+ out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history||omitted_entity_observations||omitted_hypothesis_history)?"false":"true")
     <<",\"omitted\":{\"members\":"<<omitted_members<<",\"associations\":"<<omitted_associations
     <<",\"association_history_revisions\":"<<omitted_history
     <<",\"pattern_hypotheses\":"<<omitted_hypotheses
     <<",\"hypothesis_references\":"<<omitted_hypothesis_refs
     <<",\"score_observation_revisions\":"<<omitted_observations
     <<",\"membership_history_revisions\":"<<omitted_membership_history
-    <<",\"entity_score_observation_revisions\":"<<omitted_entity_observations<<"}}";
+    <<",\"entity_score_observation_revisions\":"<<omitted_entity_observations
+    <<",\"pattern_hypothesis_history_revisions\":"<<omitted_hypothesis_history<<"}}";
  return out.str();
 }
 }
