@@ -378,6 +378,70 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(recovered.state_version, before)
                 self.assertEqual(recovered.get_question_aspect("a/root")["status"], "OPEN")
 
+    def test_question_reevaluation_apply_is_atomic_revalidated_and_persistent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-reevaluation-apply.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "apply-seed", "idempotency_key": "apply-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/apply", "kind": "QUESTION", "content": "Why?"},
+                        {"id": "cl/apply", "kind": "CLUSTER", "content": "Topic"},
+                        {"id": "a/apply", "kind": "QUESTION_ASPECT", "content": "Cause", "references": ["q/apply"]},
+                        {"id": "e/apply", "kind": "EVIDENCE", "content": "Verified record"},
+                        {"id": "c/apply", "kind": "CLAIM", "content": "Cause established", "references": ["e/apply"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "apply-links", "idempotency_key": "apply-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/q-topic", "kind": "ABOUT", "from": "q/apply", "to": "cl/apply"},
+                        {"id": "r/c-topic", "kind": "ABOUT", "from": "c/apply", "to": "cl/apply"},
+                        {"id": "r/evidence", "kind": "SUPPORTS", "from": "e/apply", "to": "c/apply"},
+                    ],
+                })
+                plan = core.plan_question_reevaluation("q/apply")
+                before = core.state_version
+                result = core.apply_question_reevaluation_plan(plan)
+                self.assertTrue(result["atomic"])
+                self.assertEqual(result["applied_aspect_ids"], ["a/apply"])
+                self.assertEqual(result["state_version"], before + 1)
+                self.assertEqual(core.get_question_aspect("a/apply")["status"], "RESOLVED")
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_question_aspect("a/apply")["status"], "RESOLVED")
+                self.assertEqual(recovered.state_version, result["state_version"])
+
+    def test_question_reevaluation_apply_rejects_stale_plan_and_rechecks_conflicts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "question-reevaluation-stale.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "stale-seed", "idempotency_key": "stale-seed",
+                    "expected_state_version": 0, "relations": [],
+                    "nodes": [
+                        {"id": "q/stale", "kind": "QUESTION", "content": "Why?"},
+                        {"id": "cl/stale", "kind": "CLUSTER", "content": "Topic"},
+                        {"id": "a/stale", "kind": "QUESTION_ASPECT", "content": "Cause", "references": ["q/stale"]},
+                        {"id": "e/stale", "kind": "EVIDENCE", "content": "Record"},
+                        {"id": "c/stale", "kind": "CLAIM", "content": "Cause", "references": ["e/stale"]},
+                    ],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "stale-links", "idempotency_key": "stale-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/q", "kind": "ABOUT", "from": "q/stale", "to": "cl/stale"},
+                        {"id": "r/c", "kind": "ABOUT", "from": "c/stale", "to": "cl/stale"},
+                        {"id": "r/e", "kind": "SUPPORTS", "from": "e/stale", "to": "c/stale"},
+                    ],
+                })
+                plan = core.plan_question_reevaluation("q/stale")
+                core.set_question_aspect_status("a/stale", "DEFERRED")
+                with self.assertRaisesRegex(PacketRejected, "STATE_VERSION_CONFLICT"):
+                    core.apply_question_reevaluation_plan(plan)
+
     def test_question_reevaluation_candidates_are_bounded_read_only_and_persistent(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "question-reevaluation.sgj"
