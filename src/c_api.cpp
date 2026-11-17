@@ -2071,6 +2071,32 @@ int surge_chaos_cluster_revise_membership(void* opaque,const char* op,const char
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_UNKNOWN_EXCEPTION");return 0;}
 }
+int surge_chaos_cluster_review_pattern_hypothesis(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* id,const char* hypothesis_id,const SurgeChaosHypothesisReviewInput* input,
+ const SurgeChaosProvenanceInput* provenance,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!id||!hypothesis_id||!input||!input->status||!input->epistemic_state||
+     input->exclusion_count>10000||
+     (input->exclusion_count&&(!input->excluded_member_refs||!input->exclusion_reasons))||
+     !chaos_get_provenance(provenance,p)){
+   copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_REVIEW_ARGUMENT_INVALID");return 0;
+  }
+  std::map<std::string,std::string> reasons;
+  for(size_t i=0;i<input->exclusion_count;++i){
+   if(!input->excluded_member_refs[i]||!input->exclusion_reasons[i]||
+      !*input->excluded_member_refs[i]||!*input->exclusion_reasons[i]||
+      !reasons.emplace(input->excluded_member_refs[i],input->exclusion_reasons[i]).second){
+    copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID");return 0;
+   }
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.review_pattern_hypothesis(
+      op,key,expected,id,hypothesis_id,input->status,input->epistemic_state,reasons,p);
+  if(version)*version=result.state_version;copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_REVIEW_UNKNOWN_EXCEPTION");return 0;}
+}
 int surge_chaos_cluster_record_entity_observation(void* opaque,const char* op,const char* key,uint64_t expected,
     const char* id,const char* entity_kind,const char* entity_ref,
     const SurgeChaosScoreObservationInput* input,uint64_t* version,char* error,size_t cap) {
