@@ -327,6 +327,50 @@ int main(){
       assert(recovered.claim_validity_history().at("claim-period").size()==2);
     }
   }
+
+  {
+    const auto reassessment_path=(root/"temporal-reassessment-core.sgj").string();
+    {
+      ContextGraph graph(reassessment_path);assert(graph.open());
+      SemanticDelta seed;seed.delta_id="reassessment-seed";seed.idempotency_key="reassessment-seed";
+      seed.expected_state_version=0;
+      seed.nodes={{{"reassess-support",NodeKind::Evidence,"現行の契約台帳",{}}},
+                  {{"reassess-contradiction",NodeKind::Evidence,"旧契約の記録",{}}},
+                  {{"reassess-claim",NodeKind::Claim,"契約は有効",{ "reassess-support" }}}};
+      seed.relations={{{"reassess-support-rel",RelationKind::Supports,"reassess-support","reassess-claim"}},
+                      {{"reassess-contradiction-rel",RelationKind::Contradicts,"reassess-contradiction","reassess-claim"}}};
+      seed.claim_validity_updates.push_back({"reassess-claim","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-support",1});
+      seed.evidence_validity_updates.push_back({"reassess-support","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-support",1});
+      seed.evidence_validity_updates.push_back({"reassess-contradiction","2025-01-01T00:00:00Z","2025-12-31T00:00:00Z","reassess-contradiction",1});
+      const auto applied=graph.apply(seed);assert(applied.committed&&applied.state_version==1);
+      TemporalReassessmentRecord trace;std::string error;
+      assert(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,trace,error));
+      assert(trace.decision=="SUPPORTED"&&trace.evaluated_state_version==1&&trace.recorded_state_version==2);
+      assert(trace.claim_validity_revision==1&&trace.evidence.size()==2);
+      assert(trace.active_support_ids.size()==1&&trace.active_contradiction_ids.empty());
+      assert(trace.evidence[0].validity_revision==1);
+      TemporalReassessmentRecord stale;
+      assert(!graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",1,stale,error));
+      assert(error=="STATE_VERSION_CONFLICT");
+      SemanticDelta add_conflict;add_conflict.delta_id="reassessment-add-conflict";
+      add_conflict.idempotency_key="reassessment-add-conflict";add_conflict.expected_state_version=2;
+      add_conflict.evidence_validity_updates.push_back({"reassess-contradiction","2026-01-01T00:00:00Z","2027-01-01T00:00:00Z","reassess-contradiction",2});
+      assert(graph.apply(add_conflict).committed&&graph.state_version()==3);
+      TemporalReassessmentRecord conflict;
+      assert(graph.reassess_claim("reassess-claim","2026-06-01T00:00:00Z",3,conflict,error));
+      assert(conflict.decision=="TEMPORAL_CONFLICT"&&conflict.active_contradiction_ids.size()==1);
+      assert(conflict.sequence==2&&conflict.previous_hash==trace.chain_hash);
+    }
+    {
+      ContextGraph recovered(reassessment_path);assert(recovered.open());
+      assert(recovered.state_version()==4);
+      const auto& history=recovered.reassessment_history().at("reassess-claim");
+      assert(history.size()==2);
+      assert(history[0].decision=="SUPPORTED"&&history[1].decision=="TEMPORAL_CONFLICT");
+      assert(history[1].previous_hash==history[0].chain_hash);
+      assert(history[1].evaluated_state_version==3&&history[1].recorded_state_version==4);
+    }
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 5 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: 6 groups passed\n";
 }
