@@ -60,3 +60,17 @@ and append-only revisions in `observation_history`, with history offsets and
 omission counts. This increment still records cluster-level observations only;
 member salience, association confidence, hypothesis confidence and score-aware
 retrieval remain open.
+
+
+## Membership status and unmembership increment
+
+Members now carry an explicit `membership_status` and `membership_active`
+state plus append-only membership revisions. The native ledger supports
+status review, unmembership, and reinstatement as version-checked journal
+transactions. The optional `CC4` snapshot extension preserves this state
+without changing the v0.1, CC2, or CC3 payload layouts. Bounded JSON emits the
+current membership state and a capped revision history with an offset; omitted
+membership revisions contribute to the response completeness flag and exact
+omission count. The C ABI and Python bridge expose the revision operation.
+Legacy snapshots without CC4 default to active UNCLASSIFIED membership with
+no synthesized history.
