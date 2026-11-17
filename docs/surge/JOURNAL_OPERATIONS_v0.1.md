@@ -9,7 +9,7 @@ EventJournal remains a single-writer append-only journal. This increment adds:
 - file and parent-directory synchronization when the journal header is first created;
 - a lock held for the EventJournal object's lifetime, released on destruction.
 
-The in-process mutex still protects threads in one process. The OS lock protects competing processes. Opening a second EventJournal as a writer is intentionally rejected.
+The in-process mutex still protects threads in one process. The OS lock protects competing processes. Opening a second EventJournal as a writer is intentionally rejected. POSIX lock/sync and the backup/restore tool are exercised in CI; Windows/macOS runtime parity remains unverified.
 
 ## Backup and restore
 
