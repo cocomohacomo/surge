@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:surge:meeting-decision-gold:0.1",
+  "title": "Meeting decision independently adjudicated gold record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "source_sha256", "items"],
+  "properties": {
+    "case_id": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "items": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/item"}
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "owner", "deadline", "critical", "evidence_quote", "evidence_start", "evidence_end"],
+      "properties": {
+        "action": {"type": "string", "minLength": 1},
+        "owner": {"type": ["string", "null"]},
+        "deadline": {"type": ["string", "null"]},
+        "critical": {"type": "boolean"},
+        "evidence_quote": {"type": "string", "minLength": 1},
+        "evidence_start": {"type": "integer", "minimum": 0},
+        "evidence_end": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

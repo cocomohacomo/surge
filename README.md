@@ -2,7 +2,7 @@
 
 Universal Context Cognition Framework.
 
-## Current specification
+## Adoption and evaluation\n\n- **v0.9 implementation map:** [docs/surge/IMPLEMENTATION_MAP_v0.1.md](docs/surge/IMPLEMENTATION_MAP_v0.1.md)\n- **Single-use-case evaluation protocol:** [docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md](docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md)\n- **Common adapter runner:** `python tools/run_meeting_decision_adapter.py --help`\n- **Independent gold corpus staging:** [tests/benchmark/meeting_decisions/README.md](tests/benchmark/meeting_decisions/README.md)\n\n## Current specification
 
 - **ContextHint Graph Reasoning v0.2:** [docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md](docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md)\n- **Graph-Derived ContextHint v0.1:** [docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md](docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md)\n- **ContextHint + Durable RetrievalTicket v0.1:** ContextHint priority and journal-backed ticket issue/resolution are integrated into the retrieval bridge. See [CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md).\n- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
 
