@@ -44,6 +44,16 @@ int main(){
   CHECK(l.admit_member("x2-op","ik-x2",13,"chaos-2",c2).committed);
   CHECK(l.transition("review-2","ik-review-2",14,"chaos-2",surge::ChaosLifecycle::Reviewable,"ready to partition",p).committed);
   CHECK(l.split_subsets("split","ik-split",15,"chaos-2",{{"chaos-2a",{"x1"}},{"chaos-2b",{"x2"}}},p).committed);
+  surge::ChaosAssociation expiring{"a-expire","x1","x2",surge::ChaosAssociationType::CoOccurs,
+    surge::ChaosAssociationStatus::Provisional,p};
+  expiring.valid_from="2026-11-17T00:00:00Z";
+  expiring.valid_until="2026-11-18T00:00:00Z";
+  CHECK(l.propose_association("expire-propose","ik-expire-propose",l.state_version(),"chaos-2",expiring).committed);
+  CHECK(l.expire_due_associations("expire-due","ik-expire-due",l.state_version(),"chaos-2",
+    "2026-11-18T00:00:00Z",p).committed);
+  CHECK(l.get("chaos-2",c));
+  CHECK(c.associations.at("a-expire").status==surge::ChaosAssociationStatus::Expired);
+  CHECK(c.associations.at("a-expire").history.size()==2);
   CHECK(l.get("chaos-2a",c));CHECK(c.members.size()==1&&c.parent_refs.size()==1);
   CHECK(l.get("chaos-2",c));CHECK(c.members.size()==2&&c.child_refs.size()==2&&c.lifecycle==surge::ChaosLifecycle::Forked);
   CHECK(l.create("score-create","ik-score-create",l.state_version(),"chaos-score",p).committed);
@@ -85,6 +95,9 @@ int main(){
   CHECK(c.pattern_hypotheses.count("hyp-1")==1&&c.promoted_member_targets.at("m1")=="topic-A");
   CHECK(l.get("chaos-child",c));CHECK(c.parent_refs.size()==1&&c.members.size()==2);
   CHECK(l.get("chaos-2b",c));CHECK(c.parent_refs.size()==1&&c.members.size()==1);
+  CHECK(l.get("chaos-2",c));
+  CHECK(c.associations.at("a-expire").valid_until=="2026-11-18T00:00:00Z");
+  CHECK(c.associations.at("a-expire").status==surge::ChaosAssociationStatus::Expired);
   CHECK(l.get("chaos-score",c));CHECK(c.observations.at("novelty").size()==2);
   CHECK(c.observations.at("novelty")[0].scorer_id=="recognizer");
   CHECK(c.observations.at("novelty")[1].value==0.84);
