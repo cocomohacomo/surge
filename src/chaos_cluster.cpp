@@ -346,6 +346,9 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
   const auto&source=s.at(source_id);
   if(source.lifecycle!=ChaosLifecycle::Reviewable&&source.lifecycle!=ChaosLifecycle::Dormant)
    return{false,false,state_version(),"CHAOS_MERGE_SOURCE_NOT_REVIEWABLE"};
+  if(std::find(target->second.child_refs.begin(),target->second.child_refs.end(),source_id)!=target->second.child_refs.end()||
+     std::find(source.parent_refs.begin(),source.parent_refs.end(),target_id)!=source.parent_refs.end())
+   return{false,false,state_version(),"CHAOS_MERGE_LINEAGE_CYCLE"};
  }
  auto append_scores=[](std::vector<ChaosScoreObservation>&to,const std::vector<ChaosScoreObservation>&from){
   for(const auto&item:from){
@@ -361,7 +364,8 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
    auto found=target->second.members.find(item.first);
    if(found==target->second.members.end())target->second.members.emplace(item);
    else{
-    if(!same_member(found->second,item.second)||found->second.membership_status!=item.second.membership_status||
+    if(!same_member(found->second,item.second)||!same_provenance(found->second.provenance,item.second.provenance)||
+       found->second.membership_status!=item.second.membership_status||
        found->second.membership_active!=item.second.membership_active)
       return{false,false,state_version(),"CHAOS_MERGE_MEMBER_CONFLICT"};
     auto&to=found->second;to.membership_history.insert(to.membership_history.end(),
@@ -386,6 +390,9 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
    if(found==target->second.pattern_hypotheses.end())target->second.pattern_hypotheses.emplace(item);
    else{
     if(found->second.statement!=item.second.statement||found->second.member_refs!=item.second.member_refs||
+       found->second.excluded_member_refs!=item.second.excluded_member_refs||
+       found->second.counterexample_refs!=item.second.counterexample_refs||
+       found->second.alternative_hypothesis_refs!=item.second.alternative_hypothesis_refs||
        found->second.status!=item.second.status||found->second.epistemic_state!=item.second.epistemic_state||
        found->second.exclusion_reasons!=item.second.exclusion_reasons)
       return{false,false,state_version(),"CHAOS_MERGE_HYPOTHESIS_CONFLICT"};
