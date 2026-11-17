@@ -162,8 +162,8 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
  if(entity_marker!="CC5")return false;
  std::size_t entity_clusters=0;if(!(i>>entity_clusters)||entity_clusters!=s.size())return false;
  auto read_observations=[&](std::vector<ChaosScoreObservation>&history){
-  std::size_t count=0;if(!(i>>count)||count>100000)return false;
-  for(std::size_t x=0;x<count;++x){ChaosScoreObservation v;
+  std::size_t observation_count=0;if(!(i>>observation_count)||observation_count>100000)return false;
+  for(std::size_t x=0;x<observation_count;++x){ChaosScoreObservation v;
    if(!(i>>v.value>>std::quoted(v.scorer_id)>>std::quoted(v.scorer_version)>>
         std::quoted(v.policy_version)>>std::quoted(v.observed_at))||
       !std::isfinite(v.value)||v.value<0.0||v.value>1.0||v.scorer_id.empty()||
