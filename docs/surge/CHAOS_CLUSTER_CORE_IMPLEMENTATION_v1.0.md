@@ -112,3 +112,19 @@ epistemic-state vocabularies, requires every exclusion rationale to refer to an
 explicitly excluded member, and preserves terminal rejection/promotion states.
 The C ABI and Python bridge expose the operation. Bounded JSON returns the
 current rationale and a capped review history with offsets and omission counts.
+
+
+## Lifecycle history and cluster merge
+
+The optional `CC8` extension persists append-only lifecycle revisions with
+reason and provenance, including admission-driven accumulation, promotion,
+fork/split, merge, explicit transitions, and archival. Legacy snapshots without
+CC8 remain readable. The bounded projection exposes a capped lifecycle history,
+offset, and omission count.
+
+An atomic merge operation now accepts one or more REVIEWABLE or DORMANT source
+clusters and a non-archived target. It retains source clusters as ARCHIVED,
+records parent/child lineage, and copies members, associations, hypotheses,
+and score observations. Identity conflicts or divergent review/membership
+states reject the whole transaction; no partial merge is committed. C ABI and
+Python bridge endpoints expose the operation.
