@@ -84,6 +84,7 @@ class ChaosClusterLedger {
  ChaosResult propose_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosAssociation&);
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
  ChaosResult expire_due_associations(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosProvenance&);
+ ChaosResult merge_clusters(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::vector<std::string>&,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
  ChaosResult review_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const std::string&,const std::map<std::string,std::string>&,const ChaosProvenance&);
  ChaosResult record_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosScoreObservation&);
