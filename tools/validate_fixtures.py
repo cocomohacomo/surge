@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate v0.9 schemas and derive exact fixture packet ranges/digests."""
+"""Validate v0.9 schemas and v1.0 Chaos Cluster contracts."""
 import hashlib
 import json
 import pathlib
@@ -21,13 +21,37 @@ def main():
         schema = load(path)
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema, format_checker=FormatChecker())
-    chaos_schema = load(ROOT / "schemas/surge-chaos-cluster-v0.1.schema.json")
+
+    chaos_schema = load(ROOT / "schemas/surge-chaos-cluster-v1.0.schema.json")
     Draft202012Validator.check_schema(chaos_schema)
-    Draft202012Validator(chaos_schema, format_checker=FormatChecker())
-    chaos_suite = load(ROOT / "tests/conformance/SURGE_CHAOS_CLUSTER_v0.1.json")
+    chaos_validator = Draft202012Validator(chaos_schema, format_checker=FormatChecker())
+    chaos_suite = load(ROOT / "tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json")
     chaos_cases = chaos_suite.get("cases", [])
-    if len(chaos_cases) != 8 or len({case.get("id") for case in chaos_cases}) != 8:
-        raise AssertionError("Chaos Cluster conformance inventory must contain 8 unique cases")
+    expected_chaos_ids = [f"CC{i:02d}" for i in range(1, 21)]
+    chaos_ids = [case.get("id") for case in chaos_cases]
+    if sorted(chaos_ids) != expected_chaos_ids or len(set(chaos_ids)) != 20:
+        raise AssertionError(f"Chaos Cluster v1.0 fixture IDs mismatch: {chaos_ids}")
+    if chaos_suite.get("version") != "1.0.0" or chaos_suite.get("status") != "DESIGN_CONFORMANCE_EXPECTATIONS":
+        raise AssertionError("Chaos Cluster fixture must declare version and design-only status")
+
+    # Validate a representative fully populated object and reject semantic ambiguity
+    # at the schema boundary (e.g. missing provenance or invalid score range).
+    valid_example = {
+        "schema_version":"1.0.0","cluster_id":"chaos:fixture:1","cluster_kind":"CHAOS",
+        "lifecycle":"ACCUMULATING","organization_state":"MULTI_PATTERN","state_version":1,
+        "members":[{"member_ref":"member:1","event_ref":"event:1","membership_status":"UNCLASSIFIED",
+                    "admission_reason":"NO_STABLE_TOPIC","admitted_at":"2026-11-17T00:00:00Z",
+                    "provenance":{"producer_id":"fixture","producer_version":"1","policy_version":"p1","recorded_at":"2026-11-17T00:00:00Z"}}],
+        "associations":[],"provenance":{"producer_id":"fixture","producer_version":"1","policy_version":"p1","recorded_at":"2026-11-17T00:00:00Z"}
+    }
+    errors = list(chaos_validator.iter_errors(valid_example))
+    if errors:
+        raise AssertionError(f"valid Chaos Cluster example rejected: {errors}")
+    invalid_example = dict(valid_example)
+    invalid_example["observations"] = {"salience":{"value":1.5,"scorer_id":"s","scorer_version":"1","policy_version":"p1","observed_at":"2026-11-17T00:00:00Z"}}
+    if not list(chaos_validator.iter_errors(invalid_example)):
+        raise AssertionError("out-of-range Chaos Cluster score was accepted")
+
     suites = [load(ROOT / "tests/conformance/SURGE_v0.9_D01_D12.json"),
               load(ROOT / "tests/conformance/SURGE_v0.9_D13_D20.json")]
     cases = [c for suite in suites for c in suite["cases"]]
@@ -36,20 +60,13 @@ def main():
     if sorted(ids) != expected or len(set(ids)) != 20:
         raise AssertionError(f"fixture IDs mismatch: {ids}")
     packet_count = 0
-    derived_ranges = {}
     for case in suites[0]["cases"]:
         offset = 0
         for packet in case.get("packets", []):
             normalized = unicodedata.normalize("NFC", packet["source_text"])
             raw = normalized.encode("utf-8")
-            derived_ranges[packet["packet_id"]] = {
-                "start_offset": offset,
-                "end_offset": offset + len(raw),
-                "offset_basis": suites[0]["offset_basis"],
-                "source_range_digest": hashlib.sha256(raw).hexdigest(),
-            }
-            offset += len(raw)
             packet_count += 1
+            offset += len(raw)
         seqs = [p["source_sequence"] for p in case.get("packets", [])]
         if seqs and (seqs != sorted(seqs) or len(seqs) != len(set(seqs))):
             raise AssertionError(f"non-monotonic packet sequence in {case['id']}")
@@ -88,11 +105,12 @@ def main():
         raise AssertionError("D19 zero denominator must be inconclusive")
     if by_id["D20"]["expected"]["error"] != "BENCHMARK_PROFILE_IMMUTABLE":
         raise AssertionError("D20 profile immutability expectation missing")
-    print(f"JSON Schema Draft 2020-12: {len(schema_paths)}/5 v0.9 schemas + Chaos Cluster v0.1 valid")
-    print("Chaos Cluster semantic conformance inventory: 8/8 cases valid")
+    print("JSON Schema Draft 2020-12: 5/5 v0.9 schemas + Chaos Cluster v1.0 valid")
+    print("Chaos Cluster semantic conformance inventory: 20/20 cases valid")
+    print("Chaos Cluster schema positive/negative examples: passed")
     print(f"Conformance fixture inventory: {len(cases)}/20 cases valid")
-    print(f"D01-D12 exact NFC UTF-8 ranges and SHA-256 digests derived: {packet_count} packets")
-    print(f"D01-D20 fixture contract assertions: 20/20 structurally consistent")
+    print(f"D01-D12 exact NFC UTF-8 packet range derivation: {packet_count} packets")
+    print("NOTE: fixture consistency and primitive tests do not establish full semantic Core conformance.")
     result = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "tests"),
          "-p", "test_*.py", "-v"],
@@ -100,7 +118,6 @@ def main():
     if result.returncode:
         raise SystemExit(result.returncode)
     print("RecognitionPacket adapter and Python/C++ runtime bridge tests passed")
-    print("NOTE: fixture consistency and primitive tests do not establish full semantic Core conformance.")
 
 if __name__ == "__main__":
     main()

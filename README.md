@@ -4,6 +4,11 @@ Universal Context Cognition Framework.
 
 ## Adoption and evaluation\n\n- **v0.9 implementation map:** [docs/surge/IMPLEMENTATION_MAP_v0.1.md](docs/surge/IMPLEMENTATION_MAP_v0.1.md)\n- **Single-use-case evaluation protocol:** [docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md](docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md)\n- **Journal operations, backup and migration:** [docs/surge/JOURNAL_OPERATIONS_v0.1.md](docs/surge/JOURNAL_OPERATIONS_v0.1.md)\n- **Backup/verify/restore tool:** `python tools/journal_backup.py --help`\n- **Common adapter runner:** `python tools/run_meeting_decision_adapter.py --help`\n- **Independent gold corpus staging:** [tests/benchmark/meeting_decisions/README.md](tests/benchmark/meeting_decisions/README.md)\n\n## Current specification
 
+- **Foundational specification v1.0.0:** [docs/surge/SPECIFICATION_v1.0.md](docs/surge/SPECIFICATION_v1.0.md)
+- **Chaos Cluster Model v1.0:** [docs/surge/CHAOS_CLUSTER_MODEL_v1.0.md](docs/surge/CHAOS_CLUSTER_MODEL_v1.0.md)
+- **Chaos Cluster Schema:** [schemas/surge-chaos-cluster-v1.0.schema.json](schemas/surge-chaos-cluster-v1.0.schema.json)
+- **Chaos Cluster conformance CC01-CC20:** [tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json](tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json)
+
 - **ContextHint Graph Reasoning v0.2:** [docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md](docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md)\n- **Graph-Derived ContextHint v0.1:** [docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md](docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md)\n- **ContextHint + Durable RetrievalTicket v0.1:** ContextHint priority and journal-backed ticket issue/resolution are integrated into the retrieval bridge. See [CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md).\n- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
 
 - **Atomic Packet-Semantic Transaction v0.1:** [docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md](docs/surge/ATOMIC_PACKET_SEMANTIC_TRANSACTION_v0.1.md)
@@ -68,7 +73,7 @@ python tools/validate_fixtures.py  # includes RecognitionPacket adapter tests
 
 ## Specification hierarchy
 
-v0.9 is the current normative architecture and execution contract. v0.8 and earlier specifications remain immutable historical design records. The v0.9 schemas define machine-validatable record shapes; Core API defines operation, authority, transaction, concurrency, replay and error semantics. Cross-record invariants are enforced by the Core Validator.
+v1.0 is the current normative cognitive specification and adds the open-world Chaos Cluster contract to v0.9. v0.9 remains the normative execution and transaction baseline until v1.0 Core operations are implemented. Earlier specifications remain immutable historical design records. Schema validation and fixture inventory validation do not imply full Core conformance.
 
 ## Core principles
 

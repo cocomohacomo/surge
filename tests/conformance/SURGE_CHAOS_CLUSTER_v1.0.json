@@ -1,0 +1,107 @@
+{
+  "suite": "SURGE Chaos Cluster v1.0 semantic conformance",
+  "version": "1.0.0",
+  "status": "DESIGN_CONFORMANCE_EXPECTATIONS",
+  "cases": [
+    {
+      "id": "CC01",
+      "input": "fragment with no reliable topic",
+      "expected": "retain as UNCLASSIFIED member; do not discard"
+    },
+    {
+      "id": "CC02",
+      "input": "unrelated observations in one stream",
+      "expected": "allow co-membership without asserting semantic relation"
+    },
+    {
+      "id": "CC03",
+      "input": "surprising analogy",
+      "expected": "ANALOGY/PROVISIONAL; no SUPPORTS relation"
+    },
+    {
+      "id": "CC04",
+      "input": "incompatible hypotheses",
+      "expected": "retain both and link as CONTRADICTION; do not force resolution"
+    },
+    {
+      "id": "CC05",
+      "input": "low coherence and high salience",
+      "expected": "retain; coherence alone cannot evict"
+    },
+    {
+      "id": "CC06",
+      "input": "two recognizers disagree on topic",
+      "expected": "preserve both interpretations with producer provenance"
+    },
+    {
+      "id": "CC07",
+      "input": "new evidence supports only a subset",
+      "expected": "promote exact subset; residual members remain in parent"
+    },
+    {
+      "id": "CC08",
+      "input": "exploration branch from ambiguous set",
+      "expected": "fork child with immutable parent/child lineage"
+    },
+    {
+      "id": "CC09",
+      "input": "split heterogeneous exploration set",
+      "expected": "partition membership without rewriting source events"
+    },
+    {
+      "id": "CC10",
+      "input": "promotion based on stale state version",
+      "expected": "reject with CONFLICT and require re-evaluation"
+    },
+    {
+      "id": "CC11",
+      "input": "retry identical admission operation",
+      "expected": "idempotent; no duplicate membership/event"
+    },
+    {
+      "id": "CC12",
+      "input": "same operation ID with changed payload",
+      "expected": "reject identity reuse conflict"
+    },
+    {
+      "id": "CC13",
+      "input": "invalid lifecycle transition",
+      "expected": "reject without partial journal/projection update"
+    },
+    {
+      "id": "CC14",
+      "input": "candidate regularity across fragments",
+      "expected": "retain as PatternHypothesis, not Claim"
+    },
+    {
+      "id": "CC15",
+      "input": "Question becomes resolved",
+      "expected": "do not automatically promote or close Chaos Cluster"
+    },
+    {
+      "id": "CC16",
+      "input": "Focus points to Chaos Cluster",
+      "expected": "retrieve exploration space without assuming one topic"
+    },
+    {
+      "id": "CC17",
+      "input": "retrieval contains one dominant similarity group",
+      "expected": "diversity policy returns distinct lower-ranked members too"
+    },
+    {
+      "id": "CC18",
+      "input": "association is rejected",
+      "expected": "retain rejected edge and audit history"
+    },
+    {
+      "id": "CC19",
+      "input": "archived cluster receives relevant new evidence",
+      "expected": "explicitly reactivate with audit provenance"
+    },
+    {
+      "id": "CC20",
+      "input": "memory compaction under pressure",
+      "expected": "preserve source/member manifest, provenance and lineage"
+    }
+  ]
+}
