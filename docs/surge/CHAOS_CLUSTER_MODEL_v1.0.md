@@ -154,3 +154,25 @@ CC20 memory compaction preserves manifest and provenance.
 ## 14. Implementation status
 
 The v1.0 document, schema and fixtures define the normative target. They do not assert that the dedicated C++ persistence/API is complete. Core implementation and executable conformance are tracked separately.
+
+
+## 15. Implementation status snapshot (2026-11-18)
+
+The repository implementation now includes:
+- persistent typed Chaos Cluster ledger with backward-compatible CC2-CC8 snapshot extensions;
+- C++ Core, C ABI and Python bridge for creation, membership, association review,
+  temporal expiry, score observations, PatternHypothesis review, lifecycle,
+  promotion, fork/split and atomic merge;
+- append-only score histories for cluster dimensions, member Salience,
+  association Confidence and PatternHypothesis Confidence;
+- append-only membership, association, hypothesis and lifecycle histories;
+- bounded JSON projection with offsets, completeness and omission counters;
+- typed Focus retrieval with Salience-aware ordering, admission-reason diversity,
+  explicit selection rationale and inactive-member exclusion.
+
+This is not yet a full v1.0 conformance claim. Remaining work includes the
+complete CC01-CC20 semantic matrix and hostile-input/replay cases, all requested
+retrieval filters and multi-hop lineage traversal, broader score-aware ranking,
+memory compaction/manifests/tombstones, multi-process/crash/power-loss testing,
+fuzzing/sanitizers, and target-hardware performance measurements. The audit
+document is authoritative for the current gap list.

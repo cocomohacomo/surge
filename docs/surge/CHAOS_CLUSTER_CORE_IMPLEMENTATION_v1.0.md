@@ -53,7 +53,78 @@ Values must be finite and within [0,1]. Missing dimensions remain absent
 Observations are append-only per dimension. Repeating the exact latest
 observation is idempotent; changing the value or timestamp creates a new
 revision. The CC3 extension is optional on read, so v0.1 and CC2 snapshots
-remain readable. This increment currently exposes the operation through the
-native C++ ledger only; C ABI/Python write adapters, member/association/
-hypothesis-level observations, bounded JSON projection, and score-aware
+remain readable. The observation write operation is now exposed through the C ABI and
+`SemanticCoreBridge.record_chaos_score_observation`. The bounded JSON projection
+returns the latest observation in the schema-compatible `observations` object
+and append-only revisions in `observation_history`, with history offsets and
+omission counts. This increment still records cluster-level observations only;
+member salience, association confidence, hypothesis confidence and score-aware
 retrieval remain open.
+
+
+## Membership status and unmembership increment
+
+Members now carry an explicit `membership_status` and `membership_active`
+state plus append-only membership revisions. The native ledger supports
+status review, unmembership, and reinstatement as version-checked journal
+transactions. The optional `CC4` snapshot extension preserves this state
+without changing the v0.1, CC2, or CC3 payload layouts. Bounded JSON emits the
+current membership state and a capped revision history with an offset; omitted
+membership revisions contribute to the response completeness flag and exact
+omission count. The C ABI and Python bridge expose the revision operation.
+Legacy snapshots without CC4 default to active UNCLASSIFIED membership with
+no synthesized history.
+
+
+## Entity-scoped orthogonal observations
+
+The optional `CC5` snapshot extension now stores score observations on
+individual members (Salience), associations (Confidence), and PatternHypotheses
+(Confidence), independently of cluster-level dimensions. All observations
+retain scorer identity/version, policy version, timestamp, and value, and are
+append-only with bounded histories. The generic C++ ledger operation is
+exposed as `surge_chaos_cluster_record_entity_observation` and through
+`SemanticCoreBridge.record_chaos_entity_observation`. The bounded JSON
+projection emits the latest schema observation plus a separate history object
+and includes omitted entity revisions in completeness metadata. Legacy
+snapshots without CC5 remain readable.
+
+
+## Association valid-time and expiry
+
+Associations now persist optional UTC validity bounds (`valid_from`,
+`valid_until`) in the backward-compatible optional `CC6` extension. Bounds
+use canonical `YYYY-MM-DDTHH:MM:SSZ` values and must be ordered when both are
+present. The C ABI preserves the original association input layout and adds a
+separate temporal proposal entry point. Python exposes temporal proposals and
+an explicit, caller-clock-driven `expire_due_chaos_associations` transaction.
+Due nonterminal associations transition to EXPIRED with an appended provenance
+revision. Expiry is deterministic for a supplied `as_of_utc`; no hidden system
+clock is read by the Core.
+
+
+## PatternHypothesis review and exclusion rationale
+
+The optional `CC7` extension stores append-only PatternHypothesis review
+revisions, epistemic-state changes, per-member exclusion reasons, and provenance.
+Creation records the initial review state. The review API validates status and
+epistemic-state vocabularies, requires every exclusion rationale to refer to an
+explicitly excluded member, and preserves terminal rejection/promotion states.
+The C ABI and Python bridge expose the operation. Bounded JSON returns the
+current rationale and a capped review history with offsets and omission counts.
+
+
+## Lifecycle history and cluster merge
+
+The optional `CC8` extension persists append-only lifecycle revisions with
+reason and provenance, including admission-driven accumulation, promotion,
+fork/split, merge, explicit transitions, and archival. Legacy snapshots without
+CC8 remain readable. The bounded projection exposes a capped lifecycle history,
+offset, and omission count.
+
+An atomic merge operation now accepts one or more REVIEWABLE or DORMANT source
+clusters and a non-archived target. It retains source clusters as ARCHIVED,
+records parent/child lineage, and copies members, associations, hypotheses,
+and score observations. Identity conflicts or divergent review/membership
+states reject the whole transaction; no partial merge is committed. C ABI and
+Python bridge endpoints expose the operation.

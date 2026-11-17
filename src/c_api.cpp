@@ -1801,6 +1801,17 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   return std::string("{\"producer_id\":")+json_quote(p.producer_id)+",\"producer_version\":"+json_quote(p.producer_version)+
    ",\"policy_version\":"+json_quote(p.policy_version)+",\"recorded_at\":"+json_quote(p.recorded_at)+"}";
  };
+ auto observation_json=[](const surge::ChaosScoreObservation& v){
+  return std::string("{\"value\":")+([&](){std::ostringstream n;n<<std::setprecision(17)<<v.value;return n.str();})()+
+   ",\"scorer_id\":"+json_quote(v.scorer_id)+",\"scorer_version\":"+json_quote(v.scorer_version)+
+   ",\"policy_version\":"+json_quote(v.policy_version)+",\"observed_at\":"+json_quote(v.observed_at)+"}";
+ };
+ auto observation_history_json=[&](const std::vector<surge::ChaosScoreObservation>& history,size_t& omitted){
+  const size_t count=std::min(history.size(),max_history),start=history.size()-count;omitted+=start;
+  std::ostringstream out;out<<"{\"history_offset\":"<<start<<",\"history\":[";
+  for(size_t i=start;i<history.size();++i){if(i>start)out<<',';out<<observation_json(history[i]);}
+  out<<"]}";return out.str();
+ };
  auto status=[](surge::ChaosAssociationStatus v)->const char* {
   switch(v){case surge::ChaosAssociationStatus::Provisional:return "PROVISIONAL";case surge::ChaosAssociationStatus::Reviewed:return "REVIEWED";
    case surge::ChaosAssociationStatus::Rejected:return "REJECTED";case surge::ChaosAssociationStatus::Expired:return "EXPIRED";}return "UNKNOWN";
@@ -1816,7 +1827,7 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   for(size_t i=0;i<n;++i){if(i)j<<',';j<<json_quote(refs[i]);}
   j<<']';omitted+=refs.size()-n;return j.str();
  };
- size_t omitted_history=0,omitted_hypothesis_refs=0;
+ size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0,omitted_entity_observations=0,omitted_hypothesis_history=0,omitted_lifecycle_history=0;
  const size_t member_count=std::min(c.members.size(),max_members);
  const size_t association_count=std::min(c.associations.size(),max_associations);
  const size_t hypothesis_count=std::min(c.pattern_hypotheses.size(),max_hypotheses);
@@ -1824,12 +1835,34 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  out<<"{\"cluster_id\":"<<json_quote(c.cluster_id)<<",\"state_version\":"<<c.state_version
     <<",\"lifecycle\":"<<json_quote(lifecycle(c.lifecycle))
     <<",\"organization\":"<<json_quote(organization(c.organization))
-    <<",\"creation_provenance\":"<<provenance(c.creation_provenance)<<",\"members\":[";
+    <<",\"creation_provenance\":"<<provenance(c.creation_provenance);
+ const size_t lifecycle_count=std::min(c.lifecycle_history.size(),max_history);
+ const size_t lifecycle_start=c.lifecycle_history.size()-lifecycle_count;
+ omitted_lifecycle_history+=lifecycle_start;
+ out<<",\"lifecycle_history_offset\":"<<lifecycle_start<<",\"lifecycle_history\":[";
+ for(size_t li=lifecycle_start;li<c.lifecycle_history.size();++li){if(li>lifecycle_start)out<<',';const auto&revision=c.lifecycle_history[li];
+  out<<"{\"lifecycle\":"<<json_quote(revision.lifecycle)<<",\"reason\":"<<json_quote(revision.reason)
+     <<",\"provenance\":"<<provenance(revision.provenance)<<'}';
+ }
+ out<<"],\"members\":[";
  size_t index=0;
  for(const auto& item:c.members){if(index>=member_count)break;if(index++)out<<',';const auto&m=item.second;
+  const size_t member_history_count=std::min(m.membership_history.size(),max_history);
+  const size_t member_history_start=m.membership_history.size()-member_history_count;
+  omitted_membership_history+=member_history_start;
   out<<"{\"member_ref\":"<<json_quote(m.member_ref)<<",\"event_ref\":"<<json_quote(m.event_ref)
      <<",\"admission_reason\":"<<json_quote(m.admission_reason)<<",\"admitted_at\":"<<json_quote(m.admitted_at)
-     <<",\"source_digest\":"<<json_quote(m.source_digest)<<",\"provenance\":"<<provenance(m.provenance)<<'}';
+     <<",\"source_digest\":"<<json_quote(m.source_digest)<<",\"membership_status\":"<<json_quote(m.membership_status)
+     <<",\"membership_active\":"<<(m.membership_active?"true":"false")
+     <<",\"membership_history_offset\":"<<member_history_start<<",\"membership_history\":[";
+  for(size_t h=member_history_start;h<m.membership_history.size();++h){if(h>member_history_start)out<<',';const auto&revision=m.membership_history[h];
+   out<<"{\"status\":"<<json_quote(revision.status)<<",\"active\":"<<(revision.active?"true":"false")
+      <<",\"provenance\":"<<provenance(revision.provenance)<<'}';
+  }
+  out<<"],";
+  if(!m.salience_observations.empty())out<<"\"salience\":"<<observation_json(m.salience_observations.back())<<',';
+  out<<"\"salience_history\":"<<observation_history_json(m.salience_observations,omitted_entity_observations)
+     <<",\"provenance\":"<<provenance(m.provenance)<<'}';
  }
  out<<"],\"associations\":[";
  index=0;
@@ -1838,11 +1871,14 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   const size_t history_start=a.history.size()-history_count;omitted_history+=history_start;
   out<<"{\"association_id\":"<<json_quote(a.association_id)<<",\"from_ref\":"<<json_quote(a.from_ref)
      <<",\"to_ref\":"<<json_quote(a.to_ref)<<",\"type\":"<<json_quote(type(a.type))
-     <<",\"status\":"<<json_quote(status(a.status))<<",\"provenance\":"<<provenance(a.provenance)
+     <<",\"status\":"<<json_quote(status(a.status))<<",\"valid_from\":"<<json_quote(a.valid_from)
+     <<",\"valid_until\":"<<json_quote(a.valid_until)<<",\"provenance\":"<<provenance(a.provenance)
      <<",\"history_offset\":"<<history_start<<",\"history\":[";
   for(size_t h=history_start;h<a.history.size();++h){if(h>history_start)out<<',';const auto&rev=a.history[h];
    out<<"{\"status\":"<<json_quote(status(rev.status))<<",\"provenance\":"<<provenance(rev.provenance)<<'}';}
-  out<<"]}";
+  out<<"],";
+  if(!a.confidence_observations.empty())out<<"\"confidence\":"<<observation_json(a.confidence_observations.back())<<',';
+  out<<"\"confidence_history\":"<<observation_history_json(a.confidence_observations,omitted_entity_observations)<<'}';
  }
  out<<"],\"pattern_hypotheses\":[";
  index=0;
@@ -1853,9 +1889,45 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
      <<",\"excluded_member_refs\":"<<refs_json(h.excluded_member_refs,omitted_hypothesis_refs)
      <<",\"counterexample_refs\":"<<refs_json(h.counterexample_refs,omitted_hypothesis_refs)
      <<",\"alternative_hypothesis_refs\":"<<refs_json(h.alternative_hypothesis_refs,omitted_hypothesis_refs)
-     <<",\"provenance\":"<<provenance(h.provenance)<<'}';
+     <<",\"confidence_history\":"<<observation_history_json(h.confidence_observations,omitted_entity_observations);
+  if(!h.confidence_observations.empty())out<<",\"confidence\":"<<observation_json(h.confidence_observations.back());
+  out<<",\"exclusion_reasons\":{";
+  bool first_reason=true;for(const auto&reason:h.exclusion_reasons){if(!first_reason)out<<',';first_reason=false;out<<json_quote(reason.first)<<':'<<json_quote(reason.second);}
+  const size_t revision_count=std::min(h.history.size(),max_history),revision_start=h.history.size()-revision_count;
+  omitted_hypothesis_history+=revision_start;
+  out<<"},\"history_offset\":"<<revision_start<<",\"history\":[";
+  for(size_t ri=revision_start;ri<h.history.size();++ri){if(ri>revision_start)out<<',';const auto&revision=h.history[ri];
+   out<<"{\"status\":"<<json_quote(revision.status)<<",\"epistemic_state\":"<<json_quote(revision.epistemic_state)
+      <<",\"exclusion_reasons\":{";
+   bool first_revision_reason=true;for(const auto&reason:revision.exclusion_reasons){if(!first_revision_reason)out<<',';first_revision_reason=false;out<<json_quote(reason.first)<<':'<<json_quote(reason.second);}
+   out<<"},\"provenance\":"<<provenance(revision.provenance)<<'}';
+  }
+  out<<"],\"provenance\":"<<provenance(h.provenance)<<'}';
  }
- out<<"],\"parent_refs\":[";
+ size_t omitted_observations=0;
+ out<<"],\"observations\":{";
+ bool first_dimension=true;
+ for(const auto& dimension:c.observations){
+  if(dimension.second.empty())continue;
+  if(!first_dimension) out<<',';
+  first_dimension=false;
+  out<<json_quote(dimension.first)<<':'<<observation_json(dimension.second.back());
+ }
+ out<<"},\"observation_history\":{";
+ first_dimension=true;
+ for(const auto& dimension:c.observations){
+  if(!first_dimension) out<<',';
+  first_dimension=false;
+  const auto& history=dimension.second;
+  const size_t count=std::min(history.size(),max_history);
+  const size_t start=history.size()-count;
+  omitted_observations+=start;
+  out<<json_quote(dimension.first)<<":{\"history_offset\":"<<start<<",\"history\":[";
+  for(size_t i=start;i<history.size();++i){if(i>start)out<<',';out<<observation_json(history[i]);}
+  out<<"]}";
+ }
+ out<<'}';
+ out<<",\"parent_refs\":[";
  for(size_t i=0;i<c.parent_refs.size();++i){if(i)out<<',';out<<json_quote(c.parent_refs[i]);}
  out<<"],\"child_refs\":[";
  for(size_t i=0;i<c.child_refs.size();++i){if(i)out<<',';out<<json_quote(c.child_refs[i]);}
@@ -1863,11 +1935,16 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  bool first=true;for(const auto& item:c.promoted_member_targets){if(!first)out<<',';first=false;out<<json_quote(item.first)<<':'<<json_quote(item.second);}
  const size_t omitted_members=c.members.size()-member_count, omitted_associations=c.associations.size()-association_count;
  const size_t omitted_hypotheses=c.pattern_hypotheses.size()-hypothesis_count;
- out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs)?"false":"true")
+ out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history||omitted_entity_observations||omitted_hypothesis_history||omitted_lifecycle_history)?"false":"true")
     <<",\"omitted\":{\"members\":"<<omitted_members<<",\"associations\":"<<omitted_associations
     <<",\"association_history_revisions\":"<<omitted_history
     <<",\"pattern_hypotheses\":"<<omitted_hypotheses
-    <<",\"hypothesis_references\":"<<omitted_hypothesis_refs<<"}}";
+    <<",\"hypothesis_references\":"<<omitted_hypothesis_refs
+    <<",\"score_observation_revisions\":"<<omitted_observations
+    <<",\"membership_history_revisions\":"<<omitted_membership_history
+    <<",\"entity_score_observation_revisions\":"<<omitted_entity_observations
+    <<",\"pattern_hypothesis_history_revisions\":"<<omitted_hypothesis_history
+    <<",\"lifecycle_history_revisions\":"<<omitted_lifecycle_history<<"}}";
  return out.str();
 }
 }
@@ -1894,6 +1971,65 @@ int surge_chaos_cluster_propose_association(void* opaque,const char* op,const ch
   copy_text(error,cap,r.error);
   return r.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_propose_association_temporal(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* id,const SurgeChaosAssociationTemporalInput* input,const SurgeChaosProvenanceInput* provenance,
+ uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;surge::ChaosAssociationType type;
+  if(!opaque||!op||!key||!id||!input||!input->association_id||!input->from_member_ref||
+     !input->to_member_ref||!chaos_get_type(input->association_type,type)||!chaos_get_provenance(provenance,p)||
+     (input->valid_from_utc&&std::strlen(input->valid_from_utc)>20)||
+     (input->valid_until_utc&&std::strlen(input->valid_until_utc)>20)){
+   copy_text(error,cap,"CHAOS_ASSOCIATION_TEMPORAL_ARGUMENT_INVALID");return 0;
+  }
+  surge::ChaosAssociation a;a.association_id=input->association_id;a.from_ref=input->from_member_ref;
+  a.to_ref=input->to_member_ref;a.type=type;a.provenance=p;
+  a.valid_from=input->valid_from_utc?input->valid_from_utc:"";
+  a.valid_until=input->valid_until_utc?input->valid_until_utc:"";
+  auto result=static_cast<Handle*>(opaque)->chaos.propose_association(op,key,expected,id,a);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_TEMPORAL_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_merge(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* target_id,const char* const* source_ids,size_t source_count,
+ const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!target_id||!source_ids||source_count==0||source_count>1000||
+     !chaos_get_provenance(input,p)){
+   copy_text(error,cap,"CHAOS_MERGE_ARGUMENT_INVALID");return 0;
+  }
+  std::vector<std::string> sources;sources.reserve(source_count);
+  for(size_t i=0;i<source_count;++i){
+   if(!source_ids[i]||!*source_ids[i]||std::strlen(source_ids[i])>256){
+    copy_text(error,cap,"CHAOS_MERGE_SOURCE_INVALID");return 0;
+   }
+   sources.emplace_back(source_ids[i]);
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.merge_clusters(op,key,expected,target_id,sources,p);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_MERGE_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_expire_due_associations(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* id,const char* as_of,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!id||!as_of||std::strlen(as_of)>20||!chaos_get_provenance(input,p)){
+   copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_ARGUMENT_INVALID");return 0;
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.expire_due_associations(op,key,expected,id,as_of,p);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_UNKNOWN_EXCEPTION");return 0;}
 }
 int surge_chaos_cluster_transition(void* opaque,const char* op,const char* key,uint64_t expected,const char* id,const char* target,const char* reason,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
  try {surge::ChaosProvenance p;surge::ChaosLifecycle lifecycle;if(!opaque||!op||!key||!id||!reason||!chaos_get_lifecycle(target,lifecycle)||!chaos_get_provenance(input,p)){copy_text(error,cap,"CHAOS_TRANSITION_ARGUMENT_INVALID");return 0;}
@@ -1963,6 +2099,98 @@ int surge_chaos_cluster_add_pattern_hypothesis(void* opaque,const char* op,const
   return r.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_revise_membership(void* opaque,const char* op,const char* key,uint64_t expected,
+    const char* id,const char* member_ref,const char* status,int active,
+    const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance provenance;
+  if(!opaque||!op||!key||!id||!member_ref||!status||(active!=0&&active!=1)||
+     std::strlen(op)>256||std::strlen(key)>256||std::strlen(id)>256||std::strlen(member_ref)>512||
+     !chaos_get_provenance(input,provenance)) {
+   copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_ARGUMENT_INVALID");return 0;
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.revise_membership(
+      op,key,expected,id,member_ref,status,active!=0,provenance);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_review_pattern_hypothesis(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* id,const char* hypothesis_id,const SurgeChaosHypothesisReviewInput* input,
+ const SurgeChaosProvenanceInput* provenance,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!id||!hypothesis_id||!input||!input->status||!input->epistemic_state||
+     input->exclusion_count>10000||
+     (input->exclusion_count&&(!input->excluded_member_refs||!input->exclusion_reasons))||
+     !chaos_get_provenance(provenance,p)){
+   copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_REVIEW_ARGUMENT_INVALID");return 0;
+  }
+  std::map<std::string,std::string> reasons;
+  for(size_t i=0;i<input->exclusion_count;++i){
+   if(!input->excluded_member_refs[i]||!input->exclusion_reasons[i]||
+      !*input->excluded_member_refs[i]||!*input->exclusion_reasons[i]||
+      !reasons.emplace(input->excluded_member_refs[i],input->exclusion_reasons[i]).second){
+    copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID");return 0;
+   }
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.review_pattern_hypothesis(
+      op,key,expected,id,hypothesis_id,input->status,input->epistemic_state,reasons,p);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_REVIEW_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_record_entity_observation(void* opaque,const char* op,const char* key,uint64_t expected,
+    const char* id,const char* entity_kind,const char* entity_ref,
+    const SurgeChaosScoreObservationInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  if(!opaque||!op||!key||!id||!entity_kind||!entity_ref||!input||
+     !input->scorer_id||!input->scorer_version||!input->policy_version||!input->observed_at||
+     std::strlen(op)>256||std::strlen(key)>256||std::strlen(id)>256||
+     std::strlen(entity_kind)>32||std::strlen(entity_ref)>512||
+     std::strlen(input->scorer_id)>256||std::strlen(input->scorer_version)>128||
+     std::strlen(input->policy_version)>128||std::strlen(input->observed_at)>64||
+     !std::isfinite(input->value)||input->value<0.0||input->value>1.0) {
+   copy_text(error,cap,"CHAOS_SCORE_OBSERVATION_ARGUMENT_INVALID");return 0;
+  }
+  surge::ChaosScoreObservation observation{input->value,input->scorer_id,input->scorer_version,
+      input->policy_version,input->observed_at};
+  auto result=static_cast<Handle*>(opaque)->chaos.record_entity_observation(
+      op,key,expected,id,entity_kind,entity_ref,observation);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_ENTITY_SCORE_OBSERVATION_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_record_observation(void* opaque,const char* op,const char* key,uint64_t expected,
+    const char* id,const char* dimension,const SurgeChaosScoreObservationInput* input,
+    uint64_t* version,char* error,size_t cap) {
+ try {
+  if(!opaque||!op||!key||!id||!dimension||!input||!input->scorer_id||
+     !input->scorer_version||!input->policy_version||!input->observed_at||
+     std::strlen(op)>256||std::strlen(key)>256||std::strlen(id)>256||
+     std::strlen(dimension)>64||std::strlen(input->scorer_id)>256||
+     std::strlen(input->scorer_version)>128||std::strlen(input->policy_version)>128||
+     std::strlen(input->observed_at)>64||!std::isfinite(input->value)||
+     input->value<0.0||input->value>1.0) {
+   copy_text(error,cap,"CHAOS_SCORE_OBSERVATION_ARGUMENT_INVALID");return 0;
+  }
+  surge::ChaosScoreObservation observation;
+  observation.value=input->value;observation.scorer_id=input->scorer_id;
+  observation.scorer_version=input->scorer_version;observation.policy_version=input->policy_version;
+  observation.observed_at=input->observed_at;
+  auto r=static_cast<Handle*>(opaque)->chaos.record_observation(op,key,expected,id,dimension,observation);
+  if(version)*version=r.state_version;
+  copy_text(error,cap,r.error);
+  return r.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_SCORE_OBSERVATION_UNKNOWN_EXCEPTION");return 0;}
 }
 int surge_chaos_cluster_get_bounded(void* opaque,const char* id,size_t max_members,size_t max_associations,
     size_t max_hypotheses,size_t max_history,size_t max_refs,char* output,size_t output_cap,

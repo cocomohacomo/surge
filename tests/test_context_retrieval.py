@@ -153,21 +153,43 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 core.review_chaos_association(operation_id="review", idempotency_key="review",
                     expected_state_version=core.state_version, cluster_id="chaos/projection",
                     association_id="a1", status="REVIEWED", provenance=provenance)
+                core.propose_chaos_association(operation_id="assoc-expiring", idempotency_key="assoc-expiring",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    association={"association_id":"a-expiring","from_member_ref":"m0","to_member_ref":"m2",
+                                 "association_type":"CO_OCCURS",
+                                 "valid_from_utc":"2026-11-17T00:00:00Z",
+                                 "valid_until_utc":"2026-11-18T00:00:00Z"}, provenance=provenance)
+                core.expire_due_chaos_associations(operation_id="expire", idempotency_key="expire",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    as_of_utc="2026-11-18T00:00:00Z", provenance=provenance)
                 core.add_chaos_pattern_hypothesis(operation_id="hyp", idempotency_key="hyp",
                     expected_state_version=core.state_version, cluster_id="chaos/projection",
                     hypothesis={"hypothesis_id":"h1","statement":"latent relation",
-                                "member_refs":["m0","m1","m2"],"counterexample_refs":["m2"]},
+                                "member_refs":["m0","m1","m2"],"excluded_member_refs":["m2"],"counterexample_refs":["m2"]},
+                    provenance=provenance)
+                core.review_chaos_pattern_hypothesis(
+                    operation_id="hyp-review", idempotency_key="hyp-review",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    hypothesis_id="h1", status="REVIEWABLE", epistemic_state="UNVERIFIED",
+                    exclusion_reasons={"m2": "counterexample retained outside pattern support"},
                     provenance=provenance)
                 full = core.get_chaos_cluster("chaos/projection")
                 self.assertTrue(full["complete"])
                 self.assertEqual(len(full["associations"][0]["history"]), 2)
-                self.assertEqual(full["associations"][0]["history"][-1]["status"], "REVIEWED")
+                self.assertEqual(next(item for item in full["associations"] if item["association_id"] == "a1")["history"][-1]["status"], "REVIEWED")
+                expiring = next(item for item in full["associations"] if item["association_id"] == "a-expiring")
+                self.assertEqual(expiring["status"], "EXPIRED")
+                self.assertEqual(expiring["valid_until"], "2026-11-18T00:00:00Z")
+                self.assertEqual(expiring["history"][-1]["status"], "EXPIRED")
                 self.assertEqual(full["pattern_hypotheses"][0]["counterexample_refs"], ["m2"])
+                self.assertEqual(full["pattern_hypotheses"][0]["history"][-1]["status"], "REVIEWABLE")
+                self.assertEqual(full["pattern_hypotheses"][0]["exclusion_reasons"]["m2"],
+                                 "counterexample retained outside pattern support")
                 bounded = core.get_chaos_cluster("chaos/projection", max_members=1,
                     max_associations=0, max_hypotheses=0)
                 self.assertFalse(bounded["complete"])
                 self.assertEqual(bounded["omitted"]["members"], 2)
-                self.assertEqual(bounded["omitted"]["associations"], 1)
+                self.assertEqual(bounded["omitted"]["associations"], 2)
                 self.assertEqual(bounded["omitted"]["pattern_hypotheses"], 1)
                 with self.assertRaises(PacketRejected):
                     core.get_chaos_cluster("chaos/projection", max_members=10001)
@@ -187,20 +209,67 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                         member={"member_ref": f"m{index}", "event_ref": f"event/{index}",
                                 "admission_reason": reason, "admitted_at": f"2026-11-18T00:0{index}:00Z"},
                         provenance=provenance)
+                for member_ref, value in (("m0", 0.2), ("m1", 0.95)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"salience-{member_ref}", idempotency_key=f"salience-{member_ref}",
+                        expected_state_version=core.state_version, cluster_id="chaos/focus",
+                        entity_kind="MEMBER", entity_ref=member_ref,
+                        observation={"value": value, "scorer_id": "retrieval-scorer",
+                                     "scorer_version": "1", "policy_version": "salience-v1",
+                                     "observed_at": f"2026-11-18T00:1{member_ref[-1]}:00Z"})
+                core.revise_chaos_membership(
+                    operation_id="remove-m3", idempotency_key="remove-m3",
+                    expected_state_version=core.state_version, cluster_id="chaos/focus",
+                    member_ref="m3", status="PROVISIONAL", active=False, provenance=provenance)
                 core.set_chaos_focus("chaos/focus", operation_id="focus",
                     idempotency_key="focus", expected_state_version=core.state_version)
-                result = ContextRetriever(core).retrieve_focus(max_members=3)
+                result = ContextRetriever(core).retrieve_focus(max_members=2)
                 self.assertEqual(result["target_kind"], "CHAOS_CLUSTER")
                 self.assertEqual([m["member_ref"] for m in result["target"]["members"]],
-                                 ["m0", "m2", "m3"])
-                self.assertEqual(result["omitted_member_refs"], ["m1"])
+                                 ["m1", "m2"])
+                self.assertEqual(result["omitted_member_refs"], ["m0"])
+                self.assertEqual(result["excluded_inactive_member_refs"], ["m3"])
                 self.assertFalse(result["complete"])
-                self.assertEqual(result["retrieval_policy"], "ADMISSION_REASON_ROUND_ROBIN")
+                self.assertEqual(result["retrieval_policy"], "SCORE_AWARE_DIVERSITY_ROUND_ROBIN")
             with SemanticCoreBridge(journal) as recovered:
                 result = ContextRetriever(recovered).retrieve_focus(max_members=10)
                 self.assertTrue(result["complete"])
                 self.assertEqual(result["target"]["cluster_id"], "chaos/focus")
-                self.assertEqual(len(result["target"]["members"]), 4)
+                self.assertEqual(len(result["target"]["members"]), 3)
+                self.assertEqual(result["excluded_inactive_member_refs"], ["m3"])
+
+    def test_chaos_cluster_merge_is_atomic_lineage_preserving_and_restart_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-merge.sgj"
+            provenance = {"producer_id": "merge-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T02:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="target-create", idempotency_key="target-create",
+                    expected_state_version=core.state_version, cluster_id="merge-target", provenance=provenance)
+                core.create_chaos_cluster(operation_id="source-create", idempotency_key="source-create",
+                    expected_state_version=core.state_version, cluster_id="merge-source", provenance=provenance)
+                core.admit_chaos_member(operation_id="member-add", idempotency_key="member-add",
+                    expected_state_version=core.state_version, cluster_id="merge-source",
+                    member={"member_ref": "merged-member", "event_ref": "merged-event",
+                            "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T02:00:01Z"},
+                    provenance=provenance)
+                core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
+                    expected_state_version=core.state_version, cluster_id="merge-source",
+                    target_lifecycle="REVIEWABLE", reason="ready to merge", provenance=provenance)
+                core.merge_chaos_clusters(operation_id="merge", idempotency_key="merge",
+                    expected_state_version=core.state_version, target_cluster_id="merge-target",
+                    source_cluster_ids=["merge-source"], provenance=provenance)
+                target = core.get_chaos_cluster("merge-target")
+                source = core.get_chaos_cluster("merge-source")
+                self.assertEqual(target["members"][0]["member_ref"], "merged-member")
+                self.assertEqual(target["parent_refs"], ["merge-source"])
+                self.assertEqual(source["lifecycle"], "ARCHIVED")
+                self.assertEqual(source["child_refs"], ["merge-target"])
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_chaos_cluster("merge-target")["members"][0]["member_ref"],
+                                 "merged-member")
+                self.assertEqual(recovered.get_chaos_cluster("merge-source")["lifecycle"], "ARCHIVED")
+
 
     def test_focus_retrieval_without_active_focus_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,6 +288,71 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     retriever.search("x", kinds=["UNKNOWN"])
                 with self.assertRaisesRegex(ValueError, "RETRIEVAL_LIMIT_INVALID"):
                     retriever.search("x", limit=0)
+
+
+    def test_chaos_score_observations_roundtrip_through_python_bridge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-score-api.sgj"
+            provenance = {"producer_id": "score-api-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T00:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="create", idempotency_key="create",
+                    expected_state_version=0, cluster_id="chaos/scores", provenance=provenance)
+                core.admit_chaos_member(operation_id="member-add", idempotency_key="member-add",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member={"member_ref": "score-member", "event_ref": "score-event",
+                            "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T00:00:01Z"},
+                    provenance=provenance)
+                core.revise_chaos_membership(operation_id="member-remove", idempotency_key="member-remove",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member_ref="score-member", status="PROVISIONAL", active=False, provenance=provenance)
+                core.revise_chaos_membership(operation_id="member-restore", idempotency_key="member-restore",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    member_ref="score-member", status="REVIEWED", active=True, provenance=provenance)
+                core.record_chaos_entity_observation(
+                    operation_id="member-salience", idempotency_key="member-salience",
+                    expected_state_version=core.state_version, cluster_id="chaos/scores",
+                    entity_kind="MEMBER", entity_ref="score-member",
+                    observation={"value": 0.73, "scorer_id": "member-scorer",
+                                 "scorer_version": "1.0", "policy_version": "salience-v1",
+                                 "observed_at": "2026-11-18T00:00:02Z"})
+                for index, value in enumerate((0.91, 0.84)):
+                    core.record_chaos_score_observation(
+                        operation_id=f"score-{index}", idempotency_key=f"score-{index}",
+                        expected_state_version=core.state_version, cluster_id="chaos/scores",
+                        dimension="novelty",
+                        observation={"value": value, "scorer_id": "recognizer",
+                                     "scorer_version": "2.1", "policy_version": "score-v1",
+                                     "observed_at": f"2026-11-18T00:0{index}:00Z"})
+                result = core.get_chaos_cluster("chaos/scores")
+                history = result["observation_history"]["novelty"]["history"]
+                self.assertEqual([item["value"] for item in history], [0.91, 0.84])
+                self.assertEqual(history[0]["scorer_id"], "recognizer")
+                self.assertEqual(result["observations"]["novelty"]["value"], 0.84)
+                self.assertEqual(result["omitted"]["score_observation_revisions"], 0)
+                membership = result["members"][0]
+                self.assertEqual(membership["membership_status"], "REVIEWED")
+                self.assertEqual(membership["salience"]["value"], 0.73)
+                self.assertEqual(membership["salience_history"]["history"][0]["scorer_id"], "member-scorer")
+                self.assertEqual([item["active"] for item in membership["membership_history"]],
+                                 [True, False, True])
+                bounded = core.get_chaos_cluster("chaos/scores", max_history_per_association=1)
+                self.assertFalse(bounded["complete"])
+                self.assertEqual(bounded["observation_history"]["novelty"]["history_offset"], 1)
+                self.assertEqual(bounded["omitted"]["score_observation_revisions"], 1)
+                with self.assertRaises(PacketRejected):
+                    core.record_chaos_score_observation(
+                        operation_id="bad", idempotency_key="bad",
+                        expected_state_version=core.state_version, cluster_id="chaos/scores",
+                        dimension="novelty",
+                        observation={"value": float("nan"), "scorer_id": "recognizer",
+                                     "scorer_version": "2.1", "policy_version": "score-v1",
+                                     "observed_at": "2026-11-18T00:03:00Z"})
+            with SemanticCoreBridge(journal) as recovered:
+                result = recovered.get_chaos_cluster("chaos/scores")
+                self.assertEqual(len(result["observation_history"]["novelty"]["history"]), 2)
+                self.assertEqual(result["members"][0]["membership_history"][-1]["status"], "REVIEWED")
+                self.assertEqual(result["members"][0]["salience"]["value"], 0.73)
 
 
 if __name__ == "__main__":

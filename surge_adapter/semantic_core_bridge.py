@@ -67,7 +67,21 @@ class _ChaosMember(ctypes.Structure):
 
 class _ChaosAssociation(ctypes.Structure):
     _fields_ = [("association_id", ctypes.c_char_p), ("from_member_ref", ctypes.c_char_p),
-                ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p)]
+                ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p), ("valid_from_utc", ctypes.c_char_p),
+                ("valid_until_utc", ctypes.c_char_p)]
+
+class _ChaosHypothesisReview(ctypes.Structure):
+    _fields_ = [("status", ctypes.c_char_p), ("epistemic_state", ctypes.c_char_p),
+                ("excluded_member_refs", ctypes.POINTER(ctypes.c_char_p)),
+                ("exclusion_reasons", ctypes.POINTER(ctypes.c_char_p)),
+                ("exclusion_count", ctypes.c_size_t)]
+
+
+class _ChaosScoreObservation(ctypes.Structure):
+    _fields_ = [("value", ctypes.c_double), ("scorer_id", ctypes.c_char_p),
+                ("scorer_version", ctypes.c_char_p), ("policy_version", ctypes.c_char_p),
+                ("observed_at", ctypes.c_char_p)]
+
 
 class _ChaosPatternHypothesis(ctypes.Structure):
     _fields_ = [("hypothesis_id", ctypes.c_char_p), ("statement", ctypes.c_char_p),
@@ -267,16 +281,55 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_propose_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_propose_association_temporal.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_propose_association_temporal.restype = ctypes.c_int
         lib.surge_chaos_cluster_review_association.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_review_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_expire_due_associations.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_expire_due_associations.restype = ctypes.c_int
+        lib.surge_chaos_cluster_merge.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t,
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_merge.restype = ctypes.c_int
         lib.surge_chaos_cluster_add_pattern_hypothesis.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_add_pattern_hypothesis.restype = ctypes.c_int
+        lib.surge_chaos_cluster_review_pattern_hypothesis.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosHypothesisReview),
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_review_pattern_hypothesis.restype = ctypes.c_int
+        lib.surge_chaos_cluster_record_observation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosScoreObservation),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_record_observation.restype = ctypes.c_int
+        lib.surge_chaos_cluster_record_entity_observation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(_ChaosScoreObservation), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_record_entity_observation.restype = ctypes.c_int
+        lib.surge_chaos_cluster_revise_membership.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_revise_membership.restype = ctypes.c_int
         lib.surge_chaos_cluster_transition.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
@@ -1081,11 +1134,165 @@ class SemanticCoreBridge(CppCoreBridge):
         values = [association.get(k) for k in fields]
         if any(not isinstance(x, str) or not x.strip() for x in values):
             raise PacketRejected("CHAOS_ASSOCIATION_INVALID")
+        valid_from = association.get("valid_from_utc") or ""
+        valid_until = association.get("valid_until_utc") or ""
+        for timestamp in (valid_from, valid_until):
+            if timestamp and (not isinstance(timestamp, str) or len(timestamp) != 20
+                              or timestamp[4] != "-" or timestamp[7] != "-"
+                              or timestamp[10] != "T" or timestamp[13] != ":"
+                              or timestamp[16] != ":" or timestamp[19] != "Z"):
+                raise PacketRejected("CHAOS_ASSOCIATION_VALID_TIME_INVALID")
+        if valid_from and valid_until and valid_from >= valid_until:
+            raise PacketRejected("CHAOS_ASSOCIATION_VALID_TIME_INVALID")
         p = self._chaos_provenance(provenance)
-        item = _ChaosAssociation(*(x.encode("utf-8") for x in values))
-        return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
+        item = _ChaosAssociation(*(x.encode("utf-8") for x in values),
+                                 valid_from.encode("ascii") if valid_from else None,
+                                 valid_until.encode("ascii") if valid_until else None)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association_temporal,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def merge_chaos_clusters(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, target_cluster_id: str,
+        source_cluster_ids: list[str], provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically merge reviewable/dormant sources into a retained target."""
+        if (not isinstance(source_cluster_ids, list) or not source_cluster_ids
+                or len(source_cluster_ids) > 1000
+                or any(not isinstance(item, str) or not item.strip() for item in source_cluster_ids)
+                or len(set(source_cluster_ids)) != len(source_cluster_ids)):
+            raise PacketRejected("CHAOS_MERGE_SOURCE_INVALID")
+        if not isinstance(target_cluster_id, str) or not target_cluster_id.strip():
+            raise PacketRejected("CHAOS_MERGE_TARGET_INVALID")
+        refs = [item.encode("utf-8") for item in source_cluster_ids]
+        array = (ctypes.c_char_p * len(refs))(*refs)
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_merge,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             target_cluster_id.encode(), array, len(refs), ctypes.byref(p)))
+
+    def expire_due_chaos_associations(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, as_of_utc: str,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Expire nonterminal associations whose valid_until is due."""
+        if (not isinstance(as_of_utc, str) or len(as_of_utc) != 20
+                or as_of_utc[4:5] != "-" or as_of_utc[7:8] != "-"
+                or as_of_utc[10:11] != "T" or as_of_utc[13:14] != ":"
+                or as_of_utc[16:17] != ":" or not as_of_utc.endswith("Z")):
+            raise PacketRejected("CHAOS_ASSOCIATION_EXPIRY_INPUT_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_expire_due_associations,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), as_of_utc.encode("ascii"), ctypes.byref(p)))
+
+    def revise_chaos_membership(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, member_ref: str,
+        status: str = "UNCLASSIFIED", active: bool = True,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append a membership status or unmembership/reinstatement revision."""
+        if status not in {"UNCLASSIFIED", "PROVISIONAL", "REVIEWED"}:
+            raise PacketRejected("CHAOS_MEMBERSHIP_STATUS_INVALID")
+        if not isinstance(active, bool):
+            raise PacketRejected("CHAOS_MEMBERSHIP_ACTIVE_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id, member_ref)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_MEMBERSHIP_IDENTITY_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_revise_membership,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), member_ref.encode(), status.encode("ascii"),
+             1 if active else 0, ctypes.byref(p)))
+
+    def review_chaos_pattern_hypothesis(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, hypothesis_id: str,
+        status: str, epistemic_state: str,
+        exclusion_reasons: dict[str, str] | None = None,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append an auditable PatternHypothesis review with per-member reasons."""
+        allowed_status = {"PROVISIONAL", "REVIEWABLE", "REJECTED", "PROMOTED_TO_EVIDENCE_REVIEW"}
+        allowed_epistemic = {"HYPOTHETICAL", "UNVERIFIED", "CONTRADICTED", "REJECTED"}
+        if status not in allowed_status or epistemic_state not in allowed_epistemic:
+            raise PacketRejected("PATTERN_HYPOTHESIS_REVIEW_INVALID")
+        reasons = exclusion_reasons or {}
+        if not isinstance(reasons, dict) or any(
+            not isinstance(ref, str) or not ref or not isinstance(reason, str) or not reason.strip()
+            for ref, reason in reasons.items()
+        ):
+            raise PacketRejected("PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID")
+        refs = [ref.encode("utf-8") for ref in reasons]
+        values = [reasons[ref].encode("utf-8") for ref in reasons]
+        ref_array = (ctypes.c_char_p * len(refs))(*refs) if refs else None
+        value_array = (ctypes.c_char_p * len(values))(*values) if values else None
+        item = _ChaosHypothesisReview(status.encode("ascii"), epistemic_state.encode("ascii"),
+            ctypes.cast(ref_array, ctypes.POINTER(ctypes.c_char_p)) if ref_array is not None else None,
+            ctypes.cast(value_array, ctypes.POINTER(ctypes.c_char_p)) if value_array is not None else None,
+            len(refs))
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_review_pattern_hypothesis,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), hypothesis_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def record_chaos_entity_observation(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, entity_kind: str,
+        entity_ref: str, observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append member salience, association confidence or hypothesis confidence."""
+        dimensions = {"MEMBER": "salience", "ASSOCIATION": "confidence",
+                      "HYPOTHESIS": "confidence"}
+        if entity_kind not in dimensions or not isinstance(observation, dict):
+            raise PacketRejected("CHAOS_SCORE_ENTITY_INVALID")
+        value = observation.get("value")
+        import math
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or not 0 <= float(value) <= 1:
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        fields = ("scorer_id", "scorer_version", "policy_version", "observed_at")
+        metadata = [observation.get(name) for name in fields]
+        if any(not isinstance(item, str) or not item.strip() for item in metadata):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id, entity_ref)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_IDENTITY_INVALID")
+        item = _ChaosScoreObservation(float(value), *(item.encode("utf-8") for item in metadata))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_record_entity_observation,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), entity_kind.encode("ascii"), entity_ref.encode(),
+             ctypes.byref(item)))
+
+    def record_chaos_score_observation(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, dimension: str,
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append a scorer-bound score observation without collapsing UNKNOWN to zero."""
+        allowed = {"organization", "salience", "recognition_confidence", "novelty",
+                   "diversity", "ambiguity", "utility"}
+        if dimension not in allowed or not isinstance(observation, dict):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        value = observation.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        import math
+        if not math.isfinite(float(value)) or not 0.0 <= float(value) <= 1.0:
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        fields = ("scorer_id", "scorer_version", "policy_version", "observed_at")
+        metadata = [observation.get(name) for name in fields]
+        if any(not isinstance(item, str) or not item.strip() for item in metadata):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_IDENTITY_INVALID")
+        item = _ChaosScoreObservation(float(value), *(item.encode("utf-8") for item in metadata))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_record_observation,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), dimension.encode("ascii"), ctypes.byref(item)))
 
     def transition_chaos_cluster(self, *, operation_id: str, idempotency_key: str,
                                  expected_state_version: int, cluster_id: str,

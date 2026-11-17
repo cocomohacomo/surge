@@ -44,14 +44,53 @@ int main(){
   CHECK(l.admit_member("x2-op","ik-x2",13,"chaos-2",c2).committed);
   CHECK(l.transition("review-2","ik-review-2",14,"chaos-2",surge::ChaosLifecycle::Reviewable,"ready to partition",p).committed);
   CHECK(l.split_subsets("split","ik-split",15,"chaos-2",{{"chaos-2a",{"x1"}},{"chaos-2b",{"x2"}}},p).committed);
+  surge::ChaosAssociation expiring{"a-expire","x1","x2",surge::ChaosAssociationType::CoOccurs,
+    surge::ChaosAssociationStatus::Provisional,p};
+  expiring.valid_from="2026-11-17T00:00:00Z";
+  expiring.valid_until="2026-11-18T00:00:00Z";
+  CHECK(l.propose_association("expire-propose","ik-expire-propose",l.state_version(),"chaos-2",expiring).committed);
+  CHECK(l.expire_due_associations("expire-due","ik-expire-due",l.state_version(),"chaos-2",
+    "2026-11-18T00:00:00Z",p).committed);
+  CHECK(l.get("chaos-2",c));
+  CHECK(c.associations.at("a-expire").status==surge::ChaosAssociationStatus::Expired);
+  CHECK(c.associations.at("a-expire").history.size()==2);
   CHECK(l.get("chaos-2a",c));CHECK(c.members.size()==1&&c.parent_refs.size()==1);
   CHECK(l.get("chaos-2",c));CHECK(c.members.size()==2&&c.child_refs.size()==2&&c.lifecycle==surge::ChaosLifecycle::Forked);
   CHECK(l.create("score-create","ik-score-create",l.state_version(),"chaos-score",p).committed);
+  surge::ChaosMember score_member{"score-member","score-event","HIGH_NOVELTY","2026-11-17T00:00:30Z","",p};
+  CHECK(l.admit_member("score-member-add","ik-score-member-add",l.state_version(),"chaos-score",score_member).committed);
+  CHECK(l.revise_membership("score-member-remove","ik-score-member-remove",l.state_version(),
+    "chaos-score","score-member","PROVISIONAL",false,p).committed);
+  CHECK(l.revise_membership("score-member-restore","ik-score-member-restore",l.state_version(),
+    "chaos-score","score-member","REVIEWED",true,p).committed);
+  surge::ChaosCluster membership_snapshot;CHECK(l.get("chaos-score",membership_snapshot));
+  CHECK(!membership_snapshot.members.at("score-member").membership_history.empty());
+  CHECK(membership_snapshot.members.at("score-member").membership_history.size()==3);
+  CHECK(membership_snapshot.members.at("score-member").membership_active);
+  CHECK(membership_snapshot.members.at("score-member").membership_status=="REVIEWED");
+  surge::ChaosPatternHypothesis score_hypothesis;
+  score_hypothesis.hypothesis_id="score-hypothesis";
+  score_hypothesis.statement="provisional pattern";
+  score_hypothesis.member_refs={"score-member"};
+  score_hypothesis.excluded_member_refs={"score-member"};
+  score_hypothesis.provenance=p;
+  CHECK(l.add_pattern_hypothesis("score-hypothesis-add","ik-score-hypothesis-add",
+    l.state_version(),"chaos-score",score_hypothesis).committed);
+  CHECK(l.review_pattern_hypothesis("score-hypothesis-review","ik-score-hypothesis-review",
+    l.state_version(),"chaos-score","score-hypothesis","REVIEWABLE","UNVERIFIED",
+    {{"score-member","insufficient independent support"}},p).committed);
   surge::ChaosScoreObservation novelty{0.91,"recognizer","2.1","score-policy-1","2026-11-17T00:01:00Z"};
   auto score_version=l.state_version();
   CHECK(l.record_observation("score-novelty","ik-score-novelty",score_version,"chaos-score","novelty",novelty).committed);
   novelty.value=0.84;novelty.observed_at="2026-11-17T00:02:00Z";
   CHECK(l.record_observation("score-novelty-2","ik-score-novelty-2",l.state_version(),"chaos-score","novelty",novelty).committed);
+  surge::ChaosScoreObservation entity_score{0.77,"entity-scorer","3.0","entity-policy","2026-11-17T00:04:00Z"};
+  CHECK(l.record_entity_observation("member-salience","ik-member-salience",l.state_version(),
+    "chaos-1","MEMBER","m1",entity_score).committed);
+  CHECK(l.record_entity_observation("association-confidence","ik-association-confidence",l.state_version(),
+    "chaos-1","ASSOCIATION","a1",entity_score).committed);
+  CHECK(l.record_entity_observation("hypothesis-confidence","ik-hypothesis-confidence",l.state_version(),
+    "chaos-1","HYPOTHESIS","hyp-1",entity_score).committed);
   auto invalid=novelty;invalid.value=1.01;
   auto bad_score=l.record_observation("score-invalid","ik-score-invalid",l.state_version(),"chaos-score","salience",invalid);
   CHECK(!bad_score.committed&&bad_score.error=="CHAOS_SCORE_OBSERVATION_INVALID");
@@ -59,6 +98,17 @@ int main(){
   CHECK(!bad_dimension.committed&&bad_dimension.error=="CHAOS_SCORE_OBSERVATION_INVALID");
   CHECK(l.get("chaos-score",c));
   CHECK(c.observations.at("novelty").size()==2&&c.observations.at("novelty").front().value==0.91);
+  CHECK(l.create("merge-target-create","ik-merge-target-create",l.state_version(),"merge-target",p).committed);
+  CHECK(l.create("merge-source-create","ik-merge-source-create",l.state_version(),"merge-source",p).committed);
+  surge::ChaosMember merge_member{"merge-member","merge-event","HIGH_NOVELTY","2026-11-17T00:05:00Z","",p};
+  CHECK(l.admit_member("merge-member-add","ik-merge-member-add",l.state_version(),"merge-source",merge_member).committed);
+  CHECK(l.transition("merge-source-review","ik-merge-source-review",l.state_version(),"merge-source",
+    surge::ChaosLifecycle::Reviewable,"ready for merge",p).committed);
+  CHECK(l.merge_clusters("merge","ik-merge",l.state_version(),"merge-target",{"merge-source"},p).committed);
+  CHECK(l.get("merge-target",c));
+  CHECK(c.members.count("merge-member")==1&&c.parent_refs.size()==1&&c.parent_refs[0]=="merge-source");
+  CHECK(l.get("merge-source",c));
+  CHECK(c.lifecycle==surge::ChaosLifecycle::Archived&&c.child_refs.size()==1&&c.child_refs[0]=="merge-target");
  }
  {
   surge::ChaosClusterLedger l(path);CHECK(l.open());
@@ -67,10 +117,27 @@ int main(){
   CHECK(c.pattern_hypotheses.count("hyp-1")==1&&c.promoted_member_targets.at("m1")=="topic-A");
   CHECK(l.get("chaos-child",c));CHECK(c.parent_refs.size()==1&&c.members.size()==2);
   CHECK(l.get("chaos-2b",c));CHECK(c.parent_refs.size()==1&&c.members.size()==1);
+  CHECK(l.get("chaos-2",c));
+  CHECK(c.associations.at("a-expire").valid_until=="2026-11-18T00:00:00Z");
+  CHECK(c.associations.at("a-expire").status==surge::ChaosAssociationStatus::Expired);
   CHECK(l.get("chaos-score",c));CHECK(c.observations.at("novelty").size()==2);
   CHECK(c.observations.at("novelty")[0].scorer_id=="recognizer");
   CHECK(c.observations.at("novelty")[1].value==0.84);
+  CHECK(c.lifecycle_history.size()==2);
+  CHECK(c.lifecycle_history.front().lifecycle=="OPEN");
+  CHECK(c.lifecycle_history.back().reason=="FIRST_MEMBER_ADMITTED");
+  CHECK(c.members.at("score-member").membership_history.size()==3);
+  CHECK(c.members.at("score-member").membership_history[1].active==false);
+  CHECK(c.members.at("score-member").membership_history[2].active==true);
+  CHECK(c.pattern_hypotheses.at("score-hypothesis").history.size()==2);
+  CHECK(c.pattern_hypotheses.at("score-hypothesis").exclusion_reasons.at("score-member")=="insufficient independent support");
+  CHECK(l.get("chaos-1",c));
+  CHECK(c.members.at("m1").salience_observations.size()==1);
+  CHECK(c.associations.at("a1").confidence_observations.size()==1);
+  CHECK(c.pattern_hypotheses.at("hyp-1").confidence_observations.size()==1);
   const auto v=l.state_version();
+  CHECK(l.get("merge-target",c));CHECK(c.members.count("merge-member")==1);
+  CHECK(l.get("merge-source",c));CHECK(c.lifecycle==surge::ChaosLifecycle::Archived);
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
   auto bad=l.transition("bad","ik-bad",v,"chaos-1",surge::ChaosLifecycle::Open,"backward",p);

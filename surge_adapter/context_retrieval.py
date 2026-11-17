@@ -268,11 +268,10 @@ class ContextRetriever:
     def retrieve_focus(self, *, max_members: int = 100,
                        max_associations: int = 1000,
                        diversity_first: bool = True) -> dict[str, Any]:
-        """Retrieve the active typed Focus and its authoritative target.
+        """Retrieve typed Focus with score-aware, auditable Chaos selection.
 
-        Chaos Cluster content is read from ChaosClusterLedger, never inferred
-        from the graph projection. Member truncation is deterministic and
-        diversity-first by admission reason; omitted references are explicit.
+        Missing scores remain UNKNOWN and sort after observed scores. Inactive
+        memberships are excluded, not treated as low-scoring candidates.
         """
         for value, low, high, code in (
             (max_members, 1, 1000, "FOCUS_MEMBER_BUDGET_INVALID"),
@@ -300,15 +299,35 @@ class ContextRetriever:
             members = target.get("members", [])
             if not isinstance(members, list):
                 raise PacketRejected("FOCUS_CHAOS_MEMBERS_INVALID")
+            if any(not isinstance(member, dict) for member in members):
+                raise PacketRejected("FOCUS_CHAOS_MEMBER_INVALID")
+
+            inactive_refs = sorted(str(m.get("member_ref", "")) for m in members
+                                   if m.get("membership_active", True) is False)
+            active_members = [m for m in members if m.get("membership_active", True) is True]
+
+            def observed_value(record: dict[str, Any], key: str) -> float | None:
+                observation = record.get(key)
+                if not isinstance(observation, dict):
+                    return None
+                value = observation.get("value")
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not 0.0 <= float(value) <= 1.0):
+                    raise PacketRejected("FOCUS_SCORE_OBSERVATION_INVALID")
+                return float(value)
+
+            def score_order(item: dict[str, Any], key: str) -> tuple[int, float, str]:
+                value = observed_value(item, key)
+                return (1 if value is None else 0,
+                        0.0 if value is None else -value,
+                        str(item.get("member_ref", "")))
+
             if diversity_first:
                 groups: dict[str, list[dict[str, Any]]] = {}
-                for member in members:
-                    if not isinstance(member, dict):
-                        raise PacketRejected("FOCUS_CHAOS_MEMBER_INVALID")
-                    reason = member.get("admission_reason", "")
-                    groups.setdefault(str(reason), []).append(member)
+                for member in active_members:
+                    groups.setdefault(str(member.get("admission_reason", "")), []).append(member)
                 for group in groups.values():
-                    group.sort(key=lambda item: str(item.get("member_ref", "")))
+                    group.sort(key=lambda item: score_order(item, "salience"))
                 ordered: list[dict[str, Any]] = []
                 depth = 0
                 while True:
@@ -321,22 +340,64 @@ class ContextRetriever:
                         break
                     depth += 1
             else:
-                ordered = sorted(members, key=lambda item: str(item.get("member_ref", "")))
+                ordered = sorted(active_members, key=lambda item: score_order(item, "salience"))
 
             selected = ordered[:max_members]
             selected_refs = {str(item.get("member_ref", "")) for item in selected}
             omitted_members = [str(item.get("member_ref", "")) for item in ordered[max_members:]]
+
             associations = target.get("associations", [])
             if not isinstance(associations, list):
                 raise PacketRejected("FOCUS_CHAOS_ASSOCIATIONS_INVALID")
-            relevant_associations = [
-                item for item in associations
-                if isinstance(item, dict)
-                and item.get("from_ref") in selected_refs
-                and item.get("to_ref") in selected_refs
-            ]
-            omitted_associations = max(0, len(relevant_associations) - max_associations)
-            selected_associations = relevant_associations[:max_associations]
+            if any(not isinstance(item, dict) for item in associations):
+                raise PacketRejected("FOCUS_CHAOS_ASSOCIATION_INVALID")
+            relevant = [item for item in associations
+                        if item.get("from_ref") in selected_refs and item.get("to_ref") in selected_refs]
+            by_type: dict[str, list[dict[str, Any]]] = {}
+            for association in relevant:
+                by_type.setdefault(str(association.get("type", "")), []).append(association)
+
+            def association_order(item: dict[str, Any]) -> tuple[int, float, str]:
+                value = observed_value(item, "confidence")
+                return (1 if value is None else 0,
+                        0.0 if value is None else -value,
+                        str(item.get("association_id", "")))
+
+            for group in by_type.values():
+                group.sort(key=association_order)
+            ordered_associations: list[dict[str, Any]] = []
+            if diversity_first:
+                depth = 0
+                while True:
+                    added = False
+                    for association_type in sorted(by_type):
+                        if depth < len(by_type[association_type]):
+                            ordered_associations.append(by_type[association_type][depth])
+                            added = True
+                    if not added:
+                        break
+                    depth += 1
+            else:
+                ordered_associations = sorted(relevant, key=association_order)
+
+            selected_associations = ordered_associations[:max_associations]
+            omitted_associations = max(0, len(ordered_associations) - max_associations)
+            selected_rationale = []
+            for rank, member in enumerate(selected, start=1):
+                salience = observed_value(member, "salience")
+                selected_rationale.append({
+                    "member_ref": member.get("member_ref"),
+                    "rank": rank,
+                    "salience": salience,
+                    "salience_status": "OBSERVED" if salience is not None else "UNKNOWN",
+                    "admission_reason": member.get("admission_reason"),
+                    "selection_basis": "REASON_DIVERSITY_THEN_SALIENCE" if diversity_first
+                                       else "SALIENCE_THEN_MEMBER_REF",
+                })
+
+            score_context = target.get("observations", {})
+            if not isinstance(score_context, dict):
+                raise PacketRejected("FOCUS_CLUSTER_OBSERVATIONS_INVALID")
             target = dict(target)
             target["members"] = selected
             target["associations"] = selected_associations
@@ -344,9 +405,13 @@ class ContextRetriever:
                 "found": True, "state_version": before,
                 "target_kind": "CHAOS_CLUSTER", "focus": focus, "target": target,
                 "omitted_member_refs": omitted_members,
+                "excluded_inactive_member_refs": inactive_refs,
                 "omitted_association_count": omitted_associations,
+                "selection_rationale": selected_rationale,
+                "score_context": score_context,
                 "complete": not omitted_members and omitted_associations == 0,
-                "retrieval_policy": "ADMISSION_REASON_ROUND_ROBIN" if diversity_first else "MEMBER_REF_ORDER",
+                "retrieval_policy": "SCORE_AWARE_DIVERSITY_ROUND_ROBIN" if diversity_first
+                                    else "SCORE_AWARE_SALIENCE_ORDER",
             }
         elif target_kind == "CLUSTER":
             page = self.search(target_id, kinds=["CLUSTER"], limit=1000)
