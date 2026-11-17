@@ -36,6 +36,7 @@ struct ChaosAssociation {
  ChaosAssociationType type{ChaosAssociationType::Unclassified};
  ChaosAssociationStatus status{ChaosAssociationStatus::Provisional};
  ChaosProvenance provenance;
+ std::string valid_from, valid_until;
  std::vector<ChaosStatusRevision> history;
  std::vector<ChaosScoreObservation> confidence_observations;
 };
@@ -70,6 +71,7 @@ class ChaosClusterLedger {
  ChaosResult revise_membership(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,bool,const ChaosProvenance&);
  ChaosResult propose_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosAssociation&);
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
+ ChaosResult expire_due_associations(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
  ChaosResult record_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosScoreObservation&);
  ChaosResult record_entity_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const ChaosScoreObservation&);
