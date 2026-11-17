@@ -24,6 +24,14 @@ typedef struct SurgeChaosAssociationInput {
   const char* to_member_ref;
   const char* association_type;
 } SurgeChaosAssociationInput;
+typedef struct SurgeChaosScoreObservationInput {
+  double value;
+  const char* scorer_id;
+  const char* scorer_version;
+  const char* policy_version;
+  const char* observed_at;
+} SurgeChaosScoreObservationInput;
+
 typedef struct SurgeChaosPatternHypothesisInput {
   const char* hypothesis_id;
   const char* statement;
@@ -238,6 +246,7 @@ int surge_chaos_cluster_admit_member(void*,const char*,const char*,uint64_t,cons
 int surge_chaos_cluster_propose_association(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_review_association(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_add_pattern_hypothesis(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosPatternHypothesisInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_record_observation(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_transition(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_promote_subset(void*,const char*,const char*,uint64_t,const char*,const char* const*,const char* const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_get(void*,const char*,char*,size_t,size_t*,char*,size_t);
