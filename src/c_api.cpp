@@ -1994,6 +1994,29 @@ int surge_chaos_cluster_propose_association_temporal(void* opaque,const char* op
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_TEMPORAL_UNKNOWN_EXCEPTION");return 0;}
 }
+int surge_chaos_cluster_merge(void* opaque,const char* op,const char* key,uint64_t expected,
+ const char* target_id,const char* const* source_ids,size_t source_count,
+ const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance p;
+  if(!opaque||!op||!key||!target_id||!source_ids||source_count==0||source_count>1000||
+     !chaos_get_provenance(input,p)){
+   copy_text(error,cap,"CHAOS_MERGE_ARGUMENT_INVALID");return 0;
+  }
+  std::vector<std::string> sources;sources.reserve(source_count);
+  for(size_t i=0;i<source_count;++i){
+   if(!source_ids[i]||!*source_ids[i]||std::strlen(source_ids[i])>256){
+    copy_text(error,cap,"CHAOS_MERGE_SOURCE_INVALID");return 0;
+   }
+   sources.emplace_back(source_ids[i]);
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.merge_clusters(op,key,expected,target_id,sources,p);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_MERGE_UNKNOWN_EXCEPTION");return 0;}
+}
 int surge_chaos_cluster_expire_due_associations(void* opaque,const char* op,const char* key,uint64_t expected,
  const char* id,const char* as_of,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
  try {
