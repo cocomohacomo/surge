@@ -7,7 +7,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from surge_adapter.compact_recognition import (
     CompactModelSpec, CompactRecognitionRuntime, RecognitionCandidate,
-    summarize_rtf, DEFAULT_MODEL_LIMIT_BYTES, RecognitionPacketMetadata,\n    build_recognition_packet,
+    summarize_rtf, DEFAULT_MODEL_LIMIT_BYTES, RecognitionPacketMetadata,
+    build_recognition_packet,
 )
 
 
