@@ -492,6 +492,26 @@
               }
             }
           }
+        },
+        "salience_history": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
         }
       }
     },
@@ -549,6 +569,26 @@
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
+        },
+        "confidence_history": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
         }
       }
     },
@@ -622,6 +662,26 @@
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
+        },
+        "confidence_history": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
         }
       }
     }
