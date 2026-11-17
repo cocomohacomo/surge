@@ -101,3 +101,14 @@ an explicit, caller-clock-driven `expire_due_chaos_associations` transaction.
 Due nonterminal associations transition to EXPIRED with an appended provenance
 revision. Expiry is deterministic for a supplied `as_of_utc`; no hidden system
 clock is read by the Core.
+
+
+## PatternHypothesis review and exclusion rationale
+
+The optional `CC7` extension stores append-only PatternHypothesis review
+revisions, epistemic-state changes, per-member exclusion reasons, and provenance.
+Creation records the initial review state. The review API validates status and
+epistemic-state vocabularies, requires every exclusion rationale to refer to an
+explicitly excluded member, and preserves terminal rejection/promotion states.
+The C ABI and Python bridge expose the operation. Bounded JSON returns the
+current rationale and a capped review history with offsets and omission counts.
