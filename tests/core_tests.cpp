@@ -3,7 +3,7 @@
 #include <iostream>
 using namespace surge;
 int main() {
-  { SourceSequencer s(9); s.observe(10); s.observe(12); CHECK(s.gaps().count(11)); CHECK(s.packet_status(12)=="BLOCKED_BY_GAP"); CHECK(s.watermark()==10); }
+  { SourceSequencer s(9); s.observe(10); s.observe(12); CHECK(s.gaps().count(11)); CHECK(s.packet_status(12)=="READY_BUT_BLOCKED"); CHECK(s.watermark()==10); }
   { SourceSequencer s(10); s.observe(12); CHECK(!s.authorize_skip(11,"NONE","SOURCE_CONFIRMED_LOSS","v1","k")); CHECK(s.authorize_skip(11,"SOURCE_GAP_SKIP","SOURCE_CONFIRMED_LOSS","v1","k")); CHECK(s.watermark()==12); CHECK(s.audit_count()==1); CHECK(s.authorize_skip(11,"SOURCE_GAP_SKIP","SOURCE_CONFIRMED_LOSS","v1","k")); CHECK(s.audit_count()==1); }
   { SourceSequencer s(10); s.observe(12); s.authorize_skip(11,"SOURCE_GAP_SKIP","SOURCE_CONFIRMED_LOSS","v1","k"); CHECK(s.ingest_late(11)); CHECK(s.gaps().at(11).state==GapState::Reopened); }
   { SourceSequencer s(0); s.observe(3); CHECK(s.packet_status(3)=="READY_BUT_BLOCKED"); s.observe(2); s.observe(1); CHECK(s.watermark()==3); }

@@ -47,7 +47,7 @@ int main() {
     auto wrong_snapshot=packet("p5b","i5b",6,"abc"); wrong_snapshot.block_ref="b5b";
     CHECK(coordinator.admit(wrong_snapshot,"abd").error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
     auto bad_utf8=packet("p5c","i5c",6,"abc"); bad_utf8.block_ref="b5c";
-    CHECK(coordinator.admit(bad_utf8,std::string("\\xff",1)).error=="SOURCE_SNAPSHOT_INVALID_UTF8");
+    CHECK(coordinator.admit(bad_utf8,std::string(1, static_cast<char>(0xff))).error=="SOURCE_SNAPSHOT_INVALID_UTF8");
     auto collision=packet("p1","i-new",7,"abc"); collision.block_ref="b6";
     CHECK(coordinator.admit(collision,"abc").error=="PACKET_ID_REUSED");
     CHECK(coordinator.packet_count()==3);
