@@ -187,6 +187,20 @@ int main(){
     CHECK(recovered.nodes().count("cluster-1")==1);
   }
   {
+    const auto chaos_path=(root/"chaos-focus.sgj").string();
+    {
+      ContextGraph graph(chaos_path);CHECK(graph.open());
+      SemanticDelta seed;seed.delta_id="chaos-focus-seed";seed.idempotency_key="chaos-focus-seed";
+      seed.expected_state_version=0;
+      seed.nodes={{{"chaos-1",NodeKind::ChaosCluster,"Chaos Cluster chaos-1",{}}}};
+      seed.focus=SetFocus{{"chaos-1","",true}};
+      auto result=graph.apply(seed);CHECK(result.committed);
+      CHECK(graph.focus()&&graph.focus()->chaos_cluster);
+    }
+    ContextGraph recovered(chaos_path);CHECK(recovered.open());
+    CHECK(recovered.focus()&&recovered.focus()->cluster_id=="chaos-1"&&recovered.focus()->chaos_cluster);
+  }
+  {
     const auto claim_path=(root/"claim-lifecycle.sgj").string();
     {
       ContextGraph graph(claim_path);CHECK(graph.open());
