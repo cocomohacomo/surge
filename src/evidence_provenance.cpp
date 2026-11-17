@@ -130,6 +130,16 @@ bool EvidenceProvenanceLedger::append(const EvidenceProvenance& provenance,
     error = "STATE_VERSION_CONFLICT"; return false;
   }
   EvidenceProvenanceRecord record{provenance, expected + 1};
+  const auto valid = [](const std::optional<std::string>& value) {
+    return !value || is_valid_rfc3339_timestamp(*value);
+  };
+  if (provenance.evidence_id.empty() || provenance.revision == 0) {
+    error = "EVIDENCE_PROVENANCE_ID_OR_REVISION_INVALID"; return false;
+  }
+  if (!valid(provenance.observed_at) || !valid(provenance.source_published_at) ||
+      !valid(provenance.source_retrieved_at)) {
+    error = "EVIDENCE_PROVENANCE_TIMESTAMP_INVALID"; return false;
+  }
   const auto found = history_.find(provenance.evidence_id);
   const auto next_revision = found == history_.end() ? 1 : found->second.size() + 1;
   if (provenance.revision != next_revision) {
