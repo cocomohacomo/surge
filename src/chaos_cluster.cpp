@@ -298,6 +298,80 @@ ChaosResult ChaosClusterLedger::expire_due_associations(const std::string&o,cons
  if(expired==0)return{true,true,state_version(),{}};
  return commit_snapshot(o,k,v,std::move(s),{});
 }
+ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::string&k,
+ std::uint64_t v,const std::string&target_id,const std::vector<std::string>&source_ids,
+ const ChaosProvenance&p){
+ std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto target=s.find(target_id);
+ if(target==s.end())return{false,false,state_version(),"CHAOS_MERGE_TARGET_NOT_FOUND"};
+ if(target->second.lifecycle==ChaosLifecycle::Archived||source_ids.empty()||!vp(p))
+  return{false,false,state_version(),"CHAOS_MERGE_INVALID"};
+ std::set<std::string>seen;
+ for(const auto&source_id:source_ids){
+  if(source_id==target_id||!seen.insert(source_id).second||!s.count(source_id))
+   return{false,false,state_version(),"CHAOS_MERGE_SOURCE_INVALID"};
+  const auto&source=s.at(source_id);
+  if(source.lifecycle!=ChaosLifecycle::Reviewable&&source.lifecycle!=ChaosLifecycle::Dormant)
+   return{false,false,state_version(),"CHAOS_MERGE_SOURCE_NOT_REVIEWABLE"};
+ }
+ auto append_scores=[](std::vector<ChaosScoreObservation>&to,const std::vector<ChaosScoreObservation>&from){
+  for(const auto&item:from){
+   const bool exists=std::any_of(to.begin(),to.end(),[&](const ChaosScoreObservation&old){
+    return old.value==item.value&&old.scorer_id==item.scorer_id&&old.scorer_version==item.scorer_version&&
+      old.policy_version==item.policy_version&&old.observed_at==item.observed_at;});
+   if(!exists)to.push_back(item);
+  }
+ };
+ for(const auto&source_id:source_ids){
+  const auto&source=s.at(source_id);
+  for(const auto&item:source.members){
+   auto found=target->second.members.find(item.first);
+   if(found==target->second.members.end())target->second.members.emplace(item);
+   else{
+    if(!same_member(found->second,item.second))return{false,false,state_version(),"CHAOS_MERGE_MEMBER_CONFLICT"};
+    auto&to=found->second;to.membership_history.insert(to.membership_history.end(),
+      item.second.membership_history.begin(),item.second.membership_history.end());
+    append_scores(to.salience_observations,item.second.salience_observations);
+   }
+  }
+  for(const auto&item:source.associations){
+   auto found=target->second.associations.find(item.first);
+   if(found==target->second.associations.end())target->second.associations.emplace(item);
+   else{
+    if(found->second.from_ref!=item.second.from_ref||found->second.to_ref!=item.second.to_ref||
+       found->second.type!=item.second.type||found->second.status!=item.second.status||
+       found->second.valid_from!=item.second.valid_from||found->second.valid_until!=item.second.valid_until)
+      return{false,false,state_version(),"CHAOS_MERGE_ASSOCIATION_CONFLICT"};
+    found->second.history.insert(found->second.history.end(),item.second.history.begin(),item.second.history.end());
+    append_scores(found->second.confidence_observations,item.second.confidence_observations);
+   }
+  }
+  for(const auto&item:source.pattern_hypotheses){
+   auto found=target->second.pattern_hypotheses.find(item.first);
+   if(found==target->second.pattern_hypotheses.end())target->second.pattern_hypotheses.emplace(item);
+   else{
+    if(found->second.statement!=item.second.statement||found->second.member_refs!=item.second.member_refs||
+       found->second.status!=item.second.status||found->second.epistemic_state!=item.second.epistemic_state)
+      return{false,false,state_version(),"CHAOS_MERGE_HYPOTHESIS_CONFLICT"};
+    found->second.history.insert(found->second.history.end(),item.second.history.begin(),item.second.history.end());
+    append_scores(found->second.confidence_observations,item.second.confidence_observations);
+   }
+  }
+  for(const auto&dimension:source.observations)
+   append_scores(target->second.observations[dimension.first],dimension.second);
+  if(std::find(target->second.parent_refs.begin(),target->second.parent_refs.end(),source_id)==target->second.parent_refs.end())
+   target->second.parent_refs.push_back(source_id);
+  auto&mutable_source=s.at(source_id);
+  if(std::find(mutable_source.child_refs.begin(),mutable_source.child_refs.end(),target_id)==mutable_source.child_refs.end())
+   mutable_source.child_refs.push_back(target_id);
+  mutable_source.lifecycle=ChaosLifecycle::Archived;
+  mutable_source.lifecycle_history.push_back({"ARCHIVED","MERGED_INTO:"+target_id,p});
+ }
+ if(target->second.lifecycle!=ChaosLifecycle::Accumulating){
+  target->second.lifecycle=ChaosLifecycle::Accumulating;
+  target->second.lifecycle_history.push_back({"ACCUMULATING","MERGED_SOURCES",p});
+ }
+ return commit_snapshot(o,k,v,std::move(s),{});
+}
 ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosPatternHypothesis&h){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(h.hypothesis_id.empty()||h.statement.empty()||h.member_refs.empty()||!vp(h.provenance)||(h.epistemic_state!="HYPOTHETICAL"&&h.epistemic_state!="UNVERIFIED"&&h.epistemic_state!="CONTRADICTED"&&h.epistemic_state!="REJECTED"))return{false,false,state_version(),"PATTERN_HYPOTHESIS_INVALID"};std::set<std::string>seen;for(const auto&r:h.member_refs)if(!it->second.members.count(r)||!seen.insert(r).second)return{false,false,state_version(),"PATTERN_HYPOTHESIS_MEMBER_INVALID"};for(const auto&r:h.counterexample_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_COUNTEREXAMPLE_INVALID"};for(const auto&r:h.excluded_member_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUDED_MEMBER_INVALID"};for(const auto&r:h.exclusion_reasons)if(!it->second.members.count(r.first)||r.second.empty())return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID"};auto old=it->second.pattern_hypotheses.find(h.hypothesis_id);if(old!=it->second.pattern_hypotheses.end())return{old->second.statement==h.statement,true,state_version(),old->second.statement==h.statement?std::string():"PATTERN_HYPOTHESIS_ID_CONFLICT"};auto initial=h;if(initial.history.empty())initial.history.push_back({initial.status,initial.epistemic_state,initial.exclusion_reasons,initial.provenance});it->second.pattern_hypotheses.emplace(h.hypothesis_id,std::move(initial));if(it->second.organization==ChaosOrganization::Unordered)it->second.organization=ChaosOrganization::Provisional;return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::review_pattern_hypothesis(const std::string&o,const std::string&k,
  std::uint64_t v,const std::string&id,const std::string&hypothesis_id,const std::string&status,
