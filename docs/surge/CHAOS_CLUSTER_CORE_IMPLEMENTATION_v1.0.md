@@ -88,3 +88,16 @@ exposed as `surge_chaos_cluster_record_entity_observation` and through
 projection emits the latest schema observation plus a separate history object
 and includes omitted entity revisions in completeness metadata. Legacy
 snapshots without CC5 remain readable.
+
+
+## Association valid-time and expiry
+
+Associations now persist optional UTC validity bounds (`valid_from`,
+`valid_until`) in the backward-compatible optional `CC6` extension. Bounds
+use canonical `YYYY-MM-DDTHH:MM:SSZ` values and must be ordered when both are
+present. The C ABI preserves the original association input layout and adds a
+separate temporal proposal entry point. Python exposes temporal proposals and
+an explicit, caller-clock-driven `expire_due_chaos_associations` transaction.
+Due nonterminal associations transition to EXPIRED with an appended provenance
+revision. Expiry is deterministic for a supplied `as_of_utc`; no hidden system
+clock is read by the Core.
