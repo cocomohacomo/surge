@@ -72,3 +72,24 @@ timing/RTF measurement and deterministic fake-backend tests. It does not bundle
 an ONNX model, inference library, trained weights, or a claim that any model
 currently reaches RTF < 0.01. Hardware-specific performance certification is
 the next gate.
+
+
+## RecognitionPacket bridge
+
+`build_recognition_packet` converts an execution into two coordinated but
+separate artifacts:
+
+1. A source-centric v0.9 RecognitionPacket, validated against the repository
+   JSON Schema and anchored to the full NFC UTF-8 source digest.
+2. A recognition proposal sidecar carrying typed model candidates and the same
+   packet ID/source digest.
+
+The sidecar is not an extension to the strict v0.9 packet schema. This keeps
+model-specific outputs out of the durable source packet and lets downstream
+scoring/validation evolve independently. Candidate offsets are byte offsets
+into the NFC-normalized source. The runtime normalizes before inference so
+candidate offsets and packet anchors share one coordinate system.
+
+The bridge does not create SemanticDelta, Evidence, Claims, or Core writes.
+The caller must pass the packet through RecognitionPacketAdapter and route
+proposals through the established scorer and Core-authoritative transaction.

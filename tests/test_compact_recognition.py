@@ -7,7 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from surge_adapter.compact_recognition import (
     CompactModelSpec, CompactRecognitionRuntime, RecognitionCandidate,
-    summarize_rtf, DEFAULT_MODEL_LIMIT_BYTES,
+    summarize_rtf, DEFAULT_MODEL_LIMIT_BYTES, RecognitionPacketMetadata,\n    build_recognition_packet,
 )
 
 
@@ -36,6 +36,35 @@ class CompactRecognitionTests(unittest.TestCase):
             self.assertIsNotNone(result.rtf)
             self.assertEqual(result.performance_target_met, result.rtf < .01)
             self.assertEqual(result.as_dict()["model_id"], "test-ja-small")
+
+    def test_packet_builder_creates_schema_valid_source_packet_and_candidate_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"model")
+            runtime = CompactRecognitionRuntime(self.make_spec(model), FakeBackend())
+            execution = runtime.recognize("予算を確保する")
+            metadata = RecognitionPacketMetadata(
+                packet_id="p-1", idempotency_key="i-1", context_id="ctx",
+                source_id="stream", block_ref="turn-1", source_order=1,
+                source_generation="g1", source_sequence=1, state_version=0,
+                adapter_id="compact-local", adapter_version="0.1",
+                capability_descriptor_ref="cap-compact-1",
+            )
+            built = build_recognition_packet("予算を確保する", execution, metadata)
+            self.assertEqual(built.packet["content"]["normalized_digest"], built.proposal_batch["source_digest"])
+            self.assertEqual(built.proposal_batch["packet_id"], "p-1")
+            self.assertEqual(built.proposal_batch["candidates"][0]["kind"], "CLAIM")
+
+    def test_runtime_normalizes_nfc_before_backend_offsets(self):
+        class EchoBackend:
+            def recognize(self, text, context=None):
+                return [RecognitionCandidate("CLAIM", None, text, "POSITIVE", False, .9, .1, .8, 0, len(text.encode("utf-8")))]
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"model")
+            runtime = CompactRecognitionRuntime(self.make_spec(model), EchoBackend())
+            result = runtime.recognize("か\\u3099")
+            self.assertEqual(result.candidates[0].end_offset, len("が".encode("utf-8")))
 
     def test_rtf_is_not_claimed_without_media_duration(self):
         with tempfile.TemporaryDirectory() as tmp:

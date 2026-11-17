@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import math
 import time
+import unicodedata
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
@@ -152,12 +154,13 @@ class CompactRecognitionRuntime:
                 not isinstance(audio_duration_seconds, (int, float)) or
                 not math.isfinite(audio_duration_seconds) or audio_duration_seconds <= 0):
                 raise ValueError("AUDIO_DURATION_INVALID")
+        normalized_text = unicodedata.normalize("NFC", text)
         started = time.perf_counter()
-        candidates = tuple(self.backend.recognize(text, context or {}))
+        candidates = tuple(self.backend.recognize(normalized_text, context or {}))
         elapsed = time.perf_counter() - started
         if not all(isinstance(item, RecognitionCandidate) for item in candidates):
             raise ValueError("BACKEND_CANDIDATE_TYPE_INVALID")
-        source_bytes = len(text.encode("utf-8"))
+        source_bytes = len(normalized_text.encode("utf-8"))
         if any(item.end_offset > source_bytes for item in candidates):
             raise ValueError("BACKEND_CANDIDATE_OFFSET_OUT_OF_RANGE")
         rtf = elapsed / float(audio_duration_seconds) if audio_duration_seconds is not None else None
@@ -185,3 +188,104 @@ def summarize_rtf(executions: Sequence[RecognitionExecution]) -> dict[str, Any]:
         "target_rtf": target, "mean_rtf": sum(measured) / len(measured),
         "max_rtf": max(measured), "target_pass": (all(value < target for value in measured) if len(measured) == len(executions) else None),
     }
+
+
+@dataclass(frozen=True)
+class RecognitionPacketMetadata:
+    """Caller-owned source identity and Core context required to build a packet."""
+    packet_id: str
+    idempotency_key: str
+    context_id: str
+    source_id: str
+    block_ref: str
+    source_order: int
+    source_generation: str
+    source_sequence: int
+    state_version: int
+    adapter_id: str
+    adapter_version: str
+    capability_descriptor_ref: str
+    language: str = "ja"
+    finalization: str = "FINAL"
+    temporal_mode: str = "CURRENT"
+    retrieval_reason: str = "recognition-engine"
+    offset_basis: str = "UTF8_BYTE_NFC"
+
+
+@dataclass(frozen=True)
+class RecognitionPacketBuild:
+    packet: dict[str, Any]
+    proposal_batch: dict[str, Any]
+
+
+def build_recognition_packet(source_text: str, execution: RecognitionExecution,
+                             metadata: RecognitionPacketMetadata) -> RecognitionPacketBuild:
+    """Create a schema-valid packet plus a candidate sidecar anchored to it.
+
+    No SemanticDelta is created and no Core state is changed. The sidecar is
+    intentionally separate because v0.9 RecognitionPacket is source-centric.
+    """
+    if not isinstance(source_text, str) or not source_text.strip():
+        raise ValueError("PACKET_SOURCE_TEXT_INVALID")
+    if metadata.finalization not in ("PARTIAL", "FINAL", "CONTINUATION", "REVISION"):
+        raise ValueError("PACKET_FINALIZATION_INVALID")
+    normalized = unicodedata.normalize("NFC", source_text)
+    raw = normalized.encode("utf-8")
+    if any(c.end_offset > len(raw) for c in execution.candidates):
+        raise ValueError("PACKET_CANDIDATE_RANGE_INVALID")
+    digest = hashlib.sha256(raw).hexdigest()
+    packet = {
+        "schema_version": "0.9.0",
+        "packet_id": metadata.packet_id,
+        "idempotency_key": metadata.idempotency_key,
+        "context_id": metadata.context_id,
+        "source_id": metadata.source_id,
+        "source_position": {
+            "block_ref": metadata.block_ref,
+            "start_offset": 0,
+            "end_offset": len(raw),
+            "offset_basis": metadata.offset_basis,
+            "source_order": metadata.source_order,
+            "source_generation": metadata.source_generation,
+            "source_sequence": metadata.source_sequence,
+            "source_range_digest": digest,
+        },
+        "structural": {"block_type": "TRANSCRIPT_TURN", "semantic_role": "MAIN_CONTENT"},
+        "content": {
+            "text": normalized,
+            "normalized_digest": digest,
+            "language": metadata.language,
+        },
+        "context_hint": {
+            "state_version": metadata.state_version,
+            "temporal_mode": metadata.temporal_mode,
+            "retrieval_reason": metadata.retrieval_reason,
+        },
+        "coverage": {"completeness": "COMPLETE"},
+        "adapter": {
+            "adapter_id": metadata.adapter_id,
+            "adapter_version": metadata.adapter_version,
+            "capability_descriptor_ref": metadata.capability_descriptor_ref,
+        },
+        "finalization": metadata.finalization,
+    }
+    schema_path = Path(__file__).resolve().parents[1] / "schemas" / "surge-v0.9-input.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(packet)
+    proposal_batch = {
+        "schema_version": "0.1.0",
+        "packet_id": metadata.packet_id,
+        "source_digest": digest,
+        "model_id": execution.model_id,
+        "model_bytes": execution.model_bytes,
+        "candidates": [
+            {
+                "kind": c.kind, "topic": c.topic, "proposition": c.proposition,
+                "polarity": c.polarity, "conditional": c.conditional,
+                "confidence": c.confidence, "ambiguity": c.ambiguity,
+                "importance": c.importance, "start_offset": c.start_offset,
+                "end_offset": c.end_offset,
+            } for c in execution.candidates
+        ],
+    }
+    return RecognitionPacketBuild(packet, proposal_batch)
