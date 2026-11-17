@@ -23,13 +23,17 @@ int main(){
  SurgeChaosPatternHypothesisInput hypothesis{"hyp-1","latent pattern","HYPOTHETICAL","PROVISIONAL",
    hyp_members,2,nullptr,0,hyp_counterexamples,1,nullptr,0};
  SurgeChaosScoreObservationInput score{0.93,"c-api-scorer","1.2","policy-score","2026-11-17T00:00:30Z"};
+ CHECK(surge_chaos_cluster_revise_membership(h,"cc-member-remove","cc-member-remove-key",version,
+   "chaos-c-api","m1","PROVISIONAL",0,&p,&version,error,sizeof(error))==1);
+ CHECK(surge_chaos_cluster_revise_membership(h,"cc-member-restore","cc-member-restore-key",version,
+   "chaos-c-api","m1","REVIEWED",1,&p,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_record_observation(h,"cc-score","cc-score-key",version,
    "chaos-c-api","novelty",&score,&version,error,sizeof(error))==1);
- CHECK(surge_chaos_cluster_add_pattern_hypothesis(h,"cc-hyp","cc-hyp-key",5,
+ CHECK(surge_chaos_cluster_add_pattern_hypothesis(h,"cc-hyp","cc-hyp-key",version,
    "chaos-c-api",&hypothesis,&p,&version,error,sizeof(error))==1);
- CHECK(surge_chaos_cluster_transition(h,"cc-review","cc-review-key",6,"chaos-c-api","REVIEWABLE","candidate pattern",&p,&version,error,sizeof(error))==1);
+ CHECK(surge_chaos_cluster_transition(h,"cc-review","cc-review-key",version,"chaos-c-api","REVIEWABLE","candidate pattern",&p,&version,error,sizeof(error))==1);
  const char* refs[]={"m1"};const char* targets[]={"topic-1"};
- CHECK(surge_chaos_cluster_promote_subset(h,"cc-promote","cc-promote-key",7,"chaos-c-api",refs,targets,1,&p,&version,error,sizeof(error))==1);
+ CHECK(surge_chaos_cluster_promote_subset(h,"cc-promote","cc-promote-key",version,"chaos-c-api",refs,targets,1,&p,&version,error,sizeof(error))==1);
  char output[16384]{};size_t required=0;
  CHECK(surge_chaos_cluster_get_bounded(h,"chaos-c-api",100,100,100,100,100,
    output,sizeof(output),&required,error,sizeof(error))==1);
@@ -42,6 +46,8 @@ int main(){
  CHECK(std::string(output).find("counterexample_refs")!=std::string::npos);
  CHECK(std::string(output).find("\"observations\"")!=std::string::npos);
  CHECK(std::string(output).find("c-api-scorer")!=std::string::npos);
+ CHECK(std::string(output).find("\"membership_history\"")!=std::string::npos);
+ CHECK(std::string(output).find("\"membership_active\":true")!=std::string::npos);
  char truncated[8192]{};required=0;
  CHECK(surge_chaos_cluster_get_bounded(h,"chaos-c-api",1,0,0,0,0,
    truncated,sizeof(truncated),&required,error,sizeof(error))==1);
