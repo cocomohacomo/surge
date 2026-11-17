@@ -269,8 +269,7 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
       !pl(revision.lifecycle,value)||revision.reason.empty()||!rp(i,revision.provenance))return false;
    c.lifecycle_history.push_back(std::move(revision));
   }
-  if(!c.lifecycle_history.empty()&&(c.lifecycle_history.front().lifecycle!="OPEN"||
-      c.lifecycle_history.back().lifecycle!=ln(c.lifecycle)))return false;
+  if(!c.lifecycle_history.empty()&&c.lifecycle_history.back().lifecycle!=ln(c.lifecycle))return false;
  }
  std::string extra;return !(i>>extra);
 }
