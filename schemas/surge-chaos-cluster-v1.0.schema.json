@@ -458,6 +458,40 @@
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
+        },
+        "membership_active": {
+          "type": "boolean"
+        },
+        "membership_history_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "membership_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "active",
+              "provenance"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "UNCLASSIFIED",
+                  "PROVISIONAL",
+                  "REVIEWED"
+                ]
+              },
+              "active": {
+                "type": "boolean"
+              },
+              "provenance": {
+                "$ref": "#/$defs/provenance"
+              }
+            }
+          }
         }
       }
     },
