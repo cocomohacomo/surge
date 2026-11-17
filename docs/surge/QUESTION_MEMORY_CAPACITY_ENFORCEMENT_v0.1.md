@@ -32,3 +32,12 @@ When a Question is referenced, `record_question_reference_with_dependents` may t
 ## Read-only Question context restoration
 
 `get_question_context_bundle(question_id, max_depth=8, max_nodes=256)` builds a bounded read-only context view. It includes the root and dependent Questions, QuestionAspects that reference those Questions, Claims and Evidence connected by explicit references or graph relations, and relations whose endpoints are both included. It does not reactivate or rewrite any node, resolve QuestionAspects, or change Claim validity. Archived Questions remain visible with their lifecycle state. Limits fail closed and the result carries the State Version for optimistic follow-up operations.
+
+
+## Evidence-based Question reevaluation proposals
+
+`plan_question_reevaluation(question_id, max_depth=8, max_nodes=256)` returns a deterministic, bounded, read-only proposal for QuestionAspect lifecycle reevaluation. It traverses the root Question and reverse-dependent Questions, then associates QuestionAspects and Claims through shared ABOUT-linked topic clusters. Supporting Evidence is counted through SUPPORTS relations; CONTRADICTS, CONFLICTS_WITH, and RETRACTS relations are treated as conflict signals.
+
+A proposal becomes RESOLVED only when at least one ACTIVE Claim has explicit SUPPORTS Evidence and no conflict relation touches the associated Claims. Any conflict proposes OPEN. Without sufficient evidence, the current status is preserved. The plan reports the current State Version, reason codes, supporting/conflicting counts, associated Claim IDs, and bounded node count.
+
+This API never applies its proposals. It does not change QuestionAspect status, Claim status or validity, Question memory state, Focus, or EventJournal state. A later explicit apply operation must validate the proposal's State Version and re-check the evidence in the Core transaction. Traversal and selected context are bounded by max_depth (1..64) and max_nodes (1..4096); overflow fails closed.
