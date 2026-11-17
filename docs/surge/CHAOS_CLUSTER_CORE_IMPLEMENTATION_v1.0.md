@@ -53,7 +53,10 @@ Values must be finite and within [0,1]. Missing dimensions remain absent
 Observations are append-only per dimension. Repeating the exact latest
 observation is idempotent; changing the value or timestamp creates a new
 revision. The CC3 extension is optional on read, so v0.1 and CC2 snapshots
-remain readable. This increment currently exposes the operation through the
-native C++ ledger only; C ABI/Python write adapters, member/association/
-hypothesis-level observations, bounded JSON projection, and score-aware
+remain readable. The observation write operation is now exposed through the C ABI and
+`SemanticCoreBridge.record_chaos_score_observation`. The bounded JSON projection
+returns the latest observation in the schema-compatible `observations` object
+and append-only revisions in `observation_history`, with history offsets and
+omission counts. This increment still records cluster-level observations only;
+member salience, association confidence, hypothesis confidence and score-aware
 retrieval remain open.
