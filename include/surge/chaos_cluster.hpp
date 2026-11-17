@@ -29,6 +29,7 @@ struct ChaosMember {
  std::string membership_status{"UNCLASSIFIED"};
  bool membership_active{true};
  std::vector<ChaosMembershipRevision> membership_history;
+ std::vector<ChaosScoreObservation> salience_observations;
 };
 struct ChaosAssociation {
  std::string association_id, from_ref, to_ref;
@@ -36,11 +37,13 @@ struct ChaosAssociation {
  ChaosAssociationStatus status{ChaosAssociationStatus::Provisional};
  ChaosProvenance provenance;
  std::vector<ChaosStatusRevision> history;
+ std::vector<ChaosScoreObservation> confidence_observations;
 };
 struct ChaosPatternHypothesis {
  std::string hypothesis_id, statement, epistemic_state{"HYPOTHETICAL"}, status{"PROVISIONAL"};
  std::vector<std::string> member_refs, excluded_member_refs, counterexample_refs, alternative_hypothesis_refs;
  ChaosProvenance provenance;
+ std::vector<ChaosScoreObservation> confidence_observations;
 };
 struct ChaosCluster {
  std::string cluster_id;
@@ -69,6 +72,7 @@ class ChaosClusterLedger {
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
  ChaosResult record_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosScoreObservation&);
+ ChaosResult record_entity_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const ChaosScoreObservation&);
  ChaosResult transition(const std::string&,const std::string&,std::uint64_t,const std::string&,ChaosLifecycle,const std::string&,const ChaosProvenance&);
  ChaosResult promote_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::map<std::string,std::string>&,const ChaosProvenance&);
  ChaosResult fork_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::vector<std::string>&,const ChaosProvenance&);
