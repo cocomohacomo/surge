@@ -293,10 +293,30 @@ ChaosResult ChaosClusterLedger::revise_membership(const std::string&o,const std:
  m.membership_history.push_back({status,active,p});
  return commit_snapshot(o,k,v,std::move(s),{});
 }
-ChaosResult ChaosClusterLedger::propose_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosAssociation&a){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(a.association_id.empty()||a.from_ref==a.to_ref||!vp(a.provenance)||
- !utc_timestamp(a.valid_from)||!utc_timestamp(a.valid_until)||
- (!a.valid_from.empty()&&!a.valid_until.empty()&&a.valid_from>=a.valid_until))
- return{false,false,state_version(),"INVALID_CHAOS_ASSOCIATION"};if(!it->second.members.count(a.from_ref)||!it->second.members.count(a.to_ref))return{false,false,state_version(),"CHAOS_ASSOCIATION_MEMBER_NOT_FOUND"};auto old=it->second.associations.find(a.association_id);if(old!=it->second.associations.end()){const bool same=old->second.from_ref==a.from_ref&&old->second.to_ref==a.to_ref&&old->second.type==a.type&&!old->second.history.empty()&&same_provenance(old->second.history.front().provenance,a.provenance);return{same,true,state_version(),same?std::string():"CHAOS_ASSOCIATION_ID_CONFLICT"};}auto x=a;x.status=ChaosAssociationStatus::Provisional;x.history.push_back({ChaosAssociationStatus::Provisional,a.provenance});it->second.associations.emplace(x.association_id,std::move(x));return commit_snapshot(o,k,v,std::move(s),{});}
+ChaosResult ChaosClusterLedger::propose_association(const std::string&o,const std::string&k,
+ std::uint64_t v,const std::string&id,const ChaosAssociation&a){
+ std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);
+ if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};
+ if(a.association_id.empty()||a.from_ref==a.to_ref||!vp(a.provenance)||
+    !utc_timestamp(a.valid_from)||!utc_timestamp(a.valid_until)||
+    (!a.valid_from.empty()&&!a.valid_until.empty()&&a.valid_from>=a.valid_until)){
+  return{false,false,state_version(),"INVALID_CHAOS_ASSOCIATION"};
+ }
+ if(!it->second.members.count(a.from_ref)||!it->second.members.count(a.to_ref))
+  return{false,false,state_version(),"CHAOS_ASSOCIATION_MEMBER_NOT_FOUND"};
+ auto old=it->second.associations.find(a.association_id);
+ if(old!=it->second.associations.end()){
+  const bool same=old->second.from_ref==a.from_ref&&old->second.to_ref==a.to_ref&&
+   old->second.type==a.type&&old->second.valid_from==a.valid_from&&
+   old->second.valid_until==a.valid_until&&!old->second.history.empty()&&
+   same_provenance(old->second.history.front().provenance,a.provenance);
+  return{same,true,state_version(),same?std::string():"CHAOS_ASSOCIATION_ID_CONFLICT"};
+ }
+ auto value=a;value.status=ChaosAssociationStatus::Provisional;
+ value.history.push_back({ChaosAssociationStatus::Provisional,a.provenance});
+ it->second.associations.emplace(value.association_id,std::move(value));
+ return commit_snapshot(o,k,v,std::move(s),{});
+}
 ChaosResult ChaosClusterLedger::review_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&aid,ChaosAssociationStatus st,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};auto a=it->second.associations.find(aid);if(a==it->second.associations.end())return{false,false,state_version(),"CHAOS_ASSOCIATION_NOT_FOUND"};if(st==ChaosAssociationStatus::Provisional||!vp(p))return{false,false,state_version(),"INVALID_ASSOCIATION_REVIEW"};if(a->second.status==st)return{true,true,state_version(),{}};if(a->second.status!=ChaosAssociationStatus::Provisional)return{false,false,state_version(),"CHAOS_ASSOCIATION_REVIEW_TERMINAL"};a->second.status=st;a->second.provenance=p;a->second.history.push_back({st,p});return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::expire_due_associations(const std::string&o,const std::string&k,
  std::uint64_t v,const std::string&id,const std::string&as_of,const ChaosProvenance&p){
