@@ -409,7 +409,37 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
  }
  return commit_snapshot(o,k,v,std::move(s),{});
 }
-ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosPatternHypothesis&h){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(h.hypothesis_id.empty()||h.statement.empty()||h.member_refs.empty()||!vp(h.provenance)||(h.epistemic_state!="HYPOTHETICAL"&&h.epistemic_state!="UNVERIFIED"&&h.epistemic_state!="CONTRADICTED"&&h.epistemic_state!="REJECTED"))return{false,false,state_version(),"PATTERN_HYPOTHESIS_INVALID"};std::set<std::string>seen;for(const auto&r:h.member_refs)if(!it->second.members.count(r)||!seen.insert(r).second)return{false,false,state_version(),"PATTERN_HYPOTHESIS_MEMBER_INVALID"};for(const auto&r:h.counterexample_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_COUNTEREXAMPLE_INVALID"};for(const auto&r:h.excluded_member_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUDED_MEMBER_INVALID"};for(const auto&r:h.exclusion_reasons)if(!it->second.members.count(r.first)||r.second.empty())return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID"};auto old=it->second.pattern_hypotheses.find(h.hypothesis_id);if(old!=it->second.pattern_hypotheses.end())return{old->second.statement==h.statement,true,state_version(),old->second.statement==h.statement?std::string():"PATTERN_HYPOTHESIS_ID_CONFLICT"};auto initial=h;if(initial.history.empty())initial.history.push_back({initial.status,initial.epistemic_state,initial.exclusion_reasons,initial.provenance});it->second.pattern_hypotheses.emplace(h.hypothesis_id,std::move(initial));if(it->second.organization==ChaosOrganization::Unordered)it->second.organization=ChaosOrganization::Provisional;return commit_snapshot(o,k,v,std::move(s),{});}
+ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const std::string&k,
+ std::uint64_t v,const std::string&id,const ChaosPatternHypothesis&h){
+ std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);
+ if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};
+ static const std::set<std::string>epistemic={"HYPOTHETICAL","UNVERIFIED","CONTRADICTED","REJECTED"};
+ static const std::set<std::string>statuses={"PROVISIONAL","REVIEWABLE","REJECTED","PROMOTED_TO_EVIDENCE_REVIEW"};
+ if(h.hypothesis_id.empty()||h.statement.empty()||h.member_refs.empty()||!vp(h.provenance)||
+    !epistemic.count(h.epistemic_state)||!statuses.count(h.status))
+  return{false,false,state_version(),"PATTERN_HYPOTHESIS_INVALID"};
+ auto validate_refs=[&](const std::vector<std::string>&refs){
+  std::set<std::string>seen;
+  for(const auto&ref:refs)if(ref.empty()||!it->second.members.count(ref)||!seen.insert(ref).second)return false;
+  return true;
+ };
+ if(!validate_refs(h.member_refs)||!validate_refs(h.excluded_member_refs)||
+    !validate_refs(h.counterexample_refs)||!validate_refs(h.alternative_hypothesis_refs))
+  return{false,false,state_version(),"PATTERN_HYPOTHESIS_REFERENCE_INVALID"};
+ for(const auto&reason:h.exclusion_reasons){
+  if(reason.second.empty()||std::find(h.excluded_member_refs.begin(),h.excluded_member_refs.end(),reason.first)==h.excluded_member_refs.end())
+   return{false,false,state_version(),"PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID"};
+ }
+ auto old=it->second.pattern_hypotheses.find(h.hypothesis_id);
+ if(old!=it->second.pattern_hypotheses.end())
+  return{old->second.statement==h.statement,true,state_version(),
+         old->second.statement==h.statement?std::string():"PATTERN_HYPOTHESIS_ID_CONFLICT"};
+ auto value=h;value.history.clear();
+ value.history.push_back({value.status,value.epistemic_state,value.exclusion_reasons,value.provenance});
+ it->second.pattern_hypotheses.emplace(value.hypothesis_id,std::move(value));
+ if(it->second.organization==ChaosOrganization::Unordered)it->second.organization=ChaosOrganization::Provisional;
+ return commit_snapshot(o,k,v,std::move(s),{});
+}
 ChaosResult ChaosClusterLedger::review_pattern_hypothesis(const std::string&o,const std::string&k,
  std::uint64_t v,const std::string&id,const std::string&hypothesis_id,const std::string&status,
  const std::string&epistemic_state,const std::map<std::string,std::string>&exclusion_reasons,
