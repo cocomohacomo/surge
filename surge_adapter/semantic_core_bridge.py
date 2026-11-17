@@ -70,6 +70,13 @@ class _ChaosAssociation(ctypes.Structure):
                 ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p), ("valid_from_utc", ctypes.c_char_p),
                 ("valid_until_utc", ctypes.c_char_p)]
 
+class _ChaosHypothesisReview(ctypes.Structure):
+    _fields_ = [("status", ctypes.c_char_p), ("epistemic_state", ctypes.c_char_p),
+                ("excluded_member_refs", ctypes.POINTER(ctypes.c_char_p)),
+                ("exclusion_reasons", ctypes.POINTER(ctypes.c_char_p)),
+                ("exclusion_count", ctypes.c_size_t)]
+
+
 class _ChaosScoreObservation(ctypes.Structure):
     _fields_ = [("value", ctypes.c_double), ("scorer_id", ctypes.c_char_p),
                 ("scorer_version", ctypes.c_char_p), ("policy_version", ctypes.c_char_p),
@@ -294,6 +301,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_add_pattern_hypothesis.restype = ctypes.c_int
+        lib.surge_chaos_cluster_review_pattern_hypothesis.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosHypothesisReview),
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_review_pattern_hypothesis.restype = ctypes.c_int
         lib.surge_chaos_cluster_record_observation.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosScoreObservation),
@@ -1168,6 +1181,37 @@ class SemanticCoreBridge(CppCoreBridge):
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), member_ref.encode(), status.encode("ascii"),
              1 if active else 0, ctypes.byref(p)))
+
+    def review_chaos_pattern_hypothesis(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, hypothesis_id: str,
+        status: str, epistemic_state: str,
+        exclusion_reasons: dict[str, str] | None = None,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append an auditable PatternHypothesis review with per-member reasons."""
+        allowed_status = {"PROVISIONAL", "REVIEWABLE", "REJECTED", "PROMOTED_TO_EVIDENCE_REVIEW"}
+        allowed_epistemic = {"HYPOTHETICAL", "UNVERIFIED", "CONTRADICTED", "REJECTED"}
+        if status not in allowed_status or epistemic_state not in allowed_epistemic:
+            raise PacketRejected("PATTERN_HYPOTHESIS_REVIEW_INVALID")
+        reasons = exclusion_reasons or {}
+        if not isinstance(reasons, dict) or any(
+            not isinstance(ref, str) or not ref or not isinstance(reason, str) or not reason.strip()
+            for ref, reason in reasons.items()
+        ):
+            raise PacketRejected("PATTERN_HYPOTHESIS_EXCLUSION_REASON_INVALID")
+        refs = [ref.encode("utf-8") for ref in reasons]
+        values = [reasons[ref].encode("utf-8") for ref in reasons]
+        ref_array = (ctypes.c_char_p * len(refs))(*refs) if refs else None
+        value_array = (ctypes.c_char_p * len(values))(*values) if values else None
+        item = _ChaosHypothesisReview(status.encode("ascii"), epistemic_state.encode("ascii"),
+            ctypes.cast(ref_array, ctypes.POINTER(ctypes.c_char_p)) if ref_array is not None else None,
+            ctypes.cast(value_array, ctypes.POINTER(ctypes.c_char_p)) if value_array is not None else None,
+            len(refs))
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_review_pattern_hypothesis,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), hypothesis_id.encode(), ctypes.byref(item), ctypes.byref(p)))
 
     def record_chaos_entity_observation(
         self, *, operation_id: str, idempotency_key: str,
