@@ -187,4 +187,6 @@ v0.1 Chaos descriptors may be imported through an explicit adapter. Missing fiel
 
 ## 15. Implementation boundary
 
-At v1.0 specification publication, the repository contains the v0.1 descriptor contract but does not yet expose a dedicated persistent ChaosCluster Core node/API. The next implementation stage must add typed graph persistence, journal replay, lifecycle validation, membership/association transactions, retrieval/Focus integration and executable CC01-CC20 tests. Documentation or schema validation alone must not be reported as full feature implementation.
+As of the 2026-11-18 implementation audit, the repository has a typed persistent ChaosCluster ledger, journal replay, C++/C ABI/Python operations, Focus routing, bounded JSON projection, scorer-bound cluster/member/association/hypothesis observations, membership revisions, association valid-time/expiry, PatternHypothesis review history, lifecycle history, fork/split and atomic merge. These are implementation increments, not a declaration of full v1.0 conformance.
+
+Remaining conformance work includes exhaustive executable CC01-CC20 assertions and adversarial migration/replay cases; complete query filters and multi-hop lineage retrieval; full retrieval ranking across all task-specific score dimensions; memory compaction/manifests/tombstones; multi-process and crash/power-loss testing; fuzz/sanitizer coverage; and measured performance on the target 30 MiB model and hardware. Schema conformance, Core behavior, security hardening and performance evidence remain separate claims.
