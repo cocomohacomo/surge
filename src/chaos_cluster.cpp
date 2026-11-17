@@ -327,7 +327,9 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
    auto found=target->second.members.find(item.first);
    if(found==target->second.members.end())target->second.members.emplace(item);
    else{
-    if(!same_member(found->second,item.second))return{false,false,state_version(),"CHAOS_MERGE_MEMBER_CONFLICT"};
+    if(!same_member(found->second,item.second)||found->second.membership_status!=item.second.membership_status||
+       found->second.membership_active!=item.second.membership_active)
+      return{false,false,state_version(),"CHAOS_MERGE_MEMBER_CONFLICT"};
     auto&to=found->second;to.membership_history.insert(to.membership_history.end(),
       item.second.membership_history.begin(),item.second.membership_history.end());
     append_scores(to.salience_observations,item.second.salience_observations);
@@ -350,7 +352,8 @@ ChaosResult ChaosClusterLedger::merge_clusters(const std::string&o,const std::st
    if(found==target->second.pattern_hypotheses.end())target->second.pattern_hypotheses.emplace(item);
    else{
     if(found->second.statement!=item.second.statement||found->second.member_refs!=item.second.member_refs||
-       found->second.status!=item.second.status||found->second.epistemic_state!=item.second.epistemic_state)
+       found->second.status!=item.second.status||found->second.epistemic_state!=item.second.epistemic_state||
+       found->second.exclusion_reasons!=item.second.exclusion_reasons)
       return{false,false,state_version(),"CHAOS_MERGE_HYPOTHESIS_CONFLICT"};
     found->second.history.insert(found->second.history.end(),item.second.history.begin(),item.second.history.end());
     append_scores(found->second.confidence_observations,item.second.confidence_observations);
