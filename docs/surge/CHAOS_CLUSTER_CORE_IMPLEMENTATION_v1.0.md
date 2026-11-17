@@ -18,3 +18,23 @@ The C++ ledger API is persistent and replayable. The public C ABI and Python bri
 ## Verification
 
 The dedicated C++ test covers create/member retry, provisional association and terminal review history, PatternHypothesis, subset promotion, fork, split, restart replay, stale-version rejection and invalid lifecycle rejection. The public C ABI is covered by `surge_chaos_c_api_tests`; the Python `SemanticCoreBridge` now exposes create, member admission, provisional association, lifecycle transition, subset promotion and bounded JSON readback and Chaos Cluster Focus routing. Its integration test exercises the complete C ABI-to-Python path and restart replay. CI remains the authority for platform/compiler verification.
+
+
+## Bounded read projection and missing mutation adapters
+
+The C ABI now exposes association review and PatternHypothesis creation in
+addition to create/admit/propose operations. PatternHypothesis remains separate
+from Claim and retains member, excluded-member, counterexample, and alternative
+references with provenance.
+
+`surge_chaos_cluster_get_bounded` exposes the authoritative ledger, including
+association provenance and append-only status revision history, PatternHypothesis
+records, lineage, and promotion targets. Each collection has an independent
+caller budget: members, associations, hypotheses, history revisions per
+association, and hypothesis references per vector. Budgets are validated before
+reading and the serialized response is capped at 16 MiB.
+
+The response includes `complete` and exact omission counters. History truncation
+keeps the newest revisions and reports `history_offset`, so a truncated
+history cannot be mistaken for a complete audit trail. Hypotheses remain
+hypothetical records and are never promoted to Claims by retrieval.

@@ -24,6 +24,16 @@ typedef struct SurgeChaosAssociationInput {
   const char* to_member_ref;
   const char* association_type;
 } SurgeChaosAssociationInput;
+typedef struct SurgeChaosPatternHypothesisInput {
+  const char* hypothesis_id;
+  const char* statement;
+  const char* epistemic_state;
+  const char* status;
+  const char* const* member_refs; size_t member_count;
+  const char* const* excluded_member_refs; size_t excluded_member_count;
+  const char* const* counterexample_refs; size_t counterexample_count;
+  const char* const* alternative_hypothesis_refs; size_t alternative_hypothesis_count;
+} SurgeChaosPatternHypothesisInput;
 
 typedef struct SurgeRecognitionPacketInput {
   const char* packet_id;
@@ -226,9 +236,12 @@ int surge_context_graph_claim_validity_at(void* handle, const char* claim_id,
 int surge_chaos_cluster_create(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_admit_member(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosMemberInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_propose_association(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_review_association(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_add_pattern_hypothesis(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosPatternHypothesisInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_transition(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_promote_subset(void*,const char*,const char*,uint64_t,const char*,const char* const*,const char* const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_get(void*,const char*,char*,size_t,size_t*,char*,size_t);
+int surge_chaos_cluster_get_bounded(void*,const char*,size_t,size_t,size_t,size_t,size_t,char*,size_t,size_t*,char*,size_t);
 
 // Read-only deterministic lexical retrieval over replayed durable graph state.
 // kinds_csv is a comma-separated allow-list (e.g. CLUSTER,CLAIM,SCOPE_SPAN); empty means all.

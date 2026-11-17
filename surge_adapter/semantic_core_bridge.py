@@ -69,6 +69,14 @@ class _ChaosAssociation(ctypes.Structure):
     _fields_ = [("association_id", ctypes.c_char_p), ("from_member_ref", ctypes.c_char_p),
                 ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p)]
 
+class _ChaosPatternHypothesis(ctypes.Structure):
+    _fields_ = [("hypothesis_id", ctypes.c_char_p), ("statement", ctypes.c_char_p),
+                ("epistemic_state", ctypes.c_char_p), ("status", ctypes.c_char_p),
+                ("member_refs", ctypes.POINTER(ctypes.c_char_p)), ("member_count", ctypes.c_size_t),
+                ("excluded_member_refs", ctypes.POINTER(ctypes.c_char_p)), ("excluded_member_count", ctypes.c_size_t),
+                ("counterexample_refs", ctypes.POINTER(ctypes.c_char_p)), ("counterexample_count", ctypes.c_size_t),
+                ("alternative_hypothesis_refs", ctypes.POINTER(ctypes.c_char_p)), ("alternative_hypothesis_count", ctypes.c_size_t)]
+
 class SemanticCoreBridge(CppCoreBridge):
     """Packet admission + typed SemanticDelta commit over one shared journal."""
 
@@ -259,6 +267,16 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_propose_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_review_association.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_review_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_add_pattern_hypothesis.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_add_pattern_hypothesis.restype = ctypes.c_int
         lib.surge_chaos_cluster_transition.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
@@ -274,6 +292,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_get.restype = ctypes.c_int
+        lib.surge_chaos_cluster_get_bounded.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
+            ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_get_bounded.restype = ctypes.c_int
 
 
     @property
@@ -1094,14 +1117,66 @@ class SemanticCoreBridge(CppCoreBridge):
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), refs, targets, len(member_targets), ctypes.byref(p)))
 
-    def get_chaos_cluster(self, cluster_id: str) -> dict[str, Any]:
-        """Read the persisted Chaos Cluster projection with bounded two-pass output sizing."""
+    def review_chaos_association(self, *, operation_id: str, idempotency_key: str,
+                                 expected_state_version: int, cluster_id: str,
+                                 association_id: str, status: str,
+                                 provenance: dict[str, Any]) -> dict[str, Any]:
+        """Append a provenance-bearing association status revision."""
+        if status not in {"PROVISIONAL", "REVIEWED", "REJECTED", "EXPIRED"}:
+            raise PacketRejected("CHAOS_ASSOCIATION_STATUS_INVALID")
+        if not all(isinstance(x, str) and x.strip() for x in
+                   (operation_id, idempotency_key, cluster_id, association_id)):
+            raise PacketRejected("CHAOS_ASSOCIATION_REVIEW_ARGUMENT_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_review_association,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), association_id.encode(), status.encode(), ctypes.byref(p)))
+
+    def add_chaos_pattern_hypothesis(self, *, operation_id: str, idempotency_key: str,
+                                     expected_state_version: int, cluster_id: str,
+                                     hypothesis: dict[str, Any],
+                                     provenance: dict[str, Any]) -> dict[str, Any]:
+        """Persist a hypothesis separately from Claims, retaining counterexamples and alternatives."""
+        if not isinstance(hypothesis, dict):
+            raise PacketRejected("CHAOS_PATTERN_HYPOTHESIS_INVALID")
+        values = [hypothesis.get("hypothesis_id"), hypothesis.get("statement")]
+        if any(not isinstance(x, str) or not x.strip() for x in values):
+            raise PacketRejected("CHAOS_PATTERN_HYPOTHESIS_INVALID")
+        names = ("member_refs", "excluded_member_refs", "counterexample_refs", "alternative_hypothesis_refs")
+        vectors = []
+        counts = []
+        for name in names:
+            value = hypothesis.get(name, [])
+            if not isinstance(value, list) or len(value) > 10000 or any(not isinstance(x, str) or not x.strip() for x in value):
+                raise PacketRejected("CHAOS_PATTERN_HYPOTHESIS_REFERENCES_INVALID")
+            vectors.append((ctypes.c_char_p * len(value))(*(x.encode("utf-8") for x in value)) if value else None)
+            counts.append(len(value))
+        p = self._chaos_provenance(provenance)
+        item = _ChaosPatternHypothesis(values[0].encode(), values[1].encode(),
+            str(hypothesis.get("epistemic_state", "HYPOTHETICAL")).encode(),
+            str(hypothesis.get("status", "PROVISIONAL")).encode(),
+            vectors[0], counts[0], vectors[1], counts[1], vectors[2], counts[2], vectors[3], counts[3])
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_add_pattern_hypothesis,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def get_chaos_cluster(self, cluster_id: str, *, max_members: int = 1000,
+                          max_associations: int = 1000, max_hypotheses: int = 256,
+                          max_history_per_association: int = 100,
+                          max_hypothesis_refs: int = 256) -> dict[str, Any]:
+        """Read the authoritative Chaos ledger with explicit per-dimension budgets."""
         if not isinstance(cluster_id, str) or not cluster_id.strip():
             raise PacketRejected("CHAOS_CLUSTER_ID_REQUIRED")
-        fn = self._lib.surge_chaos_cluster_get
+        budgets = (max_members, max_associations, max_hypotheses,
+                   max_history_per_association, max_hypothesis_refs)
+        if any(isinstance(x, bool) or not isinstance(x, int) or x < 0 for x in budgets):
+            raise PacketRejected("CHAOS_QUERY_BUDGET_INVALID")
+        if max_members > 10000 or max_associations > 10000 or max_hypotheses > 1000 or max_history_per_association > 1000 or max_hypothesis_refs > 1000:
+            raise PacketRejected("CHAOS_QUERY_BUDGET_INVALID")
+        fn = self._lib.surge_chaos_cluster_get_bounded
+        args = (self._handle, cluster_id.encode("utf-8"), *budgets)
         required, error = ctypes.c_size_t(0), ctypes.create_string_buffer(512)
-        ok = fn(self._handle, cluster_id.encode("utf-8"), None, 0,
-                ctypes.byref(required), error, len(error))
+        ok = fn(*args, None, 0, ctypes.byref(required), error, len(error))
         detail = error.value.decode("utf-8", errors="replace")
         if ok or detail != "CHAOS_CLUSTER_BUFFER_TOO_SMALL":
             raise PacketRejected(detail or "CHAOS_CLUSTER_SIZE_QUERY_FAILED")
@@ -1109,16 +1184,15 @@ class SemanticCoreBridge(CppCoreBridge):
             raise PacketRejected("CHAOS_CLUSTER_RESPONSE_TOO_LARGE")
         output = ctypes.create_string_buffer(required.value)
         error = ctypes.create_string_buffer(512)
-        ok = fn(self._handle, cluster_id.encode("utf-8"), output, len(output),
-                ctypes.byref(required), error, len(error))
+        ok = fn(*args, output, len(output), ctypes.byref(required), error, len(error))
         if not ok:
-            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
-                                 "CHAOS_CLUSTER_READ_FAILED")
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or "CHAOS_CLUSTER_READ_FAILED")
         try:
             value = json.loads(output.value.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise PacketRejected("CHAOS_CLUSTER_JSON_INVALID") from exc
-        if not isinstance(value, dict) or value.get("cluster_id") != cluster_id:
+        if (not isinstance(value, dict) or value.get("cluster_id") != cluster_id
+                or not isinstance(value.get("complete"), bool) or not isinstance(value.get("omitted"), dict)):
             raise PacketRejected("CHAOS_CLUSTER_RESPONSE_INVALID")
         return value
 

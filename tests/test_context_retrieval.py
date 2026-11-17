@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
 from surge_adapter.context_retrieval import ContextRetriever
+from surge_adapter.packet_ingest import PacketRejected
 
 
 class PersistentContextRetrievalTests(unittest.TestCase):
@@ -129,6 +130,47 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 result = ContextRetriever(core).search("予算配分")
                 self.assertEqual(result["items"][0]["id"], "cluster/ja-budget")
                 self.assertLess(result["items"][0]["score"], 65)
+
+
+    def test_bounded_chaos_projection_exposes_history_hypotheses_and_omissions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "bounded-chaos-projection.sgj"
+            provenance = {"producer_id": "projection-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T01:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="create", idempotency_key="create",
+                    expected_state_version=0, cluster_id="chaos/projection", provenance=provenance)
+                for i in range(3):
+                    core.admit_chaos_member(operation_id=f"m{i}", idempotency_key=f"m{i}",
+                        expected_state_version=core.state_version, cluster_id="chaos/projection",
+                        member={"member_ref": f"m{i}", "event_ref": f"event/{i}",
+                                "admission_reason": "UNSTRUCTURED", "admitted_at": f"2026-11-18T01:0{i}:00Z"},
+                        provenance=provenance)
+                core.propose_chaos_association(operation_id="assoc", idempotency_key="assoc",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    association={"association_id":"a1","from_member_ref":"m0","to_member_ref":"m1",
+                                 "association_type":"ANALOGY"}, provenance=provenance)
+                core.review_chaos_association(operation_id="review", idempotency_key="review",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    association_id="a1", status="REVIEWED", provenance=provenance)
+                core.add_chaos_pattern_hypothesis(operation_id="hyp", idempotency_key="hyp",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    hypothesis={"hypothesis_id":"h1","statement":"latent relation",
+                                "member_refs":["m0","m1","m2"],"counterexample_refs":["m2"]},
+                    provenance=provenance)
+                full = core.get_chaos_cluster("chaos/projection")
+                self.assertTrue(full["complete"])
+                self.assertEqual(len(full["associations"][0]["history"]), 2)
+                self.assertEqual(full["associations"][0]["history"][-1]["status"], "REVIEWED")
+                self.assertEqual(full["pattern_hypotheses"][0]["counterexample_refs"], ["m2"])
+                bounded = core.get_chaos_cluster("chaos/projection", max_members=1,
+                    max_associations=0, max_hypotheses=0)
+                self.assertFalse(bounded["complete"])
+                self.assertEqual(bounded["omitted"]["members"], 2)
+                self.assertEqual(bounded["omitted"]["associations"], 1)
+                self.assertEqual(bounded["omitted"]["pattern_hypotheses"], 1)
+                with self.assertRaises(PacketRejected):
+                    core.get_chaos_cluster("chaos/projection", max_members=10001)
 
     def test_invalid_query_options_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
