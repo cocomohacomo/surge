@@ -47,6 +47,17 @@ int main(){
   CHECK(l.get("chaos-2a",c));CHECK(c.members.size()==1&&c.parent_refs.size()==1);
   CHECK(l.get("chaos-2",c));CHECK(c.members.size()==2&&c.child_refs.size()==2&&c.lifecycle==surge::ChaosLifecycle::Forked);
   CHECK(l.create("score-create","ik-score-create",l.state_version(),"chaos-score",p).committed);
+  surge::ChaosMember score_member{"score-member","score-event","HIGH_NOVELTY","2026-11-17T00:00:30Z","",p};
+  CHECK(l.admit_member("score-member-add","ik-score-member-add",l.state_version(),"chaos-score",score_member).committed);
+  CHECK(l.revise_membership("score-member-remove","ik-score-member-remove",l.state_version(),
+    "chaos-score","score-member","PROVISIONAL",false,p).committed);
+  CHECK(l.revise_membership("score-member-restore","ik-score-member-restore",l.state_version(),
+    "chaos-score","score-member","REVIEWED",true,p).committed);
+  surge::ChaosCluster membership_snapshot;CHECK(l.get("chaos-score",membership_snapshot));
+  CHECK(!membership_snapshot.members.at("score-member").membership_history.empty());
+  CHECK(membership_snapshot.members.at("score-member").membership_history.size()==3);
+  CHECK(membership_snapshot.members.at("score-member").membership_active);
+  CHECK(membership_snapshot.members.at("score-member").membership_status=="REVIEWED");
   surge::ChaosScoreObservation novelty{0.91,"recognizer","2.1","score-policy-1","2026-11-17T00:01:00Z"};
   auto score_version=l.state_version();
   CHECK(l.record_observation("score-novelty","ik-score-novelty",score_version,"chaos-score","novelty",novelty).committed);
@@ -70,6 +81,9 @@ int main(){
   CHECK(l.get("chaos-score",c));CHECK(c.observations.at("novelty").size()==2);
   CHECK(c.observations.at("novelty")[0].scorer_id=="recognizer");
   CHECK(c.observations.at("novelty")[1].value==0.84);
+  CHECK(c.members.at("score-member").membership_history.size()==3);
+  CHECK(c.members.at("score-member").membership_history[1].active==false);
+  CHECK(c.members.at("score-member").membership_history[2].active==true);
   const auto v=l.state_version();
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
