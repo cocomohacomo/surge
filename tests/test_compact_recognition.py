@@ -55,6 +55,16 @@ class CompactRecognitionTests(unittest.TestCase):
             self.assertEqual(built.proposal_batch["packet_id"], "p-1")
             self.assertEqual(built.proposal_batch["candidates"][0]["kind"], "CLAIM")
 
+    def test_packet_builder_rejects_mismatched_source_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"model")
+            runtime = CompactRecognitionRuntime(self.make_spec(model), FakeBackend())
+            execution = runtime.recognize("source A")
+            metadata = RecognitionPacketMetadata("p", "i", "ctx", "src", "b", 1, "g1", 1, 0, "adapter", "1", "cap")
+            with self.assertRaisesRegex(ValueError, "PACKET_EXECUTION_SOURCE_MISMATCH"):
+                build_recognition_packet("source B", execution, metadata)
+
     def test_runtime_normalizes_nfc_before_backend_offsets(self):
         class EchoBackend:
             def recognize(self, text, context=None):
@@ -65,6 +75,16 @@ class CompactRecognitionTests(unittest.TestCase):
             runtime = CompactRecognitionRuntime(self.make_spec(model), EchoBackend())
             result = runtime.recognize("か\\u3099")
             self.assertEqual(result.candidates[0].end_offset, len("が".encode("utf-8")))
+
+    def test_revision_packet_requires_explicit_lineage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"model")
+            runtime = CompactRecognitionRuntime(self.make_spec(model), FakeBackend())
+            execution = runtime.recognize("text")
+            metadata = RecognitionPacketMetadata("p", "i", "ctx", "src", "b", 1, "g1", 1, 0, "adapter", "1", "cap", finalization="REVISION")
+            with self.assertRaisesRegex(ValueError, "PACKET_REVISION_LINEAGE_REQUIRED"):
+                build_recognition_packet("text", execution, metadata)
 
     def test_rtf_is_not_claimed_without_media_duration(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -14,6 +14,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
+from jsonschema import Draft202012Validator, FormatChecker
 
 
 DEFAULT_MODEL_LIMIT_BYTES = 30 * 1024 * 1024
@@ -116,6 +117,7 @@ class RecognitionExecution:
     target_rtf: float
     performance_target_met: bool | None
     candidates: tuple[RecognitionCandidate, ...]
+    source_digest: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +128,7 @@ class RecognitionExecution:
             "rtf": self.rtf,
             "target_rtf": self.target_rtf,
             "performance_target_met": self.performance_target_met,
+            "source_digest": self.source_digest,
             "candidates": [
                 {
                     "kind": c.kind, "topic": c.topic, "proposition": c.proposition,
@@ -169,7 +172,7 @@ class CompactRecognitionRuntime:
             float(audio_duration_seconds) if audio_duration_seconds is not None else None,
             rtf, self.spec.target_rtf,
             (rtf < self.spec.target_rtf) if rtf is not None else None,
-            candidates,
+            candidates, hashlib.sha256(normalized_text.encode("utf-8")).hexdigest(),
         )
 
 
@@ -210,6 +213,8 @@ class RecognitionPacketMetadata:
     temporal_mode: str = "CURRENT"
     retrieval_reason: str = "recognition-engine"
     offset_basis: str = "UTF8_BYTE_NFC"
+    source_revision_sequence: int | None = None
+    revision_of_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -229,11 +234,17 @@ def build_recognition_packet(source_text: str, execution: RecognitionExecution,
         raise ValueError("PACKET_SOURCE_TEXT_INVALID")
     if metadata.finalization not in ("PARTIAL", "FINAL", "CONTINUATION", "REVISION"):
         raise ValueError("PACKET_FINALIZATION_INVALID")
+    if metadata.finalization == "REVISION" and (not metadata.source_revision_sequence or not metadata.revision_of_ref):
+        raise ValueError("PACKET_REVISION_LINEAGE_REQUIRED")
+    if metadata.finalization != "REVISION" and (metadata.source_revision_sequence is not None or metadata.revision_of_ref is not None):
+        raise ValueError("PACKET_REVISION_FIELDS_REQUIRE_REVISION")
     normalized = unicodedata.normalize("NFC", source_text)
     raw = normalized.encode("utf-8")
     if any(c.end_offset > len(raw) for c in execution.candidates):
         raise ValueError("PACKET_CANDIDATE_RANGE_INVALID")
     digest = hashlib.sha256(raw).hexdigest()
+    if execution.source_digest != digest:
+        raise ValueError("PACKET_EXECUTION_SOURCE_MISMATCH")
     packet = {
         "schema_version": "0.9.0",
         "packet_id": metadata.packet_id,
@@ -249,6 +260,7 @@ def build_recognition_packet(source_text: str, execution: RecognitionExecution,
             "source_generation": metadata.source_generation,
             "source_sequence": metadata.source_sequence,
             "source_range_digest": digest,
+            **({"source_revision_sequence": metadata.source_revision_sequence, "revision_of_ref": metadata.revision_of_ref} if metadata.finalization == "REVISION" else {}),
         },
         "structural": {"block_type": "TRANSCRIPT_TURN", "semantic_role": "MAIN_CONTENT"},
         "content": {
