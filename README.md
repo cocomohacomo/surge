@@ -153,3 +153,8 @@ Capacity enforcement can atomically demote the lowest-scoring active Questions w
 ## Recognition Candidate Scoring Bridge
 
 The compact recognition sidecar can be bound to the exact packet/source digest and scored through the pluggable [Candidate Scoring Bridge](docs/surge/RECOGNITION_CANDIDATE_SCORING_BRIDGE_v0.1.md). ACCEPT remains proposal-only; REVIEW and ABSTAIN are preserved, and no score authorizes a Core commit.
+
+
+## Compact Recognition Pipeline
+
+The explicit orchestration path from local recognition through packet construction and scoring is documented in [Compact Recognition Pipeline v0.1](docs/surge/COMPACT_RECOGNITION_PIPELINE_v0.1.md). Preparation is read-only; packet admission is a separate operation.
