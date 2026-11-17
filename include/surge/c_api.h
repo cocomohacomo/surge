@@ -209,6 +209,9 @@ int surge_temporal_question_get(void* handle, const char* claim_id,
 size_t surge_temporal_question_count(void* handle);
 int surge_context_graph_focus_get(void* handle, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity);
+int surge_context_graph_focus_set_chaos(void* handle,const char* delta_id,const char* idempotency_key,
+    uint64_t expected_state_version,const char* chaos_cluster_id,const char* interest_id,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity);
 
 uint64_t surge_packet_core_state_version(void* handle);
 size_t surge_packet_core_packet_count(void* handle);

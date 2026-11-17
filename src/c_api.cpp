@@ -102,6 +102,7 @@ bool node_kind(const char* value, surge::NodeKind& out) {
   if (!value) return false;
   const std::string s(value);
   if(s=="CLUSTER")out=surge::NodeKind::Cluster;
+  else if(s=="CHAOS_CLUSTER")out=surge::NodeKind::ChaosCluster;
   else if(s=="ENTITY")out=surge::NodeKind::Entity;
   else if(s=="EVIDENCE")out=surge::NodeKind::Evidence;
   else if(s=="CLAIM")out=surge::NodeKind::Claim;
@@ -1712,7 +1713,7 @@ size_t surge_temporal_question_count(void*o){try{return o?static_cast<Handle*>(o
 int surge_context_graph_focus_get(void*o,char*out,size_t cap,size_t*req,char*err,size_t ec){
  try{if(!o){copy_text(err,ec,"CORE_HANDLE_REQUIRED");return 0;}
  const auto& focus=static_cast<Handle*>(o)->graph.focus();std::string value;
- if(focus)value=std::string(R"({"found":true,"cluster_id":)")+json_quote(focus->cluster_id)+R"(,"interest_id":)"+json_quote(focus->interest_id)+"}";
+ if(focus)value=std::string(R"({"found":true,"cluster_id":)")+json_quote(focus->cluster_id)+R"(,"interest_id":)"+json_quote(focus->interest_id)+R"(,"target_kind":)"+json_quote(focus->chaos_cluster?"CHAOS_CLUSTER":"CLUSTER")+"}";
  else value=R"({"found":false,"cluster_id":null,"interest_id":null})";
  if(req) *req=value.size()+1;
  if(!out||cap<value.size()+1){copy_text(err,ec,"FOCUS_BUFFER_TOO_SMALL");return 0;}
@@ -1724,6 +1725,28 @@ size_t surge_temporal_boundary_pending_count(void* opaque) {
   catch(...) { return 0; }
 }
 
+
+int surge_context_graph_focus_set_chaos(void* opaque,const char* delta_id,const char* idempotency_key,
+    uint64_t expected,const char* chaos_cluster_id,const char* interest_id,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_cap) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!chaos_cluster_id||!*chaos_cluster_id) {
+      copy_text(error,error_cap,"CHAOS_FOCUS_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::ChaosCluster cluster;
+    if(!handle.chaos.get(chaos_cluster_id,cluster)) { copy_text(error,error_cap,"CHAOS_FOCUS_TARGET_NOT_FOUND");return 0; }
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;delta.expected_state_version=expected;
+    const auto existing=handle.graph.nodes().find(chaos_cluster_id);
+    if(existing==handle.graph.nodes().end()) delta.nodes.push_back({{chaos_cluster_id,surge::NodeKind::ChaosCluster,"Chaos Cluster "+cluster.cluster_id,{}}});
+    else if(existing->second.kind!=surge::NodeKind::ChaosCluster) { copy_text(error,error_cap,"CHAOS_FOCUS_GRAPH_ID_CONFLICT");return 0; }
+    delta.focus=surge::SetFocus{{chaos_cluster_id,interest_id?interest_id:"",true}};
+    const auto result=handle.graph.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;if(state_version)*state_version=result.state_version;
+    copy_text(error,error_cap,result.error);return result.committed?1:0;
+  } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
+    catch(...){copy_text(error,error_cap,"CHAOS_FOCUS_UNKNOWN_EXCEPTION");return 0;}
+}
 
 extern "C++" {
 namespace {
