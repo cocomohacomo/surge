@@ -1816,7 +1816,7 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   for(size_t i=0;i<n;++i){if(i)j<<',';j<<json_quote(refs[i]);}
   j<<']';omitted+=refs.size()-n;return j.str();
  };
- size_t omitted_history=0,omitted_hypothesis_refs=0;
+ size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0;
  const size_t member_count=std::min(c.members.size(),max_members);
  const size_t association_count=std::min(c.associations.size(),max_associations);
  const size_t hypothesis_count=std::min(c.pattern_hypotheses.size(),max_hypotheses);
@@ -1827,9 +1827,19 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
     <<",\"creation_provenance\":"<<provenance(c.creation_provenance)<<",\"members\":[";
  size_t index=0;
  for(const auto& item:c.members){if(index>=member_count)break;if(index++)out<<',';const auto&m=item.second;
+  const size_t member_history_count=std::min(m.membership_history.size(),max_history);
+  const size_t member_history_start=m.membership_history.size()-member_history_count;
+  omitted_membership_history+=member_history_start;
   out<<"{\"member_ref\":"<<json_quote(m.member_ref)<<",\"event_ref\":"<<json_quote(m.event_ref)
      <<",\"admission_reason\":"<<json_quote(m.admission_reason)<<",\"admitted_at\":"<<json_quote(m.admitted_at)
-     <<",\"source_digest\":"<<json_quote(m.source_digest)<<",\"provenance\":"<<provenance(m.provenance)<<'}';
+     <<",\"source_digest\":"<<json_quote(m.source_digest)<<",\"membership_status\":"<<json_quote(m.membership_status)
+     <<",\"membership_active\":"<<(m.membership_active?"true":"false")
+     <<",\"membership_history_offset\":"<<member_history_start<<",\"membership_history\":[";
+  for(size_t h=member_history_start;h<m.membership_history.size();++h){if(h>member_history_start)out<<',';const auto&revision=m.membership_history[h];
+   out<<"{\"status\":"<<json_quote(revision.status)<<",\"active\":"<<(revision.active?"true":"false")
+      <<",\"provenance\":"<<provenance(revision.provenance)<<'}';
+  }
+  out<<"],\"provenance\":"<<provenance(m.provenance)<<'}';
  }
  out<<"],\"associations\":[";
  index=0;
@@ -1889,12 +1899,13 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  bool first=true;for(const auto& item:c.promoted_member_targets){if(!first)out<<',';first=false;out<<json_quote(item.first)<<':'<<json_quote(item.second);}
  const size_t omitted_members=c.members.size()-member_count, omitted_associations=c.associations.size()-association_count;
  const size_t omitted_hypotheses=c.pattern_hypotheses.size()-hypothesis_count;
- out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations)?"false":"true")
+ out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history)?"false":"true")
     <<",\"omitted\":{\"members\":"<<omitted_members<<",\"associations\":"<<omitted_associations
     <<",\"association_history_revisions\":"<<omitted_history
     <<",\"pattern_hypotheses\":"<<omitted_hypotheses
     <<",\"hypothesis_references\":"<<omitted_hypothesis_refs
-    <<",\"score_observation_revisions\":"<<omitted_observations<<"}}";
+    <<",\"score_observation_revisions\":"<<omitted_observations
+    <<",\"membership_history_revisions\":"<<omitted_membership_history<<"}}";
  return out.str();
 }
 }
@@ -1990,6 +2001,24 @@ int surge_chaos_cluster_add_pattern_hypothesis(void* opaque,const char* op,const
   return r.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_revise_membership(void* opaque,const char* op,const char* key,uint64_t expected,
+    const char* id,const char* member_ref,const char* status,int active,
+    const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  surge::ChaosProvenance provenance;
+  if(!opaque||!op||!key||!id||!member_ref||!status||(active!=0&&active!=1)||
+     std::strlen(op)>256||std::strlen(key)>256||std::strlen(id)>256||std::strlen(member_ref)>512||
+     !chaos_get_provenance(input,provenance)) {
+   copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_ARGUMENT_INVALID");return 0;
+  }
+  auto result=static_cast<Handle*>(opaque)->chaos.revise_membership(
+      op,key,expected,id,member_ref,status,active!=0,provenance);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_UNKNOWN_EXCEPTION");return 0;}
 }
 int surge_chaos_cluster_record_observation(void* opaque,const char* op,const char* key,uint64_t expected,
     const char* id,const char* dimension,const SurgeChaosScoreObservationInput* input,
