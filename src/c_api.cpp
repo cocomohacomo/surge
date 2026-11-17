@@ -2022,6 +2022,29 @@ int surge_chaos_cluster_revise_membership(void* opaque,const char* op,const char
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_MEMBERSHIP_REVISION_UNKNOWN_EXCEPTION");return 0;}
 }
+int surge_chaos_cluster_record_entity_observation(void* opaque,const char* op,const char* key,uint64_t expected,
+    const char* id,const char* entity_kind,const char* entity_ref,
+    const SurgeChaosScoreObservationInput* input,uint64_t* version,char* error,size_t cap) {
+ try {
+  if(!opaque||!op||!key||!id||!entity_kind||!entity_ref||!input||
+     !input->scorer_id||!input->scorer_version||!input->policy_version||!input->observed_at||
+     std::strlen(op)>256||std::strlen(key)>256||std::strlen(id)>256||
+     std::strlen(entity_kind)>32||std::strlen(entity_ref)>512||
+     std::strlen(input->scorer_id)>256||std::strlen(input->scorer_version)>128||
+     std::strlen(input->policy_version)>128||std::strlen(input->observed_at)>64||
+     !std::isfinite(input->value)||input->value<0.0||input->value>1.0) {
+   copy_text(error,cap,"CHAOS_SCORE_OBSERVATION_ARGUMENT_INVALID");return 0;
+  }
+  surge::ChaosScoreObservation observation{input->value,input->scorer_id,input->scorer_version,
+      input->policy_version,input->observed_at};
+  auto result=static_cast<Handle*>(opaque)->chaos.record_entity_observation(
+      op,key,expected,id,entity_kind,entity_ref,observation);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"CHAOS_ENTITY_SCORE_OBSERVATION_UNKNOWN_EXCEPTION");return 0;}
+}
 int surge_chaos_cluster_record_observation(void* opaque,const char* op,const char* key,uint64_t expected,
     const char* id,const char* dimension,const SurgeChaosScoreObservationInput* input,
     uint64_t* version,char* error,size_t cap) {
