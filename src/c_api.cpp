@@ -1978,7 +1978,8 @@ int surge_chaos_cluster_propose_association_temporal(void* opaque,const char* op
   a.valid_from=input->valid_from_utc?input->valid_from_utc:"";
   a.valid_until=input->valid_until_utc?input->valid_until_utc:"";
   auto result=static_cast<Handle*>(opaque)->chaos.propose_association(op,key,expected,id,a);
-  if(version)*version=result.state_version;copy_text(error,cap,result.error);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
   return result.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_TEMPORAL_UNKNOWN_EXCEPTION");return 0;}
@@ -1991,7 +1992,8 @@ int surge_chaos_cluster_expire_due_associations(void* opaque,const char* op,cons
    copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_ARGUMENT_INVALID");return 0;
   }
   auto result=static_cast<Handle*>(opaque)->chaos.expire_due_associations(op,key,expected,id,as_of,p);
-  if(version)*version=result.state_version;copy_text(error,cap,result.error);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
   return result.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_ASSOCIATION_EXPIRY_UNKNOWN_EXCEPTION");return 0;}
@@ -2104,7 +2106,8 @@ int surge_chaos_cluster_review_pattern_hypothesis(void* opaque,const char* op,co
   }
   auto result=static_cast<Handle*>(opaque)->chaos.review_pattern_hypothesis(
       op,key,expected,id,hypothesis_id,input->status,input->epistemic_state,reasons,p);
-  if(version)*version=result.state_version;copy_text(error,cap,result.error);
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
   return result.committed?1:0;
  } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
    catch(...){copy_text(error,cap,"CHAOS_PATTERN_HYPOTHESIS_REVIEW_UNKNOWN_EXCEPTION");return 0;}
