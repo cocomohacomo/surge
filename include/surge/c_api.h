@@ -263,6 +263,7 @@ int surge_chaos_cluster_propose_association(void*,const char*,const char*,uint64
 int surge_chaos_cluster_propose_association_temporal(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationTemporalInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_review_association(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_expire_due_associations(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_merge(void*,const char*,const char*,uint64_t,const char*,const char* const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_add_pattern_hypothesis(void*,const char*,const char*,uint64_t,const char*,const SurgeChaosPatternHypothesisInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_review_pattern_hypothesis(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosHypothesisReviewInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_record_observation(void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t);
