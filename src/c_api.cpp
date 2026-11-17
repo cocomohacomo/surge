@@ -1801,6 +1801,17 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   return std::string("{\"producer_id\":")+json_quote(p.producer_id)+",\"producer_version\":"+json_quote(p.producer_version)+
    ",\"policy_version\":"+json_quote(p.policy_version)+",\"recorded_at\":"+json_quote(p.recorded_at)+"}";
  };
+ auto observation_json=[](const surge::ChaosScoreObservation& v){
+  return std::string("{\"value\":")+([&](){std::ostringstream n;n<<std::setprecision(17)<<v.value;return n.str();})()+
+   ",\"scorer_id\":"+json_quote(v.scorer_id)+",\"scorer_version\":"+json_quote(v.scorer_version)+
+   ",\"policy_version\":"+json_quote(v.policy_version)+",\"observed_at\":"+json_quote(v.observed_at)+"}";
+ };
+ auto observation_history_json=[&](const std::vector<surge::ChaosScoreObservation>& history,size_t& omitted){
+  const size_t count=std::min(history.size(),max_history),start=history.size()-count;omitted+=start;
+  std::ostringstream out;out<<"{\"history_offset\":"<<start<<",\"history\":[";
+  for(size_t i=start;i<history.size();++i){if(i>start)out<<',';out<<observation_json(history[i]);}
+  out<<"]}";return out.str();
+ };
  auto status=[](surge::ChaosAssociationStatus v)->const char* {
   switch(v){case surge::ChaosAssociationStatus::Provisional:return "PROVISIONAL";case surge::ChaosAssociationStatus::Reviewed:return "REVIEWED";
    case surge::ChaosAssociationStatus::Rejected:return "REJECTED";case surge::ChaosAssociationStatus::Expired:return "EXPIRED";}return "UNKNOWN";
@@ -1816,7 +1827,7 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   for(size_t i=0;i<n;++i){if(i)j<<',';j<<json_quote(refs[i]);}
   j<<']';omitted+=refs.size()-n;return j.str();
  };
- size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0;
+ size_t omitted_history=0,omitted_hypothesis_refs=0,omitted_membership_history=0,omitted_entity_observations=0;
  const size_t member_count=std::min(c.members.size(),max_members);
  const size_t association_count=std::min(c.associations.size(),max_associations);
  const size_t hypothesis_count=std::min(c.pattern_hypotheses.size(),max_hypotheses);
@@ -1839,7 +1850,10 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
    out<<"{\"status\":"<<json_quote(revision.status)<<",\"active\":"<<(revision.active?"true":"false")
       <<",\"provenance\":"<<provenance(revision.provenance)<<'}';
   }
-  out<<"],\"provenance\":"<<provenance(m.provenance)<<'}';
+  out<<"],";
+  if(!m.salience_observations.empty())out<<"\"salience\":"<<observation_json(m.salience_observations.back())<<',';
+  out<<"\"salience_history\":"<<observation_history_json(m.salience_observations,omitted_entity_observations)
+     <<",\"provenance\":"<<provenance(m.provenance)<<'}';
  }
  out<<"],\"associations\":[";
  index=0;
@@ -1852,7 +1866,9 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
      <<",\"history_offset\":"<<history_start<<",\"history\":[";
   for(size_t h=history_start;h<a.history.size();++h){if(h>history_start)out<<',';const auto&rev=a.history[h];
    out<<"{\"status\":"<<json_quote(status(rev.status))<<",\"provenance\":"<<provenance(rev.provenance)<<'}';}
-  out<<"]}";
+  out<<"],";
+  if(!a.confidence_observations.empty())out<<"\"confidence\":"<<observation_json(a.confidence_observations.back())<<',';
+  out<<"\"confidence_history\":"<<observation_history_json(a.confidence_observations,omitted_entity_observations)<<'}';
  }
  out<<"],\"pattern_hypotheses\":[";
  index=0;
@@ -1863,14 +1879,11 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
      <<",\"excluded_member_refs\":"<<refs_json(h.excluded_member_refs,omitted_hypothesis_refs)
      <<",\"counterexample_refs\":"<<refs_json(h.counterexample_refs,omitted_hypothesis_refs)
      <<",\"alternative_hypothesis_refs\":"<<refs_json(h.alternative_hypothesis_refs,omitted_hypothesis_refs)
-     <<",\"provenance\":"<<provenance(h.provenance)<<'}';
+     <<",\"confidence_history\":"<<observation_history_json(h.confidence_observations,omitted_entity_observations);
+  if(!h.confidence_observations.empty())out<<",\"confidence\":"<<observation_json(h.confidence_observations.back());
+  out<<",\"provenance\":"<<provenance(h.provenance)<<'}';
  }
  size_t omitted_observations=0;
- auto observation_json=[](const surge::ChaosScoreObservation& v){
-  return std::string("{\"value\":")+([&](){std::ostringstream n;n<<std::setprecision(17)<<v.value;return n.str();})()+
-   ",\"scorer_id\":"+json_quote(v.scorer_id)+",\"scorer_version\":"+json_quote(v.scorer_version)+
-   ",\"policy_version\":"+json_quote(v.policy_version)+",\"observed_at\":"+json_quote(v.observed_at)+"}";
- };
  out<<"],\"observations\":{";
  bool first_dimension=true;
  for(const auto& dimension:c.observations){
@@ -1901,13 +1914,14 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  bool first=true;for(const auto& item:c.promoted_member_targets){if(!first)out<<',';first=false;out<<json_quote(item.first)<<':'<<json_quote(item.second);}
  const size_t omitted_members=c.members.size()-member_count, omitted_associations=c.associations.size()-association_count;
  const size_t omitted_hypotheses=c.pattern_hypotheses.size()-hypothesis_count;
- out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history)?"false":"true")
+ out<<"},\"complete\":"<<((omitted_members||omitted_associations||omitted_hypotheses||omitted_history||omitted_hypothesis_refs||omitted_observations||omitted_membership_history||omitted_entity_observations)?"false":"true")
     <<",\"omitted\":{\"members\":"<<omitted_members<<",\"associations\":"<<omitted_associations
     <<",\"association_history_revisions\":"<<omitted_history
     <<",\"pattern_hypotheses\":"<<omitted_hypotheses
     <<",\"hypothesis_references\":"<<omitted_hypothesis_refs
     <<",\"score_observation_revisions\":"<<omitted_observations
-    <<",\"membership_history_revisions\":"<<omitted_membership_history<<"}}";
+    <<",\"membership_history_revisions\":"<<omitted_membership_history
+    <<",\"entity_score_observation_revisions\":"<<omitted_entity_observations<<"}}";
  return out.str();
 }
 }
