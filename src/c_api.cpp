@@ -1875,7 +1875,8 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  bool first_dimension=true;
  for(const auto& dimension:c.observations){
   if(dimension.second.empty())continue;
-  if(!first_dimension)out<<',';first_dimension=false;
+  if(!first_dimension) out<<',';
+  first_dimension=false;
   out<<json_quote(dimension.first)<<':'<<observation_json(dimension.second.back());
  }
  out<<"},\"observation_history\":{";
