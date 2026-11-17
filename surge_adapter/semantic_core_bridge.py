@@ -29,6 +29,13 @@ class _Proposal(ctypes.Structure):
                 ("packet_source_sequence", ctypes.c_uint64),
                 ("serialized_json", ctypes.c_char_p)]
 
+class _EvidenceProvenance(ctypes.Structure):
+    _fields_ = [("evidence_id", ctypes.c_char_p),
+                ("observed_at", ctypes.c_char_p),
+                ("source_published_at", ctypes.c_char_p),
+                ("source_retrieved_at", ctypes.c_char_p),
+                ("revision", ctypes.c_uint64)]
+
 class _Relation(ctypes.Structure):
     _fields_ = [("id", ctypes.c_char_p), ("kind", ctypes.c_char_p),
                 ("from_id", ctypes.c_char_p), ("to_id", ctypes.c_char_p)]
@@ -70,6 +77,22 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_classification_proposal_get.restype = ctypes.c_int
+        lib.surge_packet_core_admit_and_apply_with_metadata.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.POINTER(_Node), ctypes.c_size_t,
+            ctypes.POINTER(_Relation), ctypes.c_size_t,
+            ctypes.POINTER(_Scope), ctypes.c_size_t,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_Proposal),
+            ctypes.POINTER(_EvidenceProvenance),
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_packet_core_admit_and_apply_with_metadata.restype = ctypes.c_int
+        lib.surge_evidence_provenance_get.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_evidence_provenance_get.restype = ctypes.c_int
         lib.surge_context_graph_apply_scoped.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
@@ -284,15 +307,39 @@ class SemanticCoreBridge(CppCoreBridge):
                 int(proposal_value["context_hint_state_version"]),
                 str(proposal_value["packet_source_generation"]).encode("utf-8"),
                 int(proposal_value["packet_source_sequence"]), proposal_json)
+        provenance_value = delta.get("evidence_provenance")
+        provenance_input = None
+        provenance_keepalive = []
+        if provenance_value is not None:
+            def optional_timestamp(key):
+                value = provenance_value.get(key)
+                if value is None:
+                    return None
+                if not isinstance(value, str) or not value:
+                    raise PacketRejected("EVIDENCE_PROVENANCE_TIMESTAMP_INVALID")
+                encoded = value.encode("utf-8")
+                provenance_keepalive.append(encoded)
+                return encoded
+            evidence_id = provenance_value.get("evidence_id")
+            if not isinstance(evidence_id, str) or not evidence_id:
+                raise PacketRejected("EVIDENCE_PROVENANCE_ID_REQUIRED")
+            evidence_id_bytes = evidence_id.encode("utf-8")
+            provenance_keepalive.append(evidence_id_bytes)
+            provenance_input = _EvidenceProvenance(
+                evidence_id_bytes, optional_timestamp("observed_at"),
+                optional_timestamp("source_published_at"),
+                optional_timestamp("source_retrieved_at"),
+                int(provenance_value.get("revision", 1)))
         duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
         status, error = ctypes.create_string_buffer(128), ctypes.create_string_buffer(1024)
-        ok = self._lib.surge_packet_core_admit_and_apply_with_proposal(
+        ok = self._lib.surge_packet_core_admit_and_apply_with_metadata(
             self._handle, ctypes.byref(packet_input), snapshot_buffer, len(source),
             str(delta["delta_id"]).encode(), str(delta["idempotency_key"]).encode(),
             int(delta["expected_state_version"]), node_array, len(nodes),
             relation_array, len(relations), scope_array, len(scopes),
             focus_cluster, focus_interest,
             ctypes.byref(proposal_input) if proposal_input is not None else None,
+            ctypes.byref(provenance_input) if provenance_input is not None else None,
             ctypes.byref(duplicate), ctypes.byref(version), status, len(status), error, len(error))
         if not ok:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
@@ -307,6 +354,35 @@ class SemanticCoreBridge(CppCoreBridge):
             range_digest=range_digest, canonical_request_digest=request_digest)
         return admission, {"committed": True, "duplicate": bool(duplicate.value),
                            "state_version": int(version.value)}
+
+
+    def get_evidence_provenance(self, evidence_id: str) -> dict[str, Any]:
+        """Load the append-only provenance history for one Evidence node."""
+        if not isinstance(evidence_id, str) or not evidence_id:
+            raise PacketRejected("EVIDENCE_PROVENANCE_ID_REQUIRED")
+        required = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(256)
+        fn = self._lib.surge_evidence_provenance_get
+        ok = fn(self._handle, evidence_id.encode("utf-8"), None, 0,
+                ctypes.byref(required), error, len(error))
+        if ok or error.value.decode("utf-8", errors="replace") != \
+                "EVIDENCE_PROVENANCE_BUFFER_TOO_SMALL":
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "EVIDENCE_PROVENANCE_SIZE_QUERY_FAILED")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(256)
+        ok = fn(self._handle, evidence_id.encode("utf-8"), output, len(output),
+                ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "EVIDENCE_PROVENANCE_READ_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("EVIDENCE_PROVENANCE_JSON_INVALID") from exc
+        if not isinstance(value, dict) or value.get("evidence_id") != evidence_id:
+            raise PacketRejected("EVIDENCE_PROVENANCE_RESPONSE_INVALID")
+        return value
 
 
     def get_classification_proposal(self, proposal_id: str) -> dict[str, Any]:

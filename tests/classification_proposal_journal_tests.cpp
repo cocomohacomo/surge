@@ -28,14 +28,18 @@ int main() {
   const std::string proposal_id="proposal-1", packet_ref="packet-1", generation="generation-1";
   SurgeClassificationProposalInput proposal{proposal_id.c_str(),packet_ref.c_str(),0,0,
       generation.c_str(),1,proposal_json.c_str()};
+  const std::string observed_at="2026-11-17T09:00:00+09:00";
+  const std::string retrieved_at="2026-11-17T09:05:00+09:00";
+  SurgeEvidenceProvenanceInput provenance{node_id.c_str(),observed_at.c_str(),
+      nullptr,retrieved_at.c_str(),1};
   {
     char error[512]{};
     void* handle=surge_packet_core_open(path.c_str(),error,sizeof(error)); assert(handle);
     int duplicate=0; std::uint64_t version=0; char status[128]{};
-    const int committed=surge_packet_core_admit_and_apply_with_proposal(
+    const int committed=surge_packet_core_admit_and_apply_with_metadata(
       handle,&packet,reinterpret_cast<const unsigned char*>(source.data()),source.size(),
       "delta-1","semantic-idem-1",0,&node,1,nullptr,0,nullptr,0,nullptr,nullptr,
-      &proposal,&duplicate,&version,status,sizeof(status),error,sizeof(error));
+      &proposal,&provenance,&duplicate,&version,status,sizeof(status),error,sizeof(error));
     assert(committed==1); assert(version==1); assert(duplicate==0);
     surge_packet_core_close(handle);
   }
@@ -51,6 +55,33 @@ int main() {
     const int loaded=surge_classification_proposal_get(handle,proposal_id.c_str(),
       output.data(),output.size(),&required,error,sizeof(error));
     assert(loaded==1); assert(std::string(output.c_str())==proposal_json);
+    required=0;
+    const int provenance_size=surge_evidence_provenance_get(handle,node_id.c_str(),
+      nullptr,0,&required,error,sizeof(error));
+    assert(provenance_size==0);
+    assert(std::string(error)=="EVIDENCE_PROVENANCE_BUFFER_TOO_SMALL");
+    std::string provenance_json(required,'\0');
+    const int provenance_loaded=surge_evidence_provenance_get(handle,node_id.c_str(),
+      provenance_json.data(),provenance_json.size(),&required,error,sizeof(error));
+    assert(provenance_loaded==1);
+    assert(provenance_json.find(observed_at)!=std::string::npos);
+    assert(provenance_json.find("\"source_published_at\":null")!=std::string::npos);
+    assert(provenance_json.find("\"recorded_state_version\":1")!=std::string::npos);
+    surge_packet_core_close(handle);
+  }
+  {
+    const auto invalid_path=(root/"invalid-provenance.sgj").string();
+    char error[512]{}; void* handle=surge_packet_core_open(invalid_path.c_str(),error,sizeof(error)); assert(handle);
+    const std::string invalid_time="2026-02-30T12:00:00Z";
+    SurgeEvidenceProvenanceInput invalid{node_id.c_str(),invalid_time.c_str(),nullptr,nullptr,1};
+    int duplicate=0; std::uint64_t version=99; char status[128]{};
+    const int committed=surge_packet_core_admit_and_apply_with_metadata(
+      handle,&packet,reinterpret_cast<const unsigned char*>(source.data()),source.size(),
+      "delta-invalid","semantic-idem-invalid",0,&node,1,nullptr,0,nullptr,0,nullptr,nullptr,
+      nullptr,&invalid,&duplicate,&version,status,sizeof(status),error,sizeof(error));
+    assert(committed==0);
+    assert(std::string(error)=="EVIDENCE_PROVENANCE_TIMESTAMP_INVALID");
+    assert(surge_packet_core_state_version(handle)==0);
     surge_packet_core_close(handle);
   }
   {

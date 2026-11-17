@@ -43,3 +43,23 @@ Binding this ledger into the main SemanticDelta graph transaction and exposing
 it through the public C/Python APIs is a subsequent integration task. Until
 that integration lands, this primitive must not be described as automatic
 metadata capture during packet ingestion.
+
+
+## Atomic packet integration v0.2
+
+The packet adapter can now pass an explicit `evidence_provenance` object
+alongside the RecognitionPacket, SemanticDelta and ClassificationProposal.
+The C++ Core verifies that the target identifier resolves to an EVIDENCE node,
+validates every supplied timestamp, prepares the provenance event without
+committing it independently, and appends it to the same EventJournal
+transaction. The transaction therefore advances State Version once.
+
+The C API and Python bridge expose a read-only history query. Each revision
+includes its recorded State Version and preserves unknown fields as JSON null.
+The LLM runtime accepts provenance clocks only when the caller supplies them;
+it never derives observation/publication/retrieval times from the text or
+runtime wall clock. Omitting the argument means no provenance event is added.
+
+This integration supports append-only revisions against existing Evidence
+nodes as well as first-time Evidence creation. A provenance event is rejected
+if its Evidence target is absent or has another node kind.

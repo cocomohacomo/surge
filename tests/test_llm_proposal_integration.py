@@ -52,7 +52,11 @@ class LLMProposalIntegrationTests(unittest.TestCase):
                 {"committed": True, "duplicate": False, "state_version": 13},
             )
         )
-        return runtime.process("予算を増額する。", FakeCore())
+        return runtime.process("予算を増額する。", FakeCore(),
+                               evidence_provenance={
+                                   "observed_at": "2026-11-17T09:00:00+09:00",
+                                   "source_retrieved_at": "2026-11-17T09:05:00+09:00",
+                               })
 
     def test_runtime_emits_schema_valid_proposal_before_core_commit(self):
         result = self.runtime_result(FixedProvider())

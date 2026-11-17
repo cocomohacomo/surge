@@ -71,6 +71,14 @@ typedef struct SurgeClassificationProposalInput {
   const char* serialized_json;
 } SurgeClassificationProposalInput;
 
+typedef struct SurgeEvidenceProvenanceInput {
+  const char* evidence_id;
+  const char* observed_at;
+  const char* source_published_at;
+  const char* source_retrieved_at;
+  uint64_t revision;
+} SurgeEvidenceProvenanceInput;
+
 typedef struct SurgeScopeSpanInput {
   const char* span_id;
   const char* kind;
@@ -251,6 +259,26 @@ int surge_packet_core_admit_and_apply_with_proposal(
 int surge_classification_proposal_get(void* handle, const char* proposal_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
+// Atomic packet + SemanticDelta + optional proposal + Evidence provenance.
+int surge_packet_core_admit_and_apply_with_metadata(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const char* delta_id, const char* semantic_idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeGraphRelationInput* relations, size_t relation_count,
+    const SurgeScopeSpanInput* scopes, size_t scope_count,
+    const char* focus_cluster_id, const char* focus_interest_id,
+    const SurgeClassificationProposalInput* proposal,
+    const SurgeEvidenceProvenanceInput* provenance,
+    int* duplicate, uint64_t* state_version,
+    char* packet_status, size_t status_capacity,
+    char* error, size_t error_capacity);
+int surge_evidence_provenance_get(void* handle, const char* evidence_id,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
+
 #ifdef __cplusplus
 }
 #endif
