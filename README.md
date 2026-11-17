@@ -148,3 +148,8 @@ Capacity enforcement can atomically demote the lowest-scoring active Questions w
 - Default model artifact ceiling: 30 MiB; target CPU RTF < 0.01, subject to hardware-specific benchmark.
 - Backend-neutral typed candidate interface, SHA-256 artifact identity, measured RTF reporting and deterministic fake-backend tests.
 - No model weights or inference runtime are bundled; the interface does not claim the target has been achieved until a real model is benchmarked.
+
+
+## Recognition Candidate Scoring Bridge
+
+The compact recognition sidecar can be bound to the exact packet/source digest and scored through the pluggable [Candidate Scoring Bridge](docs/surge/RECOGNITION_CANDIDATE_SCORING_BRIDGE_v0.1.md). ACCEPT remains proposal-only; REVIEW and ABSTAIN are preserved, and no score authorizes a Core commit.
