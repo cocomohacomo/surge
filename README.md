@@ -163,3 +163,8 @@ The explicit orchestration path from local recognition through packet constructi
 ## ONNX CPU Backend
 
 An optional [ONNX Runtime CPU backend](docs/surge/COMPACT_ONNX_CPU_BACKEND_v0.1.md) implements the compact model interface with injected tokenizer and candidate decoder. Model weights and tokenizer assets remain separately packaged and license-checked.
+
+
+## Temporal Reassessment Trace
+
+The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEMPORAL_REASSESSMENT_EVIDENCE_TRACE_v0.1.md) records Claim validity revisions, Evidence valid-time intervals, provenance timestamps, evaluation instants and explainable decision reasons in a verifiable append-only trace chain.
