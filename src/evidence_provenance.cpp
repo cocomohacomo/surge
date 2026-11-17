@@ -123,13 +123,15 @@ bool EvidenceProvenanceLedger::apply(const EvidenceProvenanceRecord& record,
   revisions.push_back(record);
   return true;
 }
-bool EvidenceProvenanceLedger::append(const EvidenceProvenance& provenance,
-    std::uint64_t expected, EvidenceProvenanceRecord& result, std::string& error) {
+bool EvidenceProvenanceLedger::prepare_event(const EvidenceProvenance& provenance,
+    std::uint64_t expected, JournalEvent& event, std::string& error) const {
   error.clear();
   if (!journal_ || expected != journal_->state_version()) {
     error = "STATE_VERSION_CONFLICT"; return false;
   }
-  EvidenceProvenanceRecord record{provenance, expected + 1};
+  if (expected == UINT64_MAX) {
+    error = "STATE_VERSION_EXHAUSTED"; return false;
+  }
   const auto valid = [](const std::optional<std::string>& value) {
     return !value || is_valid_rfc3339_timestamp(*value);
   };
@@ -145,13 +147,22 @@ bool EvidenceProvenanceLedger::append(const EvidenceProvenance& provenance,
   if (provenance.revision != next_revision) {
     error = "EVIDENCE_PROVENANCE_REVISION_INVALID"; return false;
   }
+  EvidenceProvenanceRecord record{provenance, expected + 1};
   const auto event_id = "evidence-provenance:" + provenance.evidence_id + ":" +
                         std::to_string(provenance.revision);
-  const auto committed = journal_->commit(event_id, event_id, expected,
-      {{event_id, "EVIDENCE_PROVENANCE_SET_V1", encode(record)}});
+  event = {event_id, "EVIDENCE_PROVENANCE_SET_V1", encode(record)};
+  return true;
+}
+bool EvidenceProvenanceLedger::append(const EvidenceProvenance& provenance,
+    std::uint64_t expected, EvidenceProvenanceRecord& result, std::string& error) {
+  JournalEvent event;
+  if (!prepare_event(provenance, expected, event, error)) return false;
+  const auto committed = journal_->commit(event.event_id, event.event_id, expected, {event});
   if (!committed.committed) { error = committed.error; return false; }
-  if (!apply(record, error)) return false;
-  result = record;
+  if (!replay()) { error = "EVIDENCE_PROVENANCE_REPLAY_FAILED"; return false; }
+  const auto record = latest(provenance.evidence_id);
+  if (!record) { error = "EVIDENCE_PROVENANCE_RECORD_MISSING"; return false; }
+  result = *record;
   return true;
 }
 bool EvidenceProvenanceLedger::replay() {
