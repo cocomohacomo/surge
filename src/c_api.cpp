@@ -1830,7 +1830,9 @@ int surge_chaos_cluster_focus_get(void* opaque,char* output,size_t output_cap,si
  try {if(!opaque){copy_text(error,error_cap,"CHAOS_FOCUS_QUERY_ARGUMENT_INVALID");return 0;}surge::ChaosFocus focus;
   std::string value;if(static_cast<Handle*>(opaque)->chaos.get_focus(focus)){value="{\"found\":true,\"cluster_id\":"+json_quote(focus.cluster_id)+",\"interest_id\":"+json_quote(focus.interest_id)+",\"reason\":"+json_quote(focus.reason)+",\"state_version\":"+std::to_string(focus.state_version)+"}";}
   else value="{\"found\":false,\"cluster_id\":null}";
-  if(required)*required=value.size()+1;if(!output||output_cap<value.size()+1){copy_text(error,error_cap,"CHAOS_FOCUS_BUFFER_TOO_SMALL");return 0;}copy_text(output,output_cap,value);copy_text(error,error_cap,"");return 1;
+  if(required) *required=value.size()+1;
+  if(!output||output_cap<value.size()+1){copy_text(error,error_cap,"CHAOS_FOCUS_BUFFER_TOO_SMALL");return 0;}
+  copy_text(output,output_cap,value);copy_text(error,error_cap,"");return 1;
  } catch(const std::exception& x){copy_text(error,error_cap,x.what());return 0;}catch(...){copy_text(error,error_cap,"CHAOS_FOCUS_QUERY_UNKNOWN_EXCEPTION");return 0;}
 }
 int surge_chaos_cluster_retrieve(void* opaque,const char* cluster,size_t limit,int diversity_first,char* output,size_t output_cap,size_t* required,char* error,size_t error_cap) {

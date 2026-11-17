@@ -69,9 +69,9 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   if(!(i>>nh)||nh>100000)return false;
   for(std::size_t x=0;x<nh;++x){ChaosPatternHypothesis h;if(!(i>>std::quoted(h.hypothesis_id)>>std::quoted(h.statement)>>std::quoted(h.epistemic_state)>>std::quoted(h.status))||h.hypothesis_id.empty())return false;auto vec=[&](std::vector<std::string>&v){std::size_t count=0;if(!(i>>count)||count>100000)return false;for(std::size_t q=0;q<count;++q){std::string value;if(!(i>>std::quoted(value)))return false;v.push_back(std::move(value));}return true;};if(!vec(h.member_refs)||!vec(h.excluded_member_refs)||!vec(h.counterexample_refs)||!vec(h.alternative_hypothesis_refs)||!rp(i,h.provenance)||!c.pattern_hypotheses.emplace(h.hypothesis_id,std::move(h)).second)return false;}
  }
- std::string marker;
- if(!(i>>marker))return true;
- if(marker!="CC3")return false;
+ std::string marker3;
+ if(!(i>>marker3))return true;
+ if(marker3!="CC3")return false;
  std::size_t focus_count=0;if(!(i>>focus_count)||focus_count!=s.size())return false;
  for(std::size_t x=0;x<focus_count;++x){std::string id,interest,reason;int focused=0;ChaosProvenance provenance;
   if(!(i>>std::quoted(id)>>focused>>std::quoted(interest)>>std::quoted(reason))||
@@ -114,6 +114,8 @@ ChaosRetrievalResult ChaosClusterLedger::retrieve(const std::string&id,std::size
   bool added=true;std::size_t index=0;while(added){added=false;for(const auto&group:groups)if(index<group.second.size()){ordered.push_back(group.second[index]);added=true;}++index;}
  }else{for(const auto&item:it->second.members)ordered.push_back(item.second);}
  const auto count=std::min(limit,ordered.size());out.members.insert(out.members.end(),ordered.begin(),ordered.begin()+static_cast<std::ptrdiff_t>(count));
- for(std::size_t i=count;i<ordered.size();++i)out.omitted_member_refs.push_back(ordered[i].member_ref);out.complete=out.omitted_member_refs.empty();return out;
+ for(std::size_t i=count;i<ordered.size();++i) out.omitted_member_refs.push_back(ordered[i].member_ref);
+ out.complete=out.omitted_member_refs.empty();
+ return out;
 }
 } // namespace surge
