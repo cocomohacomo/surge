@@ -82,6 +82,7 @@ class ContextGraph {
   QuestionMemoryState question_memory_state(const std::string& id) const;
   std::uint64_t question_reference_count(const std::string& id) const;
   bool record_question_reference(const std::string& id, std::uint64_t expected_state_version, bool& reactivated, std::string& error);
+  bool record_question_reference_with_dependents(const std::string& id, std::uint64_t expected_state_version, std::size_t max_depth, std::size_t max_nodes, bool& reactivated, std::size_t& reactivated_dependents, std::string& error);
   bool set_question_memory_state(const std::string& id, QuestionMemoryState state, std::uint64_t expected_state_version, std::string& error);
   bool enforce_question_memory_capacity(const std::vector<std::pair<std::string, double>>& scores, std::size_t max_active, std::uint64_t expected_state_version, std::vector<std::string>& demoted, std::string& error);
   const std::map<std::string, std::vector<ClaimValidityRecord>>& claim_validity_history() const { return state_.claim_validity_history; }

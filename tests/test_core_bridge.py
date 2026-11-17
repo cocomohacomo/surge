@@ -430,6 +430,68 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 self.assertEqual(item["factors"]["reference_frequency"], 0.4)
                 self.assertEqual(recovered.state_version, second["state_version"])
 
+    def test_dependency_aware_reference_reactivates_dormant_chain_atomically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "dependency-reactivation.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "dependency-reactivation-seed", "idempotency_key": "dependency-reactivation-seed",
+                    "expected_state_version": 0, "nodes": [
+                        {"id": "q/root", "kind": "QUESTION", "content": "root"},
+                        {"id": "q/mid", "kind": "QUESTION", "content": "middle"},
+                        {"id": "q/leaf", "kind": "QUESTION", "content": "leaf"},
+                        {"id": "q/archived", "kind": "QUESTION", "content": "archived"},
+                    ], "relations": [],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "dependency-reactivation-links", "idempotency_key": "dependency-reactivation-links",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [
+                        {"id": "r/mid-root", "kind": "DEPENDS_ON", "from": "q/mid", "to": "q/root"},
+                        {"id": "r/leaf-mid", "kind": "DEPENDS_ON", "from": "q/leaf", "to": "q/mid"},
+                        {"id": "r/archive-root", "kind": "DEPENDS_ON", "from": "q/archived", "to": "q/root"},
+                    ],
+                })
+                for question_id, state in (("q/root", "DORMANT"), ("q/mid", "DORMANT"),
+                                           ("q/leaf", "DORMANT"), ("q/archived", "ARCHIVED")):
+                    core.set_question_memory_state(question_id, state)
+                result = core.record_question_reference_with_dependents("q/root")
+                self.assertTrue(result["root_reactivated"])
+                self.assertEqual(result["reactivated_dependent_count"], 2)
+                self.assertEqual(core.get_question_memory_state("q/root")["memory_state"], "ACTIVE")
+                self.assertEqual(core.get_question_memory_state("q/mid")["memory_state"], "ACTIVE")
+                self.assertEqual(core.get_question_memory_state("q/leaf")["memory_state"], "ACTIVE")
+                self.assertEqual(core.get_question_memory_state("q/archived")["memory_state"], "ARCHIVED")
+                committed_version = core.state_version
+            with SemanticCoreBridge(journal) as recovered:
+                for question_id in ("q/root", "q/mid", "q/leaf"):
+                    self.assertEqual(recovered.get_question_memory_state(question_id)["memory_state"], "ACTIVE")
+                self.assertEqual(recovered.get_question_memory_state("q/archived")["memory_state"], "ARCHIVED")
+                self.assertEqual(recovered.state_version, committed_version)
+
+    def test_dependency_reactivation_node_limit_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "dependency-limit.sgj") as core:
+                core.apply_semantic_delta({
+                    "delta_id": "dependency-limit-seed", "idempotency_key": "dependency-limit-seed",
+                    "expected_state_version": 0, "nodes": [
+                        {"id": "q/root", "kind": "QUESTION", "content": "root"},
+                        {"id": "q/child", "kind": "QUESTION", "content": "child"},
+                        {"id": "q/child2", "kind": "QUESTION", "content": "child two"},
+                    ], "relations": [],
+                })
+                core.apply_semantic_delta({
+                    "delta_id": "dependency-limit-link", "idempotency_key": "dependency-limit-link",
+                    "expected_state_version": core.state_version, "nodes": [],
+                    "relations": [{"id": "r/child-root", "kind": "DEPENDS_ON", "from": "q/child", "to": "q/root"},
+                        {"id": "r/child2-root", "kind": "DEPENDS_ON", "from": "q/child2", "to": "q/root"}],
+                })
+                before = core.state_version
+                with self.assertRaisesRegex(PacketRejected, "QUESTION_REACTIVATION_NODE_LIMIT"):
+                    core.record_question_reference_with_dependents("q/root", max_nodes=1)
+                self.assertEqual(core.state_version, before)
+                self.assertEqual(core.get_question_memory_state("q/root")["memory_state"], "ACTIVE")
+
     def test_archived_question_reference_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "archived-reference.sgj") as core:

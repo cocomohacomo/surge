@@ -85,6 +85,8 @@ class SemanticCoreBridge(CppCoreBridge):
         lib.surge_question_memory_set_state.restype=ctypes.c_int
         lib.surge_question_memory_record_reference.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_uint64,ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_uint64),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_record_reference.restype=ctypes.c_int
+        lib.surge_question_memory_record_reference_with_dependents.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_uint64,ctypes.c_size_t,ctypes.c_size_t,ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
+        lib.surge_question_memory_record_reference_with_dependents.restype=ctypes.c_int
         lib.surge_question_memory_get_state.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
         lib.surge_question_memory_get_state.restype=ctypes.c_int
         lib.surge_question_memory_recommendation.argtypes=[ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.POINTER(ctypes.c_char),ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_char),ctypes.c_size_t]
@@ -584,6 +586,30 @@ class SemanticCoreBridge(CppCoreBridge):
             raise PacketRejected(detail or "QUESTION_REFERENCE_REJECTED")
         return {"question_id": question_id, "reference_count": count.value,
                 "reactivated": bool(reactivated.value), "memory_state": "ACTIVE",
+                "state_version": self.state_version}
+
+    def record_question_reference_with_dependents(self, question_id: str,
+                                                  expected_state_version: int | None = None,
+                                                  max_depth: int = 8, max_nodes: int = 256) -> dict[str, Any]:
+        """Record a reference and atomically reactivate dormant dependent Questions."""
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise PacketRejected("QUESTION_ID_REQUIRED")
+        if not isinstance(max_depth, int) or isinstance(max_depth, bool) or not 1 <= max_depth <= 64:
+            raise PacketRejected("QUESTION_REACTIVATION_DEPTH_INVALID")
+        if not isinstance(max_nodes, int) or isinstance(max_nodes, bool) or not 1 <= max_nodes <= 4096:
+            raise PacketRejected("QUESTION_REACTIVATION_NODE_LIMIT_INVALID")
+        expected = self.state_version if expected_state_version is None else int(expected_state_version)
+        root_reactivated = ctypes.c_int(0)
+        dependent_count = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_question_memory_record_reference_with_dependents(
+            self._handle, question_id.encode("utf-8"), expected, max_depth, max_nodes,
+            ctypes.byref(root_reactivated), ctypes.byref(dependent_count), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if not ok or detail:
+            raise PacketRejected(detail or "QUESTION_DEPENDENCY_REACTIVATION_REJECTED")
+        return {"question_id": question_id, "root_reactivated": bool(root_reactivated.value),
+                "reactivated_dependent_count": dependent_count.value,
                 "state_version": self.state_version}
 
     def set_question_memory_state(self, question_id: str, state: str, expected_state_version: int | None = None) -> int:

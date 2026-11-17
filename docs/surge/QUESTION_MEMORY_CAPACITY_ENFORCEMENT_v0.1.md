@@ -22,3 +22,8 @@ plan_question_memory_capacity(max_active) returns a read-only plan from the curr
 - 0.15 reference frequency, based on persisted reference events (count / 5, capped at 1.0)
 
 A Question participating in a DEPENDS_ON edge receives a retention floor of 0.75. This is a conservative protection heuristic, not proof that the dependency is currently active. Output includes the state version, factor breakdown, sorted scores, and demotion candidates. Planning does not mutate state. Review the plan, then pass its scores and state version to the existing atomic capacity-enforcement API. Reference counts are durable event-journal data. `record_question_reference(question_id)` increments the count and reactivates a DORMANT Question in the same atomic event. ARCHIVED Questions reject references and require an explicit lifecycle decision to restore.
+
+
+## Dependency-aware reactivation
+
+When a Question is referenced, `record_question_reference_with_dependents` may traverse reverse `DEPENDS_ON` edges and reactivate dormant dependent Questions. The root reference count and all dependent reactivations are committed in one EventJournal transaction. Traversal is deterministic, bounded by depth (1..64) and node count (1..4096), and fails closed before mutation on overflow or stale state version. Archived Questions are never implicitly reactivated, though traversal may continue through them to discover downstream dependents. Dependency reactivation does not increment dependent reference counts. Replay restores the exact active/dormant state.
