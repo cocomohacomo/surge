@@ -877,6 +877,7 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
    first=false;
    rows<<"{\"aspect_id\":"<<json_quote(aspect->id)<<",\"question_ids\":[";
    bool qfirst=true;for(const auto&ref:aspect->references)if(questions.count(ref)){if(!qfirst)rows<<',';qfirst=false;rows<<json_quote(ref);}
+   rows<<"],\"current_status\":"<<json_quote(status_name(current))<<",\"proposed_status\":"<<json_quote(proposed)<<",\"reason\":"<<json_quote(reason)<<",\"supporting_evidence_count\":"<<supporting;
    rows<<"],\"contradicting_relation_count\":"<<contradicting<<",\"supporting_evidence_ids\":[";
    bool efirst=true;for(const auto&id:support_evidence){if(!efirst)rows<<',';efirst=false;rows<<json_quote(id);}
    rows<<"],\"retracted_claim_ids\":[";
