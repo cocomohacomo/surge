@@ -24,7 +24,7 @@ independent semantic-quality evaluation.
 | Priority | Requirement | Status | Gap |
 |---|---|---|---|
 | P0 | Orthogonal score observations | Partial | Cluster-level observations now persist and are exposed through C ABI/Python and bounded schema-aligned latest/history projection. Member salience, association confidence and hypothesis confidence are not yet persisted; score-aware retrieval is missing. |
-| P0 | Membership status and unmembership | Missing | Native member record has identity/provenance but no membership status or append-only removal/reinstatement edge history. |
+| P0 | Membership status and unmembership | Partial | Native C++ ledger, CC4 replay, C ABI/Python revision endpoint, bounded JSON history and replay tests are implemented; exhaustive lifecycle/legacy-fixture tests remain. |
 | P1 | PatternHypothesis auditability | Partial | Member/excluded/counterexample/alternative refs persist. Exclusion reasons, confidence observations and append-only hypothesis review revisions are absent. |
 | P1 | Association valid-time | Partial | Status revisions include provenance and terminal EXPIRED exists. valid_from/valid_until are not persisted and expiry is not automatically evaluated. |
 | P1 | Retrieval diversity | Partial | Focus retrieval round-robins admission-reason groups. It does not rank or constrain by persisted novelty, salience, diversity, ambiguity or utility observations. |
@@ -63,3 +63,13 @@ returns the latest value in the schema-compatible `observations` object and
 history revisions in `observation_history`, with offsets and omission counts.
 Validation includes finite [0,1] values, required scorer/policy/timestamp
 metadata, dimension allow-list, response cap, and restart replay tests.
+
+
+## Follow-up: membership lifecycle
+
+Member membership status and active/inactive state are now append-only,
+version-checked journal mutations. The CC4 extension is optional and legacy
+snapshots remain readable with the default active/UNCLASSIFIED state. The C ABI
+and Python bridge expose removal and reinstatement; bounded projection reports
+membership-history offsets and omission counts. Full adversarial and migration
+coverage remains part of conformance closure.
