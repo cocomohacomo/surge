@@ -288,6 +288,12 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosScoreObservation),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_record_observation.restype = ctypes.c_int
+        lib.surge_chaos_cluster_revise_membership.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+            ctypes.POINTER(_ChaosProvenance), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_revise_membership.restype = ctypes.c_int
         lib.surge_chaos_cluster_transition.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
@@ -1097,6 +1103,26 @@ class SemanticCoreBridge(CppCoreBridge):
         return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def revise_chaos_membership(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, member_ref: str,
+        status: str = "UNCLASSIFIED", active: bool = True,
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append a membership status or unmembership/reinstatement revision."""
+        if status not in {"UNCLASSIFIED", "PROVISIONAL", "REVIEWED"}:
+            raise PacketRejected("CHAOS_MEMBERSHIP_STATUS_INVALID")
+        if not isinstance(active, bool):
+            raise PacketRejected("CHAOS_MEMBERSHIP_ACTIVE_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id, member_ref)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_MEMBERSHIP_IDENTITY_INVALID")
+        p = self._chaos_provenance(provenance)
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_revise_membership,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), member_ref.encode(), status.encode("ascii"),
+             1 if active else 0, ctypes.byref(p)))
 
     def record_chaos_score_observation(
         self, *, operation_id: str, idempotency_key: str,
