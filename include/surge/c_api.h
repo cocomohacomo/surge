@@ -227,6 +227,10 @@ int surge_chaos_cluster_transition(void*,const char*,const char*,uint64_t,const 
 int surge_chaos_cluster_promote_subset(void*,const char*,const char*,uint64_t,const char*,const char* const*,const char* const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
 int surge_chaos_cluster_get(void*,const char*,char*,size_t,size_t*,char*,size_t);
 
+int surge_chaos_cluster_focus_set(void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t);
+int surge_chaos_cluster_focus_get(void*,char*,size_t,size_t*,char*,size_t);
+int surge_chaos_cluster_retrieve(void*,const char*,size_t,int,char*,size_t,size_t*,char*,size_t);
+
 // Read-only deterministic lexical retrieval over replayed durable graph state.
 // kinds_csv is a comma-separated allow-list (e.g. CLUSTER,CLAIM,SCOPE_SPAN); empty means all.
 // On insufficient output capacity, required_capacity receives the needed byte count including NUL.

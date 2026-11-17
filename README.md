@@ -9,6 +9,7 @@ Universal Context Cognition Framework.
 - **Chaos Cluster Schema:** [schemas/surge-chaos-cluster-v1.0.schema.json](schemas/surge-chaos-cluster-v1.0.schema.json)
 - **Chaos Cluster conformance CC01-CC20:** [tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json](tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json)
 - **Chaos Cluster Core implementation:** [docs/surge/CHAOS_CLUSTER_CORE_IMPLEMENTATION_v1.0.md](docs/surge/CHAOS_CLUSTER_CORE_IMPLEMENTATION_v1.0.md)
+- **Chaos Focus and diversity retrieval:** [docs/surge/CHAOS_CLUSTER_CORE_IMPLEMENTATION_v1.1.md](docs/surge/CHAOS_CLUSTER_CORE_IMPLEMENTATION_v1.1.md)
 
 - **ContextHint Graph Reasoning v0.2:** [docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md](docs/surge/CONTEXT_HINT_GRAPH_REASONING_v0.2.md)\n- **Graph-Derived ContextHint v0.1:** [docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md](docs/surge/GRAPH_DERIVED_CONTEXT_HINT_v0.1.md)\n- **ContextHint + Durable RetrievalTicket v0.1:** ContextHint priority and journal-backed ticket issue/resolution are integrated into the retrieval bridge. See [CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md).\n- **Persistent Context Retrieval v0.1:** [docs/surge/CONTEXT_RETRIEVAL_v0.1.md](docs/surge/CONTEXT_RETRIEVAL_v0.1.md)\n- **Atomic ScopeSpan Transaction v0.1:** [docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md](docs/surge/ATOMIC_SCOPESPAN_TRANSACTION_v0.1.md)
 

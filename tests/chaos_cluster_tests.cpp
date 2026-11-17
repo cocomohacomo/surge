@@ -46,6 +46,10 @@ int main(){
   CHECK(l.split_subsets("split","ik-split",15,"chaos-2",{{"chaos-2a",{"x1"}},{"chaos-2b",{"x2"}}},p).committed);
   CHECK(l.get("chaos-2a",c));CHECK(c.members.size()==1&&c.parent_refs.size()==1);
   CHECK(l.get("chaos-2",c));CHECK(c.members.size()==2&&c.child_refs.size()==2&&c.lifecycle==surge::ChaosLifecycle::Forked);
+  CHECK(l.set_focus("focus","ik-focus",16,"chaos-1","interest-1","explore unresolved fragments",p).committed);
+  surge::ChaosFocus focus;CHECK(l.get_focus(focus));CHECK(focus.cluster_id=="chaos-1"&&focus.interest_id=="interest-1");
+  auto retrieval=l.retrieve("chaos-1",1,true);CHECK(retrieval.members.size()==1&&!retrieval.complete&&retrieval.omitted_member_refs.size()==1);
+  CHECK(retrieval.members[0].admission_reason=="CREATIVE_EXPLORATION");
  }
  {
   surge::ChaosClusterLedger l(path);CHECK(l.open());
@@ -54,6 +58,8 @@ int main(){
   CHECK(c.pattern_hypotheses.count("hyp-1")==1&&c.promoted_member_targets.at("m1")=="topic-A");
   CHECK(l.get("chaos-child",c));CHECK(c.parent_refs.size()==1&&c.members.size()==2);
   CHECK(l.get("chaos-2b",c));CHECK(c.parent_refs.size()==1&&c.members.size()==1);
+  surge::ChaosFocus focus;CHECK(l.get_focus(focus));CHECK(focus.cluster_id=="chaos-1"&&focus.state_version==17);
+  auto retrieval=l.retrieve("chaos-1",2,true);CHECK(retrieval.complete&&retrieval.members.size()==2);
   const auto v=l.state_version();
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");

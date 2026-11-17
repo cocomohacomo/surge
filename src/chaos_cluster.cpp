@@ -39,6 +39,8 @@ std::string ChaosClusterLedger::encode(const State&s){
   o<<c.associations.size()<<' ';for(const auto&x:c.associations){const auto&a=x.second;o<<std::quoted(x.first)<<' '<<a.history.size()<<' ';for(const auto&h:a.history){o<<sn(h.status)<<' ';wp(o,h.provenance);}}
   o<<c.pattern_hypotheses.size()<<' ';for(const auto&x:c.pattern_hypotheses){const auto&h=x.second;o<<std::quoted(h.hypothesis_id)<<' '<<std::quoted(h.statement)<<' '<<std::quoted(h.epistemic_state)<<' '<<std::quoted(h.status)<<' ';auto vec=[&](const std::vector<std::string>&v){o<<v.size()<<' ';for(const auto&z:v)o<<std::quoted(z)<<' ';};vec(h.member_refs);vec(h.excluded_member_refs);vec(h.counterexample_refs);vec(h.alternative_hypothesis_refs);wp(o,h.provenance);}
  }
+ o<<"CC3 "<<s.size()<<' ';
+ for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<(c.focused?1:0)<<' '<<std::quoted(c.focus_interest_id)<<' '<<std::quoted(c.focus_reason)<<' ';wp(o,c.focus_provenance);}
  return o.str();
 }
 bool ChaosClusterLedger::decode(const std::string&p,State&s){
@@ -67,6 +69,15 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   if(!(i>>nh)||nh>100000)return false;
   for(std::size_t x=0;x<nh;++x){ChaosPatternHypothesis h;if(!(i>>std::quoted(h.hypothesis_id)>>std::quoted(h.statement)>>std::quoted(h.epistemic_state)>>std::quoted(h.status))||h.hypothesis_id.empty())return false;auto vec=[&](std::vector<std::string>&v){std::size_t count=0;if(!(i>>count)||count>100000)return false;for(std::size_t q=0;q<count;++q){std::string value;if(!(i>>std::quoted(value)))return false;v.push_back(std::move(value));}return true;};if(!vec(h.member_refs)||!vec(h.excluded_member_refs)||!vec(h.counterexample_refs)||!vec(h.alternative_hypothesis_refs)||!rp(i,h.provenance)||!c.pattern_hypotheses.emplace(h.hypothesis_id,std::move(h)).second)return false;}
  }
+ std::string marker3;
+ if(!(i>>marker3))return true;
+ if(marker3!="CC3")return false;
+ std::size_t focus_count=0;if(!(i>>focus_count)||focus_count!=s.size())return false;
+ for(std::size_t x=0;x<focus_count;++x){std::string id,interest,reason;int focused=0;ChaosProvenance provenance;
+  if(!(i>>std::quoted(id)>>focused>>std::quoted(interest)>>std::quoted(reason))||
+     (focused!=0&&focused!=1)||!s.count(id)||!rp(i,provenance))return false;
+  auto&c=s.at(id);c.focused=focused==1;c.focus_interest_id=std::move(interest);c.focus_reason=std::move(reason);c.focus_provenance=std::move(provenance);
+ }
  std::string extra;return !(i>>extra);
 }
 bool ChaosClusterLedger::replay(){State staged;for(const auto&e:journal_->committed_events())if(e.kind=="CHAOS_CLUSTER_SNAPSHOT"){State next;if(!decode(e.payload,next))return false;staged=std::move(next);}state_=std::move(staged);return true;}
@@ -84,4 +95,27 @@ ChaosResult ChaosClusterLedger::split_subsets(const std::string&o,const std::str
 bool ChaosClusterLedger::get(const std::string&id,ChaosCluster&r)const{std::lock_guard<std::mutex>lock(mutex_);auto i=state_.find(id);if(i==state_.end())return false;r=i->second;return true;}
 std::vector<ChaosCluster> ChaosClusterLedger::list()const{std::lock_guard<std::mutex>lock(mutex_);std::vector<ChaosCluster>v;for(const auto&x:state_)v.push_back(x.second);return v;}
 std::uint64_t ChaosClusterLedger::state_version()const{return journal_?journal_->state_version():0;}
+
+ChaosResult ChaosClusterLedger::set_focus(const std::string&op,const std::string&key,std::uint64_t expected,const std::string&id,const std::string&interest,const std::string&reason,const ChaosProvenance&p){
+ std::lock_guard<std::mutex> lock(mutex_);State staged=state_;auto target=staged.find(id);
+ if(target==staged.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};
+ if(target->second.lifecycle==ChaosLifecycle::Archived||reason.empty()||!vp(p))return{false,false,state_version(),"CHAOS_FOCUS_INVALID"};
+ for(auto&item:staged){item.second.focused=false;item.second.focus_interest_id.clear();item.second.focus_reason.clear();item.second.focus_provenance={};}
+ target=staged.find(id);target->second.focused=true;target->second.focus_interest_id=interest;target->second.focus_reason=reason;target->second.focus_provenance=p;
+ return commit_snapshot(op,key,expected,std::move(staged),{});
+}
+bool ChaosClusterLedger::get_focus(ChaosFocus&out)const{
+ std::lock_guard<std::mutex> lock(mutex_);for(const auto&item:state_)if(item.second.focused){out.cluster_id=item.first;out.interest_id=item.second.focus_interest_id;out.reason=item.second.focus_reason;out.provenance=item.second.focus_provenance;out.state_version=item.second.state_version;return true;}return false;
+}
+ChaosRetrievalResult ChaosClusterLedger::retrieve(const std::string&id,std::size_t limit,bool diversity_first)const{
+ std::lock_guard<std::mutex> lock(mutex_);ChaosRetrievalResult out;out.state_version=journal_?journal_->state_version():0;auto it=state_.find(id);if(it==state_.end()){out.complete=false;return out;}
+ std::vector<ChaosMember> ordered;
+ if(diversity_first){std::map<std::string,std::vector<ChaosMember>> groups;for(const auto&item:it->second.members)groups[item.second.admission_reason].push_back(item.second);
+  bool added=true;std::size_t index=0;while(added){added=false;for(const auto&group:groups)if(index<group.second.size()){ordered.push_back(group.second[index]);added=true;}++index;}
+ }else{for(const auto&item:it->second.members)ordered.push_back(item.second);}
+ const auto count=std::min(limit,ordered.size());out.members.insert(out.members.end(),ordered.begin(),ordered.begin()+static_cast<std::ptrdiff_t>(count));
+ for(std::size_t i=count;i<ordered.size();++i) out.omitted_member_refs.push_back(ordered[i].member_ref);
+ out.complete=out.omitted_member_refs.empty();
+ return out;
+}
 } // namespace surge

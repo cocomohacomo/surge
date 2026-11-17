@@ -30,6 +30,17 @@ struct ChaosPatternHypothesis {
  std::vector<std::string> member_refs, excluded_member_refs, counterexample_refs, alternative_hypothesis_refs;
  ChaosProvenance provenance;
 };
+struct ChaosFocus {
+ std::string cluster_id, interest_id, reason;
+ ChaosProvenance provenance;
+ std::uint64_t state_version{0};
+};
+struct ChaosRetrievalResult {
+ std::uint64_t state_version{0};
+ std::vector<ChaosMember> members;
+ std::vector<std::string> omitted_member_refs;
+ bool complete{true};
+};
 struct ChaosCluster {
  std::string cluster_id;
  ChaosLifecycle lifecycle{ChaosLifecycle::Open};
@@ -41,6 +52,9 @@ struct ChaosCluster {
  std::map<std::string,ChaosPatternHypothesis> pattern_hypotheses;
  std::vector<std::string> parent_refs,child_refs;
  std::map<std::string,std::string> promoted_member_targets;
+ bool focused{false};
+ std::string focus_interest_id, focus_reason;
+ ChaosProvenance focus_provenance;
 };
 struct ChaosResult { bool committed{false},duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 struct ChaosSplitPart { std::string child_cluster_id; std::vector<std::string> member_refs; };
@@ -58,6 +72,9 @@ class ChaosClusterLedger {
  ChaosResult promote_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::map<std::string,std::string>&,const ChaosProvenance&);
  ChaosResult fork_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::vector<std::string>&,const ChaosProvenance&);
  ChaosResult split_subsets(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::vector<ChaosSplitPart>&,const ChaosProvenance&);
+ ChaosResult set_focus(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const ChaosProvenance&);
+ bool get_focus(ChaosFocus&) const;
+ ChaosRetrievalResult retrieve(const std::string&,std::size_t,bool diversity_first=true) const;
  bool get(const std::string&,ChaosCluster&) const;
  std::vector<ChaosCluster> list() const;
  std::uint64_t state_version() const;

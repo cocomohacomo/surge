@@ -1820,4 +1820,30 @@ int surge_chaos_cluster_get(void* opaque,const char* id,char* output,size_t outp
  } catch(const std::exception& x){copy_text(error,error_cap,x.what());return 0;}catch(...){copy_text(error,error_cap,"CHAOS_QUERY_UNKNOWN_EXCEPTION");return 0;}
 }
 
+
+int surge_chaos_cluster_focus_set(void* opaque,const char* op,const char* key,uint64_t expected,const char* cluster,const char* interest,const char* reason,const SurgeChaosProvenanceInput* input,uint64_t* version,char* error,size_t cap) {
+ try {surge::ChaosProvenance p;if(!opaque||!op||!key||!cluster||!reason||!chaos_get_provenance(input,p)){copy_text(error,cap,"CHAOS_FOCUS_ARGUMENT_INVALID");return 0;}
+  auto r=static_cast<Handle*>(opaque)->chaos.set_focus(op,key,expected,cluster,interest?interest:"",reason,p);if(version)*version=r.state_version;copy_text(error,cap,r.error);return r.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}catch(...){copy_text(error,cap,"CHAOS_FOCUS_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_focus_get(void* opaque,char* output,size_t output_cap,size_t* required,char* error,size_t error_cap) {
+ try {if(!opaque){copy_text(error,error_cap,"CHAOS_FOCUS_QUERY_ARGUMENT_INVALID");return 0;}surge::ChaosFocus focus;
+  std::string value;if(static_cast<Handle*>(opaque)->chaos.get_focus(focus)){value="{\"found\":true,\"cluster_id\":"+json_quote(focus.cluster_id)+",\"interest_id\":"+json_quote(focus.interest_id)+",\"reason\":"+json_quote(focus.reason)+",\"state_version\":"+std::to_string(focus.state_version)+"}";}
+  else value="{\"found\":false,\"cluster_id\":null}";
+  if(required) *required=value.size()+1;
+  if(!output||output_cap<value.size()+1){copy_text(error,error_cap,"CHAOS_FOCUS_BUFFER_TOO_SMALL");return 0;}
+  copy_text(output,output_cap,value);copy_text(error,error_cap,"");return 1;
+ } catch(const std::exception& x){copy_text(error,error_cap,x.what());return 0;}catch(...){copy_text(error,error_cap,"CHAOS_FOCUS_QUERY_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_chaos_cluster_retrieve(void* opaque,const char* cluster,size_t limit,int diversity_first,char* output,size_t output_cap,size_t* required,char* error,size_t error_cap) {
+ try {if(!opaque||!cluster||(diversity_first!=0&&diversity_first!=1)||limit>100000){copy_text(error,error_cap,"CHAOS_RETRIEVAL_ARGUMENT_INVALID");return 0;}
+  auto result=static_cast<Handle*>(opaque)->chaos.retrieve(cluster,limit,diversity_first!=0);
+  if(!result.complete&&result.members.empty()&&result.omitted_member_refs.empty()){copy_text(error,error_cap,"CHAOS_CLUSTER_NOT_FOUND");return 0;}
+  std::ostringstream json;json<<"{\"state_version\":"<<result.state_version<<",\"complete\":"<<(result.complete?"true":"false")<<",\"members\":[";
+  for(size_t i=0;i<result.members.size();++i){if(i)json<<',';const auto&m=result.members[i];json<<"{\"member_ref\":"<<json_quote(m.member_ref)<<",\"event_ref\":"<<json_quote(m.event_ref)<<",\"admission_reason\":"<<json_quote(m.admission_reason)<<'}';}
+  json<<"],\"omitted_member_refs\":[";for(size_t i=0;i<result.omitted_member_refs.size();++i){if(i)json<<',';json<<json_quote(result.omitted_member_refs[i]);}json<<"]}";
+  const auto value=json.str();if(required)*required=value.size()+1;if(!output||output_cap<value.size()+1){copy_text(error,error_cap,"CHAOS_RETRIEVAL_BUFFER_TOO_SMALL");return 0;}copy_text(output,output_cap,value);copy_text(error,error_cap,"");return 1;
+ } catch(const std::exception& x){copy_text(error,error_cap,x.what());return 0;}catch(...){copy_text(error,error_cap,"CHAOS_RETRIEVAL_UNKNOWN_EXCEPTION");return 0;}
+}
+
 }
