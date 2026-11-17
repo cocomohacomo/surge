@@ -37,6 +37,55 @@ def make_packet(source, packet_id="bridge-p1", sequence=1, idem="bridge-i1"):
 
 
 class PythonCppRuntimeBridgeTests(unittest.TestCase):
+    def test_chaos_cluster_python_bridge_roundtrip_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-bridge.sgj"
+            provenance = {"producer_id": "python-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T00:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                created = core.create_chaos_cluster(
+                    operation_id="py-create", idempotency_key="py-create-key",
+                    expected_state_version=0, cluster_id="chaos-python",
+                    provenance=provenance)
+                self.assertEqual(created["state_version"], 1)
+                core.admit_chaos_member(
+                    operation_id="py-member-1", idempotency_key="py-member-key-1",
+                    expected_state_version=1, cluster_id="chaos-python",
+                    member={"member_ref": "m1", "event_ref": "event-1",
+                            "admission_reason": "UNRESOLVED_TOPIC",
+                            "admitted_at": "2026-11-18T00:00:01Z"},
+                    provenance=provenance)
+                core.admit_chaos_member(
+                    operation_id="py-member-2", idempotency_key="py-member-key-2",
+                    expected_state_version=2, cluster_id="chaos-python",
+                    member={"member_ref": "m2", "event_ref": "event-2",
+                            "admission_reason": "CREATIVE_EXPLORATION",
+                            "admitted_at": "2026-11-18T00:00:02Z"},
+                    provenance=provenance)
+                core.propose_chaos_association(
+                    operation_id="py-analogy", idempotency_key="py-analogy-key",
+                    expected_state_version=3, cluster_id="chaos-python",
+                    association={"association_id": "a1", "from_member_ref": "m1",
+                                 "to_member_ref": "m2", "association_type": "ANALOGY"},
+                    provenance=provenance)
+                core.transition_chaos_cluster(
+                    operation_id="py-review", idempotency_key="py-review-key",
+                    expected_state_version=4, cluster_id="chaos-python",
+                    target_lifecycle="REVIEWABLE", reason="test review",
+                    provenance=provenance)
+                core.promote_chaos_subset(
+                    operation_id="py-promote", idempotency_key="py-promote-key",
+                    expected_state_version=5, cluster_id="chaos-python",
+                    member_targets={"m1": "topic-1"}, provenance=provenance)
+                value = core.get_chaos_cluster("chaos-python")
+                self.assertIn("event-2", str(value))
+                self.assertIn("topic-1", str(value))
+            with SemanticCoreBridge(journal) as recovered:
+                value = recovered.get_chaos_cluster("chaos-python")
+                self.assertIn("event-2", str(value))
+                self.assertIn("topic-1", str(value))
+
+
     def test_nfc_admission_duplicate_and_restart_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "runtime.sgj"
