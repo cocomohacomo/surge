@@ -187,15 +187,23 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                         member={"member_ref": f"m{index}", "event_ref": f"event/{index}",
                                 "admission_reason": reason, "admitted_at": f"2026-11-18T00:0{index}:00Z"},
                         provenance=provenance)
+                for member_ref, value in (("m0", 0.2), ("m1", 0.95)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"salience-{member_ref}", idempotency_key=f"salience-{member_ref}",
+                        expected_state_version=core.state_version, cluster_id="chaos/focus",
+                        entity_kind="MEMBER", entity_ref=member_ref,
+                        observation={"value": value, "scorer_id": "retrieval-scorer",
+                                     "scorer_version": "1", "policy_version": "salience-v1",
+                                     "observed_at": f"2026-11-18T00:1{member_ref[-1]}:00Z"})
                 core.set_chaos_focus("chaos/focus", operation_id="focus",
                     idempotency_key="focus", expected_state_version=core.state_version)
                 result = ContextRetriever(core).retrieve_focus(max_members=3)
                 self.assertEqual(result["target_kind"], "CHAOS_CLUSTER")
                 self.assertEqual([m["member_ref"] for m in result["target"]["members"]],
-                                 ["m0", "m2", "m3"])
-                self.assertEqual(result["omitted_member_refs"], ["m1"])
+                                 ["m1", "m2", "m3"])
+                self.assertEqual(result["omitted_member_refs"], ["m0"])
                 self.assertFalse(result["complete"])
-                self.assertEqual(result["retrieval_policy"], "ADMISSION_REASON_ROUND_ROBIN")
+                self.assertEqual(result["retrieval_policy"], "SCORE_AWARE_DIVERSITY_ROUND_ROBIN")
             with SemanticCoreBridge(journal) as recovered:
                 result = ContextRetriever(recovered).retrieve_focus(max_members=10)
                 self.assertTrue(result["complete"])
