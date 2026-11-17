@@ -69,6 +69,12 @@ class _ChaosAssociation(ctypes.Structure):
     _fields_ = [("association_id", ctypes.c_char_p), ("from_member_ref", ctypes.c_char_p),
                 ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p)]
 
+class _ChaosScoreObservation(ctypes.Structure):
+    _fields_ = [("value", ctypes.c_double), ("scorer_id", ctypes.c_char_p),
+                ("scorer_version", ctypes.c_char_p), ("policy_version", ctypes.c_char_p),
+                ("observed_at", ctypes.c_char_p)]
+
+
 class _ChaosPatternHypothesis(ctypes.Structure):
     _fields_ = [("hypothesis_id", ctypes.c_char_p), ("statement", ctypes.c_char_p),
                 ("epistemic_state", ctypes.c_char_p), ("status", ctypes.c_char_p),
@@ -277,6 +283,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_add_pattern_hypothesis.restype = ctypes.c_int
+        lib.surge_chaos_cluster_record_observation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosScoreObservation),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_record_observation.restype = ctypes.c_int
         lib.surge_chaos_cluster_transition.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
@@ -1086,6 +1097,34 @@ class SemanticCoreBridge(CppCoreBridge):
         return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
+
+    def record_chaos_score_observation(
+        self, *, operation_id: str, idempotency_key: str,
+        expected_state_version: int, cluster_id: str, dimension: str,
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append a scorer-bound score observation without collapsing UNKNOWN to zero."""
+        allowed = {"organization", "salience", "recognition_confidence", "novelty",
+                   "diversity", "ambiguity", "utility"}
+        if dimension not in allowed or not isinstance(observation, dict):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        value = observation.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        import math
+        if not math.isfinite(float(value)) or not 0.0 <= float(value) <= 1.0:
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        fields = ("scorer_id", "scorer_version", "policy_version", "observed_at")
+        metadata = [observation.get(name) for name in fields]
+        if any(not isinstance(item, str) or not item.strip() for item in metadata):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_INVALID")
+        identity = (operation_id, idempotency_key, cluster_id)
+        if any(not isinstance(item, str) or not item.strip() for item in identity):
+            raise PacketRejected("CHAOS_SCORE_OBSERVATION_IDENTITY_INVALID")
+        item = _ChaosScoreObservation(float(value), *(item.encode("utf-8") for item in metadata))
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_record_observation,
+            (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
+             cluster_id.encode(), dimension.encode("ascii"), ctypes.byref(item)))
 
     def transition_chaos_cluster(self, *, operation_id: str, idempotency_key: str,
                                  expected_state_version: int, cluster_id: str,
