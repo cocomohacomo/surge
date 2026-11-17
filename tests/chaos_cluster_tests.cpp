@@ -68,6 +68,17 @@ int main(){
   CHECK(membership_snapshot.members.at("score-member").membership_history.size()==3);
   CHECK(membership_snapshot.members.at("score-member").membership_active);
   CHECK(membership_snapshot.members.at("score-member").membership_status=="REVIEWED");
+  surge::ChaosPatternHypothesis score_hypothesis;
+  score_hypothesis.hypothesis_id="score-hypothesis";
+  score_hypothesis.statement="provisional pattern";
+  score_hypothesis.member_refs={"score-member"};
+  score_hypothesis.excluded_member_refs={"score-member"};
+  score_hypothesis.provenance=p;
+  CHECK(l.add_pattern_hypothesis("score-hypothesis-add","ik-score-hypothesis-add",
+    l.state_version(),"chaos-score",score_hypothesis).committed);
+  CHECK(l.review_pattern_hypothesis("score-hypothesis-review","ik-score-hypothesis-review",
+    l.state_version(),"chaos-score","score-hypothesis","REVIEWABLE","UNVERIFIED",
+    {{"score-member","insufficient independent support"}},p).committed);
   surge::ChaosScoreObservation novelty{0.91,"recognizer","2.1","score-policy-1","2026-11-17T00:01:00Z"};
   auto score_version=l.state_version();
   CHECK(l.record_observation("score-novelty","ik-score-novelty",score_version,"chaos-score","novelty",novelty).committed);
@@ -104,6 +115,8 @@ int main(){
   CHECK(c.members.at("score-member").membership_history.size()==3);
   CHECK(c.members.at("score-member").membership_history[1].active==false);
   CHECK(c.members.at("score-member").membership_history[2].active==true);
+  CHECK(c.pattern_hypotheses.at("score-hypothesis").history.size()==2);
+  CHECK(c.pattern_hypotheses.at("score-hypothesis").exclusion_reasons.at("score-member")=="insufficient independent support");
   CHECK(l.get("chaos-1",c));
   CHECK(c.members.at("m1").salience_observations.size()==1);
   CHECK(c.associations.at("a1").confidence_observations.size()==1);
