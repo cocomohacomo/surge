@@ -158,3 +158,8 @@ The compact recognition sidecar can be bound to the exact packet/source digest a
 ## Compact Recognition Pipeline
 
 The explicit orchestration path from local recognition through packet construction and scoring is documented in [Compact Recognition Pipeline v0.1](docs/surge/COMPACT_RECOGNITION_PIPELINE_v0.1.md). Preparation is read-only; packet admission is a separate operation.
+
+
+## ONNX CPU Backend
+
+An optional [ONNX Runtime CPU backend](docs/surge/COMPACT_ONNX_CPU_BACKEND_v0.1.md) implements the compact model interface with injected tokenizer and candidate decoder. Model weights and tokenizer assets remain separately packaged and license-checked.
