@@ -342,7 +342,8 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "c/supported", "kind": "CLAIM", "content": "The source was revised", "references": ["e/support"]},
                         {"id": "e/conflict", "kind": "EVIDENCE", "content": "Conflicting record"},
                         {"id": "c/conflicted", "kind": "CLAIM", "content": "The value was not revised", "references": ["e/conflict"]},
-                        {"id": "c/opposite", "kind": "CLAIM", "content": "The source was not revised"},
+                        {"id": "e/opposite", "kind": "EVIDENCE", "content": "Independent source record"},
+                        {"id": "c/opposite", "kind": "CLAIM", "content": "The source was not revised", "references": ["e/opposite"]},
                     ],
                 })
                 core.apply_semantic_delta({
