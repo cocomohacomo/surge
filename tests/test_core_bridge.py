@@ -342,6 +342,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "c/supported", "kind": "CLAIM", "content": "The source was revised", "references": ["e/support"]},
                         {"id": "e/conflict", "kind": "EVIDENCE", "content": "Conflicting record"},
                         {"id": "c/conflicted", "kind": "CLAIM", "content": "The value was not revised", "references": ["e/conflict"]},
+                        {"id": "c/opposite", "kind": "CLAIM", "content": "The source was not revised"},
                     ],
                 })
                 core.apply_semantic_delta({
@@ -353,8 +354,9 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "r/q-cluster", "kind": "ABOUT", "from": "q/root", "to": "cl/topic"},
                         {"id": "r/c1-cluster", "kind": "ABOUT", "from": "c/supported", "to": "cl/topic"},
                         {"id": "r/c2-cluster", "kind": "ABOUT", "from": "c/conflicted", "to": "cl/conflict"},
+                        {"id": "r/c3-cluster", "kind": "ABOUT", "from": "c/opposite", "to": "cl/conflict"},
                         {"id": "r/support", "kind": "SUPPORTS", "from": "e/support", "to": "c/supported"},
-                        {"id": "r/contradiction", "kind": "CONTRADICTS", "from": "e/conflict", "to": "c/conflicted"},
+                        {"id": "r/contradiction", "kind": "CONTRADICTS", "from": "c/conflicted", "to": "c/opposite"},
                     ],
                 })
                 before = core.state_version
