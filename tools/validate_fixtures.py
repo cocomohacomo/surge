@@ -21,6 +21,13 @@ def main():
         schema = load(path)
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema, format_checker=FormatChecker())
+    chaos_schema = load(ROOT / "schemas/surge-chaos-cluster-v0.1.schema.json")
+    Draft202012Validator.check_schema(chaos_schema)
+    Draft202012Validator(chaos_schema, format_checker=FormatChecker())
+    chaos_suite = load(ROOT / "tests/conformance/SURGE_CHAOS_CLUSTER_v0.1.json")
+    chaos_cases = chaos_suite.get("cases", [])
+    if len(chaos_cases) != 8 or len({case.get("id") for case in chaos_cases}) != 8:
+        raise AssertionError("Chaos Cluster conformance inventory must contain 8 unique cases")
     suites = [load(ROOT / "tests/conformance/SURGE_v0.9_D01_D12.json"),
               load(ROOT / "tests/conformance/SURGE_v0.9_D13_D20.json")]
     cases = [c for suite in suites for c in suite["cases"]]
@@ -81,7 +88,8 @@ def main():
         raise AssertionError("D19 zero denominator must be inconclusive")
     if by_id["D20"]["expected"]["error"] != "BENCHMARK_PROFILE_IMMUTABLE":
         raise AssertionError("D20 profile immutability expectation missing")
-    print(f"JSON Schema Draft 2020-12: {len(schema_paths)}/5 schemas valid")
+    print(f"JSON Schema Draft 2020-12: {len(schema_paths)}/5 v0.9 schemas + Chaos Cluster v0.1 valid")
+    print("Chaos Cluster semantic conformance inventory: 8/8 cases valid")
     print(f"Conformance fixture inventory: {len(cases)}/20 cases valid")
     print(f"D01-D12 exact NFC UTF-8 ranges and SHA-256 digests derived: {packet_count} packets")
     print(f"D01-D20 fixture contract assertions: 20/20 structurally consistent")
