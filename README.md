@@ -100,7 +100,7 @@ by journal restart replay. A live external LLM endpoint is not called in CI.
 The end-to-end runtime test executes packet admission, typed graph commit,
 contradiction-to-Question/Interest routing, ambiguous-focus suppression,
 dependency impact calculation, ContextHint budget handling and RetrievalTicket
-resolution, followed by shared-journal replay. Current CI passes 15/15 CTest targets and 168/168 Python tests. All 5 Draft 2020-12 schemas and D01-D20 fixture
+resolution, followed by shared-journal replay. Current CI passes 15/15 CTest targets and 172/172 Python tests. All 5 Draft 2020-12 schemas and D01-D20 fixture
 structural contracts validate.
 
 This establishes execution of the implemented LLM-to-Core path, not complete

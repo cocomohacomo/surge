@@ -123,3 +123,18 @@ Verified on the PR head and subsequently merged to main:
 
 These are conformance and harness checks, not independent semantic accuracy
 or production durability results.
+
+
+## Journal durability increment (2026-11-17)
+
+EventJournal now holds an OS-level exclusive writer lock for its lifetime,
+uses `fsync` / `FlushFileBuffers` for committed frame writes, syncs the new
+journal header and POSIX parent directory, and syncs recovery tail truncation.
+The backup tool uses the same sidecar lock, writes a temporary copy, fsyncs,
+atomically renames it, and creates a SHA-256/size manifest. Restore verifies
+the manifest, locks the destination, and refuses overwrite unless explicitly
+authorized.
+
+Verified PR CI: 15/15 CTest targets and 172/172 Python tests. This does not yet
+constitute Windows/macOS runtime validation, automated off-host backup,
+scheduled retention, snapshot/compaction, or an executable migration registry.
