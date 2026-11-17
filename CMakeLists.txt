@@ -54,3 +54,8 @@ add_test(NAME surge_temporal_question_ledger_conformance COMMAND surge_temporal_
 add_test(NAME surge_atomic_semantic_transaction COMMAND surge_atomic_semantic_tests)
 add_test(NAME surge_evidence_provenance_conformance COMMAND surge_evidence_provenance_tests)
 add_test(NAME surge_classification_proposal_journal COMMAND surge_classification_proposal_tests)
+
+# Prove that test checks remain active even when Release defines NDEBUG.
+add_executable(surge_check_failure_probe tests/check_failure_probe.cpp)
+add_test(NAME surge_test_check_failure_is_detected COMMAND surge_check_failure_probe)
+set_tests_properties(surge_test_check_failure_is_detected PROPERTIES WILL_FAIL TRUE)

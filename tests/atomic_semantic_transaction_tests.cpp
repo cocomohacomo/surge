@@ -1,7 +1,7 @@
+#include "test_support.hpp"
 #include "surge/context_graph.hpp"
 #include "surge/packet_admission.hpp"
 #include "surge/sha256.hpp"
-#include <cassert>
 #include <filesystem>
 #include <iostream>
 
@@ -42,60 +42,60 @@ int main() {
   const auto path=(root/"atomic.sgj").string();
   {
     EventJournal journal(path);
-    assert(journal.open());
+    CHECK(journal.open());
     PacketAdmissionCoordinator packets(journal);
     ContextGraph graph(journal);
-    assert(packets.recover());
-    assert(graph.open());
+    CHECK(packets.recover());
+    CHECK(graph.open());
     auto delta=delta_for();
     std::vector<JournalEvent> events;
     std::string error;
-    assert(graph.prepare_events(delta,events,error));
-    assert(!events.empty());
+    CHECK(graph.prepare_events(delta,events,error));
+    CHECK(!events.empty());
     const auto admitted=packets.admit(packet_for(source),source,events);
-    assert(admitted.admitted&&!admitted.duplicate);
-    assert(admitted.state_version==1);
-    assert(graph.open());
-    assert(graph.state_version()==1);
-    assert(packets.packet_count()==1);
-    assert(graph.nodes().size()==2);
+    CHECK(admitted.admitted&&!admitted.duplicate);
+    CHECK(admitted.state_version==1);
+    CHECK(graph.open());
+    CHECK(graph.state_version()==1);
+    CHECK(packets.packet_count()==1);
+    CHECK(graph.nodes().size()==2);
     // Exact retry must not create another packet or semantic transaction.
     std::vector<JournalEvent> retry_events;
-    assert(graph.prepare_events(delta,retry_events,error));
-    assert(retry_events.empty());
+    CHECK(graph.prepare_events(delta,retry_events,error));
+    CHECK(retry_events.empty());
     const auto retry=packets.admit(packet_for(source),source,retry_events);
-    assert(retry.admitted&&retry.duplicate);
-    assert(journal.state_version()==1);
+    CHECK(retry.admitted&&retry.duplicate);
+    CHECK(journal.state_version()==1);
   }
   {
     EventJournal journal(path);
-    assert(journal.open());
+    CHECK(journal.open());
     PacketAdmissionCoordinator packets(journal);
     ContextGraph graph(journal);
-    assert(packets.recover());
-    assert(graph.open());
-    assert(packets.packet_count()==1);
-    assert(graph.state_version()==1);
-    assert(graph.nodes().count("cluster-atomic")==1);
-    assert(graph.nodes().count("evidence-atomic")==1);
+    CHECK(packets.recover());
+    CHECK(graph.open());
+    CHECK(packets.packet_count()==1);
+    CHECK(graph.state_version()==1);
+    CHECK(graph.nodes().count("cluster-atomic")==1);
+    CHECK(graph.nodes().count("evidence-atomic")==1);
   }
   {
     const auto fail_path=(root/"reject.sgj").string();
     EventJournal journal(fail_path);
-    assert(journal.open());
+    CHECK(journal.open());
     PacketAdmissionCoordinator packets(journal);
     ContextGraph graph(journal);
-    assert(packets.recover());
-    assert(graph.open());
+    CHECK(packets.recover());
+    CHECK(graph.open());
     auto delta=delta_for();
     delta.nodes[0].node.content="";
     std::vector<JournalEvent> events;
     std::string error;
-    assert(!graph.prepare_events(delta,events,error));
-    assert(error=="NODE_ID_OR_CONTENT_INVALID");
+    CHECK(!graph.prepare_events(delta,events,error));
+    CHECK(error=="NODE_ID_OR_CONTENT_INVALID");
     // The orchestrator must not call packet admission after semantic validation fails.
-    assert(journal.state_version()==0);
-    assert(packets.packet_count()==0);
+    CHECK(journal.state_version()==0);
+    CHECK(packets.packet_count()==0);
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE atomic packet-semantic transaction: commit/retry/replay passed\n";
