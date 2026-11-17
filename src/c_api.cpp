@@ -1731,28 +1731,32 @@ bool chaos_get_provenance(const SurgeChaosProvenanceInput* p,surge::ChaosProvena
  out={p->producer_id,p->producer_version,p->policy_version,p->recorded_at};return true;
 }
 bool chaos_get_lifecycle(const char* s,surge::ChaosLifecycle& out) {
- if(!s)return false;std::string v(s);
- if(v=="OPEN")out=surge::ChaosLifecycle::Open;
- else if(v=="ACCUMULATING")out=surge::ChaosLifecycle::Accumulating;
- else if(v=="EMERGING")out=surge::ChaosLifecycle::Emerging;
- else if(v=="REVIEWABLE")out=surge::ChaosLifecycle::Reviewable;
- else if(v=="PROMOTED")out=surge::ChaosLifecycle::Promoted;
- else if(v=="FORKED")out=surge::ChaosLifecycle::Forked;
- else if(v=="DORMANT")out=surge::ChaosLifecycle::Dormant;
- else if(v=="ARCHIVED")out=surge::ChaosLifecycle::Archived;
- else return false;return true;
+ if(!s) return false;
+ const std::string v(s);
+ if(v=="OPEN") out=surge::ChaosLifecycle::Open;
+ else if(v=="ACCUMULATING") out=surge::ChaosLifecycle::Accumulating;
+ else if(v=="EMERGING") out=surge::ChaosLifecycle::Emerging;
+ else if(v=="REVIEWABLE") out=surge::ChaosLifecycle::Reviewable;
+ else if(v=="PROMOTED") out=surge::ChaosLifecycle::Promoted;
+ else if(v=="FORKED") out=surge::ChaosLifecycle::Forked;
+ else if(v=="DORMANT") out=surge::ChaosLifecycle::Dormant;
+ else if(v=="ARCHIVED") out=surge::ChaosLifecycle::Archived;
+ else return false;
+ return true;
 }
 bool chaos_get_type(const char* s,surge::ChaosAssociationType& out) {
- if(!s)return false;std::string v(s);
- if(v=="CO_OCCURS")out=surge::ChaosAssociationType::CoOccurs;
- else if(v=="ANALOGY")out=surge::ChaosAssociationType::Analogy;
- else if(v=="HYPOTHESIS")out=surge::ChaosAssociationType::Hypothesis;
- else if(v=="QUESTION")out=surge::ChaosAssociationType::Question;
- else if(v=="CONTRADICTION")out=surge::ChaosAssociationType::Contradiction;
- else if(v=="TEMPORAL_NEARNESS")out=surge::ChaosAssociationType::TemporalNearness;
- else if(v=="UNCLASSIFIED")out=surge::ChaosAssociationType::Unclassified;
- else if(v=="CREATIVE_SYNTHESIS")out=surge::ChaosAssociationType::CreativeSynthesis;
- else return false;return true;
+ if(!s) return false;
+ const std::string v(s);
+ if(v=="CO_OCCURS") out=surge::ChaosAssociationType::CoOccurs;
+ else if(v=="ANALOGY") out=surge::ChaosAssociationType::Analogy;
+ else if(v=="HYPOTHESIS") out=surge::ChaosAssociationType::Hypothesis;
+ else if(v=="QUESTION") out=surge::ChaosAssociationType::Question;
+ else if(v=="CONTRADICTION") out=surge::ChaosAssociationType::Contradiction;
+ else if(v=="TEMPORAL_NEARNESS") out=surge::ChaosAssociationType::TemporalNearness;
+ else if(v=="UNCLASSIFIED") out=surge::ChaosAssociationType::Unclassified;
+ else if(v=="CREATIVE_SYNTHESIS") out=surge::ChaosAssociationType::CreativeSynthesis;
+ else return false;
+ return true;
 }
 std::string chaos_cluster_json(const surge::ChaosCluster& c) {
  std::ostringstream out;
