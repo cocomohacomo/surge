@@ -45,6 +45,7 @@ gate. Live provider behavior is intentionally outside this test suite.
 
 ## Deferred work
 
-Durable proposal audit/replay is not implemented by this refactor. It requires
-an explicit Core EventJournal event/API contract and restart-replay semantics;
-the Python adapter must not create a parallel persistence authority.
+Durable proposal audit/replay is implemented in the subsequent
+`CLASSIFICATION_PROPOSAL_EVENTJOURNAL_v0.1.md` increment. The Python adapter
+passes the validated proposal into the existing atomic packet-plus-semantic
+transaction; EventJournal remains the single persistence authority.
