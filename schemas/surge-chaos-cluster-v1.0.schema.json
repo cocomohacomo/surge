@@ -561,11 +561,13 @@
         },
         "valid_from": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}Z$"
         },
         "valid_until": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}Z$"
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
