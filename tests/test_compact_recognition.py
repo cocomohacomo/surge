@@ -74,7 +74,7 @@ class CompactRecognitionTests(unittest.TestCase):
             model = pathlib.Path(tmp) / "model.bin"
             model.write_bytes(b"model")
             runtime = CompactRecognitionRuntime(self.make_spec(model), EchoBackend())
-            result = runtime.recognize("か\\u3099")
+            result = runtime.recognize("か\u3099")
             self.assertEqual(result.candidates[0].end_offset, len("が".encode("utf-8")))
 
     def test_revision_packet_requires_explicit_lineage(self):
