@@ -100,3 +100,13 @@ CC7 persists review status, epistemic-state revisions, per-member exclusion
 rationales, and provenance. C ABI/Python review operations enforce explicit
 excluded-member references and terminal review constraints. Bounded projection
 includes capped revision history and omission metadata.
+
+
+## Follow-up: lifecycle and merge
+
+CC8 persists lifecycle transitions with reason and provenance. Merge is a
+single version-checked transaction that archives sources, links lineage, and
+preserves their members, associations, hypotheses and score histories.
+Conflicting identities or divergent lifecycle-sensitive state reject the
+transaction. The C ABI and Python bridge expose merge. Reactivation remains an
+explicit audited lifecycle transition from ARCHIVED to DORMANT.
