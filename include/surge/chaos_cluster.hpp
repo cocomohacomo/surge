@@ -13,6 +13,10 @@ enum class ChaosOrganization { Unordered, Provisional, MultiPattern, PartiallySt
 enum class ChaosAssociationType { CoOccurs, Analogy, Hypothesis, Question, Contradiction, TemporalNearness, Unclassified, CreativeSynthesis };
 enum class ChaosAssociationStatus { Provisional, Reviewed, Rejected, Expired };
 struct ChaosProvenance { std::string producer_id, producer_version, policy_version, recorded_at; };
+struct ChaosScoreObservation {
+ double value{0.0};
+ std::string scorer_id, scorer_version, policy_version, observed_at;
+};
 struct ChaosStatusRevision { ChaosAssociationStatus status{ChaosAssociationStatus::Provisional}; ChaosProvenance provenance; };
 struct ChaosMember {
  std::string member_ref, event_ref, admission_reason, admitted_at, source_digest;
@@ -41,6 +45,7 @@ struct ChaosCluster {
  std::map<std::string,ChaosPatternHypothesis> pattern_hypotheses;
  std::vector<std::string> parent_refs,child_refs;
  std::map<std::string,std::string> promoted_member_targets;
+ std::map<std::string,std::vector<ChaosScoreObservation>> observations;
 };
 struct ChaosResult { bool committed{false},duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 struct ChaosSplitPart { std::string child_cluster_id; std::vector<std::string> member_refs; };
@@ -54,6 +59,7 @@ class ChaosClusterLedger {
  ChaosResult propose_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosAssociation&);
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
+ ChaosResult record_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosScoreObservation&);
  ChaosResult transition(const std::string&,const std::string&,std::uint64_t,const std::string&,ChaosLifecycle,const std::string&,const ChaosProvenance&);
  ChaosResult promote_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::map<std::string,std::string>&,const ChaosProvenance&);
  ChaosResult fork_subset(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::vector<std::string>&,const ChaosProvenance&);
