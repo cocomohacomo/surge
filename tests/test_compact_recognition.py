@@ -45,6 +45,15 @@ class CompactRecognitionTests(unittest.TestCase):
             self.assertIsNone(result.rtf)
             self.assertIsNone(result.performance_target_met)
 
+    def test_artifact_mutation_after_inspection_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = pathlib.Path(tmp) / "model.bin"
+            model.write_bytes(b"original")
+            spec = self.make_spec(model)
+            model.write_bytes(b"tampered")
+            with self.assertRaisesRegex(ValueError, "MODEL_ARTIFACT_DIGEST_CHANGED"):
+                CompactRecognitionRuntime(spec, FakeBackend())
+
     def test_model_size_limit_is_enforced(self):
         with tempfile.TemporaryDirectory() as tmp:
             model = pathlib.Path(tmp) / "oversized.bin"

@@ -30,6 +30,20 @@ class CompactModelSpec:
     max_model_bytes: int = DEFAULT_MODEL_LIMIT_BYTES
     target_rtf: float = DEFAULT_RTF_TARGET
 
+    def verify_artifact(self) -> None:
+        path = Path(self.artifact_path)
+        if not path.is_file():
+            raise ValueError("MODEL_ARTIFACT_NOT_FOUND")
+        size = path.stat().st_size
+        if size != self.artifact_bytes or size <= 0 or size > self.max_model_bytes:
+            raise ValueError("MODEL_ARTIFACT_SIZE_CHANGED")
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != self.sha256:
+            raise ValueError("MODEL_ARTIFACT_DIGEST_CHANGED")
+
     @classmethod
     def inspect(cls, model_id: str, version: str, artifact_path: str, *,
                 runtime_id: str, device: str = "CPU",
@@ -123,6 +137,7 @@ class RecognitionExecution:
 class CompactRecognitionRuntime:
     """Runs a verified compact model and returns proposals, never Core writes."""
     def __init__(self, spec: CompactModelSpec, backend: CompactModelBackend):
+        spec.verify_artifact()
         self.spec = spec
         self.backend = backend
 
