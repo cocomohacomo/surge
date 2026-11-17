@@ -338,10 +338,10 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                         {"id": "cl/conflict", "kind": "CLUSTER", "content": "Conflicting source"},
                         {"id": "a/root", "kind": "QUESTION_ASPECT", "content": "Cause", "references": ["q/root"]},
                         {"id": "a/dependent", "kind": "QUESTION_ASPECT", "content": "Source revision", "references": ["q/dependent"]},
-                        {"id": "c/supported", "kind": "CLAIM", "content": "The source was revised", "references": ["e/support"]},
                         {"id": "e/support", "kind": "EVIDENCE", "content": "Revision log"},
-                        {"id": "c/conflicted", "kind": "CLAIM", "content": "The value was not revised", "references": ["e/conflict"]},
+                        {"id": "c/supported", "kind": "CLAIM", "content": "The source was revised", "references": ["e/support"]},
                         {"id": "e/conflict", "kind": "EVIDENCE", "content": "Conflicting record"},
+                        {"id": "c/conflicted", "kind": "CLAIM", "content": "The value was not revised", "references": ["e/conflict"]},
                     ],
                 })
                 core.apply_semantic_delta({

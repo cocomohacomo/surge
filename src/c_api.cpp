@@ -847,6 +847,7 @@ int surge_question_get_reevaluation_plan(void* opaque,const char* question_id,si
    std::set<std::string> anchors{aspect->id};for(const auto&ref:aspect->references)if(questions.count(ref))anchors.insert(ref);
    std::set<std::string> clusters;
    for(const auto&item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&anchors.count(r.from)){auto n=graph.nodes().find(r.to);if(n!=graph.nodes().end()&&(n->second.kind==surge::NodeKind::Cluster||n->second.kind==surge::NodeKind::Entity))clusters.insert(r.to);}}
+   for(const auto& cluster:clusters) included.insert(cluster);
    std::set<std::string> claims;
    for(const auto&item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&clusters.count(r.to)){auto n=graph.nodes().find(r.from);if(n!=graph.nodes().end()&&n->second.kind==surge::NodeKind::Claim)claims.insert(r.from);}}
    for(const auto&claim:claims)included.insert(claim);
