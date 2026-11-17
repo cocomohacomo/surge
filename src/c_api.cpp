@@ -1893,7 +1893,7 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
   out<<"]}";
  }
  out<<'}';
- out<<"],\"parent_refs\":[";
+ out<<",\"parent_refs\":[";
  for(size_t i=0;i<c.parent_refs.size();++i){if(i)out<<',';out<<json_quote(c.parent_refs[i]);}
  out<<"],\"child_refs\":[";
  for(size_t i=0;i<c.child_refs.size();++i){if(i)out<<',';out<<json_quote(c.child_refs[i]);}
