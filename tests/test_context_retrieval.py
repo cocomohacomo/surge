@@ -153,6 +153,15 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 core.review_chaos_association(operation_id="review", idempotency_key="review",
                     expected_state_version=core.state_version, cluster_id="chaos/projection",
                     association_id="a1", status="REVIEWED", provenance=provenance)
+                core.propose_chaos_association(operation_id="assoc-expiring", idempotency_key="assoc-expiring",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    association={"association_id":"a-expiring","from_member_ref":"m0","to_member_ref":"m2",
+                                 "association_type":"CO_OCCURS",
+                                 "valid_from_utc":"2026-11-17T00:00:00Z",
+                                 "valid_until_utc":"2026-11-18T00:00:00Z"}, provenance=provenance)
+                core.expire_due_chaos_associations(operation_id="expire", idempotency_key="expire",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    as_of_utc="2026-11-18T00:00:00Z", provenance=provenance)
                 core.add_chaos_pattern_hypothesis(operation_id="hyp", idempotency_key="hyp",
                     expected_state_version=core.state_version, cluster_id="chaos/projection",
                     hypothesis={"hypothesis_id":"h1","statement":"latent relation",
@@ -162,6 +171,10 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertTrue(full["complete"])
                 self.assertEqual(len(full["associations"][0]["history"]), 2)
                 self.assertEqual(full["associations"][0]["history"][-1]["status"], "REVIEWED")
+                expiring = next(item for item in full["associations"] if item["association_id"] == "a-expiring")
+                self.assertEqual(expiring["status"], "EXPIRED")
+                self.assertEqual(expiring["valid_until"], "2026-11-18T00:00:00Z")
+                self.assertEqual(expiring["history"][-1]["status"], "EXPIRED")
                 self.assertEqual(full["pattern_hypotheses"][0]["counterexample_refs"], ["m2"])
                 bounded = core.get_chaos_cluster("chaos/projection", max_members=1,
                     max_associations=0, max_hypotheses=0)
