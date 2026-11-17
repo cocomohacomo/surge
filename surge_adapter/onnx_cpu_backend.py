@@ -16,7 +16,7 @@ def _default_session_factory(model_path: str, intra_op_num_threads: int) -> Onnx
     try:
         import onnxruntime as ort
     except ImportError as exc:
-        raise RuntimeError("ONNXRUNTIME_NOT_INSTALLED: install surge[onnx-cpu]") from exc
+        raise RuntimeError("ONNXRUNTIME_NOT_INSTALLED: install onnxruntime") from exc
     options=ort.SessionOptions()
     options.intra_op_num_threads=intra_op_num_threads
     options.inter_op_num_threads=1
