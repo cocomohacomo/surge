@@ -32,10 +32,6 @@ class EvidenceProvenanceLedger {
               std::uint64_t expected_state_version,
               EvidenceProvenanceRecord& result,
               std::string& error);
-  bool prepare_event(const EvidenceProvenance& provenance,
-                     std::uint64_t expected_state_version,
-                     JournalEvent& event, std::string& error) const;
-  bool replay();
   std::uint64_t state_version() const;
   std::optional<EvidenceProvenanceRecord> latest(const std::string& evidence_id) const;
   const std::map<std::string, std::vector<EvidenceProvenanceRecord>>& history() const {
@@ -43,6 +39,7 @@ class EvidenceProvenanceLedger {
   }
 
  private:
+  bool replay();
   bool apply(const EvidenceProvenanceRecord&, std::string& error);
   std::unique_ptr<EventJournal> owned_journal_;
   EventJournal* journal_{nullptr};

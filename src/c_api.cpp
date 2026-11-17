@@ -2,6 +2,7 @@
 #include "surge/context_graph.hpp"
 #include "surge/context_hint.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/evidence_provenance.hpp"
 #include "surge/packet_admission.hpp"
 #include "surge/temporal_boundary_ledger.hpp"
 #include "surge/temporal_question_ledger.hpp"
@@ -161,9 +162,11 @@ struct Handle {
   surge::PersistentRetrievalTicketRegistry tickets;
   surge::TemporalBoundaryLedger temporal_ledger;
   surge::TemporalQuestionLedger temporal_questions;
+  surge::EvidenceProvenanceLedger evidence_provenance;
   explicit Handle(const std::string& path)
       : journal(path), coordinator(journal), graph(journal), tickets(journal),
-        temporal_ledger(journal), temporal_questions(journal) {}
+        temporal_ledger(journal), temporal_questions(journal),
+        evidence_provenance(journal) {}
 };
 bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion& question){
   const std::string aspect_id="aspect/"+question.question_id;
@@ -213,6 +216,9 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
     }
     if (!handle->temporal_questions.replay()) {
       copy_text(error, cap, handle->temporal_questions.last_error()); return nullptr;
+    }
+    if (!handle->evidence_provenance.replay()) {
+      copy_text(error, cap, "EVIDENCE_PROVENANCE_RECOVERY_FAILED"); return nullptr;
     }
     copy_text(error, cap, "");
     return handle.release();
@@ -432,7 +438,7 @@ int surge_retrieval_ticket_resolve(void* opaque, const char* ticket_id,
     catch(...){copy_text(error,error_cap,"UNKNOWN_RETRIEVAL_TICKET_EXCEPTION");return 0;}
 }
 
-int surge_packet_core_admit_and_apply_with_proposal(
+int surge_packet_core_admit_and_apply_with_metadata(
     void* opaque,const SurgeRecognitionPacketInput* input,
     const unsigned char* snapshot,size_t snapshot_size,
     const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
@@ -441,6 +447,7 @@ int surge_packet_core_admit_and_apply_with_proposal(
     const SurgeScopeSpanInput* scopes,size_t scope_count,
     const char* focus_cluster_id,const char* focus_interest_id,
     const SurgeClassificationProposalInput* proposal,
+    const SurgeEvidenceProvenanceInput* provenance,
     int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
     char* error,size_t error_cap) {
   try {
@@ -564,10 +571,48 @@ int surge_packet_core_admit_and_apply_with_proposal(
       semantic_events.push_back({"classification-proposal:"+std::string(proposal->proposal_id),
           "CLASSIFICATION_PROPOSAL_RECORDED",payload.str()});
     }
+    if(provenance){
+      if(!provenance->evidence_id||!*provenance->evidence_id||
+         provenance->revision==0||
+         (provenance->observed_at&&!*provenance->observed_at)||
+         (provenance->source_published_at&&!*provenance->source_published_at)||
+         (provenance->source_retrieved_at&&!*provenance->source_retrieved_at)){
+        copy_text(error,error_cap,"EVIDENCE_PROVENANCE_ARGUMENT_INVALID");return 0;
+      }
+      const std::string evidence_id=provenance->evidence_id;
+      bool evidence_exists=false;
+      const auto staged=std::find_if(delta.nodes.begin(),delta.nodes.end(),
+          [&](const surge::NodeProposal& item){return item.node.id==evidence_id;});
+      if(staged!=delta.nodes.end()){
+        evidence_exists=staged->node.kind==surge::NodeKind::Evidence;
+      }else{
+        const auto existing=handle->graph.nodes().find(evidence_id);
+        evidence_exists=existing!=handle->graph.nodes().end()&&
+                        existing->second.kind==surge::NodeKind::Evidence;
+      }
+      if(!evidence_exists){
+        copy_text(error,error_cap,"EVIDENCE_PROVENANCE_TARGET_NOT_EVIDENCE");return 0;
+      }
+      surge::EvidenceProvenance value;
+      value.evidence_id=evidence_id; value.revision=provenance->revision;
+      if(provenance->observed_at)value.observed_at=provenance->observed_at;
+      if(provenance->source_published_at)value.source_published_at=provenance->source_published_at;
+      if(provenance->source_retrieved_at)value.source_retrieved_at=provenance->source_retrieved_at;
+      surge::JournalEvent provenance_event;
+      std::string provenance_error;
+      if(!handle->evidence_provenance.prepare_event(value,expected,
+            provenance_event,provenance_error)){
+        copy_text(error,error_cap,provenance_error);return 0;
+      }
+      semantic_events.push_back(std::move(provenance_event));
+    }
     const auto admitted=handle->coordinator.admit(packet,source,semantic_events);
     if(!admitted.admitted){copy_text(error,error_cap,admitted.error);return 0;}
     if(!handle->graph.open()){
       copy_text(error,error_cap,"ATOMIC_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED");return 0;
+    }
+    if(provenance&&!handle->evidence_provenance.replay()){
+      copy_text(error,error_cap,"ATOMIC_COMMIT_SUCCEEDED_PROVENANCE_REPLAY_FAILED");return 0;
     }
     if(duplicate)*duplicate=admitted.duplicate?1:0;
     if(state_version)*state_version=handle->coordinator.state_version();
@@ -576,6 +621,24 @@ int surge_packet_core_admit_and_apply_with_proposal(
     return 1;
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_ATOMIC_COMMIT_EXCEPTION");return 0;}
+}
+
+int surge_packet_core_admit_and_apply_with_proposal(
+    void* opaque,const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot,size_t snapshot_size,
+    const char* delta_id,const char* semantic_idempotency_key,uint64_t expected,
+    const SurgeGraphNodeInput* nodes,size_t node_count,
+    const SurgeGraphRelationInput* relations,size_t relation_count,
+    const SurgeScopeSpanInput* scopes,size_t scope_count,
+    const char* focus_cluster_id,const char* focus_interest_id,
+    const SurgeClassificationProposalInput* proposal,
+    int* duplicate,uint64_t* state_version,char* status,size_t status_cap,
+    char* error,size_t error_cap) {
+  return surge_packet_core_admit_and_apply_with_metadata(
+      opaque,input,snapshot,snapshot_size,delta_id,semantic_idempotency_key,expected,
+      nodes,node_count,relations,relation_count,scopes,scope_count,
+      focus_cluster_id,focus_interest_id,proposal,nullptr,duplicate,state_version,
+      status,status_cap,error,error_cap);
 }
 
 int surge_packet_core_admit_and_apply(
@@ -628,6 +691,44 @@ int surge_classification_proposal_get(void* opaque,const char* proposal_id,
     copy_text(error,error_capacity,"CLASSIFICATION_PROPOSAL_NOT_FOUND");return 0;
   }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
    catch(...){copy_text(error,error_capacity,"UNKNOWN_CLASSIFICATION_PROPOSAL_QUERY_EXCEPTION");return 0;}
+}
+
+int surge_evidence_provenance_get(void* opaque,const char* evidence_id,
+    char* output,size_t output_capacity,size_t* required_capacity,
+    char* error,size_t error_capacity){
+  try{
+    if(!opaque||!evidence_id||!*evidence_id){
+      copy_text(error,error_capacity,"EVIDENCE_PROVENANCE_QUERY_ARGUMENT_INVALID");return 0;
+    }
+    const auto& ledger=static_cast<Handle*>(opaque)->evidence_provenance;
+    const auto found=ledger.history().find(evidence_id);
+    if(found==ledger.history().end()){
+      copy_text(error,error_capacity,"EVIDENCE_PROVENANCE_NOT_FOUND");return 0;
+    }
+    auto optional_json=[](const std::optional<std::string>& value){
+      return value?json_quote(*value):std::string("null");
+    };
+    std::ostringstream json;
+    json<<"{\"evidence_id\":"<<json_quote(evidence_id)<<",\"revisions\":[";
+    for(std::size_t i=0;i<found->second.size();++i){
+      if(i)json<<',';
+      const auto& record=found->second[i];
+      const auto& p=record.provenance;
+      json<<"{\"revision\":"<<p.revision
+          <<",\"recorded_state_version\":"<<record.recorded_state_version
+          <<",\"observed_at\":"<<optional_json(p.observed_at)
+          <<",\"source_published_at\":"<<optional_json(p.source_published_at)
+          <<",\"source_retrieved_at\":"<<optional_json(p.source_retrieved_at)<<'}';
+    }
+    json<<"]}";
+    const auto value=json.str();
+    if(required_capacity)*required_capacity=value.size()+1;
+    if(!output||output_capacity<value.size()+1){
+      copy_text(error,error_capacity,"EVIDENCE_PROVENANCE_BUFFER_TOO_SMALL");return 0;
+    }
+    copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"UNKNOWN_EVIDENCE_PROVENANCE_QUERY_EXCEPTION");return 0;}
 }
 
 int surge_context_graph_apply_claim_validity(void* opaque,
