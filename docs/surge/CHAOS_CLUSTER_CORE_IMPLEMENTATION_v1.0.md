@@ -38,3 +38,22 @@ The response includes `complete` and exact omission counters. History truncation
 keeps the newest revisions and reports `history_offset`, so a truncated
 history cannot be mistaken for a complete audit trail. Hypotheses remain
 hypothetical records and are never promoted to Claims by retrieval.
+
+
+## Score observation persistence increment
+
+The C++ ledger now persists cluster-level orthogonal score observations in the
+backward-compatible optional `CC3` snapshot extension. Supported dimensions
+are `organization`, `salience`, `recognition_confidence`, `novelty`,
+`diversity`, `ambiguity`, and `utility`. Every observation carries its
+numeric value, scorer ID/version, policy version, and observation timestamp.
+Values must be finite and within [0,1]. Missing dimensions remain absent
+(UNKNOWN), never synthesized as zero.
+
+Observations are append-only per dimension. Repeating the exact latest
+observation is idempotent; changing the value or timestamp creates a new
+revision. The CC3 extension is optional on read, so v0.1 and CC2 snapshots
+remain readable. This increment currently exposes the operation through the
+native C++ ledger only; C ABI/Python write adapters, member/association/
+hypothesis-level observations, bounded JSON projection, and score-aware
+retrieval remain open.
