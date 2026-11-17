@@ -328,6 +328,43 @@
           }
         }
       }
+    },
+    "lifecycle_history_offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lifecycle_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lifecycle",
+          "reason",
+          "provenance"
+        ],
+        "properties": {
+          "lifecycle": {
+            "enum": [
+              "OPEN",
+              "ACCUMULATING",
+              "EMERGING",
+              "REVIEWABLE",
+              "PROMOTED",
+              "FORKED",
+              "DORMANT",
+              "ARCHIVED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provenance": {
+            "$ref": "#/$defs/provenance"
+          }
+        }
+      }
     }
   },
   "$defs": {
