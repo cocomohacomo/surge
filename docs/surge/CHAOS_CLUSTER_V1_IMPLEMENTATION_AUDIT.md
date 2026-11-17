@@ -26,7 +26,7 @@ independent semantic-quality evaluation.
 | P0 | Orthogonal score observations | Partial | Cluster, Member Salience, Association Confidence and PatternHypothesis Confidence now persist as scorer-bound append-only histories and are exposed through C ABI/Python bounded projections. Score-aware retrieval is missing. |
 | P0 | Membership status and unmembership | Partial | Native C++ ledger, CC4 replay, C ABI/Python revision endpoint, bounded JSON history and replay tests are implemented; exhaustive lifecycle/legacy-fixture tests remain. |
 | P1 | PatternHypothesis auditability | Partial | Member/excluded/counterexample/alternative refs persist. Exclusion reasons, confidence observations and append-only hypothesis review revisions are absent. |
-| P1 | Association valid-time | Partial | Status revisions include provenance and terminal EXPIRED exists. valid_from/valid_until are not persisted and expiry is not automatically evaluated. |
+| P1 | Association valid-time | Partial | UTC valid_from/valid_until persist in CC6; temporal C ABI/Python proposal and explicit as-of expiry transaction append EXPIRED provenance revisions. Automatic scheduling is intentionally external to Core. |
 | P1 | Retrieval diversity | Partial | Focus retrieval round-robins admission-reason groups. It does not rank or constrain by persisted novelty, salience, diversity, ambiguity or utility observations. |
 | P1 | Retrieval query dimensions | Partial | Bounded full-cluster projection and typed Focus retrieval exist. Dedicated filtering by association type/status, temporal range, provenance, hypotheses/counterexamples and lineage traversal is incomplete. |
 | P1 | Lifecycle and operations | Partial | Transition table includes ARCHIVED -> DORMANT. Dedicated audited reactivation, merge, and lifecycle transition history as first-class records are missing. Fork/split/subset promotion exist. |
@@ -82,3 +82,13 @@ and PatternHypothesis Confidence histories. A generic entity observation write
 is available through C ABI and Python. Bounded projections expose latest
 schema-compatible observations, history offsets, and omission counts. Replay
 and API tests cover these paths; score-aware retrieval remains outstanding.
+
+
+## Follow-up: association validity
+
+Association validity bounds are persisted in CC6 and projected in bounded JSON.
+The original C ABI input layout remains unchanged; temporal proposals use a
+separate versioned input structure. A caller-supplied UTC as-of timestamp drives
+an atomic expiry transaction, with append-only status/provenance history. The
+Core does not consult a hidden wall clock; scheduling and invocation remain
+host responsibilities.
