@@ -234,11 +234,22 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   auto&hypotheses=s.at(id).pattern_hypotheses;
   for(std::size_t x=0;x<count;++x){std::string ref,status,epistemic;std::size_t revisions=0;
    if(!(i>>std::quoted(ref)>>std::quoted(status)>>std::quoted(epistemic))||!hypotheses.count(ref)||
+      (status!="PROVISIONAL"&&status!="REVIEWABLE"&&status!="REJECTED"&&status!="PROMOTED_TO_EVIDENCE_REVIEW")||
+      (epistemic!="HYPOTHETICAL"&&epistemic!="UNVERIFIED"&&epistemic!="CONTRADICTED"&&epistemic!="REJECTED")||
       !read_reasons(hypotheses.at(ref).exclusion_reasons)||!(i>>revisions)||revisions>100000)return false;
    auto&h=hypotheses.at(ref);h.status=status;h.epistemic_state=epistemic;
+   auto valid_reasons=[&](const std::map<std::string,std::string>&reasons){
+    for(const auto&reason:reasons)
+     if(!s.at(id).members.count(reason.first)||reason.second.empty()||
+        std::find(h.excluded_member_refs.begin(),h.excluded_member_refs.end(),reason.first)==h.excluded_member_refs.end())return false;
+    return true;
+   };
+   if(!valid_reasons(h.exclusion_reasons))return false;
    for(std::size_t y=0;y<revisions;++y){ChaosHypothesisRevision revision;
     if(!(i>>std::quoted(revision.status)>>std::quoted(revision.epistemic_state))||
-       !read_reasons(revision.exclusion_reasons)||!rp(i,revision.provenance))return false;
+       (revision.status!="PROVISIONAL"&&revision.status!="REVIEWABLE"&&revision.status!="REJECTED"&&revision.status!="PROMOTED_TO_EVIDENCE_REVIEW")||
+       (revision.epistemic_state!="HYPOTHETICAL"&&revision.epistemic_state!="UNVERIFIED"&&revision.epistemic_state!="CONTRADICTED"&&revision.epistemic_state!="REJECTED")||
+       !read_reasons(revision.exclusion_reasons)||!valid_reasons(revision.exclusion_reasons)||!rp(i,revision.provenance))return false;
     h.history.push_back(std::move(revision));
    }
    if(!h.history.empty()&&(h.history.back().status!=h.status||
@@ -258,7 +269,8 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
       !pl(revision.lifecycle,value)||revision.reason.empty()||!rp(i,revision.provenance))return false;
    c.lifecycle_history.push_back(std::move(revision));
   }
-  if(!c.lifecycle_history.empty()&&c.lifecycle_history.back().lifecycle!=ln(c.lifecycle))return false;
+  if(!c.lifecycle_history.empty()&&(c.lifecycle_history.front().lifecycle!="OPEN"||
+      c.lifecycle_history.back().lifecycle!=ln(c.lifecycle)))return false;
  }
  std::string extra;return !(i>>extra);
 }
