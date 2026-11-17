@@ -182,6 +182,152 @@
     },
     "provenance": {
       "$ref": "#/$defs/provenance"
+    },
+    "observation_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "salience": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "recognition_confidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "novelty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "diversity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "ambiguity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        },
+        "utility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history_offset",
+            "history"
+          ],
+          "properties": {
+            "history_offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
