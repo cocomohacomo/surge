@@ -1,0 +1,45 @@
+{
+  "suite": "SURGE Chaos Cluster v0.1 semantic conformance",
+  "cases": [
+    {
+      "id": "CC01",
+      "input": "fragment with no reliable topic",
+      "expected": "retain UNCLASSIFIED; do not discard"
+    },
+    {
+      "id": "CC02",
+      "input": "unrelated observations in one stream",
+      "expected": "allow co-membership without semantic relation"
+    },
+    {
+      "id": "CC03",
+      "input": "surprising analogy",
+      "expected": "ANALOGY/PROVISIONAL; never SUPPORTS by itself"
+    },
+    {
+      "id": "CC04",
+      "input": "two incompatible hypotheses",
+      "expected": "retain both with CONTRADICTION association"
+    },
+    {
+      "id": "CC05",
+      "input": "new evidence supports a subset",
+      "expected": "promote subset with lineage; preserve original"
+    },
+    {
+      "id": "CC06",
+      "input": "low coherence and high salience",
+      "expected": "do not evict solely due to low coherence"
+    },
+    {
+      "id": "CC07",
+      "input": "recognizers disagree on topic",
+      "expected": "retain competing interpretations and provenance"
+    },
+    {
+      "id": "CC08",
+      "input": "archived cluster receives relevant evidence",
+      "expected": "auditable reactivation"
+    }
+  ]
+}
