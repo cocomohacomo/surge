@@ -13,6 +13,10 @@ enum class ChaosOrganization { Unordered, Provisional, MultiPattern, PartiallySt
 enum class ChaosAssociationType { CoOccurs, Analogy, Hypothesis, Question, Contradiction, TemporalNearness, Unclassified, CreativeSynthesis };
 enum class ChaosAssociationStatus { Provisional, Reviewed, Rejected, Expired };
 struct ChaosProvenance { std::string producer_id, producer_version, policy_version, recorded_at; };
+struct ChaosLifecycleRevision {
+ std::string lifecycle, reason;
+ ChaosProvenance provenance;
+};
 struct ChaosScoreObservation {
  double value{0.0};
  std::string scorer_id, scorer_version, policy_version, observed_at;
@@ -59,6 +63,7 @@ struct ChaosCluster {
  ChaosOrganization organization{ChaosOrganization::Unordered};
  std::uint64_t state_version{0};
  ChaosProvenance creation_provenance;
+ std::vector<ChaosLifecycleRevision> lifecycle_history;
  std::map<std::string,ChaosMember> members;
  std::map<std::string,ChaosAssociation> associations;
  std::map<std::string,ChaosPatternHypothesis> pattern_hypotheses;
