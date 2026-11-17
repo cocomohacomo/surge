@@ -356,7 +356,7 @@ class ContextRetriever:
                         if item.get("from_ref") in selected_refs and item.get("to_ref") in selected_refs]
             by_type: dict[str, list[dict[str, Any]]] = {}
             for association in relevant:
-                by_type.setdefault(str(association.get("association_type", "")), []).append(association)
+                by_type.setdefault(str(association.get("type", "")), []).append(association)
 
             def association_order(item: dict[str, Any]) -> tuple[int, float, str]:
                 value = observed_value(item, "confidence")
@@ -545,7 +545,7 @@ class ContextRetriever:
 
         filtered_associations = []
         for item in associations:
-            association_type = item.get("association_type")
+            association_type = item.get("type")
             status = item.get("status")
             if type_filter is not None and association_type not in type_filter:
                 continue
