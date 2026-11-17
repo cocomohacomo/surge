@@ -238,6 +238,39 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(len(result["target"]["members"]), 3)
                 self.assertEqual(result["excluded_inactive_member_refs"], ["m3"])
 
+    def test_chaos_cluster_merge_is_atomic_lineage_preserving_and_restart_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-merge.sgj"
+            provenance = {"producer_id": "merge-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T02:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="target-create", idempotency_key="target-create",
+                    expected_state_version=core.state_version, cluster_id="merge-target", provenance=provenance)
+                core.create_chaos_cluster(operation_id="source-create", idempotency_key="source-create",
+                    expected_state_version=core.state_version, cluster_id="merge-source", provenance=provenance)
+                core.admit_chaos_member(operation_id="member-add", idempotency_key="member-add",
+                    expected_state_version=core.state_version, cluster_id="merge-source",
+                    member={"member_ref": "merged-member", "event_ref": "merged-event",
+                            "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T02:00:01Z"},
+                    provenance=provenance)
+                core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
+                    expected_state_version=core.state_version, cluster_id="merge-source",
+                    target_lifecycle="REVIEWABLE", reason="ready to merge", provenance=provenance)
+                core.merge_chaos_clusters(operation_id="merge", idempotency_key="merge",
+                    expected_state_version=core.state_version, target_cluster_id="merge-target",
+                    source_cluster_ids=["merge-source"], provenance=provenance)
+                target = core.get_chaos_cluster("merge-target")
+                source = core.get_chaos_cluster("merge-source")
+                self.assertEqual(target["members"][0]["member_ref"], "merged-member")
+                self.assertEqual(target["parent_refs"], ["merge-source"])
+                self.assertEqual(source["lifecycle"], "ARCHIVED")
+                self.assertEqual(source["child_refs"], ["merge-target"])
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_chaos_cluster("merge-target")["members"][0]["member_ref"],
+                                 "merged-member")
+                self.assertEqual(recovered.get_chaos_cluster("merge-source")["lifecycle"], "ARCHIVED")
+
+
     def test_focus_retrieval_without_active_focus_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "no-focus.sgj") as core:
