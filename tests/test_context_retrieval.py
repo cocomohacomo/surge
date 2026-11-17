@@ -172,6 +172,43 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 with self.assertRaises(PacketRejected):
                     core.get_chaos_cluster("chaos/projection", max_members=10001)
 
+    def test_focus_driven_chaos_retrieval_is_typed_diverse_and_restart_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "focus-chaos-retrieval.sgj"
+            provenance = {"producer_id": "retrieval-test", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T00:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="create", idempotency_key="create",
+                    expected_state_version=0, cluster_id="chaos/focus", provenance=provenance)
+                for index, reason in enumerate(["A", "A", "B", "C"]):
+                    core.admit_chaos_member(operation_id=f"member-{index}",
+                        idempotency_key=f"member-{index}", expected_state_version=core.state_version,
+                        cluster_id="chaos/focus",
+                        member={"member_ref": f"m{index}", "event_ref": f"event/{index}",
+                                "admission_reason": reason, "admitted_at": f"2026-11-18T00:0{index}:00Z"},
+                        provenance=provenance)
+                core.set_chaos_focus("chaos/focus", operation_id="focus",
+                    idempotency_key="focus", expected_state_version=core.state_version)
+                result = ContextRetriever(core).retrieve_focus(max_members=3)
+                self.assertEqual(result["target_kind"], "CHAOS_CLUSTER")
+                self.assertEqual([m["member_ref"] for m in result["target"]["members"]],
+                                 ["m0", "m2", "m3"])
+                self.assertEqual(result["omitted_member_refs"], ["m1"])
+                self.assertFalse(result["complete"])
+                self.assertEqual(result["retrieval_policy"], "ADMISSION_REASON_ROUND_ROBIN")
+            with SemanticCoreBridge(journal) as recovered:
+                result = ContextRetriever(recovered).retrieve_focus(max_members=10)
+                self.assertTrue(result["complete"])
+                self.assertEqual(result["target"]["cluster_id"], "chaos/focus")
+                self.assertEqual(len(result["target"]["members"]), 4)
+
+    def test_focus_retrieval_without_active_focus_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "no-focus.sgj") as core:
+                result = ContextRetriever(core).retrieve_focus()
+                self.assertFalse(result["found"])
+                self.assertIsNone(result["target"])
+
     def test_invalid_query_options_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "invalid.sgj") as core:

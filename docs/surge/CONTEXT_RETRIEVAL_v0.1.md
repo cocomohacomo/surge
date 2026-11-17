@@ -147,3 +147,27 @@ report the graph state version used for ranking.
 ## Chaos Cluster retrieval boundary
 
 `CHAOS_CLUSTER` nodes are discoverable as typed Focus targets through ordinary graph retrieval. The graph node is only a navigation projection; retrieve full membership, association history and hypotheses from the authoritative ChaosClusterLedger. A graph search result is not a full Chaos Cluster record.
+
+
+## v0.3: Typed Focus-driven retrieval
+
+`ContextRetriever.retrieve_focus()` resolves the current durable Focus and
+retrieves the target through its authoritative store:
+- `CLUSTER`: exact typed graph-node lookup, with its linked Interest when present.
+- `CHAOS_CLUSTER`: full target read from `ChaosClusterLedger`; the ContextGraph
+  node remains a navigation projection and is not treated as the authoritative
+  cluster record.
+
+Chaos members are bounded to 1..1000 and associations to 0..10000. The default
+member policy round-robins sorted admission-reason groups, then sorts members
+within each group by immutable member reference. This is a deterministic
+diversity proxy, not semantic novelty scoring. Truncation is explicit through
+`omitted_member_refs`, `omitted_association_count`, and `complete`; omitted
+members are never represented as absent from the underlying cluster.
+Associations are returned only when both endpoint members are in the selected
+member set. The API returns the graph/ledger state version and fails closed if
+the state changes while the focused context is being assembled.
+
+This increment does not yet expose complete association revision history or
+PatternHypothesis records through the C ABI read projection. Those remain
+authoritative in the C++ ledger and require a richer bounded JSON projection.
