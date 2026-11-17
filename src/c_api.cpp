@@ -1882,7 +1882,8 @@ std::string chaos_cluster_json_bounded(const surge::ChaosCluster& c,
  out<<"},\"observation_history\":{";
  first_dimension=true;
  for(const auto& dimension:c.observations){
-  if(!first_dimension)out<<',';first_dimension=false;
+  if(!first_dimension) out<<',';
+  first_dimension=false;
   const auto& history=dimension.second;
   const size_t count=std::min(history.size(),max_history);
   const size_t start=history.size()-count;
