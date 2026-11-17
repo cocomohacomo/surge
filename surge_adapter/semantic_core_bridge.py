@@ -274,6 +274,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_propose_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_propose_association_temporal.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.POINTER(_ChaosAssociation), ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_propose_association_temporal.restype = ctypes.c_int
         lib.surge_chaos_cluster_review_association.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
@@ -1124,7 +1129,7 @@ class SemanticCoreBridge(CppCoreBridge):
         item = _ChaosAssociation(*(x.encode("utf-8") for x in values),
                                  valid_from.encode("ascii") if valid_from else None,
                                  valid_until.encode("ascii") if valid_until else None)
-        return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association,
+        return self._chaos_mutation(self._lib.surge_chaos_cluster_propose_association_temporal,
             (operation_id.encode(), idempotency_key.encode(), int(expected_state_version),
              cluster_id.encode(), ctypes.byref(item), ctypes.byref(p)))
 
