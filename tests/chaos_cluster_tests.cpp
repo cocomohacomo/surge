@@ -123,6 +123,9 @@ int main(){
   CHECK(l.get("chaos-score",c));CHECK(c.observations.at("novelty").size()==2);
   CHECK(c.observations.at("novelty")[0].scorer_id=="recognizer");
   CHECK(c.observations.at("novelty")[1].value==0.84);
+  CHECK(c.lifecycle_history.size()==2);
+  CHECK(c.lifecycle_history.front().lifecycle=="OPEN");
+  CHECK(c.lifecycle_history.back().reason=="FIRST_MEMBER_ADMITTED");
   CHECK(c.members.at("score-member").membership_history.size()==3);
   CHECK(c.members.at("score-member").membership_history[1].active==false);
   CHECK(c.members.at("score-member").membership_history[2].active==true);
