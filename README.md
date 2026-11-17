@@ -171,3 +171,6 @@ The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEM
 
 
 - **Core Evidence Temporal Validity v0.1:** Evidence valid-time revisions are append-only, transactionally journaled, and queryable at explicit RFC3339 instants. See [EVIDENCE_TEMPORAL_VALIDITY_v0.1.md](docs/surge/EVIDENCE_TEMPORAL_VALIDITY_v0.1.md).
+
+
+- **Core Temporal Reassessment v0.1:** Core now persists version-pinned Claim/Evidence reassessment snapshots in the EventJournal with SHA-256 hash chaining and replay validation. See [TEMPORAL_REASSESSMENT_CORE_v0.1.md](docs/surge/TEMPORAL_REASSESSMENT_CORE_v0.1.md).

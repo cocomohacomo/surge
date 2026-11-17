@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/event_journal.hpp"
+#include "surge/sha256.hpp"
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -64,6 +65,25 @@ struct DependencyEvaluationRecord {
   std::vector<std::string> impacted_nodes;
   std::vector<std::string> rejected_dependencies;
 };
+struct ReassessmentEvidenceSnapshot {
+  std::string evidence_id, relation_id;
+  RelationKind relation{RelationKind::Supports};
+  std::uint64_t validity_revision{0}, validity_recorded_state_version{0};
+  std::string valid_from, valid_until, basis_evidence_id;
+  ClaimTemporalState temporal_state{ClaimTemporalState::Unknown};
+  bool eligible{false};
+};
+struct TemporalReassessmentRecord {
+  std::string trace_id, claim_id, reference_at, decision;
+  std::string claim_valid_from, claim_valid_until, claim_validity_basis_evidence_id, reason_code;
+  std::uint64_t claim_validity_revision{0}, claim_validity_recorded_state_version{0};
+  std::uint64_t evaluated_state_version{0}, recorded_state_version{0}, sequence{0};
+  ClaimStatus lifecycle{ClaimStatus::Active};
+  ClaimTemporalState claim_temporal_state{ClaimTemporalState::Unknown};
+  std::vector<ReassessmentEvidenceSnapshot> evidence;
+  std::vector<std::string> active_support_ids, active_contradiction_ids;
+  std::string previous_hash, snapshot_digest, chain_hash;
+};
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraph {
  public:
@@ -71,6 +91,12 @@ class ContextGraph {
   explicit ContextGraph(EventJournal& shared_journal);
   bool open();
   DeltaResult apply(const SemanticDelta& delta);
+  bool reassess_claim(const std::string& claim_id, const std::string& reference_at,
+                      std::uint64_t expected_state_version,
+                      TemporalReassessmentRecord& result, std::string& error);
+  const std::map<std::string, std::vector<TemporalReassessmentRecord>>& reassessment_history() const {
+    return state_.reassessment_history;
+  }
   bool prepare_events(const SemanticDelta& delta, std::vector<JournalEvent>& events, std::string& error) const;
   std::uint64_t state_version() const { return journal_->state_version(); }
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
@@ -125,6 +151,7 @@ class ContextGraph {
     std::map<std::string, std::vector<ClaimValidityRecord>> claim_validity_history;
     std::map<std::string, std::vector<EvidenceValidityRecord>> evidence_validity_history;
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
+    std::map<std::string, std::vector<TemporalReassessmentRecord>> reassessment_history;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
@@ -132,6 +159,9 @@ class ContextGraph {
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
   bool apply_evidence_validity(State&, const EvidenceValidity&, std::uint64_t recorded_state_version, std::string&) const;
+  bool build_reassessment(const State&, const std::string&, const std::string&,
+      std::uint64_t, TemporalReassessmentRecord&, std::string&) const;
+  bool apply_reassessment(State&, const TemporalReassessmentRecord&, std::string&) const;
   bool replay();
   bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
                            std::string&) const;

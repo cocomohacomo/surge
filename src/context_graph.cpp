@@ -1,4 +1,5 @@
 #include "surge/context_graph.hpp"
+#include "surge/sha256.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
 #include <algorithm>
@@ -96,6 +97,49 @@ bool decode_scope(const std::string& p,AddScopeSpan& add){std::istringstream i(p
 std::string encode_focus(const FocusRecord& f){std::ostringstream o;o<<std::quoted(f.cluster_id)<<' '<<std::quoted(f.interest_id);return o.str();}
 bool decode_focus(const std::string& p,FocusRecord& f){std::istringstream i(p);std::string extra;if(!(i>>std::quoted(f.cluster_id)>>std::quoted(f.interest_id)))return false;return !(i>>extra);}
 std::string hash_text(const std::string& t){std::uint64_t h=1469598103934665603ULL;for(unsigned char c:t){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<std::setw(16)<<std::setfill('0')<<h;return o.str();}
+std::string reassessment_snapshot_payload(const TemporalReassessmentRecord& r) {
+ std::ostringstream out;out<<std::quoted(r.trace_id)<<' '<<std::quoted(r.claim_id)<<' '
+ <<std::quoted(r.reference_at)<<' '<<std::quoted(r.decision)<<' '
+ <<std::quoted(r.claim_valid_from)<<' '<<std::quoted(r.claim_valid_until)<<' '
+ <<std::quoted(r.claim_validity_basis_evidence_id)<<' '<<std::quoted(r.reason_code)<<' '<<r.claim_validity_revision<<' '
+ <<r.claim_validity_recorded_state_version<<' '<<r.evaluated_state_version<<' '
+ <<r.recorded_state_version<<' '<<r.sequence<<' '<<static_cast<int>(r.lifecycle)<<' '
+ <<static_cast<int>(r.claim_temporal_state)<<' '<<r.evidence.size();
+ for(const auto& e:r.evidence)out<<' '<<std::quoted(e.evidence_id)<<' '<<std::quoted(e.relation_id)
+  <<' '<<static_cast<int>(e.relation)<<' '<<e.validity_revision<<' '
+  <<e.validity_recorded_state_version<<' '<<std::quoted(e.valid_from)<<' '
+  <<std::quoted(e.valid_until)<<' '<<std::quoted(e.basis_evidence_id)<<' '
+  <<static_cast<int>(e.temporal_state)<<' '<<e.eligible;
+ out<<' '<<r.active_support_ids.size();for(const auto& id:r.active_support_ids)out<<' '<<std::quoted(id);
+ out<<' '<<r.active_contradiction_ids.size();for(const auto& id:r.active_contradiction_ids)out<<' '<<std::quoted(id);
+ return out.str();
+}
+std::string reassessment_event_payload(const TemporalReassessmentRecord& r) {
+ std::ostringstream out;out<<std::quoted(r.previous_hash)<<' '<<std::quoted(r.snapshot_digest)<<' '
+ <<std::quoted(r.chain_hash)<<' '<<std::quoted(reassessment_snapshot_payload(r));return out.str();
+}
+bool decode_reassessment(const std::string& payload,TemporalReassessmentRecord& r) {
+ std::istringstream in(payload);std::string snapshot,extra;
+ if(!(in>>std::quoted(r.previous_hash)>>std::quoted(r.snapshot_digest)>>
+      std::quoted(r.chain_hash)>>std::quoted(snapshot))||(in>>extra))return false;
+ std::istringstream s(snapshot);int lifecycle=0,claim_state=0;std::size_t n=0;
+ if(!(s>>std::quoted(r.trace_id)>>std::quoted(r.claim_id)>>std::quoted(r.reference_at)>>
+  std::quoted(r.decision)>>std::quoted(r.claim_valid_from)>>std::quoted(r.claim_valid_until)>>
+  std::quoted(r.claim_validity_basis_evidence_id)>>std::quoted(r.reason_code)>>r.claim_validity_revision>>r.claim_validity_recorded_state_version>>
+  r.evaluated_state_version>>r.recorded_state_version>>r.sequence>>lifecycle>>claim_state>>n)||n>4096)return false;
+ if(lifecycle<0||lifecycle>2||claim_state<0||claim_state>3)return false;
+ r.lifecycle=static_cast<ClaimStatus>(lifecycle);r.claim_temporal_state=static_cast<ClaimTemporalState>(claim_state);
+ for(std::size_t i=0;i<n;++i){ReassessmentEvidenceSnapshot e;int rel=0,state=0;
+  if(!(s>>std::quoted(e.evidence_id)>>std::quoted(e.relation_id)>>rel>>
+    e.validity_revision>>e.validity_recorded_state_version>>std::quoted(e.valid_from)>>
+    std::quoted(e.valid_until)>>std::quoted(e.basis_evidence_id)>>state>>e.eligible)||rel<0||rel>9||state<0||state>3)return false;
+  e.relation=static_cast<RelationKind>(rel);e.temporal_state=static_cast<ClaimTemporalState>(state);r.evidence.push_back(e);}
+ if(!(s>>n)||n>4096)return false;
+ for(std::size_t i=0;i<n;++i){std::string id;if(!(s>>std::quoted(id)))return false;r.active_support_ids.push_back(id);}
+ if(!(s>>n)||n>4096)return false;
+ for(std::size_t i=0;i<n;++i){std::string id;if(!(s>>std::quoted(id)))return false;r.active_contradiction_ids.push_back(id);}
+ return !(s>>extra);
+}
 std::string encode_dependency_evaluation(const DependencyEvaluationRecord& r) {
  std::ostringstream out;
  out << std::quoted(r.delta_id) << ' ' << r.triggered.size();
@@ -140,7 +184,7 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  const auto from=s.nodes.find(r.from),to=s.nodes.find(r.to);
  if(from==s.nodes.end()||to==s.nodes.end()){e="RELATION_ENDPOINT_INVALID";return false;}
  auto a=from->second.kind,b=to->second.kind;
- switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(a!=NodeKind::Claim||b!=NodeKind::Claim){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
+ switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim&&a!=NodeKind::Question)){e="GRAPH_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Duplicates:case RelationKind::Contains:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
@@ -199,6 +243,90 @@ bool ContextGraph::apply_evidence_validity(State& s,const EvidenceValidity& vali
  if(validity.revision!=history.size()+1||recorded_state_version==0){error="EVIDENCE_VALIDITY_REVISION_INVALID";return false;}
  history.push_back({validity,recorded_state_version});return true;
 }
+bool ContextGraph::build_reassessment(const State& s,const std::string& claim_id,
+    const std::string& reference_at,std::uint64_t evaluated_version,
+    TemporalReassessmentRecord& out,std::string& error)const{
+ const auto claim=s.nodes.find(claim_id);
+ if(claim==s.nodes.end()||claim->second.kind!=NodeKind::Claim){error="REASSESSMENT_CLAIM_NOT_FOUND";return false;}
+ ParsedRfc3339 instant{};if(!parse_rfc3339(reference_at,instant)){error="REASSESSMENT_REFERENCE_TIME_INVALID";return false;}
+ out={};out.claim_id=claim_id;out.reference_at=reference_at;out.evaluated_state_version=evaluated_version;
+ const auto status=s.claim_statuses.find(claim_id);out.lifecycle=status==s.claim_statuses.end()?ClaimStatus::Active:status->second;
+ const auto cv=s.claim_validity_history.find(claim_id);
+ if(cv!=s.claim_validity_history.end()&&!cv->second.empty()){
+  const auto& latest=cv->second.back();out.claim_validity_revision=latest.validity.revision;
+  out.claim_validity_recorded_state_version=latest.recorded_state_version;
+  out.claim_valid_from=latest.validity.valid_from;out.claim_valid_until=latest.validity.valid_until;
+  out.claim_validity_basis_evidence_id=latest.validity.basis_evidence_id;
+  out.claim_temporal_state=evaluate_claim_validity(latest,reference_at);
+ }
+ for(const auto& item:s.relations){const auto& rel=item.second;
+  const auto source_node=s.nodes.find(rel.from);
+  if(rel.to!=claim_id||source_node==s.nodes.end()||source_node->second.kind!=NodeKind::Evidence||
+    (rel.kind!=RelationKind::Supports&&rel.kind!=RelationKind::Contradicts&&rel.kind!=RelationKind::Retracts))continue;
+  ReassessmentEvidenceSnapshot e;e.evidence_id=rel.from;e.relation_id=rel.id;e.relation=rel.kind;
+  const auto ev=s.evidence_validity_history.find(e.evidence_id);
+  if(ev!=s.evidence_validity_history.end()&&!ev->second.empty()){
+   const auto& latest=ev->second.back();e.validity_revision=latest.validity.revision;
+   e.validity_recorded_state_version=latest.recorded_state_version;
+   e.valid_from=latest.validity.valid_from;e.valid_until=latest.validity.valid_until;
+   e.basis_evidence_id=latest.validity.basis_evidence_id;
+   ClaimValidityRecord compatible;compatible.validity.valid_from=e.valid_from;compatible.validity.valid_until=e.valid_until;
+   e.temporal_state=evaluate_claim_validity(compatible,reference_at);
+  }
+  e.eligible=out.lifecycle==ClaimStatus::Active&&out.claim_temporal_state==ClaimTemporalState::Valid&&
+      e.temporal_state==ClaimTemporalState::Valid;
+  if(e.eligible&&rel.kind==RelationKind::Supports)out.active_support_ids.push_back(e.evidence_id);
+  if(e.eligible&&rel.kind==RelationKind::Contradicts)out.active_contradiction_ids.push_back(e.evidence_id);
+  out.evidence.push_back(std::move(e));
+ }
+ std::sort(out.evidence.begin(),out.evidence.end(),[](const auto& a,const auto& b){return a.relation_id<b.relation_id;});
+ std::sort(out.active_support_ids.begin(),out.active_support_ids.end());
+ std::sort(out.active_contradiction_ids.begin(),out.active_contradiction_ids.end());
+ if(out.lifecycle!=ClaimStatus::Active){out.decision="CLAIM_INACTIVE";out.reason_code="CLAIM_LIFECYCLE_NOT_ACTIVE";}
+ else if(out.claim_temporal_state!=ClaimTemporalState::Valid){out.decision="CLAIM_NOT_CURRENT";out.reason_code="CLAIM_VALIDITY_NOT_ACTIVE_AT_REFERENCE";}
+ else if(!out.active_support_ids.empty()&&!out.active_contradiction_ids.empty()){out.decision="TEMPORAL_CONFLICT";out.reason_code="ACTIVE_SUPPORT_AND_CONTRADICTION";}
+ else if(!out.active_contradiction_ids.empty()){out.decision="CONTRADICTED";out.reason_code="ACTIVE_CONTRADICTION";}
+ else if(!out.active_support_ids.empty()){out.decision="SUPPORTED";out.reason_code="ACTIVE_SUPPORT";}
+ else{out.decision="INSUFFICIENT_CURRENT_EVIDENCE";out.reason_code="NO_ELIGIBLE_CURRENT_EVIDENCE";}
+ return true;
+}
+bool ContextGraph::apply_reassessment(State& s,const TemporalReassessmentRecord& r,std::string& error)const{
+ if(r.claim_id.empty()||r.trace_id.empty()||r.sequence==0||r.recorded_state_version==0||
+    !s.nodes.count(r.claim_id)||s.nodes.at(r.claim_id).kind!=NodeKind::Claim){error="REASSESSMENT_RECORD_INVALID";return false;}
+ auto& history=s.reassessment_history[r.claim_id];
+ const std::uint64_t expected_sequence=history.size()+1;
+ const std::string previous=history.empty()?std::string(64,'0'):history.back().chain_hash;
+ if(r.sequence!=expected_sequence||r.previous_hash!=previous||
+    r.snapshot_digest!=sha256_hex(reassessment_snapshot_payload(r))||
+    r.chain_hash!=sha256_hex(r.previous_hash+r.snapshot_digest)){
+  error="REASSESSMENT_CHAIN_INVALID";return false;
+ }
+ TemporalReassessmentRecord expected;
+ if(!build_reassessment(s,r.claim_id,r.reference_at,r.evaluated_state_version,expected,error))return false;
+ expected.trace_id=r.trace_id;expected.recorded_state_version=r.recorded_state_version;expected.sequence=r.sequence;
+ expected.previous_hash=r.previous_hash;expected.snapshot_digest=r.snapshot_digest;expected.chain_hash=r.chain_hash;
+ if(reassessment_snapshot_payload(expected)!=reassessment_snapshot_payload(r)){error="REASSESSMENT_SNAPSHOT_STALE_OR_TAMPERED";return false;}
+ history.push_back(r);return true;
+}
+bool ContextGraph::reassess_claim(const std::string& claim_id,const std::string& reference_at,
+    std::uint64_t expected_state_version,TemporalReassessmentRecord& result,std::string& error){
+ error.clear();if(expected_state_version!=state_version()){error="STATE_VERSION_CONFLICT";return false;}
+ TemporalReassessmentRecord record;
+ if(!build_reassessment(state_,claim_id,reference_at,expected_state_version,record,error))return false;
+ const auto it=state_.reassessment_history.find(claim_id);
+ const std::size_t previous_count=it==state_.reassessment_history.end()?0:it->second.size();
+ record.sequence=previous_count+1;record.recorded_state_version=expected_state_version+1;
+ record.previous_hash=previous_count==0?std::string(64,'0'):it->second.back().chain_hash;
+ record.trace_id="reassessment:"+claim_id+":"+std::to_string(record.sequence);
+ record.snapshot_digest=sha256_hex(reassessment_snapshot_payload(record));
+ record.chain_hash=sha256_hex(record.previous_hash+record.snapshot_digest);
+ const auto payload=reassessment_event_payload(record);
+ const auto committed=journal_->commit(record.trace_id,record.trace_id,expected_state_version,
+    {{record.trace_id,"TEMPORAL_REASSESSMENT_V1",payload}});
+ if(!committed.committed){error=committed.error;return false;}
+ if(!apply_reassessment(state_,record,error))return false;
+ result=record;return true;
+}
 bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)const{
  const auto cluster=s.nodes.find(f.cluster_id);
  if(cluster==s.nodes.end()||cluster->second.kind!=NodeKind::Cluster){e="FOCUS_CLUSTER_INVALID";return false;}
@@ -239,6 +367,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
  if(e.kind=="EVIDENCE_VALIDITY_SET"){EvidenceValidityRecord record;if(!decode_evidence_validity(e.payload,record)){error="JOURNAL_EVIDENCE_VALIDITY_DECODE_FAILED";return false;}return apply_evidence_validity(s,record.validity,record.recorded_state_version,error);}
+ if(e.kind=="TEMPORAL_REASSESSMENT_V1"){TemporalReassessmentRecord record;if(!decode_reassessment(e.payload,record)){error="JOURNAL_REASSESSMENT_DECODE_FAILED";return false;}return apply_reassessment(s,record,error);}
  if(e.kind=="DEPENDENCY_EVALUATION"){
   std::istringstream in(e.payload); DependencyEvaluationRecord record;
   std::size_t count=0;
@@ -334,6 +463,15 @@ bool ContextGraph::replay(){
   if(e.kind=="QUESTION_MEMORY_REFERENCED"||e.kind=="QUESTION_MEMORY_REFERENCE_CASCADE"||e.kind=="QUESTION_MEMORY_STATE_SET"||e.kind=="QUESTION_ASPECT_STATUS_SET"||e.kind=="QUESTION_ASPECT_STATUS_BATCH_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_MEMORY_EVENT_INVALID:"+last_error_;return false;}++version;continue;}
   if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!have_meta||!decode_claim_validity(e.payload,record)||record.recorded_state_version!=version+1){last_error_="JOURNAL_CLAIM_VALIDITY_VERSION_INVALID";return false;}}
   if(e.kind=="EVIDENCE_VALIDITY_SET"){EvidenceValidityRecord record;if(!have_meta||!decode_evidence_validity(e.payload,record)||record.recorded_state_version!=version+1){last_error_="JOURNAL_EVIDENCE_VALIDITY_VERSION_INVALID";return false;}}
+  if(e.kind=="TEMPORAL_REASSESSMENT_V1"){
+   if(have_meta){++version;have_meta=false;}
+   TemporalReassessmentRecord record;
+   if(!decode_reassessment(e.payload,record)||record.evaluated_state_version!=version||
+      record.recorded_state_version!=version+1||!replay_event(rebuilt,e,last_error_)){
+    last_error_="JOURNAL_REASSESSMENT_VERSION_OR_CONTENT_INVALID";return false;
+   }
+   ++version;continue;
+  }
   if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
