@@ -61,16 +61,6 @@ typedef struct SurgeRetrievalTicketInput {
   size_t omitted_count;
 } SurgeRetrievalTicketInput;
 
-typedef struct SurgeClassificationProposalInput {
-  const char* proposal_id;
-  const char* packet_ref;
-  uint64_t base_state_version;
-  uint64_t context_hint_state_version;
-  const char* packet_source_generation;
-  uint64_t packet_source_sequence;
-  const char* serialized_json;
-} SurgeClassificationProposalInput;
-
 typedef struct SurgeScopeSpanInput {
   const char* span_id;
   const char* kind;
@@ -231,25 +221,6 @@ int surge_packet_core_admit_and_apply(
     const char* focus_cluster_id, const char* focus_interest_id,
     int* duplicate, uint64_t* state_version,
     char* packet_status, size_t status_capacity,
-    char* error, size_t error_capacity);
-
-
-// Extended atomic API. The legacy entry point above remains ABI-compatible.
-int surge_packet_core_admit_and_apply_with_proposal(
-    void* handle, const SurgeRecognitionPacketInput* packet,
-    const unsigned char* snapshot, size_t snapshot_size,
-    const char* delta_id, const char* semantic_idempotency_key,
-    uint64_t expected_state_version,
-    const SurgeGraphNodeInput* nodes, size_t node_count,
-    const SurgeGraphRelationInput* relations, size_t relation_count,
-    const SurgeScopeSpanInput* scopes, size_t scope_count,
-    const char* focus_cluster_id, const char* focus_interest_id,
-    const SurgeClassificationProposalInput* proposal,
-    int* duplicate, uint64_t* state_version,
-    char* packet_status, size_t status_capacity,
-    char* error, size_t error_capacity);
-int surge_classification_proposal_get(void* handle, const char* proposal_id,
-    char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 #ifdef __cplusplus
 }

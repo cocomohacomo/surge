@@ -47,7 +47,7 @@ int main() {
       nullptr,0,&required,error,sizeof(error));
     assert(size_query==0); assert(std::string(error)=="CLASSIFICATION_PROPOSAL_BUFFER_TOO_SMALL");
     assert(required==proposal_json.size()+1);
-    std::string output(required,'\\0');
+    std::string output(required,'\0');
     const int loaded=surge_classification_proposal_get(handle,proposal_id.c_str(),
       output.data(),output.size(),&required,error,sizeof(error));
     assert(loaded==1); assert(std::string(output.c_str())==proposal_json);
@@ -80,5 +80,5 @@ int main() {
     assert(committed==1); assert(version==1); surge_packet_core_close(handle);
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE durable ClassificationProposal tests passed\\n";
+  std::cout<<"SURGE durable ClassificationProposal tests passed\n";
 }
