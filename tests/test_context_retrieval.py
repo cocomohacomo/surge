@@ -238,12 +238,15 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                                      "scorer_version": "2.1", "policy_version": "score-v1",
                                      "observed_at": f"2026-11-18T00:0{index}:00Z"})
                 result = core.get_chaos_cluster("chaos/scores")
-                history = result["observations"]["novelty"]["history"]
+                history = result["observation_history"]["novelty"]["history"]
                 self.assertEqual([item["value"] for item in history], [0.91, 0.84])
                 self.assertEqual(history[0]["scorer_id"], "recognizer")
+                self.assertEqual(result["observations"]["novelty"]["value"], 0.84)
                 self.assertEqual(result["omitted"]["score_observation_revisions"], 0)
                 bounded = core.get_chaos_cluster("chaos/scores", max_history_per_association=1)
-                self.assertTrue(bounded["complete"])
+                self.assertFalse(bounded["complete"])
+                self.assertEqual(bounded["observation_history"]["novelty"]["history_offset"], 1)
+                self.assertEqual(bounded["omitted"]["score_observation_revisions"], 1)
                 with self.assertRaises(PacketRejected):
                     core.record_chaos_score_observation(
                         operation_id="bad", idempotency_key="bad",
@@ -254,7 +257,7 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                                      "observed_at": "2026-11-18T00:03:00Z"})
             with SemanticCoreBridge(journal) as recovered:
                 result = recovered.get_chaos_cluster("chaos/scores")
-                self.assertEqual(len(result["observations"]["novelty"]["history"]), 2)
+                self.assertEqual(len(result["observation_history"]["novelty"]["history"]), 2)
 
 
 if __name__ == "__main__":
