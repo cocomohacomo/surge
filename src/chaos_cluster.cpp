@@ -3,6 +3,7 @@
 #include <sstream>
 #include <utility>
 #include <set>
+#include <cmath>
 
 namespace surge { namespace {
 const char* ln(ChaosLifecycle v){switch(v){case ChaosLifecycle::Open:return "OPEN";case ChaosLifecycle::Accumulating:return "ACCUMULATING";case ChaosLifecycle::Emerging:return "EMERGING";case ChaosLifecycle::Reviewable:return "REVIEWABLE";case ChaosLifecycle::Promoted:return "PROMOTED";case ChaosLifecycle::Forked:return "FORKED";case ChaosLifecycle::Dormant:return "DORMANT";case ChaosLifecycle::Archived:return "ARCHIVED";}return "";}
@@ -39,6 +40,14 @@ std::string ChaosClusterLedger::encode(const State&s){
   o<<c.associations.size()<<' ';for(const auto&x:c.associations){const auto&a=x.second;o<<std::quoted(x.first)<<' '<<a.history.size()<<' ';for(const auto&h:a.history){o<<sn(h.status)<<' ';wp(o,h.provenance);}}
   o<<c.pattern_hypotheses.size()<<' ';for(const auto&x:c.pattern_hypotheses){const auto&h=x.second;o<<std::quoted(h.hypothesis_id)<<' '<<std::quoted(h.statement)<<' '<<std::quoted(h.epistemic_state)<<' '<<std::quoted(h.status)<<' ';auto vec=[&](const std::vector<std::string>&v){o<<v.size()<<' ';for(const auto&z:v)o<<std::quoted(z)<<' ';};vec(h.member_refs);vec(h.excluded_member_refs);vec(h.counterexample_refs);vec(h.alternative_hypothesis_refs);wp(o,h.provenance);}
  }
+ // CC3 adds append-only, scorer-bound observations without changing CC2 snapshots.
+ o<<"CC3 "<<s.size()<<' ';
+ for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.observations.size()<<' ';
+  for(const auto&dimension:c.observations){o<<std::quoted(dimension.first)<<' '<<dimension.second.size()<<' ';
+   for(const auto&v:dimension.second){o<<std::setprecision(17)<<v.value<<' '<<std::quoted(v.scorer_id)<<' '
+    <<std::quoted(v.scorer_version)<<' '<<std::quoted(v.policy_version)<<' '<<std::quoted(v.observed_at)<<' ';}
+  }
+ }
  return o.str();
 }
 bool ChaosClusterLedger::decode(const std::string&p,State&s){
@@ -67,6 +76,27 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
   if(!(i>>nh)||nh>100000)return false;
   for(std::size_t x=0;x<nh;++x){ChaosPatternHypothesis h;if(!(i>>std::quoted(h.hypothesis_id)>>std::quoted(h.statement)>>std::quoted(h.epistemic_state)>>std::quoted(h.status))||h.hypothesis_id.empty())return false;auto vec=[&](std::vector<std::string>&v){std::size_t count=0;if(!(i>>count)||count>100000)return false;for(std::size_t q=0;q<count;++q){std::string value;if(!(i>>std::quoted(value)))return false;v.push_back(std::move(value));}return true;};if(!vec(h.member_refs)||!vec(h.excluded_member_refs)||!vec(h.counterexample_refs)||!vec(h.alternative_hypothesis_refs)||!rp(i,h.provenance)||!c.pattern_hypotheses.emplace(h.hypothesis_id,std::move(h)).second)return false;}
  }
+ std::string marker;
+ if(!(i>>marker))return true;
+ if(marker!="CC3")return false;
+ std::size_t count=0;if(!(i>>count)||count!=s.size())return false;
+ for(std::size_t z=0;z<count;++z){std::string id;std::size_t dimensions=0;
+  if(!(i>>std::quoted(id)>>dimensions)||!s.count(id)||dimensions>32)return false;
+  auto&observations=s.at(id).observations;
+  for(std::size_t d=0;d<dimensions;++d){std::string dimension;std::size_t values=0;
+   if(!(i>>std::quoted(dimension)>>values)||values>100000||
+      (dimension!="organization"&&dimension!="salience"&&dimension!="recognition_confidence"&&
+       dimension!="novelty"&&dimension!="diversity"&&dimension!="ambiguity"&&dimension!="utility"))return false;
+   auto&history=observations[dimension];
+   for(std::size_t x=0;x<values;++x){ChaosScoreObservation v;
+    if(!(i>>v.value>>std::quoted(v.scorer_id)>>std::quoted(v.scorer_version)>>
+         std::quoted(v.policy_version)>>std::quoted(v.observed_at))||
+       !std::isfinite(v.value)||v.value<0.0||v.value>1.0||v.scorer_id.empty()||
+       v.scorer_version.empty()||v.policy_version.empty()||v.observed_at.empty())return false;
+    history.push_back(std::move(v));
+   }
+  }
+ }
  std::string extra;return !(i>>extra);
 }
 bool ChaosClusterLedger::replay(){State staged;for(const auto&e:journal_->committed_events())if(e.kind=="CHAOS_CLUSTER_SNAPSHOT"){State next;if(!decode(e.payload,next))return false;staged=std::move(next);}state_=std::move(staged);return true;}
@@ -77,6 +107,26 @@ ChaosResult ChaosClusterLedger::admit_member(const std::string&o,const std::stri
 ChaosResult ChaosClusterLedger::propose_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosAssociation&a){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(a.association_id.empty()||a.from_ref==a.to_ref||!vp(a.provenance))return{false,false,state_version(),"INVALID_CHAOS_ASSOCIATION"};if(!it->second.members.count(a.from_ref)||!it->second.members.count(a.to_ref))return{false,false,state_version(),"CHAOS_ASSOCIATION_MEMBER_NOT_FOUND"};auto old=it->second.associations.find(a.association_id);if(old!=it->second.associations.end()){const bool same=old->second.from_ref==a.from_ref&&old->second.to_ref==a.to_ref&&old->second.type==a.type&&!old->second.history.empty()&&same_provenance(old->second.history.front().provenance,a.provenance);return{same,true,state_version(),same?std::string():"CHAOS_ASSOCIATION_ID_CONFLICT"};}auto x=a;x.status=ChaosAssociationStatus::Provisional;x.history.push_back({ChaosAssociationStatus::Provisional,a.provenance});it->second.associations.emplace(x.association_id,std::move(x));return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::review_association(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&aid,ChaosAssociationStatus st,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};auto a=it->second.associations.find(aid);if(a==it->second.associations.end())return{false,false,state_version(),"CHAOS_ASSOCIATION_NOT_FOUND"};if(st==ChaosAssociationStatus::Provisional||!vp(p))return{false,false,state_version(),"INVALID_ASSOCIATION_REVIEW"};if(a->second.status==st)return{true,true,state_version(),{}};if(a->second.status!=ChaosAssociationStatus::Provisional)return{false,false,state_version(),"CHAOS_ASSOCIATION_REVIEW_TERMINAL"};a->second.status=st;a->second.provenance=p;a->second.history.push_back({st,p});return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::add_pattern_hypothesis(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const ChaosPatternHypothesis&h){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(h.hypothesis_id.empty()||h.statement.empty()||h.member_refs.empty()||!vp(h.provenance)||(h.epistemic_state!="HYPOTHETICAL"&&h.epistemic_state!="UNVERIFIED"&&h.epistemic_state!="CONTRADICTED"&&h.epistemic_state!="REJECTED"))return{false,false,state_version(),"PATTERN_HYPOTHESIS_INVALID"};std::set<std::string>seen;for(const auto&r:h.member_refs)if(!it->second.members.count(r)||!seen.insert(r).second)return{false,false,state_version(),"PATTERN_HYPOTHESIS_MEMBER_INVALID"};for(const auto&r:h.counterexample_refs)if(!it->second.members.count(r))return{false,false,state_version(),"PATTERN_HYPOTHESIS_COUNTEREXAMPLE_INVALID"};auto old=it->second.pattern_hypotheses.find(h.hypothesis_id);if(old!=it->second.pattern_hypotheses.end())return{old->second.statement==h.statement,true,state_version(),old->second.statement==h.statement?std::string():"PATTERN_HYPOTHESIS_ID_CONFLICT"};it->second.pattern_hypotheses.emplace(h.hypothesis_id,h);if(it->second.organization==ChaosOrganization::Unordered)it->second.organization=ChaosOrganization::Provisional;return commit_snapshot(o,k,v,std::move(s),{});}
+ChaosResult ChaosClusterLedger::record_observation(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&dimension,const ChaosScoreObservation&observation){
+ std::lock_guard<std::mutex>lock(mutex_);
+ State s=state_;auto it=s.find(id);
+ if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};
+ static const std::set<std::string>allowed={"organization","salience","recognition_confidence","novelty","diversity","ambiguity","utility"};
+ if(!allowed.count(dimension)||!std::isfinite(observation.value)||observation.value<0.0||observation.value>1.0||
+    observation.scorer_id.empty()||observation.scorer_version.empty()||
+    observation.policy_version.empty()||observation.observed_at.empty())
+  return{false,false,state_version(),"CHAOS_SCORE_OBSERVATION_INVALID"};
+ auto&history=it->second.observations[dimension];
+ if(!history.empty()){
+  const auto&last=history.back();
+  if(last.scorer_id==observation.scorer_id&&last.scorer_version==observation.scorer_version&&
+     last.policy_version==observation.policy_version&&last.observed_at==observation.observed_at&&
+     last.value==observation.value)return{true,true,state_version(),{}};
+ }
+ if(history.size()>=100000)return{false,false,state_version(),"CHAOS_SCORE_OBSERVATION_LIMIT"};
+ history.push_back(observation);
+ return commit_snapshot(o,k,v,std::move(s),{});
+}
 ChaosResult ChaosClusterLedger::transition(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,ChaosLifecycle target,const std::string&reason,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(reason.empty()||!vp(p)||!allowed_transition(it->second.lifecycle,target))return{false,false,state_version(),"CHAOS_LIFECYCLE_TRANSITION_INVALID"};if(it->second.lifecycle==target)return{true,true,state_version(),{}};it->second.lifecycle=target;return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::promote_subset(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::map<std::string,std::string>&targets,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(targets.empty()||!vp(p)||(it->second.lifecycle!=ChaosLifecycle::Reviewable&&it->second.lifecycle!=ChaosLifecycle::Promoted))return{false,false,state_version(),"CHAOS_PROMOTION_INVALID"};for(const auto&x:targets)if(!it->second.members.count(x.first)||x.second.empty()||it->second.promoted_member_targets.count(x.first))return{false,false,state_version(),"CHAOS_PROMOTION_MEMBER_INVALID"};for(const auto&x:targets)it->second.promoted_member_targets.emplace(x);it->second.lifecycle=ChaosLifecycle::Promoted;return commit_snapshot(o,k,v,std::move(s),{});}
 ChaosResult ChaosClusterLedger::fork_subset(const std::string&o,const std::string&k,std::uint64_t v,const std::string&id,const std::string&child_id,const std::vector<std::string>&refs,const ChaosProvenance&p){std::lock_guard<std::mutex>lock(mutex_);State s=state_;auto it=s.find(id);if(it==s.end())return{false,false,state_version(),"CHAOS_CLUSTER_NOT_FOUND"};if(it->second.lifecycle!=ChaosLifecycle::Reviewable||child_id.empty()||s.count(child_id)||refs.empty()||!vp(p))return{false,false,state_version(),"CHAOS_FORK_INVALID"};std::set<std::string>selected;ChaosCluster child;child.cluster_id=child_id;child.lifecycle=ChaosLifecycle::Accumulating;child.organization=it->second.organization;child.creation_provenance=p;child.parent_refs.push_back(id);for(const auto&r:refs){if(!selected.insert(r).second||!it->second.members.count(r))return{false,false,state_version(),"CHAOS_FORK_MEMBER_INVALID"};child.members.emplace(r,it->second.members.at(r));}for(const auto&x:it->second.associations)if(selected.count(x.second.from_ref)&&selected.count(x.second.to_ref))child.associations.emplace(x.first,x.second);for(const auto&x:it->second.pattern_hypotheses){bool all=true;for(const auto&r:x.second.member_refs)if(!selected.count(r))all=false;if(all)child.pattern_hypotheses.emplace(x.first,x.second);}it->second.child_refs.push_back(child_id);it->second.lifecycle=ChaosLifecycle::Forked;s.emplace(child_id,std::move(child));return commit_snapshot(o,k,v,std::move(s),{});}
