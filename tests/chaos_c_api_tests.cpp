@@ -22,6 +22,9 @@ int main(){
  const char* hyp_members[]={"m1","m2"};const char* hyp_counterexamples[]={"m2"};
  SurgeChaosPatternHypothesisInput hypothesis{"hyp-1","latent pattern","HYPOTHETICAL","PROVISIONAL",
    hyp_members,2,nullptr,0,hyp_counterexamples,1,nullptr,0};
+ SurgeChaosScoreObservationInput score{0.93,"c-api-scorer","1.2","policy-score","2026-11-17T00:00:30Z"};
+ CHECK(surge_chaos_cluster_record_observation(h,"cc-score","cc-score-key",version,
+   "chaos-c-api","novelty",&score,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_add_pattern_hypothesis(h,"cc-hyp","cc-hyp-key",5,
    "chaos-c-api",&hypothesis,&p,&version,error,sizeof(error))==1);
  CHECK(surge_chaos_cluster_transition(h,"cc-review","cc-review-key",6,"chaos-c-api","REVIEWABLE","candidate pattern",&p,&version,error,sizeof(error))==1);
@@ -37,6 +40,8 @@ int main(){
  CHECK(std::string(output).find("REJECTED")!=std::string::npos);
  CHECK(std::string(output).find("hyp-1")!=std::string::npos);
  CHECK(std::string(output).find("counterexample_refs")!=std::string::npos);
+ CHECK(std::string(output).find("\"observations\"")!=std::string::npos);
+ CHECK(std::string(output).find("c-api-scorer")!=std::string::npos);
  char truncated[8192]{};required=0;
  CHECK(surge_chaos_cluster_get_bounded(h,"chaos-c-api",1,0,0,0,0,
    truncated,sizeof(truncated),&required,error,sizeof(error))==1);
