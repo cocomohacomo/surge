@@ -258,7 +258,8 @@ bool ContextGraph::build_reassessment(const State& s,const std::string& claim_id
   out.claim_temporal_state=evaluate_claim_validity(latest,reference_at);
  }
  for(const auto& item:s.relations){const auto& rel=item.second;
-  if(rel.to!=claim_id||s.nodes.at(rel.from).kind!=NodeKind::Evidence||
+  const auto source_node=s.nodes.find(rel.from);
+  if(rel.to!=claim_id||source_node==s.nodes.end()||source_node->second.kind!=NodeKind::Evidence||
     (rel.kind!=RelationKind::Supports&&rel.kind!=RelationKind::Contradicts&&rel.kind!=RelationKind::Retracts))continue;
   ReassessmentEvidenceSnapshot e;e.evidence_id=rel.from;e.relation_id=rel.id;e.relation=rel.kind;
   const auto ev=s.evidence_validity_history.find(e.evidence_id);

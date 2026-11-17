@@ -364,7 +364,9 @@ int main(){
     {
       ContextGraph recovered(reassessment_path);assert(recovered.open());
       assert(recovered.state_version()==4);
-      const auto& history=recovered.reassessment_history().at("reassess-claim");
+      const auto history_it=recovered.reassessment_history().find("reassess-claim");
+      assert(history_it!=recovered.reassessment_history().end());
+      const auto& history=history_it->second;
       assert(history.size()==2);
       assert(history[0].decision=="SUPPORTED"&&history[1].decision=="TEMPORAL_CONFLICT");
       assert(history[1].previous_hash==history[0].chain_hash);
