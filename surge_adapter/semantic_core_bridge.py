@@ -67,7 +67,8 @@ class _ChaosMember(ctypes.Structure):
 
 class _ChaosAssociation(ctypes.Structure):
     _fields_ = [("association_id", ctypes.c_char_p), ("from_member_ref", ctypes.c_char_p),
-                ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p)]
+                ("to_member_ref", ctypes.c_char_p), ("association_type", ctypes.c_char_p), ("valid_from_utc", ctypes.c_char_p),
+                ("valid_until_utc", ctypes.c_char_p)]
 
 class _ChaosScoreObservation(ctypes.Structure):
     _fields_ = [("value", ctypes.c_double), ("scorer_id", ctypes.c_char_p),
@@ -278,6 +279,11 @@ class SemanticCoreBridge(CppCoreBridge):
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
             ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         lib.surge_chaos_cluster_review_association.restype = ctypes.c_int
+        lib.surge_chaos_cluster_expire_due_associations.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_ChaosProvenance),
+            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_chaos_cluster_expire_due_associations.restype = ctypes.c_int
         lib.surge_chaos_cluster_add_pattern_hypothesis.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.c_char_p, ctypes.POINTER(_ChaosPatternHypothesis), ctypes.POINTER(_ChaosProvenance),
