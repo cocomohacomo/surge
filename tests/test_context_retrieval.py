@@ -165,7 +165,13 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 core.add_chaos_pattern_hypothesis(operation_id="hyp", idempotency_key="hyp",
                     expected_state_version=core.state_version, cluster_id="chaos/projection",
                     hypothesis={"hypothesis_id":"h1","statement":"latent relation",
-                                "member_refs":["m0","m1","m2"],"counterexample_refs":["m2"]},
+                                "member_refs":["m0","m1","m2"],"excluded_member_refs":["m2"],"counterexample_refs":["m2"]},
+                    provenance=provenance)
+                core.review_chaos_pattern_hypothesis(
+                    operation_id="hyp-review", idempotency_key="hyp-review",
+                    expected_state_version=core.state_version, cluster_id="chaos/projection",
+                    hypothesis_id="h1", status="REVIEWABLE", epistemic_state="UNVERIFIED",
+                    exclusion_reasons={"m2": "counterexample retained outside pattern support"},
                     provenance=provenance)
                 full = core.get_chaos_cluster("chaos/projection")
                 self.assertTrue(full["complete"])
@@ -176,6 +182,9 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(expiring["valid_until"], "2026-11-18T00:00:00Z")
                 self.assertEqual(expiring["history"][-1]["status"], "EXPIRED")
                 self.assertEqual(full["pattern_hypotheses"][0]["counterexample_refs"], ["m2"])
+                self.assertEqual(full["pattern_hypotheses"][0]["history"][-1]["status"], "REVIEWABLE")
+                self.assertEqual(full["pattern_hypotheses"][0]["exclusion_reasons"]["m2"],
+                                 "counterexample retained outside pattern support")
                 bounded = core.get_chaos_cluster("chaos/projection", max_members=1,
                     max_associations=0, max_hypotheses=0)
                 self.assertFalse(bounded["complete"])
