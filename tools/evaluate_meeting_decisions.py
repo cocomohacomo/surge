@@ -55,7 +55,7 @@ def validate_span(item: dict, source: str, source_digest: str) -> bool:
 
 def evaluate(cases: list[dict], gold_rows: list[dict], pred_rows: list[dict],
              min_coverage: float, min_critical_recall: float,
-             max_selective_risk: float) -> dict:
+             max_selective_risk: float, min_evidence_grounding: float = 0.98) -> dict:
     case_map = index_unique(cases, "cases")
     gold_map = index_unique(gold_rows, "gold")
     pred_map = index_unique(pred_rows, "predictions")
@@ -134,10 +134,14 @@ def evaluate(cases: list[dict], gold_rows: list[dict], pred_rows: list[dict],
     critical_recall = critical_tp / (critical_tp + critical_fn) if critical_tp + critical_fn else None
     selective_risk = ((accepted_cases-exact_accepted_cases)/accepted_cases) if accepted_cases else None
     evidence_rate = grounded / predicted_items if predicted_items else None
-    if not case_map or coverage is None or critical_recall is None or selective_risk is None:
+    if (not case_map or coverage is None or critical_recall is None or
+        selective_risk is None or evidence_rate is None):
         gate = "INCONCLUSIVE"
     else:
-        gate = "PASS" if coverage >= min_coverage and critical_recall >= min_critical_recall and selective_risk <= max_selective_risk else "FAIL"
+        gate = "PASS" if (coverage >= min_coverage and
+                          critical_recall >= min_critical_recall and
+                          selective_risk <= max_selective_risk and
+                          evidence_rate >= min_evidence_grounding) else "FAIL"
     return {
         "benchmark": "SURGE_MEETING_DECISIONS_V0.1",
         "case_count": len(case_map), "accepted_cases": accepted_cases, "review_cases": review_cases,
@@ -149,7 +153,8 @@ def evaluate(cases: list[dict], gold_rows: list[dict], pred_rows: list[dict],
         "selective_risk": selective_risk,
         "thresholds": {"minimum_coverage": min_coverage,
                        "minimum_critical_recall": min_critical_recall,
-                       "maximum_selective_risk": max_selective_risk},
+                       "maximum_selective_risk": max_selective_risk,
+                       "minimum_evidence_grounding": min_evidence_grounding},
         "gate": gate, "per_case": per_case,
         "note": "INDEPENDENT_GOLD_REQUIRED; a structurally valid run is not evidence of model quality."
     }
@@ -164,8 +169,10 @@ def main() -> None:
     parser.add_argument("--min-coverage", type=float, default=0.70)
     parser.add_argument("--min-critical-recall", type=float, default=0.90)
     parser.add_argument("--max-selective-risk", type=float, default=0.10)
+    parser.add_argument("--min-evidence-grounding", type=float, default=0.98)
     args = parser.parse_args()
-    for value in (args.min_coverage, args.min_critical_recall, args.max_selective_risk):
+    for value in (args.min_coverage, args.min_critical_recall,
+                  args.max_selective_risk, args.min_evidence_grounding):
         if not math.isfinite(value) or not 0 <= value <= 1:
             parser.error("thresholds must be finite fractions in [0,1]")
     result = evaluate(read_jsonl(args.cases), read_jsonl(args.gold),

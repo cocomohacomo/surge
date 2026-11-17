@@ -69,7 +69,7 @@ Primary:
 Operational:
 - end-to-end latency p50/p95/p99, throughput, peak RSS, CPU utilization, model artifact size, tokens/cost per meeting, journal growth and recovery time.
 
-The evaluator computes a deterministic pilot gate from pre-registered thresholds. Defaults (coverage >= 0.70, critical recall >= 0.90, selective risk <= 0.10) are pilot starting values, not achieved results. Freeze thresholds and profile digest before opening test results. Zero denominator or missing independent gold yields INCONCLUSIVE.
+The evaluator computes a deterministic pilot gate from pre-registered thresholds. Defaults (coverage >= 0.70, critical recall >= 0.90, selective risk <= 0.10, exact evidence grounding >= 0.98) are pilot starting values, not achieved results. Freeze thresholds and profile digest before opening test results. Zero denominator or missing independent gold yields INCONCLUSIVE.
 
 ## 6. Demonstrating SURGE's incremental value
 
