@@ -796,6 +796,35 @@ int surge_question_memory_enforce_capacity(void* opaque,const char* const* ids,c
   copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_MEMORY_CAPACITY_UNKNOWN_EXCEPTION");return 0;}
 }
+int surge_question_get_context_bundle(void* opaque,const char* question_id,size_t max_depth,size_t max_nodes,char* output,size_t output_capacity,size_t* required_capacity,char* error,size_t error_capacity){
+ try{
+  if(!opaque||!question_id||!*question_id||max_depth==0||max_depth>64||max_nodes==0||max_nodes>4096){copy_text(error,error_capacity,"QUESTION_CONTEXT_ARGUMENT_INVALID");return 0;}
+  const auto& graph=static_cast<Handle*>(opaque)->graph;const auto root=graph.nodes().find(question_id);
+  if(root==graph.nodes().end()||root->second.kind!=surge::NodeKind::Question){copy_text(error,error_capacity,"QUESTION_NOT_FOUND");return 0;}
+  std::set<std::string> questions{question_id};std::map<std::string,std::vector<std::string>> reverse;
+  for(const auto& item:graph.relations()){const auto&r=item.second;if(r.kind!=surge::RelationKind::DependsOn)continue;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(a!=graph.nodes().end()&&b!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Question&&b->second.kind==surge::NodeKind::Question)reverse[r.to].push_back(r.from);}
+  for(auto& item:reverse)std::sort(item.second.begin(),item.second.end());
+  std::vector<std::pair<std::string,size_t>> queue{{question_id,0}};
+  for(size_t i=0;i<queue.size();++i){auto cur=queue[i];if(cur.second>=max_depth)continue;for(const auto& next:reverse[cur.first])if(questions.insert(next).second){if(questions.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_CONTEXT_NODE_LIMIT");return 0;}queue.push_back({next,cur.second+1});}}
+  std::set<std::string> aspects,claims,evidence;
+  for(const auto& item:graph.nodes()){const auto& n=item.second;if(n.kind==surge::NodeKind::QuestionAspect)for(const auto& ref:n.references)if(questions.count(ref)){aspects.insert(n.id);break;}}
+  std::set<std::string> anchors=questions;anchors.insert(aspects.begin(),aspects.end());std::set<std::string> about_targets;
+  for(const auto& item:graph.relations()){const auto&r=item.second;if(r.kind==surge::RelationKind::About&&anchors.count(r.from)){auto target=graph.nodes().find(r.to);if(target!=graph.nodes().end()&&(target->second.kind==surge::NodeKind::Cluster||target->second.kind==surge::NodeKind::Entity))about_targets.insert(r.to);}}
+  for(const auto& item:graph.nodes()){const auto& n=item.second;if(n.kind!=surge::NodeKind::Claim&&n.kind!=surge::NodeKind::Evidence)continue;bool linked=false;for(const auto& ref:n.references)if(anchors.count(ref)||about_targets.count(ref)){linked=true;break;}if(!linked)for(const auto& rel:graph.relations()){const auto&r=rel.second;if((r.from==n.id&&(anchors.count(r.to)||about_targets.count(r.to)))||(r.to==n.id&&(anchors.count(r.from)||about_targets.count(r.from)))){linked=true;break;}}if(linked){if(n.kind==surge::NodeKind::Claim)claims.insert(n.id);else evidence.insert(n.id);}}
+  for(const auto& item:graph.relations()){const auto&r=item.second;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(claims.count(r.from)&&b!=graph.nodes().end()&&b->second.kind==surge::NodeKind::Evidence)evidence.insert(r.to);if(claims.count(r.to)&&a!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Evidence)evidence.insert(r.from);}
+  if(questions.size()+aspects.size()+claims.size()+evidence.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_CONTEXT_NODE_LIMIT");return 0;}
+  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";default:return "UNKNOWN";}};
+  auto mn=[](surge::QuestionMemoryState s){return s==surge::QuestionMemoryState::Active?"ACTIVE":s==surge::QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";};
+  auto an=[](surge::QuestionAspectStatus s){return s==surge::QuestionAspectStatus::Open?"OPEN":s==surge::QuestionAspectStatus::Resolved?"RESOLVED":"DEFERRED";};
+  auto cn=[](surge::ClaimStatus s){return s==surge::ClaimStatus::Active?"ACTIVE":s==surge::ClaimStatus::Superseded?"SUPERSEDED":"RETRACTED";};
+  std::set<std::string> included=questions;included.insert(aspects.begin(),aspects.end());included.insert(about_targets.begin(),about_targets.end());included.insert(claims.begin(),claims.end());included.insert(evidence.begin(),evidence.end());
+  std::ostringstream json;json<<"{\"question_id\":"<<json_quote(question_id)<<",\"state_version\":"<<graph.state_version()<<",\"nodes\":[";bool first=true;
+  for(const auto&id:included){const auto&n=graph.nodes().at(id);if(!first)json<<',';first=false;json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(kn(n.kind))<<",\"content\":"<<json_quote(n.content)<<",\"references\":[";for(size_t i=0;i<n.references.size();++i){if(i)json<<',';json<<json_quote(n.references[i]);}json<<']';if(n.kind==surge::NodeKind::Question)json<<",\"memory_state\":"<<json_quote(mn(graph.question_memory_state(n.id)));if(n.kind==surge::NodeKind::QuestionAspect)json<<",\"aspect_status\":"<<json_quote(an(graph.question_aspect_status(n.id)));if(n.kind==surge::NodeKind::Claim)json<<",\"claim_status\":"<<json_quote(cn(graph.claim_status(n.id)));json<<'}';}
+  json<<"],\"relations\":[";first=true;for(const auto&item:graph.relations()){const auto&r=item.second;if(!included.count(r.from)||!included.count(r.to))continue;if(!first)json<<',';first=false;const char* kind=r.kind==surge::RelationKind::Supports?"SUPPORTS":r.kind==surge::RelationKind::Contradicts?"CONTRADICTS":r.kind==surge::RelationKind::AgreesWith?"AGREES_WITH":r.kind==surge::RelationKind::ConflictsWith?"CONFLICTS_WITH":r.kind==surge::RelationKind::DependsOn?"DEPENDS_ON":r.kind==surge::RelationKind::About?"ABOUT":r.kind==surge::RelationKind::Supersedes?"SUPERSEDES":r.kind==surge::RelationKind::Retracts?"RETRACTS":r.kind==surge::RelationKind::Duplicates?"DUPLICATES":"CONTAINS";json<<"{\"id\":"<<json_quote(r.id)<<",\"kind\":"<<json_quote(kind)<<",\"from\":"<<json_quote(r.from)<<",\"to\":"<<json_quote(r.to)<<'}';}
+  json<<"]}";auto value=json.str();if(required_capacity)*required_capacity=value.size()+1;if(!output||output_capacity<value.size()+1){copy_text(error,error_capacity,"QUESTION_CONTEXT_BUFFER_TOO_SMALL");return 0;}copy_text(output,output_capacity,value);copy_text(error,error_capacity,"");return 1;
+ }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}catch(...){copy_text(error,error_capacity,"QUESTION_CONTEXT_UNKNOWN_EXCEPTION");return 0;}
+}
+
 int surge_question_get_reevaluation_candidates(void* opaque, const char* question_id,
     size_t max_depth, size_t max_nodes, char* output, size_t output_capacity,
     size_t* required_capacity, char* error, size_t error_capacity) {

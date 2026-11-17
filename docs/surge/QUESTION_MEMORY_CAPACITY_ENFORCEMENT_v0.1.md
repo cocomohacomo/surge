@@ -27,3 +27,8 @@ A Question participating in a DEPENDS_ON edge receives a retention floor of 0.75
 ## Dependency-aware reactivation
 
 When a Question is referenced, `record_question_reference_with_dependents` may traverse reverse `DEPENDS_ON` edges and reactivate dormant dependent Questions. The root reference count and all dependent reactivations are committed in one EventJournal transaction. Traversal is deterministic, bounded by depth (1..64) and node count (1..4096), and fails closed before mutation on overflow or stale state version. Archived Questions are never implicitly reactivated, though traversal may continue through them to discover downstream dependents. Dependency reactivation does not increment dependent reference counts. Replay restores the exact active/dormant state.
+
+
+## Read-only Question context restoration
+
+`get_question_context_bundle(question_id, max_depth=8, max_nodes=256)` builds a bounded read-only context view. It includes the root and dependent Questions, QuestionAspects that reference those Questions, Claims and Evidence connected by explicit references or graph relations, and relations whose endpoints are both included. It does not reactivate or rewrite any node, resolve QuestionAspects, or change Claim validity. Archived Questions remain visible with their lifecycle state. Limits fail closed and the result carries the State Version for optimistic follow-up operations.
