@@ -23,7 +23,7 @@ independent semantic-quality evaluation.
 
 | Priority | Requirement | Status | Gap |
 |---|---|---|---|
-| P0 | Orthogonal score observations | Partial | Schema defines cluster observations and member salience / association confidence / hypothesis confidence. Initial native ledger tranche stores cluster-level observations only; adapters, bounded projection and retrieval consumption are missing. |
+| P0 | Orthogonal score observations | Partial | Cluster-level observations now persist and are exposed through C ABI/Python and bounded schema-aligned latest/history projection. Member salience, association confidence and hypothesis confidence are not yet persisted; score-aware retrieval is missing. |
 | P0 | Membership status and unmembership | Missing | Native member record has identity/provenance but no membership status or append-only removal/reinstatement edge history. |
 | P1 | PatternHypothesis auditability | Partial | Member/excluded/counterexample/alternative refs persist. Exclusion reasons, confidence observations and append-only hypothesis review revisions are absent. |
 | P1 | Association valid-time | Partial | Status revisions include provenance and terminal EXPIRED exists. valid_from/valid_until are not persisted and expiry is not automatically evaluated. |
@@ -37,18 +37,14 @@ independent semantic-quality evaluation.
 
 ## Implementation order
 
-1. Persist scorer-bound orthogonal observations with append-only history and
-   backward-compatible replay. Do not collapse dimensions or treat missing as
-   zero.
-2. Expose bounded observation read/write through C ABI and Python; test restart
-   parity and reject invalid dimensions, NaN/Infinity, out-of-range values and
-   malformed provenance.
-3. Add member membership status and append-only unmembership/reinstatement.
-4. Add PatternHypothesis review/exclusion rationale and association valid-time.
-5. Implement score-aware retrieval with independently configurable novelty,
+1. Extend observation ownership to member salience, association confidence and
+   PatternHypothesis confidence, preserving independent scorer lineage.
+2. Add member membership status and append-only unmembership/reinstatement.
+3. Add PatternHypothesis review/exclusion rationale and association valid-time.
+4. Implement score-aware retrieval with independently configurable novelty,
    salience and diversity constraints, explicit ranking rationale and omissions.
-6. Close all CC01-CC20 assertions, including negative and restart cases.
-7. Complete merge/reactivation, retention manifests/tombstones, and operational
+5. Close all CC01-CC20 assertions, including negative and restart cases.
+6. Complete merge/reactivation, retention manifests/tombstones, and operational
    hardening before production claims.
 
 ## First implementation tranche
@@ -57,3 +53,13 @@ The score-observation persistence work is being delivered separately from this
 audit. It is intentionally limited to the native C++ ledger first. It does not
 claim full score observation conformance until the C ABI/Python adapters,
 bounded projection and score-aware retrieval are implemented and tested.
+
+
+## Follow-up: score observation public API
+
+The cluster-level score observation operation is now exposed through the C ABI
+and Python `SemanticCoreBridge.record_chaos_score_observation`. Bounded JSON
+returns the latest value in the schema-compatible `observations` object and
+history revisions in `observation_history`, with offsets and omission counts.
+Validation includes finite [0,1] values, required scorer/policy/timestamp
+metadata, dimension allow-list, response cap, and restart replay tests.
