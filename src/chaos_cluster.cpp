@@ -1,4 +1,5 @@
 #include "surge/chaos_cluster.hpp"
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include <utility>
@@ -84,6 +85,20 @@ std::string ChaosClusterLedger::encode(const State&s){
  o<<"CC6 "<<s.size()<<' ';
  for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.associations.size()<<' ';
   for(const auto&item:c.associations)o<<std::quoted(item.first)<<' '<<std::quoted(item.second.valid_from)<<' '<<std::quoted(item.second.valid_until)<<' ';
+ }
+ // CC7 persists PatternHypothesis review revisions and explicit exclusion rationales.
+ auto write_reasons=[&](const std::map<std::string,std::string>&reasons){
+  o<<reasons.size()<<' ';
+  for(const auto&item:reasons)o<<std::quoted(item.first)<<' '<<std::quoted(item.second)<<' ';
+ };
+ o<<"CC7 "<<s.size()<<' ';
+ for(const auto&kv:s){const auto&c=kv.second;o<<std::quoted(c.cluster_id)<<' '<<c.pattern_hypotheses.size()<<' ';
+  for(const auto&item:c.pattern_hypotheses){const auto&h=item.second;
+   o<<std::quoted(item.first)<<' '<<std::quoted(h.status)<<' '<<std::quoted(h.epistemic_state)<<' ';
+   write_reasons(h.exclusion_reasons);o<<h.history.size()<<' ';
+   for(const auto&revision:h.history){o<<std::quoted(revision.status)<<' '<<std::quoted(revision.epistemic_state)<<' ';
+    write_reasons(revision.exclusion_reasons);wp(o,revision.provenance);}
+  }
  }
  return o.str();
 }
@@ -192,6 +207,35 @@ bool ChaosClusterLedger::decode(const std::string&p,State&s){
    if(!(i>>std::quoted(ref)>>std::quoted(from)>>std::quoted(until))||!associations.count(ref)||
       !utc_timestamp(from)||!utc_timestamp(until)||(!from.empty()&&!until.empty()&&from>=until))return false;
    associations.at(ref).valid_from=std::move(from);associations.at(ref).valid_until=std::move(until);
+  }
+ }
+ std::string hypothesis_marker;
+ if(!(i>>hypothesis_marker))return true;
+ if(hypothesis_marker!="CC7")return false;
+ std::size_t hypothesis_clusters=0;if(!(i>>hypothesis_clusters)||hypothesis_clusters!=s.size())return false;
+ auto read_reasons=[&](std::map<std::string,std::string>&reasons){
+  std::size_t reason_count=0;if(!(i>>reason_count)||reason_count>100000)return false;
+  for(std::size_t x=0;x<reason_count;++x){std::string ref,reason;
+   if(!(i>>std::quoted(ref)>>std::quoted(reason))||ref.empty()||reason.empty()||
+      !reasons.emplace(ref,reason).second)return false;
+  }
+  return true;
+ };
+ for(std::size_t z=0;z<hypothesis_clusters;++z){std::string id;std::size_t count=0;
+  if(!(i>>std::quoted(id)>>count)||!s.count(id)||count!=s.at(id).pattern_hypotheses.size())return false;
+  auto&hypotheses=s.at(id).pattern_hypotheses;
+  for(std::size_t x=0;x<count;++x){std::string ref,status,epistemic;std::size_t revisions=0;
+   if(!(i>>std::quoted(ref)>>std::quoted(status)>>std::quoted(epistemic))||!hypotheses.count(ref)||
+      !read_reasons(hypotheses.at(ref).exclusion_reasons)||!(i>>revisions)||revisions>100000)return false;
+   auto&h=hypotheses.at(ref);h.status=status;h.epistemic_state=epistemic;
+   for(std::size_t y=0;y<revisions;++y){ChaosHypothesisRevision revision;
+    if(!(i>>std::quoted(revision.status)>>std::quoted(revision.epistemic_state))||
+       !read_reasons(revision.exclusion_reasons)||!rp(i,revision.provenance))return false;
+    h.history.push_back(std::move(revision));
+   }
+   if(!h.history.empty()&&(h.history.back().status!=h.status||
+      h.history.back().epistemic_state!=h.epistemic_state||
+      h.history.back().exclusion_reasons!=h.exclusion_reasons))return false;
   }
  }
  std::string extra;return !(i>>extra);
