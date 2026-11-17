@@ -21,6 +21,14 @@ class _Node(ctypes.Structure):
                 ("references", ctypes.POINTER(ctypes.c_char_p)),
                 ("reference_count", ctypes.c_size_t)]
 
+class _Proposal(ctypes.Structure):
+    _fields_ = [("proposal_id", ctypes.c_char_p), ("packet_ref", ctypes.c_char_p),
+                ("base_state_version", ctypes.c_uint64),
+                ("context_hint_state_version", ctypes.c_uint64),
+                ("packet_source_generation", ctypes.c_char_p),
+                ("packet_source_sequence", ctypes.c_uint64),
+                ("serialized_json", ctypes.c_char_p)]
+
 class _Relation(ctypes.Structure):
     _fields_ = [("id", ctypes.c_char_p), ("kind", ctypes.c_char_p),
                 ("from_id", ctypes.c_char_p), ("to_id", ctypes.c_char_p)]
@@ -47,17 +55,21 @@ class SemanticCoreBridge(CppCoreBridge):
     def __init__(self, journal_path, library_path=None):
         super().__init__(journal_path, library_path)
         lib = self._lib
-        lib.surge_packet_core_admit_and_apply.argtypes = [
+        lib.surge_packet_core_admit_and_apply_with_proposal.argtypes = [
             ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
             ctypes.POINTER(_Relation), ctypes.c_size_t,
             ctypes.POINTER(_Scope), ctypes.c_size_t,
-            ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(_Proposal),
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
-        lib.surge_packet_core_admit_and_apply.restype = ctypes.c_int
+        lib.surge_packet_core_admit_and_apply_with_proposal.restype = ctypes.c_int
+        lib.surge_classification_proposal_get.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_classification_proposal_get.restype = ctypes.c_int
         lib.surge_context_graph_apply_scoped.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
             ctypes.POINTER(_Node), ctypes.c_size_t,
@@ -259,15 +271,29 @@ class SemanticCoreBridge(CppCoreBridge):
         focus = delta.get("focus")
         focus_cluster = str(focus["cluster_id"]).encode() if focus else None
         focus_interest = str(focus.get("interest_id", "")).encode() if focus else None
+        proposal_value = delta.get("classification_proposal")
+        proposal_input = None
+        proposal_json = None
+        if proposal_value is not None:
+            proposal_json = json.dumps(proposal_value, ensure_ascii=False,
+                                       separators=(",", ":"), sort_keys=True).encode("utf-8")
+            proposal_input = _Proposal(
+                str(proposal_value["proposal_id"]).encode("utf-8"),
+                str(proposal_value["packet_ref"]).encode("utf-8"),
+                int(proposal_value["base_state_version"]),
+                int(proposal_value["context_hint_state_version"]),
+                str(proposal_value["packet_source_generation"]).encode("utf-8"),
+                int(proposal_value["packet_source_sequence"]), proposal_json)
         duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
         status, error = ctypes.create_string_buffer(128), ctypes.create_string_buffer(1024)
-        ok = self._lib.surge_packet_core_admit_and_apply(
+        ok = self._lib.surge_packet_core_admit_and_apply_with_proposal(
             self._handle, ctypes.byref(packet_input), snapshot_buffer, len(source),
             str(delta["delta_id"]).encode(), str(delta["idempotency_key"]).encode(),
             int(delta["expected_state_version"]), node_array, len(nodes),
             relation_array, len(relations), scope_array, len(scopes),
-            focus_cluster, focus_interest, ctypes.byref(duplicate),
-            ctypes.byref(version), status, len(status), error, len(error))
+            focus_cluster, focus_interest,
+            ctypes.byref(proposal_input) if proposal_input is not None else None,
+            ctypes.byref(duplicate), ctypes.byref(version), status, len(status), error, len(error))
         if not ok:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
                                  "ATOMIC_SEMANTIC_COMMIT_FAILED")
@@ -281,6 +307,35 @@ class SemanticCoreBridge(CppCoreBridge):
             range_digest=range_digest, canonical_request_digest=request_digest)
         return admission, {"committed": True, "duplicate": bool(duplicate.value),
                            "state_version": int(version.value)}
+
+
+    def get_classification_proposal(self, proposal_id: str) -> dict[str, Any]:
+        """Load a committed ClassificationProposal from EventJournal after restart."""
+        if not isinstance(proposal_id, str) or not proposal_id:
+            raise PacketRejected("CLASSIFICATION_PROPOSAL_ID_REQUIRED")
+        required = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(256)
+        fn = self._lib.surge_classification_proposal_get
+        ok = fn(self._handle, proposal_id.encode("utf-8"), None, 0,
+                ctypes.byref(required), error, len(error))
+        if ok or error.value.decode("utf-8", errors="replace") != \
+                "CLASSIFICATION_PROPOSAL_BUFFER_TOO_SMALL":
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLASSIFICATION_PROPOSAL_SIZE_QUERY_FAILED")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(256)
+        ok = fn(self._handle, proposal_id.encode("utf-8"), output, len(output),
+                ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "CLASSIFICATION_PROPOSAL_READ_FAILED")
+        try:
+            proposal = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("CLASSIFICATION_PROPOSAL_JSON_INVALID") from exc
+        if not isinstance(proposal, dict) or proposal.get("proposal_id") != proposal_id:
+            raise PacketRejected("CLASSIFICATION_PROPOSAL_RESPONSE_INVALID")
+        return proposal
 
 
     def dependency_evaluation(self, delta_id: str) -> dict[str, Any]:
