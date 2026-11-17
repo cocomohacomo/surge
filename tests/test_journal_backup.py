@@ -27,6 +27,14 @@ class JournalBackupTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "JOURNAL_WRITER_LOCKED"):
                     create_backup(source, root / "blocked.sgj")
 
+    def test_second_lock_in_same_process_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "live.sgj"
+            with writer_lock(source):
+                with self.assertRaisesRegex(RuntimeError, "JOURNAL_WRITER_LOCKED"):
+                    with writer_lock(source):
+                        self.fail("a second exclusive writer lock must not be acquired")
+
     def test_restore_refuses_overwrite_without_explicit_flag(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
