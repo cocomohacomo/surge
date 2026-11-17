@@ -26,7 +26,7 @@ int main(){
  CHECK(std::string(focus_output).find("chaos-c-api")!=std::string::npos);
  char retrieval_output[4096]{};size_t retrieval_required=0;
  CHECK(surge_chaos_cluster_retrieve(h,"chaos-c-api",1,1,retrieval_output,sizeof(retrieval_output),&retrieval_required,error,sizeof(error))==1);
- CHECK(std::string(retrieval_output).find("\\\"complete\\\":false")!=std::string::npos);
+ CHECK(std::string(retrieval_output).find("\"complete\":false")!=std::string::npos);
  CHECK(std::string(retrieval_output).find("omitted_member_refs")!=std::string::npos);
  char output[4096]{};size_t required=0;
  CHECK(surge_chaos_cluster_get(h,"chaos-c-api",output,sizeof(output),&required,error,sizeof(error))==1);
