@@ -40,11 +40,18 @@ struct ChaosAssociation {
  std::vector<ChaosStatusRevision> history;
  std::vector<ChaosScoreObservation> confidence_observations;
 };
+struct ChaosHypothesisRevision {
+ std::string status, epistemic_state;
+ std::map<std::string,std::string> exclusion_reasons;
+ ChaosProvenance provenance;
+};
 struct ChaosPatternHypothesis {
  std::string hypothesis_id, statement, epistemic_state{"HYPOTHETICAL"}, status{"PROVISIONAL"};
  std::vector<std::string> member_refs, excluded_member_refs, counterexample_refs, alternative_hypothesis_refs;
  ChaosProvenance provenance;
  std::vector<ChaosScoreObservation> confidence_observations;
+ std::map<std::string,std::string> exclusion_reasons;
+ std::vector<ChaosHypothesisRevision> history;
 };
 struct ChaosCluster {
  std::string cluster_id;
@@ -73,6 +80,7 @@ class ChaosClusterLedger {
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
  ChaosResult expire_due_associations(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
+ ChaosResult review_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const std::map<std::string,std::string>&,const ChaosProvenance&);
  ChaosResult record_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const ChaosScoreObservation&);
  ChaosResult record_entity_observation(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,const ChaosScoreObservation&);
  ChaosResult transition(const std::string&,const std::string&,std::uint64_t,const std::string&,ChaosLifecycle,const std::string&,const ChaosProvenance&);
