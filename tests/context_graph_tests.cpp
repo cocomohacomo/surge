@@ -97,6 +97,47 @@ int main(){
           "dependency-on-change");
     }
   }
+  {
+    const auto evidence_path=(root/"evidence-temporal-validity.sgj").string();
+    {
+      ContextGraph graph(evidence_path);assert(graph.open());
+      SemanticDelta seed;seed.delta_id="evidence-temporal-seed";seed.idempotency_key="evidence-temporal-seed";
+      seed.expected_state_version=0;
+      seed.nodes={{{"ev-validity-basis",NodeKind::Evidence,"発行元の契約台帳",{}}},
+                  {{"ev-validity-subject",NodeKind::Evidence,"契約書",{}}}};
+      seed.relations={{{"ev-validity-basis-supports",RelationKind::Supports,
+                        "ev-validity-basis","ev-validity-subject"}}};
+      seed.evidence_validity_updates.push_back({"ev-validity-subject",
+          "2026-01-01T00:00:00+09:00","2026-04-01T00:00:00+09:00",
+          "ev-validity-basis",1});
+      assert(graph.apply(seed).committed && graph.state_version()==1);
+      assert(graph.evidence_validity_at("ev-validity-subject","2025-12-31T15:00:00Z")==ClaimTemporalState::Valid);
+      assert(graph.evidence_validity_at("ev-validity-subject","2026-03-31T15:00:00Z")==ClaimTemporalState::Expired);
+      assert(graph.evidence_validity_at("missing-evidence","2026-02-01T00:00:00Z")==ClaimTemporalState::Unknown);
+      SemanticDelta correction;correction.delta_id="evidence-temporal-correction";
+      correction.idempotency_key="evidence-temporal-correction";correction.expected_state_version=1;
+      correction.evidence_validity_updates.push_back({"ev-validity-subject",
+          "2025-12-01T00:00:00Z","2026-05-01T00:00:00Z",
+          "ev-validity-basis",2});
+      assert(graph.apply(correction).committed && graph.state_version()==2);
+      assert(graph.evidence_validity_history().at("ev-validity-subject").size()==2);
+      SemanticDelta invalid;invalid.delta_id="evidence-temporal-invalid";
+      invalid.idempotency_key="evidence-temporal-invalid";invalid.expected_state_version=2;
+      invalid.evidence_validity_updates.push_back({"ev-validity-subject",
+          "2026-05-01T00:00:00Z","2026-04-01T00:00:00Z",
+          "ev-validity-basis",3});
+      assert(graph.apply(invalid).error=="EVIDENCE_VALIDITY_INTERVAL_INVALID");
+      assert(graph.state_version()==2);
+    }
+    {
+      ContextGraph recovered(evidence_path);assert(recovered.open());
+      assert(recovered.state_version()==2);
+      assert(recovered.evidence_validity_history().at("ev-validity-subject").size()==2);
+      const auto latest=recovered.latest_evidence_validity("ev-validity-subject");
+      assert(latest && latest->validity.revision==2 && latest->recorded_state_version==2);
+      assert(recovered.evidence_validity_at("ev-validity-subject","2026-03-01T00:00:00Z")==ClaimTemporalState::Valid);
+    }
+  }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);assert(graph.open());

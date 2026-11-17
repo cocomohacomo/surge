@@ -84,3 +84,28 @@ preserved.
 ## 10. Scope boundary
 
 Core implements explicit valid-time intervals, timezone-normalized comparison, append-only interval revisions, transaction-version lineage, point-in-time evaluation and temporal dependency propagation. Natural-language extraction is a separate conservative adapter and does not constitute automatic high-accuracy recognition. Interval overlap resolution across separate Claims and a bitemporal query API across arbitrary historical transaction versions remain out of scope.
+
+
+## 11. Evidence temporal validity in Core
+
+Evidence has its own append-only valid-time history, independent of the
+ClaimValidity history. Each EvidenceValidity revision records the Evidence
+whose modeled-world applicability is described, a half-open interval
+[valid_from, valid_until), a supporting Evidence basis, a contiguous
+revision number, optional paired review Evidence/reviewer provenance, and
+the transaction state version.
+
+The basis must be an existing Evidence node. It may be the subject Evidence
+itself or a separate Evidence connected by an explicit SUPPORTS relation
+from basis to subject. Missing validity remains UNKNOWN; observation,
+publication, and retrieval timestamps are not silently promoted to valid time.
+
+Evidence validity updates are part of SemanticDelta fingerprinting, atomic
+journal commit, and deterministic replay. Corrections append revisions and
+preserve the complete prior history. Point-in-time lookup uses the same
+UNKNOWN, NOT_YET_VALID, VALID and EXPIRED states as Claim validity.
+
+Errors: EVIDENCE_VALIDITY_EVIDENCE_INVALID, EVIDENCE_VALIDITY_BASIS_INVALID,
+EVIDENCE_VALIDITY_BASIS_NOT_BOUND, EVIDENCE_VALIDITY_REVIEW_PROVENANCE_INVALID,
+EVIDENCE_VALIDITY_REVIEW_EVIDENCE_INVALID, EVIDENCE_VALIDITY_TIMESTAMP_INVALID,
+EVIDENCE_VALIDITY_INTERVAL_INVALID, EVIDENCE_VALIDITY_REVISION_INVALID.

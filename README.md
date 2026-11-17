@@ -168,3 +168,6 @@ An optional [ONNX Runtime CPU backend](docs/surge/COMPACT_ONNX_CPU_BACKEND_v0.1.
 ## Temporal Reassessment Trace
 
 The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEMPORAL_REASSESSMENT_EVIDENCE_TRACE_v0.1.md) records Claim validity revisions, Evidence valid-time intervals, provenance timestamps, evaluation instants and explainable decision reasons in a verifiable append-only trace chain.
+
+
+- **Core Evidence Temporal Validity v0.1:** Evidence valid-time revisions are append-only, transactionally journaled, and queryable at explicit RFC3339 instants. See [EVIDENCE_TEMPORAL_VALIDITY_v0.1.md](docs/surge/EVIDENCE_TEMPORAL_VALIDITY_v0.1.md).

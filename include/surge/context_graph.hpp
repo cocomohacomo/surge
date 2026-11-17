@@ -43,6 +43,8 @@ struct AddRelation { GraphRelation relation; };
 struct AddScopeSpan { ScopeSpanProposal span; std::string source_snapshot; };
 struct ClaimValidity { std::string claim_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; std::string review_evidence_id{}, reviewer_id{}; };
 struct ClaimValidityRecord { ClaimValidity validity; std::uint64_t recorded_state_version{0}; };
+struct EvidenceValidity { std::string evidence_id, valid_from, valid_until, basis_evidence_id; std::uint64_t revision{0}; std::string review_evidence_id{}, reviewer_id{}; };
+struct EvidenceValidityRecord { EvidenceValidity validity; std::uint64_t recorded_state_version{0}; };
 ClaimTemporalState evaluate_claim_validity(const ClaimValidityRecord& record, const std::string& instant);
 struct SetFocus { FocusRecord focus; };
 struct SemanticDelta {
@@ -53,6 +55,7 @@ struct SemanticDelta {
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
   std::vector<ClaimValidity> claim_validity_updates;
+  std::vector<EvidenceValidity> evidence_validity_updates;
 };
 struct DependencyTrigger { std::string dependency_id, prerequisite_id, dependent_id; };
 struct DependencyEvaluationRecord {
@@ -92,6 +95,13 @@ class ContextGraph {
     return it->second.back();
   }
   ClaimTemporalState claim_validity_at(const std::string& id, const std::string& instant) const;
+  const std::map<std::string, std::vector<EvidenceValidityRecord>>& evidence_validity_history() const { return state_.evidence_validity_history; }
+  std::optional<EvidenceValidityRecord> latest_evidence_validity(const std::string& id) const {
+    const auto it = state_.evidence_validity_history.find(id);
+    if (it == state_.evidence_validity_history.end() || it->second.empty()) return std::nullopt;
+    return it->second.back();
+  }
+  ClaimTemporalState evidence_validity_at(const std::string& id, const std::string& instant) const;
 
   ClaimStatus claim_status(const std::string& id) const {
     const auto it = state_.claim_statuses.find(id);
@@ -113,6 +123,7 @@ class ContextGraph {
     std::map<std::string, std::uint64_t> question_reference_counts;
     std::map<std::string, ClaimStatus> claim_statuses;
     std::map<std::string, std::vector<ClaimValidityRecord>> claim_validity_history;
+    std::map<std::string, std::vector<EvidenceValidityRecord>> evidence_validity_history;
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
@@ -120,6 +131,7 @@ class ContextGraph {
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
+  bool apply_evidence_validity(State&, const EvidenceValidity&, std::uint64_t recorded_state_version, std::string&) const;
   bool replay();
   bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
                            std::string&) const;
