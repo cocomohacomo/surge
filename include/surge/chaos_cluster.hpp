@@ -18,9 +18,17 @@ struct ChaosScoreObservation {
  std::string scorer_id, scorer_version, policy_version, observed_at;
 };
 struct ChaosStatusRevision { ChaosAssociationStatus status{ChaosAssociationStatus::Provisional}; ChaosProvenance provenance; };
+struct ChaosMembershipRevision {
+ std::string status{"UNCLASSIFIED"};
+ bool active{true};
+ ChaosProvenance provenance;
+};
 struct ChaosMember {
  std::string member_ref, event_ref, admission_reason, admitted_at, source_digest;
  ChaosProvenance provenance;
+ std::string membership_status{"UNCLASSIFIED"};
+ bool membership_active{true};
+ std::vector<ChaosMembershipRevision> membership_history;
 };
 struct ChaosAssociation {
  std::string association_id, from_ref, to_ref;
@@ -56,6 +64,7 @@ class ChaosClusterLedger {
  bool open();
  ChaosResult create(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosProvenance&);
  ChaosResult admit_member(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosMember&);
+ ChaosResult revise_membership(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,const std::string&,bool,const ChaosProvenance&);
  ChaosResult propose_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosAssociation&);
  ChaosResult review_association(const std::string&,const std::string&,std::uint64_t,const std::string&,const std::string&,ChaosAssociationStatus,const ChaosProvenance&);
  ChaosResult add_pattern_hypothesis(const std::string&,const std::string&,std::uint64_t,const std::string&,const ChaosPatternHypothesis&);
