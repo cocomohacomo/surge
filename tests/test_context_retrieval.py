@@ -176,7 +176,7 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 full = core.get_chaos_cluster("chaos/projection")
                 self.assertTrue(full["complete"])
                 self.assertEqual(len(full["associations"][0]["history"]), 2)
-                self.assertEqual(full["associations"][0]["history"][-1]["status"], "REVIEWED")
+                self.assertEqual(next(item for item in full["associations"] if item["association_id"] == "a1")["history"][-1]["status"], "REVIEWED")
                 expiring = next(item for item in full["associations"] if item["association_id"] == "a-expiring")
                 self.assertEqual(expiring["status"], "EXPIRED")
                 self.assertEqual(expiring["valid_until"], "2026-11-18T00:00:00Z")
