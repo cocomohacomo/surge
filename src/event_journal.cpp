@@ -399,6 +399,11 @@ bool EventJournal::recover() {
         last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED";
         return false;
       }
+      if (limits_.max_event_ids &&
+          event_ids_.size() > limits_.max_event_ids) {
+        last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED";
+        return false;
+      }
       state_version_ = checkpoint_base_state_version_;
       checkpoint_header_seen = true;
     } else if (!checkpoint_header_seen) {
@@ -444,7 +449,9 @@ bool EventJournal::recover() {
               std::min(limits_.max_events, events_.size())) ||
           (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
               std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
-          (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions)) {
+          (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions) ||
+          (limits_.max_event_ids && p.events.size() > limits_.max_event_ids -
+              std::min(limits_.max_event_ids, event_ids_.size()))) {
         last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
       }
       for (auto event : p.events) {
@@ -515,7 +522,9 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
           std::min(limits_.max_events, events_.size())) ||
       (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
           std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
-      (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions)) {
+      (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions) ||
+      (limits_.max_event_ids && events.size() > limits_.max_event_ids -
+          std::min(limits_.max_event_ids, event_ids_.size()))) {
     return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
   }
   if (!append_frame(begin_frame(tx, idem, expected, fingerprint))) {
