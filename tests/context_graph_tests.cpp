@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/event_journal.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -388,6 +389,23 @@ int main(){
       CHECK(history[1].evaluated_state_version==3&&history[1].recorded_state_version==4);
     }
   }
+  // Shared-journal owner event: ContextGraph must advance the global
+  // transaction version without interpreting retention metadata as graph data.
+  const auto retention_path=(root/"retention-owner-events.sgj").string();
+  {
+    EventJournal journal(retention_path);
+    ContextGraph graph(journal); CHECK(graph.open());
+    const auto committed=journal.commit("retention-manifest-tx",
+      "retention-manifest-idem",0,
+      {{"retention:manifest:test","RETENTION_MANIFEST_RECORDED","{}"}});
+    CHECK(committed.committed&&committed.state_version==1);
+  }
+  {
+    ContextGraph recovered(retention_path);
+    CHECK(recovered.open());
+    CHECK(recovered.state_version()==1);
+    CHECK(recovered.nodes().empty());
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 6 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\\n";
 }
