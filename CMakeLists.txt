@@ -15,7 +15,7 @@ if(SURGE_ENABLE_SANITIZERS)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
-add_library(surge_core SHARED src/c_api.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp src/snapshot_domains.cpp src/snapshot.cpp src/snapshot_coordinator.cpp src/snapshot_store.cpp)
+add_library(surge_core SHARED src/c_api.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp src/snapshot_domains.cpp src/snapshot.cpp src/snapshot_coordinator.cpp src/snapshot_store.cpp src/journal_backup_retention.cpp)
 target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(SURGE_BUILD_BENCHMARKS)
