@@ -9,6 +9,7 @@
 #include <utility>
 
 namespace surge {
+class SnapshotStore;
 struct JournalEvent {
   std::string event_id;
   std::string kind;
@@ -75,6 +76,11 @@ class EventJournal {
                                    JournalTailLimits limits = {}) const;
   std::string last_error() const;
   JournalCheckpointInfo checkpoint_info() const;
+  // Explicitly removes the old full-journal .bak only when SnapshotStore
+  // supplies the exact checkpoint envelope bound into this compacted journal.
+  // This is irreversible and is never performed automatically.
+  bool prune_backup_after_checkpoint(const SnapshotStore& store,
+                                     std::string* error);
  private:
   friend class SnapshotCoordinator;
   bool compact_after_checkpoint(const std::string& snapshot_bytes,
