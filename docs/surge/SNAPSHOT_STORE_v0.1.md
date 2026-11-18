@@ -25,6 +25,8 @@ If directory sync fails after atomic replacement, save reports failure because t
 
 - Default maximum generation size is 64 MiB; callers can lower or raise it explicitly.
 - Backup copying uses 64 KiB chunks. Reading a generation is bounded by the configured file-size ceiling.
+- SnapshotCodec metadata inspection validates the checksum and format without copying the opaque payload into a second document buffer; the load result retains the encoded bytes and returns metadata separately.
+- Saves reject context changes, watermark regression, and divergent content at an identical watermark.
 - One writer per snapshot path is required. The class mutex serializes calls through one instance; it is not a cross-process lock.
 - Callers must quiesce the EventJournal and registered domains when capturing the bytes that are saved.
 - The envelope checksum detects accidental corruption, not malicious modification or authenticity.
