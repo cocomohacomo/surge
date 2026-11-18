@@ -56,7 +56,7 @@ class RetentionManifestTests(unittest.TestCase):
     def test_manifest_tampering_is_rejected(self):
         manifest = build_retention_manifest(self.records(), capacity=2,
                                             policy_version="p1", now=NOW)
-        manifest["records"][0]["state"] = "ACTIVE"
+        next(item for item in manifest["records"] if item["state"] == "ARCHIVED")["state"] = "ACTIVE"
         with self.assertRaisesRegex(ValueError, "DIGEST_MISMATCH"):
             verify_retention_manifest(manifest)
 
