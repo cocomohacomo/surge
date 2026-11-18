@@ -13,7 +13,7 @@ int main() {
   source.context_id = "ctx-test";
   source.state_version = 42;
   source.journal_sequence = 109;
-  source.payload = std::string("opaque\0state", 11);
+  source.payload = std::string("opaque\0state", 12);
 
   std::string encoded, error;
   CHECK(SnapshotCodec::encode(source, {}, &encoded, &error));
