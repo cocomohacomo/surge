@@ -158,7 +158,7 @@ int main(){
   CHECK(l.get("merge-target",c));
   CHECK(c.members.count("merge-member")==1&&c.parent_refs.size()==1&&c.parent_refs[0]=="merge-source");
   CHECK(l.get("merge-source",c));
-  CHECK(c.lifecycle==surge::ChaosLifecycle::Archived&&c.child_refs.size()==1&&c.child_refs[0]=="merge-target");
+  CHECK(c.lifecycle==surge::ChaosLifecycle::Dormant&&c.child_refs.size()==1&&c.child_refs[0]=="merge-target");
  }
  {
   surge::ChaosClusterLedger l(path);CHECK(l.open());
