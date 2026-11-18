@@ -12,6 +12,7 @@ from surge_adapter.retention import (
     persist_retention_manifest, persist_payload_tombstone,
     replay_retention_projection,
 )
+from tools.journal_backup import create_backup, restore_backup, verify_backup
 from surge_adapter.packet_ingest import (
     CppCoreBridge, PacketRejected, RecognitionPacketAdapter, normalize_source,
 )
@@ -1022,6 +1023,19 @@ if __name__ == "__main__":
                                  manifest["manifest_sha256"])
                 self.assertIn(tombstone["event_sha256"], projection["tombstones"])
                 self.assertEqual(recovered.state_version, 2)
+            backup = pathlib.Path(tmp) / "retention-backup.sgj"
+            restored = pathlib.Path(tmp) / "retention-restored.sgj"
+            create_backup(journal, backup)
+            self.assertEqual(verify_backup(backup)["sha256"],
+                             hashlib.sha256(backup.read_bytes()).hexdigest())
+            restore_backup(backup, restored)
+            with SemanticCoreBridge(restored) as from_backup:
+                restored_projection = replay_retention_projection(
+                    from_backup.get_retention_events())
+                self.assertEqual(restored_projection["latest_manifest"]["manifest_sha256"],
+                                 manifest["manifest_sha256"])
+                self.assertEqual(len(restored_projection["tombstones"]), 1)
+                self.assertEqual(from_backup.state_version, 2)
 
     def test_retention_journal_rejects_non_retention_event_kind(self):
         with tempfile.TemporaryDirectory() as tmp:
