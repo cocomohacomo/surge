@@ -31,13 +31,13 @@ struct JournalCommitResult {
 struct JournalTailLimits {
   // Tail reads are bounded by default for edge deployments.
   std::size_t max_events{65536};
-  std::size_t max_payload_bytes{16U * 1024U * 1024U};
+  std::size_t max_total_bytes{16U * 1024U * 1024U};
 };
 struct JournalTailResult {
   bool ok{false};
   std::uint64_t after_state_version{0};
   std::uint64_t current_state_version{0};
-  std::size_t payload_bytes{0};
+  std::size_t total_bytes{0};
   std::vector<JournalEvent> events;
   std::string error;
 };
