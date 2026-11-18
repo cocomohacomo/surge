@@ -943,11 +943,12 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
                              NodeKind required_kind) {
     std::size_t n = 0;
     if (!(in >> n) || n > 1000000) return false;
+    std::set<std::string> seen;
     for (std::size_t i = 0; i < n; ++i) {
       std::string id;
       int value = 0;
       if (!(in >> std::quoted(id) >> value) || id.empty() ||
-          value < 0 || value > maximum) return false;
+          value < 0 || value > maximum || !seen.insert(id).second) return false;
       const auto node = nodes.find(id);
       if (node == nodes.end() || node->second.kind != required_kind)
         return false;
@@ -1051,6 +1052,7 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
   if (in >> extra) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TRAILING_DATA");
 
   bool have_meta = false;
+  bool semantic_packet_waiting_for_delta = false;
   std::uint64_t transaction_version = 0;
   auto close_meta = [&]() { have_meta = false; };
   for (const auto& event : tail) {
@@ -1073,6 +1075,13 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
           !idempotency.emplace(key, fingerprint).second)
         return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_DELTA_META_INVALID");
       have_meta = true;
+      semantic_packet_waiting_for_delta = false;
+      continue;
+    }
+    if (event.kind == "SEMANTIC_PACKET_ADMITTED") {
+      if (semantic_packet_waiting_for_delta)
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_PACKET_ORDER_INVALID");
+      semantic_packet_waiting_for_delta = true;
       continue;
     }
 
@@ -1129,6 +1138,8 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
     if (!graph_.replay_event(candidate, event, detail))
       return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_DELTA_EVENT_INVALID");
   }
+  if (semantic_packet_waiting_for_delta)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_PACKET_DELTA_MISSING");
   if (error) error->clear();
   return std::make_unique<PreparedContextGraphSnapshotRestore>(
       &graph_, std::move(candidate), std::move(idempotency));
