@@ -369,6 +369,8 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path, *,
 
 def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
                   key_id: str | None = None, require_auth: bool = False) -> dict:
+    if key_id is not None and (not isinstance(key_id, str) or not key_id.strip()):
+        raise ValueError("BACKUP_AUTH_KEY_ID_INVALID")
     backup = backup.resolve()
     manifest_path = pathlib.Path(str(backup) + ".manifest.json")
     if not backup.is_file() or not manifest_path.is_file():
@@ -406,13 +408,37 @@ def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
         raise ValueError("BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL")
     if manifest.get("replay") != replay:
         raise ValueError("BACKUP_REPLAY_METADATA_MISMATCH")
+
+    auth = manifest.get("auth")
+    if auth is None:
+        if require_auth or key_file is not None or key_id is not None:
+            raise ValueError("BACKUP_AUTH_SIGNATURE_REQUIRED")
+    else:
+        if (not isinstance(auth, dict) or set(auth) != {"algorithm", "key_id", "hmac_sha256"} or
+            auth.get("algorithm") != "HMAC-SHA256" or
+            not isinstance(auth.get("key_id"), str) or not auth["key_id"].strip() or
+            not isinstance(auth.get("hmac_sha256"), str) or
+            not re.fullmatch(r"[0-9a-f]{64}", auth["hmac_sha256"])):
+            raise ValueError("BACKUP_AUTH_METADATA_INVALID")
+        if key_file is None:
+            raise ValueError("BACKUP_AUTH_KEY_REQUIRED")
+        if key_id is not None and key_id != auth["key_id"]:
+            raise ValueError("BACKUP_AUTH_KEY_ID_MISMATCH")
+        auth_key = _load_auth_key(key_file)
+        expected = hmac.new(auth_key, _canonical_manifest(manifest),
+                            hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, auth["hmac_sha256"]):
+            raise ValueError("BACKUP_AUTH_SIGNATURE_MISMATCH")
     return manifest
 
 
 def restore_backup(backup: pathlib.Path, destination: pathlib.Path,
-                   replace_existing: bool = False) -> None:
+                   replace_existing: bool = False, *,
+                   key_file: pathlib.Path | None = None,
+                   key_id: str | None = None,
+                   require_auth: bool = False) -> None:
     backup, destination = backup.resolve(), destination.resolve()
-    verify_backup(backup)
+    verify_backup(backup, key_file=key_file, key_id=key_id, require_auth=require_auth)
     if backup == destination:
         raise ValueError("RESTORE_PATH_EQUALS_BACKUP")
     with writer_lock(destination):
