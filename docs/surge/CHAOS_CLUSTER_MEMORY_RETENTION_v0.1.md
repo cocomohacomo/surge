@@ -47,8 +47,8 @@ backup containing source bytes.
 ## EventJournal integration
 
 The C ABI exposes a retention-only transaction surface:
-- `surge_retention_journal_commit` accepts 1..128 events in one atomic journal
-  transaction and allowlists only `RETENTION_MANIFEST_RECORDED` and
+- `surge_retention_journal_commit` accepts exactly one retention event per journal
+  transaction, preserving the journal's one-transaction/one-State-Version replay contract and allowlists only `RETENTION_MANIFEST_RECORDED` and
   `RETENTION_TOMBSTONE_PROPOSED`.
 - `surge_retention_journal_get_events` projects only those event kinds.
 - `SemanticCoreBridge.commit_retention_events` and
