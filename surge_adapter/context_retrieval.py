@@ -457,15 +457,24 @@ class ContextRetriever:
         max_members: int = 1000,
         max_associations: int = 1000,
         max_hypotheses: int = 256,
+        member_offset: int = 0,
+        association_offset: int = 0,
+        hypothesis_offset: int = 0,
+        ranking_policy: str = "SOURCE_ORDER",
     ) -> dict[str, Any]:
         """Retrieve a Chaos Cluster using explicit temporal, provenance and lineage filters."""
         if not isinstance(cluster_id, str) or not cluster_id.strip():
             raise ValueError("CHAOS_RETRIEVAL_CLUSTER_ID_INVALID")
         if any(isinstance(v, bool) or not isinstance(v, int) or v < 0
-               for v in (lineage_depth, max_members, max_associations, max_hypotheses)):
+               for v in (lineage_depth, max_members, max_associations, max_hypotheses,
+                         member_offset, association_offset, hypothesis_offset)):
             raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
-        if lineage_depth > 8 or max_members > 10000 or max_associations > 10000 or max_hypotheses > 1000:
+        if (lineage_depth > 8 or max_members > 10000 or max_associations > 10000
+                or max_hypotheses > 1000 or member_offset > 10000000
+                or association_offset > 10000000 or hypothesis_offset > 1000000):
             raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
+        if ranking_policy not in {"SOURCE_ORDER", "SCORE_THEN_ID", "DIVERSITY_THEN_SCORE"}:
+            raise ValueError("CHAOS_RANKING_POLICY_INVALID")
         if not isinstance(include_hypotheses, bool) or not isinstance(include_counterexamples, bool):
             raise ValueError("CHAOS_RETRIEVAL_OPTION_INVALID")
 
@@ -576,12 +585,70 @@ class ContextRetriever:
                     item["counterexample_refs"] = []
                 filtered_hypotheses.append(item)
 
-        selected_members = filtered_members[:max_members]
-        selected_associations = filtered_associations[:max_associations]
-        selected_hypotheses = filtered_hypotheses[:max_hypotheses]
-        omitted_member_refs = [str(item.get("member_ref", "")) for item in filtered_members[max_members:]]
-        omitted_association_refs = [str(item.get("association_id", "")) for item in filtered_associations[max_associations:]]
-        omitted_hypothesis_refs = [str(item.get("hypothesis_id", "")) for item in filtered_hypotheses[max_hypotheses:]]
+        def score_value(item: dict[str, Any], key: str) -> float | None:
+            observation = item.get(key)
+            if observation is None:
+                return None
+            if not isinstance(observation, dict):
+                raise PacketRejected("CHAOS_RANKING_OBSERVATION_INVALID")
+            value = observation.get("value")
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not 0.0 <= float(value) <= 1.0):
+                raise PacketRejected("CHAOS_RANKING_SCORE_INVALID")
+            return float(value)
+
+        def score_key(item: dict[str, Any], score_name: str, identity: str) -> tuple[int, float, str]:
+            value = score_value(item, score_name)
+            return (1 if value is None else 0,
+                    0.0 if value is None else -value,
+                    str(item.get(identity, "")))
+
+        def diverse_rank(items: list[dict[str, Any]], group_key: str,
+                         score_name: str, identity: str) -> list[dict[str, Any]]:
+            groups: dict[str, list[dict[str, Any]]] = {}
+            for item in items:
+                groups.setdefault(str(item.get(group_key, "")), []).append(item)
+            for group in groups.values():
+                group.sort(key=lambda item: score_key(item, score_name, identity))
+            ordered: list[dict[str, Any]] = []
+            depth = 0
+            while True:
+                added = False
+                for group_name in sorted(groups):
+                    if depth < len(groups[group_name]):
+                        ordered.append(groups[group_name][depth])
+                        added = True
+                if not added:
+                    return ordered
+                depth += 1
+
+        if ranking_policy == "SCORE_THEN_ID":
+            ranked_members = sorted(filtered_members, key=lambda item: score_key(item, "salience", "member_ref"))
+            ranked_associations = sorted(filtered_associations, key=lambda item: score_key(item, "confidence", "association_id"))
+            ranked_hypotheses = sorted(filtered_hypotheses, key=lambda item: score_key(item, "confidence", "hypothesis_id"))
+        elif ranking_policy == "DIVERSITY_THEN_SCORE":
+            ranked_members = diverse_rank(filtered_members, "admission_reason", "salience", "member_ref")
+            ranked_associations = diverse_rank(filtered_associations, "type", "confidence", "association_id")
+            ranked_hypotheses = diverse_rank(filtered_hypotheses, "status", "confidence", "hypothesis_id")
+        else:
+            ranked_members, ranked_associations, ranked_hypotheses = (
+                filtered_members, filtered_associations, filtered_hypotheses)
+
+        def page(items: list[dict[str, Any]], offset: int, limit: int, identity: str):
+            selected = items[offset:offset + limit]
+            omitted = [str(item.get(identity, "")) for item in items[offset + limit:]]
+            next_offset = offset + len(selected) if offset + len(selected) < len(items) else None
+            return selected, omitted, {
+                "total": len(items), "offset": offset, "limit": limit,
+                "next_offset": next_offset,
+            }
+
+        selected_members, omitted_member_refs, member_page = page(
+            ranked_members, member_offset, max_members, "member_ref")
+        selected_associations, omitted_association_refs, association_page = page(
+            ranked_associations, association_offset, max_associations, "association_id")
+        selected_hypotheses, omitted_hypothesis_refs, hypothesis_page = page(
+            ranked_hypotheses, hypothesis_offset, max_hypotheses, "hypothesis_id")
 
         # Lineage traversal is metadata-only. It never silently expands the
         # content budget of linked clusters or conflates lineage with membership.
@@ -639,6 +706,12 @@ class ContextRetriever:
                 "include_hypotheses": include_hypotheses,
                 "include_counterexamples": include_counterexamples,
                 "lineage_depth": lineage_depth,
+                "ranking_policy": ranking_policy,
+            },
+            "pages": {
+                "members": member_page,
+                "associations": association_page,
+                "hypotheses": hypothesis_page,
             },
             "lineage": lineage,
             "unresolved_lineage_refs": sorted(set(unresolved_lineage_refs)),
@@ -647,8 +720,9 @@ class ContextRetriever:
             "omitted_association_refs": omitted_association_refs,
             "omitted_hypothesis_refs": omitted_hypothesis_refs,
             "source_omitted": source_omitted,
-            "complete": source_complete and not omitted_member_refs and
-                        not omitted_association_refs and not omitted_hypothesis_refs and
+            "complete": source_complete and member_page["next_offset"] is None and
+                        association_page["next_offset"] is None and
+                        hypothesis_page["next_offset"] is None and
                         not unresolved_lineage_refs and not omitted_lineage_refs,
         }
         return result
