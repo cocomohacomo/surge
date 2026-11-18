@@ -187,7 +187,8 @@ int main(){
   CHECK(c.pattern_hypotheses.at("hyp-1").confidence_observations.size()==1);
   const auto v=l.state_version();
   CHECK(l.get("merge-target",c));CHECK(c.members.count("merge-member")==1);
-  CHECK(l.get("merge-source",c));CHECK(c.lifecycle==surge::ChaosLifecycle::Dormant);\n  CHECK(c.members.count("merge-member")==1&&c.members.count("late-member")==1);
+  CHECK(l.get("merge-source",c));CHECK(c.lifecycle==surge::ChaosLifecycle::Dormant);
+  CHECK(c.members.count("merge-member")==1&&c.members.count("late-member")==1);
   auto stale=l.transition("stale","ik-stale",v-1,"chaos-1",surge::ChaosLifecycle::Dormant,"stale",p);
   CHECK(!stale.committed&&stale.error=="STATE_VERSION_CONFLICT");
   auto bad=l.transition("bad","ik-bad",v,"chaos-1",surge::ChaosLifecycle::Open,"backward",p);
