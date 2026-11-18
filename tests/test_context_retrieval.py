@@ -271,6 +271,70 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(recovered.get_chaos_cluster("merge-source")["lifecycle"], "ARCHIVED")
 
 
+    def test_chaos_query_filters_temporal_provenance_and_lineage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "chaos-query.sgj"
+            provenance = {"producer_id": "writer-A", "producer_version": "1",
+                          "policy_version": "chaos-v1", "recorded_at": "2026-11-18T03:00:00Z"}
+            with SemanticCoreBridge(journal) as core:
+                core.create_chaos_cluster(operation_id="target-create", idempotency_key="target-create",
+                    expected_state_version=core.state_version, cluster_id="query-root", provenance=provenance)
+                core.create_chaos_cluster(operation_id="source-create", idempotency_key="source-create",
+                    expected_state_version=core.state_version, cluster_id="query-source", provenance=provenance)
+                for ref in ("a", "b"):
+                    core.admit_chaos_member(operation_id=f"member-{ref}", idempotency_key=f"member-{ref}",
+                        expected_state_version=core.state_version, cluster_id="query-source",
+                        member={"member_ref": ref, "event_ref": f"event-{ref}",
+                                "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T03:00:01Z"},
+                        provenance=provenance)
+                core.propose_chaos_association(operation_id="analogy", idempotency_key="analogy",
+                    expected_state_version=core.state_version, cluster_id="query-source",
+                    association={"association_id":"edge-analogy","from_member_ref":"a","to_member_ref":"b",
+                                 "association_type":"ANALOGY",
+                                 "valid_from_utc":"2026-11-17T00:00:00Z",
+                                 "valid_until_utc":"2026-11-19T00:00:00Z"}, provenance=provenance)
+                core.propose_chaos_association(operation_id="cooccur", idempotency_key="cooccur",
+                    expected_state_version=core.state_version, cluster_id="query-source",
+                    association={"association_id":"edge-cooccur","from_member_ref":"a","to_member_ref":"b",
+                                 "association_type":"CO_OCCURS"}, provenance=provenance)
+                core.add_chaos_pattern_hypothesis(operation_id="hypothesis", idempotency_key="hypothesis",
+                    expected_state_version=core.state_version, cluster_id="query-source",
+                    hypothesis={"hypothesis_id":"h-query","statement":"candidate pattern",
+                                "member_refs":["a","b"],"counterexample_refs":["b"]},
+                    provenance=provenance)
+                core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
+                    expected_state_version=core.state_version, cluster_id="query-source",
+                    target_lifecycle="REVIEWABLE", reason="ready for merge", provenance=provenance)
+                core.merge_chaos_clusters(operation_id="merge", idempotency_key="merge",
+                    expected_state_version=core.state_version, target_cluster_id="query-root",
+                    source_cluster_ids=["query-source"], provenance=provenance)
+
+                result = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", association_types=["ANALOGY"],
+                    association_statuses=["PROVISIONAL"],
+                    valid_at_utc="2026-11-18T12:00:00Z",
+                    producer_ids=["writer-A"], include_hypotheses=True,
+                    include_counterexamples=False, lineage_depth=1)
+                self.assertEqual([item["association_id"] for item in result["target"]["associations"]],
+                                 ["edge-analogy"])
+                self.assertEqual(result["target"]["pattern_hypotheses"][0]["counterexample_refs"], [])
+                self.assertEqual(result["lineage"][0]["cluster_id"], "query-source")
+                self.assertTrue(result["complete"])
+                before = core.state_version
+                no_match = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", association_types=["CONTRADICTION"])
+                self.assertEqual(no_match["target"]["associations"], [])
+                self.assertEqual(core.state_version, before)
+                time_filtered = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", member_admitted_after_utc="2026-11-18T03:00:02Z",
+                    member_admitted_before_utc="2026-11-18T03:00:03Z")
+                self.assertEqual(time_filtered["target"]["members"], [])
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", valid_at_utc="2026-11-18T25:00:00Z")
+
+
+
     def test_focus_retrieval_without_active_focus_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with SemanticCoreBridge(pathlib.Path(tmp) / "no-focus.sgj") as core:

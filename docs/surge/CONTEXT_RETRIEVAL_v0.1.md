@@ -171,3 +171,14 @@ the state changes while the focused context is being assembled.
 This increment does not yet expose complete association revision history or
 PatternHypothesis records through the C ABI read projection. Those remain
 authoritative in the C++ ledger and require a richer bounded JSON projection.
+
+
+## Chaos Cluster typed retrieval filters
+
+The Python ContextRetriever provides a typed Chaos Cluster query operation with
+association type/status filters, canonical UTC valid-time filtering, member
+admission-time bounds, producer provenance filters, member-ref filters,
+hypothesis/counterexample inclusion controls, and bounded parent/child lineage
+traversal. The result carries the source state version, exact omitted refs,
+unresolved lineage refs, and completeness. Lineage traversal returns metadata
+only and does not silently consume the content budget of linked clusters.
