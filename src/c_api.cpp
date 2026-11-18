@@ -2230,8 +2230,7 @@ int surge_retention_journal_commit(void* opaque,const char* tx,const char* idem,
    }
    const std::string kind(in.kind);
    if(kind!="RETENTION_MANIFEST_RECORDED"&&
-      kind!="RETENTION_TOMBSTONE_PROPOSED"&&
-      kind!="RETENTION_RESTORE_VERIFIED") {
+      kind!="RETENTION_TOMBSTONE_PROPOSED") {
     copy_text(error,cap,"RETENTION_JOURNAL_EVENT_KIND_FORBIDDEN");return 0;
    }
    events.push_back({in.event_id,kind,in.payload});
@@ -2254,8 +2253,7 @@ int surge_retention_journal_get_events(void* opaque,char* output,size_t output_c
   bool first=true;
   for(const auto& event:events) {
    if(event.kind!="RETENTION_MANIFEST_RECORDED"&&
-      event.kind!="RETENTION_TOMBSTONE_PROPOSED"&&
-      event.kind!="RETENTION_RESTORE_VERIFIED")continue;
+      event.kind!="RETENTION_TOMBSTONE_PROPOSED")continue;
    if(!first)value+=",";
    first=false;
    value+="{\"event_id\":"+json_quote(event.event_id)+
