@@ -280,9 +280,9 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
     return false;
 
   const auto current = native_path(path_);
-  const fs::path temporary(path_ + ".tmp");
-  const fs::path backup(path_ + ".bak");
-  const fs::path backup_temporary(path_ + ".bak.tmp");
+  const auto temporary = native_path(path_ + ".tmp");
+  const auto backup = native_path(path_ + ".bak");
+  const auto backup_temporary = native_path(path_ + ".bak.tmp");
   remove_if_present(temporary);
   remove_if_present(backup_temporary);
 
@@ -297,17 +297,29 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
     return false;
   }
   if (limits_.keep_backup && current_exists) {
-    if (!copy_durable_file(current, backup_temporary,
-                           limits_.max_file_bytes, error)) {
-      remove_if_present(temporary);
-      remove_if_present(backup_temporary);
-      return false;
-    }
-    if (!atomic_replace(backup_temporary, backup, error) ||
-        !sync_parent_directory(current, error)) {
-      remove_if_present(temporary);
-      remove_if_present(backup_temporary);
-      return false;
+    // Never replace a known-good backup with a corrupt current generation.
+    // If current is valid, promote it to the recovery generation first.
+    const auto existing = load_generation(current, limits_.max_file_bytes, false);
+    if (existing.ok) {
+      if (!copy_durable_file(current, backup_temporary,
+                             limits_.max_file_bytes, error)) {
+        remove_if_present(temporary);
+        remove_if_present(backup_temporary);
+        return false;
+      }
+      if (!atomic_replace(backup_temporary, backup, error) ||
+          !sync_parent_directory(current, error)) {
+        remove_if_present(temporary);
+        remove_if_present(backup_temporary);
+        return false;
+      }
+    } else {
+      const auto previous = load_generation(backup, limits_.max_file_bytes, true);
+      if (!previous.ok) {
+        // No valid old generation exists. Keep the corrupt file only until
+        // the new durable generation is atomically installed.
+        remove_if_present(backup_temporary);
+      }
     }
   }
 
