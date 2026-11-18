@@ -46,6 +46,7 @@ int main() {
 
   const auto generation_one = encode("ctx", 1, "state-one");
   const auto generation_two = encode("ctx", 2, "state-two");
+  const auto generation_three = encode("ctx", 3, "state-three");
   std::string error;
 
   SnapshotStore store(path.u8string());
@@ -78,6 +79,13 @@ int main() {
   CHECK(loaded.bytes == generation_one);
   CHECK(loaded.document.context_id == "ctx");
   CHECK(loaded.document.state_version == 1);
+
+  // A later save must preserve the last known-good backup rather than
+  // overwriting it with the corrupt primary generation.
+  CHECK(store.save(generation_three, &error));
+  write_text(path, "corrupt-again");
+  loaded = store.load();
+  CHECK(loaded.ok && loaded.used_backup && loaded.bytes == generation_one);
 
   SnapshotStoreLimits small_limits;
   small_limits.max_file_bytes = generation_one.size() - 1;
