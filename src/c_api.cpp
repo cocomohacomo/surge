@@ -2215,7 +2215,7 @@ int surge_retention_journal_commit(void* opaque,const char* tx,const char* idem,
     uint64_t expected,const SurgeJournalEventInput* inputs,size_t count,
     int* duplicate,uint64_t* version,char* error,size_t cap) {
  try {
-  if(!opaque||!tx||!*tx||!idem||!*idem||!inputs||count==0||count>128||
+  if(!opaque||!tx||!*tx||!idem||!*idem||!inputs||count!=1||
      std::strlen(tx)>256||std::strlen(idem)>256) {
    copy_text(error,cap,"RETENTION_JOURNAL_ARGUMENT_INVALID");return 0;
   }
