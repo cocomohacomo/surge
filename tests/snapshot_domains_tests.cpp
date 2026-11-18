@@ -133,6 +133,13 @@ int main() {
   CHECK(questions.size() == 1);
   CHECK(graph.nodes().count("extra/G") == 1);
 
+  // A too-small tail budget fails closed and leaves all live domains untouched.
+  CHECK(!coordinator.restore_with_tail(snapshot, journal, "ctx", 0, 0,
+      JournalTailLimits{1, 64}, &error));
+  CHECK(evidence.history().at("evidence-a").size() == 2);
+  CHECK(chaos.list().size() == 2);
+  CHECK(graph.nodes().count("extra/G") == 1);
+
   // Restore from the checkpoint and replay the bounded committed tail.
   CHECK(coordinator.restore_with_tail(snapshot, journal, "ctx", 0, 0,
                                       JournalTailLimits{4096, 4U * 1024U * 1024U},
@@ -187,7 +194,8 @@ int main() {
   CHECK(tail_replayed_state == full_replayed_state);
 
   // A malformed tail event must not partially publish any prepared domain.
-  const auto before_failed_restore = tail_replayed_state;
+  SnapshotDocument before_failed_document;
+  CHECK(SnapshotCodec::decode(tail_replayed_state, {}, &before_failed_document, &error));
   const auto bad_commit = journal.commit("tx-bad-tail", "idem-bad-tail",
       journal.state_version(),
       {JournalEvent{"bad-evidence-event", "EVIDENCE_PROVENANCE_SET_V1", "malformed"}});
@@ -195,12 +203,14 @@ int main() {
   CHECK(!coordinator.restore_with_tail(snapshot, journal, "ctx", 0, 0,
       JournalTailLimits{4096, 4U * 1024U * 1024U}, &error));
   std::string after_failed_restore;
-  CHECK(coordinator.capture("ctx", checkpoint_version, checkpoint_version,
-                            &after_failed_restore, &error) == false);
+  CHECK(coordinator.capture("ctx", journal.state_version(), journal.state_version(),
+                            &after_failed_restore, &error));
+  SnapshotDocument after_failed_document;
+  CHECK(SnapshotCodec::decode(after_failed_restore, {}, &after_failed_document, &error));
   CHECK(evidence.history().at("evidence-a").size() == 2);
   CHECK(chaos.list().size() == 2);
   CHECK(graph.nodes().count("extra/G") == 1);
-  CHECK(before_failed_restore == tail_replayed_state);
+  CHECK(before_failed_document.payload == after_failed_document.payload);
 
   std::filesystem::remove(path, ec);
   std::filesystem::remove(copy_path, ec);
