@@ -43,6 +43,8 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: C++ journal lock and durability tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
+      - name: Snapshot store atomic replacement and recovery tests
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
       - name: Python journal backup and lock parity tests
         run: python -m unittest discover -s tests -p test_journal_backup.py -v
 
