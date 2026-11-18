@@ -182,3 +182,27 @@ hypothesis/counterexample inclusion controls, and bounded parent/child lineage
 traversal. The result carries the source state version, exact omitted refs,
 unresolved lineage refs, and completeness. Lineage traversal returns metadata
 only and does not silently consume the content budget of linked clusters.
+
+
+## v0.4: Chaos Cluster score ranking and pagination
+
+`ContextRetriever.retrieve_chaos_cluster` supports independent page offsets
+and limits for members, associations and PatternHypotheses. Each page reports
+its total filtered count, offset, limit and next offset. A positive limit is
+required to guarantee forward progress. Offsets beyond the filtered result
+count are rejected. `page_complete` describes whether the current page reaches
+the end of all three result sets; `complete` is true only when the response
+contains every filtered item from offset zero and the source projection itself
+was complete.
+
+Ranking is explicit and deterministic:
+- `SOURCE_ORDER`: preserve ledger projection order (compatibility default).
+- `SCORE_THEN_ID`: rank members by Salience, associations by Confidence and
+  PatternHypotheses by Confidence, descending, with unknown scores last and
+  stable identity tie-breaks.
+- `DIVERSITY_THEN_SCORE`: round-robin admission reasons, association types
+  and hypothesis statuses; within each group use the corresponding score.
+
+Scores are validated as finite-range [0,1] numeric observations. Ranking never
+converts a score into evidence, claim support, causal relation or epistemic
+promotion. The selected ranking policy is returned in query metadata.
