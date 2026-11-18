@@ -78,7 +78,6 @@ class EventJournal {
   bool compact_after_checkpoint(const std::string& snapshot_bytes,
                                 const std::string& expected_context_id,
                                 std::string* error);
-  bool restore_previous_generation(std::string* error);
   bool recover();
   bool acquire_writer_lock();
   void release_writer_lock();
