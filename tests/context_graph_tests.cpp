@@ -407,5 +407,5 @@ int main(){
     CHECK(recovered.nodes().empty());
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\\n";
+  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
