@@ -52,8 +52,8 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     STARTUPINFOA startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    std::string command = "\\"" + executable + "\\" --hold-lock \\"" +
-      process_path + "\\" \\"" + ready_path + "\\"";
+    std::string command = "\"" + executable + "\" --hold-lock \"" +
+      process_path + "\" \"" + ready_path + "\"";
     std::vector<char> command_buffer(command.begin(), command.end());
     command_buffer.push_back('\\0');
     CHECK(CreateProcessA(nullptr, command_buffer.data(), nullptr, nullptr, FALSE,
