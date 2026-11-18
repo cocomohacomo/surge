@@ -73,6 +73,8 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
   if (!bytes) return fail(error, "SNAPSHOT_OUTPUT_REQUIRED");
   bytes->clear();
   if (domains_.empty()) return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
+  if (domains_.size() > std::numeric_limits<std::uint32_t>::max())
+    return fail(error, "SNAPSHOT_DOMAIN_COUNT_INVALID");
   std::string bundle;
   put_u32(&bundle, static_cast<std::uint32_t>(domains_.size()));
   for (const auto* domain : domains_) {
