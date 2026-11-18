@@ -1449,7 +1449,7 @@ class SemanticCoreBridge(CppCoreBridge):
     def commit_retention_events(self, transaction_id: str, idempotency_key: str,
                                 expected_state_version: int,
                                 events: list[dict[str, str]]) -> dict[str, Any]:
-        """Append allowlisted retention metadata in one EventJournal transaction."""
+        """Append exactly one allowlisted retention event in one transaction."""
         if not isinstance(events, list) or len(events) != 1:
             raise PacketRejected("RETENTION_JOURNAL_EVENTS_INVALID")
         keepalive = []
