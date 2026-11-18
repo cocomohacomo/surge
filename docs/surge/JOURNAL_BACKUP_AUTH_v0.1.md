@@ -22,17 +22,17 @@ control, rotation, escrow, and recovery remain the operator's responsibility.
 - Use at least 32 bytes of cryptographically random key material.
 - Keep the key outside the repository and outside the backup directory.
 - Restrict file access to the backup service/operator (for example, POSIX mode
-  \`0600\` or a managed secret store materialized to a protected file).
-- \`key_id\` is a non-secret identifier. It is recorded in the manifest.
+  `0600` or a managed secret store materialized to a protected file).
+- `key_id` is a non-secret identifier. It is recorded in the manifest.
 - Retain old keys while any backup signed by those keys must remain verifiable.
   Rotation means creating a new key and key ID; it does not rewrite old backups.
 
 Example key creation on a trusted POSIX host:
 
-\`\`\`sh
+```sh
 umask 077
 openssl rand -out /secure/surge-backup-v1.key 32
-\`\`\`
+```
 
 Do not commit the key or include it in support bundles.
 
@@ -40,39 +40,40 @@ Do not commit the key or include it in support bundles.
 
 Create a signed backup:
 
-\`\`\`sh
+```sh
 python tools/journal_backup.py backup live.sgj backups/live.sgj \
   --key-file /secure/surge-backup-v1.key --key-id ops-2026-v1
-\`\`\`
+```
 
 Verify and require authentication:
 
-\`\`\`sh
+```sh
 python tools/journal_backup.py verify backups/live.sgj \
   --key-file /secure/surge-backup-v1.key --key-id ops-2026-v1 --require-auth
-\`\`\`
+```
 
 Restore and require authentication:
 
-\`\`\`sh
+```sh
 python tools/journal_backup.py restore backups/live.sgj restored.sgj \
   --key-file /secure/surge-backup-v1.key --key-id ops-2026-v1 \
   --require-auth
-\`\`\`
+```
 
-The Python API accepts the same \`key_file\`, \`key_id\`, and \`require_auth\`
+The Python API accepts the same `key_file`, `key_id`, and `require_auth`
 arguments. Unsigned legacy backups remain readable by default for migration,
-but \`require_auth=True\` / \`--require-auth\` rejects them. Supplying an auth key
+but `require_auth=True` / `--require-auth` rejects them. Supplying an auth key
 to verify an unsigned backup also fails closed.
 
 ## Signed fields and verification
 
 The HMAC-SHA256 is computed over canonical UTF-8 JSON containing every
-manifest field except the \`auth\` object itself. The auth object contains only:
+manifest field, including the auth algorithm and key ID, but excluding only
+the `hmac_sha256` signature value itself. The auth object contains only:
 
-- \`algorithm\`: \`HMAC-SHA256\`
-- \`key_id\`: operator-managed key identifier
-- \`hmac_sha256\`: lowercase hexadecimal signature
+- `algorithm`: `HMAC-SHA256`
+- `key_id`: operator-managed key identifier
+- `hmac_sha256`: lowercase hexadecimal signature
 
 Verification first checks the backup digest and replay summary, then validates
 the auth metadata, key identifier (when supplied), key length, and HMAC. A
