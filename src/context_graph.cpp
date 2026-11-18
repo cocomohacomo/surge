@@ -10,6 +10,7 @@
 #include <set>
 #include <sstream>
 #include <utility>
+#include <type_traits>
 
 namespace surge {
 namespace {
@@ -751,4 +752,293 @@ bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<
  for(const auto&id:demoted) { state_.question_memory_states[id]=QuestionMemoryState::Dormant; }
  return true;
 }
+
+class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore {
+ public:
+  PreparedContextGraphSnapshotRestore(ContextGraph* owner, ContextGraph::State state,
+      std::map<std::string, std::string> idempotency)
+      : owner_(owner), state_(std::move(state)), idempotency_(std::move(idempotency)) {}
+  void commit() noexcept override {
+    owner_->state_ = std::move(state_);
+    owner_->idempotency_.swap(idempotency_);
+  }
+ private:
+  ContextGraph* owner_;
+  ContextGraph::State state_;
+  std::map<std::string, std::string> idempotency_;
+};
+
+std::string ContextGraphSnapshotDomain::domain_id() const {
+  return "context_graph";
+}
+std::string ContextGraphSnapshotDomain::schema_id() const {
+  return "surge.context-graph.native-v1";
+}
+bool ContextGraphSnapshotDomain::capture(std::string* payload,
+                                         std::string* error) const {
+  if (!payload) { if (error) *error = "SNAPSHOT_OUTPUT_REQUIRED"; return false; }
+  const auto& s = graph_.state_;
+  std::ostringstream out;
+  out << "CGS1 " << s.nodes.size() << ' ';
+  for (const auto& item : s.nodes)
+    out << std::quoted(encode_node(item.second)) << ' ';
+  out << s.relations.size() << ' ';
+  for (const auto& item : s.relations)
+    out << std::quoted(encode_relation(item.second)) << ' ';
+  out << s.scope_spans.size() << ' ';
+  for (const auto& item : s.scope_spans) {
+    const auto& record = item.second;
+    out << std::quoted(encode_scope(AddScopeSpan{record.proposal, {}})) << ' '
+        << static_cast<int>(record.status) << ' '
+        << static_cast<int>(record.effect) << ' '
+        << (record.may_emit_unconditional_claim ? 1 : 0) << ' ';
+  }
+  out << s.focus_history.size() << ' ';
+  for (const auto& focus : s.focus_history)
+    out << std::quoted(encode_focus(focus)) << ' ';
+  out << (s.focus ? 1 : 0) << ' ';
+  if (s.focus) out << std::quoted(encode_focus(*s.focus)) << ' ';
+
+  auto write_enum_map = [&out](const auto& values) {
+    out << values.size() << ' ';
+    for (const auto& item : values)
+      out << std::quoted(item.first) << ' '
+          << static_cast<int>(item.second) << ' ';
+  };
+  write_enum_map(s.question_aspect_statuses);
+  write_enum_map(s.question_memory_states);
+  out << s.question_reference_counts.size() << ' ';
+  for (const auto& item : s.question_reference_counts)
+    out << std::quoted(item.first) << ' ' << item.second << ' ';
+  write_enum_map(s.claim_statuses);
+
+  out << s.claim_validity_history.size() << ' ';
+  for (const auto& item : s.claim_validity_history) {
+    out << std::quoted(item.first) << ' ' << item.second.size() << ' ';
+    for (const auto& record : item.second)
+      out << std::quoted(encode_claim_validity(record)) << ' ';
+  }
+  out << s.evidence_validity_history.size() << ' ';
+  for (const auto& item : s.evidence_validity_history) {
+    out << std::quoted(item.first) << ' ' << item.second.size() << ' ';
+    for (const auto& record : item.second)
+      out << std::quoted(encode_evidence_validity(record)) << ' ';
+  }
+  out << s.dependency_evaluations.size() << ' ';
+  for (const auto& item : s.dependency_evaluations)
+    out << std::quoted(item.first) << ' '
+        << std::quoted(encode_dependency_evaluation(item.second)) << ' ';
+  out << s.reassessment_history.size() << ' ';
+  for (const auto& item : s.reassessment_history) {
+    out << std::quoted(item.first) << ' ' << item.second.size() << ' ';
+    for (const auto& record : item.second)
+      out << std::quoted(reassessment_event_payload(record)) << ' ';
+  }
+  out << graph_.idempotency_.size() << ' ';
+  for (const auto& item : graph_.idempotency_)
+    out << std::quoted(item.first) << ' ' << std::quoted(item.second) << ' ';
+  *payload = out.str();
+  if (error) error->clear();
+  return true;
+}
+
+std::unique_ptr<PreparedSnapshotRestore>
+ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
+                                             std::string* error) {
+  std::istringstream in(payload);
+  std::string magic, extra;
+  std::size_t count = 0;
+  ContextGraph::State candidate;
+  std::map<std::string, std::string> idempotency;
+  auto fail_restore = [error](const char* code)
+      -> std::unique_ptr<PreparedSnapshotRestore> {
+    if (error) *error = code;
+    return nullptr;
+  };
+  if (!(in >> magic >> count) || magic != "CGS1" || count > 100000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_HEADER_INVALID");
+  std::string detail;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string encoded;
+    GraphNode node;
+    if (!(in >> std::quoted(encoded)) || !decode_node(encoded, node) ||
+        !graph_.apply_node(candidate, node, detail))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_NODE_INVALID");
+  }
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_RELATION_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string encoded;
+    GraphRelation relation;
+    if (!(in >> std::quoted(encoded)) || !decode_relation(encoded, relation) ||
+        !graph_.apply_relation(candidate, relation, detail))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_RELATION_INVALID");
+  }
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string encoded;
+    int status = 0, effect = 0, may_emit = 0;
+    AddScopeSpan add;
+    if (!(in >> std::quoted(encoded) >> status >> effect >> may_emit) ||
+        !decode_scope(encoded, add) || add.span.span_id.empty() ||
+        status < 0 || status > 1 || effect < 0 || effect > 9 ||
+        (may_emit != 0 && may_emit != 1) ||
+        add.span.source_digest.empty() || add.span.offset_basis.empty() ||
+        add.span.opener.source_digest != add.span.source_digest ||
+        add.span.opener.offset_basis != add.span.offset_basis ||
+        add.span.opener.start_offset > add.span.opener.end_offset)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_INVALID");
+    if (add.span.closer &&
+        (add.span.closer->source_digest != add.span.source_digest ||
+         add.span.closer->offset_basis != add.span.offset_basis ||
+         add.span.closer->start_offset > add.span.closer->end_offset))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_ANCHOR_INVALID");
+    for (const auto& ref : add.span.target_refs)
+      if (!candidate.nodes.count(ref))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_TARGET_INVALID");
+    for (const auto& ref : add.span.antecedent_refs)
+      if (!candidate.nodes.count(ref))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_ANTECEDENT_INVALID");
+    ScopeSpanRecord record{add.span, static_cast<ScopeStatus>(status),
+        static_cast<ScopeEffect>(effect), may_emit != 0};
+    if (!candidate.scope_spans.emplace(add.span.span_id, std::move(record)).second)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_DUPLICATE");
+  }
+
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_HISTORY_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string encoded;
+    FocusRecord focus;
+    if (!(in >> std::quoted(encoded)) || !decode_focus(encoded, focus) ||
+        !graph_.apply_focus(candidate, focus, detail))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_INVALID");
+  }
+  int has_focus = 0;
+  if (!(in >> has_focus) || (has_focus != 0 && has_focus != 1))
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_MARKER_INVALID");
+  if (has_focus) {
+    std::string encoded;
+    FocusRecord focus;
+    if (!(in >> std::quoted(encoded)) || !decode_focus(encoded, focus) ||
+        !candidate.focus || candidate.focus->cluster_id != focus.cluster_id ||
+        candidate.focus->interest_id != focus.interest_id ||
+        candidate.focus->chaos_cluster != focus.chaos_cluster)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_MISMATCH");
+  } else if (candidate.focus || !candidate.focus_history.empty()) {
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_MISSING");
+  }
+
+  auto read_enum_map = [&in](auto& values, int maximum,
+                             const std::map<std::string, GraphNode>& nodes,
+                             NodeKind required_kind) {
+    std::size_t n = 0;
+    if (!(in >> n) || n > 1000000) return false;
+    for (std::size_t i = 0; i < n; ++i) {
+      std::string id;
+      int value = 0;
+      if (!(in >> std::quoted(id) >> value) || id.empty() ||
+          value < 0 || value > maximum) return false;
+      const auto node = nodes.find(id);
+      if (node == nodes.end() || node->second.kind != required_kind)
+        return false;
+      values[id] = static_cast<typename std::decay_t<decltype(values)>::mapped_type>(value);
+    }
+    return true;
+  };
+  if (!read_enum_map(candidate.question_aspect_statuses, 2, candidate.nodes,
+                     NodeKind::QuestionAspect) ||
+      !read_enum_map(candidate.question_memory_states, 2, candidate.nodes,
+                     NodeKind::Question))
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_QUESTION_STATE_INVALID");
+
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_QUESTION_REFERENCE_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    std::uint64_t references = 0;
+    if (!(in >> std::quoted(id) >> references) || id.empty() || references == 0 ||
+        !candidate.nodes.count(id) ||
+        candidate.nodes.at(id).kind != NodeKind::Question ||
+        !candidate.question_reference_counts.emplace(id, references).second)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_QUESTION_REFERENCE_INVALID");
+  }
+  if (!read_enum_map(candidate.claim_statuses, 2, candidate.nodes, NodeKind::Claim))
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_STATUS_INVALID");
+
+  if (!(in >> count) || count > 100000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_VALIDITY_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    std::size_t records = 0;
+    if (!(in >> std::quoted(id) >> records) || id.empty() ||
+        records > 100000) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_VALIDITY_INVALID");
+    for (std::size_t j = 0; j < records; ++j) {
+      std::string encoded;
+      ClaimValidityRecord record;
+      if (!(in >> std::quoted(encoded)) || !decode_claim_validity(encoded, record) ||
+          record.validity.claim_id != id ||
+          !graph_.apply_claim_validity(candidate, record.validity,
+                                       record.recorded_state_version, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_VALIDITY_INVALID");
+    }
+  }
+  if (!(in >> count) || count > 100000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_EVIDENCE_VALIDITY_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    std::size_t records = 0;
+    if (!(in >> std::quoted(id) >> records) || id.empty() ||
+        records > 100000) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_EVIDENCE_VALIDITY_INVALID");
+    for (std::size_t j = 0; j < records; ++j) {
+      std::string encoded;
+      EvidenceValidityRecord record;
+      if (!(in >> std::quoted(encoded)) || !decode_evidence_validity(encoded, record) ||
+          record.validity.evidence_id != id ||
+          !graph_.apply_evidence_validity(candidate, record.validity,
+                                          record.recorded_state_version, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_EVIDENCE_VALIDITY_INVALID");
+    }
+  }
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_DEPENDENCY_EVALUATION_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id, encoded;
+    if (!(in >> std::quoted(id) >> std::quoted(encoded)) || id.empty() ||
+        !graph_.replay_event(candidate,
+            JournalEvent{"snapshot/dependency/" + id, "DEPENDENCY_EVALUATION", encoded},
+            detail) || !candidate.dependency_evaluations.count(id))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_DEPENDENCY_EVALUATION_INVALID");
+  }
+  if (!(in >> count) || count > 100000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_REASSESSMENT_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    std::size_t records = 0;
+    if (!(in >> std::quoted(id) >> records) || id.empty() ||
+        records > 100000) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_REASSESSMENT_INVALID");
+    for (std::size_t j = 0; j < records; ++j) {
+      std::string encoded;
+      TemporalReassessmentRecord record;
+      if (!(in >> std::quoted(encoded)) || !decode_reassessment(encoded, record) ||
+          record.claim_id != id || !graph_.apply_reassessment(candidate, record, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_REASSESSMENT_INVALID");
+    }
+  }
+  if (!(in >> count) || count > 1000000)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_IDEMPOTENCY_COUNT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string key, fingerprint;
+    if (!(in >> std::quoted(key) >> std::quoted(fingerprint)) ||
+        key.empty() || fingerprint.empty() ||
+        !idempotency.emplace(key, fingerprint).second)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_IDEMPOTENCY_INVALID");
+  }
+  if (in >> extra) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TRAILING_DATA");
+  if (error) error->clear();
+  return std::make_unique<PreparedContextGraphSnapshotRestore>(
+      &graph_, std::move(candidate), std::move(idempotency));
+}
+
 } // namespace surge
