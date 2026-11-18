@@ -74,6 +74,7 @@ struct ChaosCluster {
 struct ChaosResult { bool committed{false},duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 struct ChaosSplitPart { std::string child_cluster_id; std::vector<std::string> member_refs; };
 class ChaosClusterSnapshotDomain;
+class PreparedChaosSnapshotRestore;
 class ChaosClusterLedger {
  public:
  explicit ChaosClusterLedger(std::string journal_path);
@@ -99,6 +100,7 @@ class ChaosClusterLedger {
  std::uint64_t state_version() const;
  private:
  friend class ChaosClusterSnapshotDomain;
+ friend class PreparedChaosSnapshotRestore;
  using State=std::map<std::string,ChaosCluster>;
  ChaosResult commit_snapshot(const std::string&,const std::string&,std::uint64_t,State&&,const std::string&);
  bool replay();
