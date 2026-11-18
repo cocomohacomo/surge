@@ -319,15 +319,21 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
   const SnapshotStoreResult& previous =
       current_generation.ok ? current_generation : backup_generation;
   if (previous.ok) {
-    if (document.context_id != previous.document.context_id)
+    if (document.context_id != previous.document.context_id) {
+      remove_if_present(temporary);
       return fail(error, "SNAPSHOT_STORE_CONTEXT_MISMATCH");
+    }
     if (document.state_version < previous.document.state_version ||
-        document.journal_sequence < previous.document.journal_sequence)
+        document.journal_sequence < previous.document.journal_sequence) {
+      remove_if_present(temporary);
       return fail(error, "SNAPSHOT_STORE_WATERMARK_REGRESSION");
+    }
     if (document.state_version == previous.document.state_version &&
         document.journal_sequence == previous.document.journal_sequence &&
-        bytes != previous.bytes)
+        bytes != previous.bytes) {
+      remove_if_present(temporary);
       return fail(error, "SNAPSHOT_STORE_SAME_WATERMARK_CONFLICT");
+    }
   }
 
   if (limits_.keep_backup && current_generation.ok) {
