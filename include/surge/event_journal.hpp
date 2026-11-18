@@ -66,6 +66,8 @@ class EventJournal {
                              std::uint64_t expected_state_version,
                              const std::vector<JournalEvent>& events);
   std::uint64_t state_version() const;
+  // After compaction this is the active tail only. Rebuild domain state from
+  // SnapshotStore with SnapshotCoordinator::restore_from_store.
   std::vector<JournalEvent> committed_events() const;
   // Returns all committed events after a transaction-state watermark. The
   // result is all-or-nothing and rejects gaps, future watermarks, and limits.
