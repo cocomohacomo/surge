@@ -38,6 +38,11 @@ class SnapshotCodec {
   static bool decode(const std::string& bytes,
                     const SnapshotLimits& limits,
                     SnapshotDocument* output, std::string* error);
+  // Validates the complete envelope and returns metadata without copying the
+  // potentially large opaque payload into the output document.
+  static bool inspect(const std::string& bytes,
+                      const SnapshotLimits& limits,
+                      SnapshotDocument* metadata, std::string* error);
 };
 
 }  // namespace surge

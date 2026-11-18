@@ -59,6 +59,45 @@ bool fail(std::string* error, const char* message) {
   if (error) *error = message;
   return false;
 }
+bool decode_impl(const std::string& bytes, const SnapshotLimits& limits,
+                 SnapshotDocument* output, std::string* error,
+                 bool include_payload) {
+  if (!output) return fail(error, "SNAPSHOT_OUTPUT_REQUIRED");
+  if (bytes.size() > total_limit(limits) || bytes.size() < 8 + 4 + 4 + 4 + 8 + 8 + 4 + kDigestBytes)
+    return fail(error, "SNAPSHOT_SIZE_INVALID");
+  const std::size_t content_size = bytes.size() - kDigestBytes;
+  const std::string content = bytes.substr(0, content_size);
+  if (sha256_hex(content) != bytes.substr(content_size))
+    return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
+
+  std::size_t pos = 0;
+  if (content.compare(0, sizeof(kMagic) - 1, kMagic) != 0)
+    return fail(error, "SNAPSHOT_MAGIC_INVALID");
+  pos += sizeof(kMagic) - 1;
+  std::uint32_t version = 0;
+  if (!get_u32(content, &pos, &version) || version != kFormatVersion)
+    return fail(error, "SNAPSHOT_FORMAT_UNSUPPORTED");
+
+  SnapshotDocument candidate;
+  if (!get_string(content, &pos, kMaxMetadata, &candidate.schema_id) ||
+      !get_string(content, &pos, kMaxMetadata, &candidate.context_id) ||
+      candidate.schema_id.empty() || candidate.context_id.empty() ||
+      !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id))
+    return fail(error, "SNAPSHOT_METADATA_INVALID");
+  if (!get_u64(content, &pos, &candidate.state_version) ||
+      !get_u64(content, &pos, &candidate.journal_sequence))
+    return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
+  std::uint32_t payload_size = 0;
+  if (!get_u32(content, &pos, &payload_size) ||
+      payload_size > payload_limit(limits) ||
+      pos > content.size() || content.size() - pos != payload_size)
+    return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
+  if (include_payload)
+    candidate.payload.assign(content.data() + pos, payload_size);
+  *output = std::move(candidate);
+  if (error) error->clear();
+  return true;
+}
 }  // namespace
 
 bool SnapshotCodec::encode(const SnapshotDocument& doc,
@@ -96,39 +135,12 @@ bool SnapshotCodec::encode(const SnapshotDocument& doc,
 bool SnapshotCodec::decode(const std::string& bytes,
                            const SnapshotLimits& limits,
                            SnapshotDocument* output, std::string* error) {
-  if (!output) return fail(error, "SNAPSHOT_OUTPUT_REQUIRED");
-  if (bytes.size() > total_limit(limits) || bytes.size() < 8 + 4 + 4 + 4 + 8 + 8 + 4 + kDigestBytes)
-    return fail(error, "SNAPSHOT_SIZE_INVALID");
-  const std::size_t content_size = bytes.size() - kDigestBytes;
-  const std::string content = bytes.substr(0, content_size);
-  if (sha256_hex(content) != bytes.substr(content_size))
-    return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
+  return decode_impl(bytes, limits, output, error, true);
+}
 
-  std::size_t pos = 0;
-  if (content.compare(0, sizeof(kMagic) - 1, kMagic) != 0)
-    return fail(error, "SNAPSHOT_MAGIC_INVALID");
-  pos += sizeof(kMagic) - 1;
-  std::uint32_t version = 0;
-  if (!get_u32(content, &pos, &version) || version != kFormatVersion)
-    return fail(error, "SNAPSHOT_FORMAT_UNSUPPORTED");
-
-  SnapshotDocument candidate;
-  if (!get_string(content, &pos, kMaxMetadata, &candidate.schema_id) ||
-      !get_string(content, &pos, kMaxMetadata, &candidate.context_id) ||
-      candidate.schema_id.empty() || candidate.context_id.empty() ||
-      !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id))
-    return fail(error, "SNAPSHOT_METADATA_INVALID");
-  if (!get_u64(content, &pos, &candidate.state_version) ||
-      !get_u64(content, &pos, &candidate.journal_sequence))
-    return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
-  std::uint32_t payload_size = 0;
-  if (!get_u32(content, &pos, &payload_size) ||
-      payload_size > payload_limit(limits) ||
-      pos > content.size() || content.size() - pos != payload_size)
-    return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
-  candidate.payload.assign(content.data() + pos, payload_size);
-  *output = std::move(candidate);
-  if (error) error->clear();
-  return true;
+bool SnapshotCodec::inspect(const std::string& bytes,
+                            const SnapshotLimits& limits,
+                            SnapshotDocument* metadata, std::string* error) {
+  return decode_impl(bytes, limits, metadata, error, false);
 }
 }  // namespace surge
