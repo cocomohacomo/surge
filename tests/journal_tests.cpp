@@ -249,5 +249,5 @@ int main(int argc, char** argv) {
     CHECK(retry.committed&&retry.duplicate&&retry.state_version==1);
   }
   std::filesystem::remove_all(root);
-  std::cout << "SURGE EventJournal tests: sync uncertainty recovery passed\\n";
+  std::cout << "SURGE EventJournal tests: sync uncertainty recovery passed\n";
 }
