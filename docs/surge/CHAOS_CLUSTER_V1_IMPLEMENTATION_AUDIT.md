@@ -172,3 +172,19 @@ This does not compact the journal or perform physical deletion. Remaining
 work includes snapshot/segment compaction, restore drills against semantic
 projections, authenticated/off-host backup, crash injection at sync boundaries,
 and power-loss validation.
+
+
+## EventJournal retention integration and recovery validation
+
+Retention manifests and tombstone proposals are now persisted through a
+retention-only C ABI and Python bridge as atomic, idempotent EventJournal
+transactions. Replay validates manifest structure and digest, deterministic
+ranking/capacity assignment, event-ID binding, tombstone digest, archived
+record membership, and source digest agreement. Regression coverage includes
+idempotent retry, restart replay, rejection of non-retention event kinds, and
+backup/restore followed by full Core open and retention projection replay.
+
+A snapshot/compaction design contract has been added. It deliberately keeps
+compaction disabled until every journal consumer has a versioned snapshot and
+replay reducer and differential replay proves state equivalence. Current work
+does not physically delete payloads or rewrite the authoritative journal.
