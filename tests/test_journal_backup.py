@@ -1,5 +1,6 @@
 import tempfile
 import json
+import subprocess
 import unittest
 import struct
 import zlib
@@ -95,6 +96,30 @@ class JournalBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL"):
                 create_backup(source, backup)
             self.assertFalse(backup.exists())
+
+    def test_restored_backup_replays_with_native_cpp_eventjournal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup, restored = root / "live.sgj", root / "backup.sgj", root / "restored.sgj"
+            source.write_bytes(_valid_journal())
+            create_backup(source, backup)
+            restore_backup(backup, restored)
+
+            repository = Path(__file__).resolve().parents[1]
+            candidates = (
+                repository / "build" / "surge_journal_verify",
+                repository / "build" / "surge_journal_verify.exe",
+                repository / "build" / "Release" / "surge_journal_verify.exe",
+            )
+            verifier = next((candidate for candidate in candidates if candidate.is_file()), None)
+            if verifier is None:
+                self.skipTest("native C++ verifier is not built in this environment")
+            result = subprocess.run(
+                [str(verifier), str(restored)],
+                check=True, capture_output=True, text=True, timeout=15)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["state_version"], 1)
+            self.assertEqual(report["event_count"], 1)
 
     def test_restore_invalid_backup_preserves_existing_destination(self):
         with tempfile.TemporaryDirectory() as directory:
