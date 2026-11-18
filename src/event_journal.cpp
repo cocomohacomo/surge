@@ -458,7 +458,7 @@ JournalTailResult EventJournal::committed_tail(
     if (event.state_version > expected_version) ++expected_version;
     if (result.events.size() >= limits.max_events) {
       result.events.clear();
-      result.payload_bytes = 0;
+      result.total_bytes = 0;
       result.error = "JOURNAL_TAIL_EVENT_LIMIT_EXCEEDED";
       return result;
     }
@@ -468,7 +468,7 @@ JournalTailResult EventJournal::committed_tail(
         event.kind.size() > remaining - std::min(remaining, event.event_id.size()) ||
         event.payload.size() > remaining - std::min(remaining, event.event_id.size() + event.kind.size())) {
       result.events.clear();
-      result.payload_bytes = 0;
+      result.total_bytes = 0;
       result.error = "JOURNAL_TAIL_TOTAL_BYTES_LIMIT_EXCEEDED";
       return result;
     }
@@ -477,7 +477,7 @@ JournalTailResult EventJournal::committed_tail(
   }
   if (expected_version != state_version_ || result.events.empty()) {
     result.events.clear();
-    result.payload_bytes = 0;
+    result.total_bytes = 0;
     result.error = "JOURNAL_TAIL_VERSION_GAP";
     return result;
   }
