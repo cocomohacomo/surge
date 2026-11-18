@@ -1,4 +1,5 @@
 #include "surge/snapshot_coordinator.hpp"
+#include "surge/sha256.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -49,7 +50,7 @@ SnapshotCoordinator::SnapshotCoordinator(SnapshotCoordinatorLimits limits)
 
 bool SnapshotCoordinator::register_domain(SnapshotDomain* domain,
                                           std::string* error) {
-  if (!domain || domain->domain_id().empty() || domain->schema_id().empty())
+  if (!domain || domain->domain_id().empty() || domain->schema_id().empty() ||\n      !is_valid_utf8(domain->domain_id()) || !is_valid_utf8(domain->schema_id()))
     return fail(error, "SNAPSHOT_DOMAIN_INVALID");
   if (domains_.size() >= limits_.max_domains)
     return fail(error, "SNAPSHOT_DOMAIN_LIMIT_EXCEEDED");
@@ -79,7 +80,7 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
       return fail(error, domain_error.empty() ? "SNAPSHOT_DOMAIN_CAPTURE_FAILED" : domain_error.c_str());
     if (payload.size() > limits_.max_domain_payload_bytes)
       return fail(error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
-    if (!put_field(&bundle, domain->domain_id(), 4096) ||
+    if (!is_valid_utf8(domain->domain_id()) || !is_valid_utf8(domain->schema_id()) ||\n        !put_field(&bundle, domain->domain_id(), 4096) ||
         !put_field(&bundle, domain->schema_id(), 4096) ||
         !put_field(&bundle, payload, limits_.max_domain_payload_bytes))
       return fail(error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
@@ -126,7 +127,7 @@ bool SnapshotCoordinator::restore(const std::string& bytes,
         !get_field(bundle, &pos, limits_.max_domain_payload_bytes, &payload))
       return fail(error, "SNAPSHOT_BUNDLE_TRUNCATED");
     SnapshotDomain* domain = domains_[i];
-    if (id != domain->domain_id() || schema != domain->schema_id())
+    if (!is_valid_utf8(id) || !is_valid_utf8(schema) ||\n        id != domain->domain_id() || schema != domain->schema_id())
       return fail(error, "SNAPSHOT_DOMAIN_SCHEMA_MISMATCH");
     std::string domain_error;
     auto staged = domain->prepare_restore(payload, &domain_error);
