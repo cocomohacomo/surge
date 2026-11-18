@@ -2,6 +2,8 @@
 #include "surge/chaos_cluster.hpp"
 #include "surge/evidence_provenance.hpp"
 #include "surge/snapshot_coordinator.hpp"
+#include "surge/temporal_boundary_ledger.hpp"
+#include "surge/temporal_question_ledger.hpp"
 namespace surge {
 class EvidenceProvenanceSnapshotDomain final : public SnapshotDomain {
  public:
@@ -20,5 +22,23 @@ class ChaosClusterSnapshotDomain final : public SnapshotDomain {
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
  private: ChaosClusterLedger& ledger_;
+};
+class TemporalBoundarySnapshotDomain final : public SnapshotDomain {
+ public:
+  explicit TemporalBoundarySnapshotDomain(TemporalBoundaryLedger& ledger) : ledger_(ledger) {}
+  std::string domain_id() const override;
+  std::string schema_id() const override;
+  bool capture(std::string*, std::string*) const override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+ private: TemporalBoundaryLedger& ledger_;
+};
+class TemporalQuestionSnapshotDomain final : public SnapshotDomain {
+ public:
+  explicit TemporalQuestionSnapshotDomain(TemporalQuestionLedger& ledger) : ledger_(ledger) {}
+  std::string domain_id() const override;
+  std::string schema_id() const override;
+  bool capture(std::string*, std::string*) const override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+ private: TemporalQuestionLedger& ledger_;
 };
 }  // namespace surge

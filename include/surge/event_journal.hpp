@@ -13,10 +13,11 @@ struct JournalEvent {
   std::string event_id;
   std::string kind;
   std::string payload;
+  // Runtime watermark assigned by EventJournal after a transaction commits.
+  // It is reconstructed from the durable COMMIT frame and is not user input.
+  std::uint64_t state_version{0};
 };
 struct EventJournalLimits {
-  // Zero means unlimited for backward compatibility. Non-zero limits are
-  // enforced during replay and before appending a new transaction.
   std::size_t max_events{0};
   std::size_t max_payload_bytes{0};
   std::size_t max_transactions{0};
@@ -27,10 +28,22 @@ struct JournalCommitResult {
   std::uint64_t state_version{0};
   std::string error;
 };
+struct JournalTailLimits {
+  // Tail reads are bounded by default for edge deployments.
+  std::size_t max_events{65536};
+  std::size_t max_total_bytes{16U * 1024U * 1024U};
+};
+struct JournalTailResult {
+  bool ok{false};
+  std::uint64_t after_state_version{0};
+  std::uint64_t current_state_version{0};
+  std::size_t total_bytes{0};
+  std::vector<JournalEvent> events;
+  std::string error;
+};
 
-// Append-only, commit-marker journal. A transaction becomes visible only after
-// its COMMIT frame has been written and synchronized to stable storage. CRC32 detects accidental frame
-// corruption; it is not a cryptographic authenticity mechanism.
+// Append-only, commit-marker journal. CRC32 detects accidental frame corruption;
+// it is not a cryptographic authenticity mechanism.
 class EventJournal {
  public:
   using AppendFrameGate = std::function<bool(std::size_t frame_index)>;
@@ -48,6 +61,10 @@ class EventJournal {
                              const std::vector<JournalEvent>& events);
   std::uint64_t state_version() const;
   std::vector<JournalEvent> committed_events() const;
+  // Returns all committed events after a transaction-state watermark. The
+  // result is all-or-nothing and rejects gaps, future watermarks, and limits.
+  JournalTailResult committed_tail(std::uint64_t after_state_version,
+                                   JournalTailLimits limits = {}) const;
   std::string last_error() const;
  private:
   bool recover();
