@@ -119,6 +119,13 @@ int main() {
     compacted_version = journal.state_version();
     journal_before = std::filesystem::file_size(journal_path);
 
+    SnapshotStoreLimits tiny_limits;
+    tiny_limits.max_file_bytes = 8;
+    SnapshotStore tiny_store((snapshot_path.string() + ".tiny"), tiny_limits);
+    CHECK(!coordinator.compact(journal, tiny_store, "counter-context", &error));
+    CHECK(!journal.checkpoint_info().compacted);
+    CHECK(std::filesystem::file_size(journal_path) == journal_before);
+
     CHECK(coordinator.compact(journal, store, "counter-context", &error));
     const auto checkpoint = journal.checkpoint_info();
     CHECK(checkpoint.compacted);
@@ -150,6 +157,10 @@ int main() {
     SnapshotCoordinator coordinator;
     std::string error;
     CHECK(coordinator.register_domain(&counter, &error));
+    CHECK(!coordinator.restore_with_tail(first_checkpoint, recovered,
+        "counter-context", 0, 0,
+        JournalTailLimits{4096, 8U * 1024U * 1024U}, &error));
+    CHECK(error == "SNAPSHOT_CHECKPOINT_BEHIND_COMPACTION_BASE");
     CHECK(coordinator.restore_from_store(store, recovered, "counter-context",
         0, 0, JournalTailLimits{4096, 8U * 1024U * 1024U}, &error));
     CHECK(counter.value == 25);
@@ -203,6 +214,7 @@ int main() {
 
   remove_generations(journal_path);
   remove_generations(snapshot_path);
+  remove_generations(snapshot_path.string() + ".tiny");
   std::cout << "SURGE copy-on-write journal compaction tests passed\n";
   return 0;
 }
