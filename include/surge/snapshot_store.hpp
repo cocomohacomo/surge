@@ -34,6 +34,7 @@ class SnapshotStore {
   SnapshotStoreResult load() const;
 
   const std::string& path() const { return path_; }
+  std::size_t max_file_bytes() const { return limits_.max_file_bytes; }
   std::string backup_path() const { return path_ + ".bak"; }
 
  private:
