@@ -28,7 +28,7 @@ The old journal generation remains at `.bak` as an independent full replay sourc
 
 - The compacted identity manifest is one CRC-protected frame and is capped by the journal's 16 MiB frame limit. If identity history no longer fits, compaction fails without replacing the current journal.
 - Historical event payloads are removed from the current journal and in-memory event vector. Identity indexes remain, preserving exact idempotency and event-ID uniqueness.
-- `max_events` and `max_payload_bytes` apply to the active tail after compaction. `max_transactions` continues to count retained transaction identities across the journal lifetime.
+- `max_events` and `max_payload_bytes` apply to the active tail after compaction. `max_transactions` and `max_event_ids` continue to bound retained transaction and event identities across the journal lifetime. `max_event_ids` is independent because one transaction may contain many events.
 - The snapshot envelope and backup journal are copied/written using bounded or streaming file operations; compaction does not require loading the old journal into memory.
 - Compaction does not claim to bound total process RSS. The identity maps remain proportional to historical transaction/event identities.
 - One writer lock and application-level quiescence are required.
