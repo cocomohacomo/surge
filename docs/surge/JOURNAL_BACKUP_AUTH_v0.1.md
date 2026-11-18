@@ -81,6 +81,37 @@ missing key, wrong key ID, wrong key, altered metadata, or unsigned backup
 when authentication is required is rejected before restore acquires the
 destination writer lock or writes destination bytes.
 
+## Key rotation with an external keyring
+
+For a backup set containing generations signed by different keys, maintain an
+external JSON keyring that maps each manifest key ID to a key-file path. Paths
+may be absolute or relative to the keyring file. The keyring contains paths,
+not key bytes.
+
+Example `backup-keyring.json`:
+
+```json
+{
+  "ops-2026-v1": "keys/backup-v1.key",
+  "ops-2026-v2": "keys/backup-v2.key"
+}
+```
+
+Verify or restore a backup using its signed key ID:
+
+```sh
+python tools/journal_backup.py verify backups/old.sgj \
+  --keyring-file /secure/backup-keyring.json --require-auth
+python tools/journal_backup.py restore backups/old.sgj restored.sgj \
+  --keyring-file /secure/backup-keyring.json --require-auth
+```
+
+The key ID is included in the HMAC-authenticated manifest. A missing keyring
+entry fails closed. During rotation, add the new key mapping before creating
+new backups and retain old mappings until all backups signed with the old key
+have expired. The keyring file itself should be access-controlled and backed up
+separately from the data it protects.
+
 ## Limitations
 
 - HMAC does not encrypt the journal.
