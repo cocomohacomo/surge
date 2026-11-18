@@ -239,3 +239,12 @@ resolves both cases: marker survived (duplicate) and marker was lost (new
 commit). The tests model the loss of an unsynchronized marker by truncating to
 the last synchronized EVENT frame. This is deterministic fault injection, not
 a physical power-loss simulation.
+
+
+## Performance baseline tooling
+
+An opt-in EventJournal benchmark target now measures append p50/p95/p99,
+replay time, journal size, and event count using real platform durability
+barriers. CI runs a small smoke workload only; it is not a performance gate.
+This does not measure recognition-model inference, RTF, peak RSS, or the
+30MB model target. Those require a separate adapter and target-device run.
