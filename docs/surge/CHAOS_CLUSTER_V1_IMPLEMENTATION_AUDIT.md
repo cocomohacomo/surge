@@ -157,7 +157,9 @@ partial state change (CC10), changed payload under a reused idempotency identity
 (CC12), and provenance-bound ARCHIVED -> DORMANT reactivation followed by new
 membership (CC19). These are regression tests, not a claim that all CC01-CC20
 cases are closed. CC14 (hypothesis never becomes Claim) and CC15 (Question
-resolution does not promote/close the Chaos Cluster) remain explicit gaps.
+resolution does not promote/close the Chaos Cluster) now have shared-journal
+negative and restart regression coverage merged in PR #113; the broader CC01-CC20
+matrix remains incomplete.
 
 
 ## Retention-to-EventJournal integration
@@ -188,3 +190,13 @@ A snapshot/compaction design contract has been added. It deliberately keeps
 compaction disabled until every journal consumer has a versioned snapshot and
 replay reducer and differential replay proves state equivalence. Current work
 does not physically delete payloads or rewrite the authoritative journal.
+
+
+## Shared-journal replay ownership
+
+ContextGraph replay now explicitly advances its global State Version across
+`RETENTION_MANIFEST_RECORDED` and `RETENTION_TOMBSTONE_PROPOSED` events without
+interpreting those payloads as graph mutations. This is an explicit
+cross-domain event registration, not a permissive ignore-unknown fallback.
+A regression opens and reopens a journal containing both retention event kinds
+and verifies graph state remains unchanged while the global version advances.
