@@ -1,4 +1,5 @@
 import tempfile
+import json
 import unittest
 import struct
 import zlib
@@ -106,6 +107,24 @@ class JournalBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "BACKUP_DIGEST_OR_SIZE_MISMATCH"):
                 restore_backup(backup, target, replace_existing=True)
             self.assertEqual(target.read_bytes(), b"untouched")
+
+    def test_manifest_schema_rejects_boolean_version_and_replay_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup = root / "live.sgj", root / "backup.sgj"
+            source.write_bytes(_valid_journal())
+            manifest_path = create_backup(source, backup)
+            original = json.loads(manifest_path.read_text(encoding="utf-8"))
+            invalid = dict(original)
+            invalid["manifest_version"] = True
+            manifest_path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_MANIFEST_VERSION_INVALID"):
+                verify_backup(backup)
+            invalid = dict(original)
+            invalid["replay"] = {**original["replay"], "state_version": 99}
+            manifest_path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_REPLAY_METADATA_MISMATCH"):
+                verify_backup(backup)
 
     def test_backup_digest_tampering_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
