@@ -106,3 +106,14 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ./build-fuzz/surge_journal_fuzz -max_total_time=20 -max_len=65536
+
+  journal-benchmark-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Configure benchmark
+        run: cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release -DSURGE_BUILD_BENCHMARKS=ON
+      - name: Build benchmark
+        run: cmake --build build-bench --target surge_journal_bench --config Release --parallel 2
+      - name: Run benchmark smoke test
+        run: ./build-bench/surge_journal_bench 100 64
