@@ -273,3 +273,15 @@ through the production EventJournal implementation and reports replayed State
 Version and committed event count. The Python backup/restore regression invokes
 this native verifier on the restored copy in CI whenever the CMake target is
 available, complementing the independent Python preflight validator.
+
+
+## Authenticated backup integrity
+
+Backup manifests can now be optionally authenticated with HMAC-SHA256 using a
+caller-supplied key file (minimum 32 bytes) and a non-secret key ID. The key is
+not embedded in the manifest or repository. Verification uses
+constant-time comparison and can require authentication, rejecting unsigned
+legacy backups in strict mode. Tests cover signed round-trip restore, missing
+and wrong keys, key-ID mismatch, manifest tampering, unsigned rejection, and
+short keys. Encryption, KMS/HSM integration, automated key rotation, and
+off-host immutable replication remain separate operational work.
