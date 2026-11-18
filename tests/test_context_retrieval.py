@@ -346,6 +346,14 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     ranking_policy="SCORE_THEN_ID")
                 self.assertEqual(next_member_page["target"]["members"][0]["member_ref"], "a")
                 self.assertIsNone(next_member_page["pages"]["members"]["next_offset"])
+                self.assertTrue(next_member_page["page_complete"])
+                self.assertFalse(next_member_page["complete"])
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", member_offset=99)
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", max_members=0)
                 with self.assertRaises(ValueError):
                     ContextRetriever(core).retrieve_chaos_cluster(
                         "query-root", ranking_policy="UNSAFE")
