@@ -10,6 +10,7 @@
 #include <set>
 #include <sstream>
 #include <utility>
+#include <type_traits>
 
 namespace surge {
 namespace {
@@ -940,9 +941,9 @@ ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
       if (!(in >> std::quoted(id) >> value) || id.empty() ||
           value < 0 || value > maximum) return false;
       const auto node = nodes.find(id);
-      if (node == nodes.end() || node->second.kind != required_kind ||
-          !values.emplace(id, static_cast<typename std::decay_t<decltype(values)>::mapped_type>(value)).second)
+      if (node == nodes.end() || node->second.kind != required_kind)
         return false;
+      values[id] = static_cast<typename std::decay_t<decltype(values)>::mapped_type>(value);
     }
     return true;
   };
