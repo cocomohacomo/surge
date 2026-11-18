@@ -13,6 +13,7 @@ class ContextGraphSnapshotDomain final : public SnapshotDomain {
   std::string schema_id() const override;
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: ContextGraph& graph_;
 };
 class EvidenceProvenanceSnapshotDomain final : public SnapshotDomain {
