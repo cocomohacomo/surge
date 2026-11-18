@@ -284,6 +284,10 @@ EvidenceProvenanceSnapshotDomain::prepare_restore_with_tail(
     std::string* error) {
  std::map<std::string,std::vector<EvidenceProvenanceRecord>> candidate;
  if(!decode_history(payload,candidate)){fail(error,"SNAPSHOT_EVIDENCE_PROVENANCE_INVALID");return nullptr;}
+ std::uint64_t latest_recorded_version = 0;
+ for (const auto& item : candidate)
+  for (const auto& record : item.second)
+   latest_recorded_version = std::max(latest_recorded_version, record.recorded_state_version);
  for(const auto& event:tail){
   if(event.kind!="EVIDENCE_PROVENANCE_SET_V1")continue;
   EvidenceProvenanceRecord record;
@@ -294,9 +298,11 @@ EvidenceProvenanceSnapshotDomain::prepare_restore_with_tail(
   }
   auto& revisions=candidate[record.provenance.evidence_id];
   if(record.provenance.revision!=revisions.size()+1 ||
+     record.recorded_state_version <= latest_recorded_version ||
      (!revisions.empty() && record.recorded_state_version<=revisions.back().recorded_state_version)){
    fail(error,"SNAPSHOT_EVIDENCE_TAIL_REVISION_INVALID");return nullptr;
   }
+  latest_recorded_version = record.recorded_state_version;
   revisions.push_back(std::move(record));
  }
  if(error)error->clear();
