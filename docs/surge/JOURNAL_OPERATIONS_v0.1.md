@@ -24,7 +24,8 @@ After restore, reopen the file with EventJournal and run full replay/conformance
 ## Retention metadata transactions
 
 Retention manifests and tombstone proposals can be appended through the
-retention-only C ABI. These events participate in the same global journal
+retention-only C ABI, one event per transaction so every journal consumer can
+advance its global State Version exactly once per transaction. These events participate in the same global journal
 State Version and idempotency rules as other transactions. Only
 `RETENTION_MANIFEST_RECORDED` and `RETENTION_TOMBSTONE_PROPOSED` are accepted
 through this surface; arbitrary graph/domain event kinds are rejected.
