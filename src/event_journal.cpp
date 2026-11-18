@@ -103,6 +103,9 @@ std::string commit_frame(const std::string& tx, std::uint64_t version,
 
 EventJournal::EventJournal(std::string path) : path_(std::move(path)) {}
 
+EventJournal::EventJournal(std::string path, EventJournalLimits limits)
+    : path_(std::move(path)), limits_(limits) {}
+
 EventJournal::EventJournal(std::string path, AppendFrameGate append_frame_gate)
     : path_(std::move(path)), append_frame_gate_(std::move(append_frame_gate)) {}
 
@@ -215,6 +218,7 @@ bool EventJournal::append_frame(const std::string& payload) {
 
 bool EventJournal::recover() {
   state_version_ = 0;
+  retained_payload_bytes_ = 0;
   events_.clear(); idempotency_.clear(); transaction_ids_.clear(); event_ids_.clear();
   std::ifstream in(path_, std::ios::binary);
   if (!in) { last_error_ = "JOURNAL_OPEN_READ_ERROR"; return false; }
@@ -296,10 +300,23 @@ bool EventJournal::recover() {
           idempotency_.count(p.idem) || transaction_ids_.count(tx)) {
         last_error_ = "JOURNAL_COMMIT_INVARIANT_FAILED"; return false;
       }
+      std::size_t added_payload_bytes = 0;
       for (const auto& event : p.events) {
         if (event_ids_.count(event.event_id)) { last_error_ = "JOURNAL_EVENT_ID_DUPLICATE"; return false; }
+        if (event.payload.size() > std::numeric_limits<std::size_t>::max() - added_payload_bytes) {
+          last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
+        }
+        added_payload_bytes += event.payload.size();
+      }
+      if ((limits_.max_events && p.events.size() > limits_.max_events -
+              std::min(limits_.max_events, events_.size())) ||
+          (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
+              std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
+          (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions)) {
+        last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
       }
       for (const auto& event : p.events) { events_.push_back(event); event_ids_[event.event_id] = true; }
+      retained_payload_bytes_ += added_payload_bytes;
       idempotency_[p.idem] = p.fingerprint;
       transaction_ids_[tx] = p.fingerprint;
       state_version_ = version;
@@ -343,10 +360,21 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
   if (transaction_ids_.count(tx)) return {false, false, state_version_, "TRANSACTION_ID_REUSED"};
   if (expected != state_version_) return {false, false, state_version_, "STATE_VERSION_CONFLICT"};
   std::map<std::string, bool> batch_ids;
+  std::size_t added_payload_bytes = 0;
   for (const auto& event : events) {
     if (event.event_id.empty() || event.kind.empty() || event_ids_.count(event.event_id) ||
         batch_ids.count(event.event_id)) return {false, false, state_version_, "EVENT_ID_INVALID_OR_DUPLICATE"};
+    if (event.payload.size() > std::numeric_limits<std::size_t>::max() - added_payload_bytes)
+      return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
+    added_payload_bytes += event.payload.size();
     batch_ids[event.event_id] = true;
+  }
+  if ((limits_.max_events && events.size() > limits_.max_events -
+          std::min(limits_.max_events, events_.size())) ||
+      (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
+          std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
+      (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions)) {
+    return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
   }
   if (!append_frame(begin_frame(tx, idem, expected, fingerprint))) {
     opened_ = false; return {false, false, state_version_, last_error_};
@@ -369,6 +397,7 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     return {false, false, state_version_, last_error_};
   }
   for (const auto& event : events) { events_.push_back(event); event_ids_[event.event_id] = true; }
+  retained_payload_bytes_ += added_payload_bytes;
   idempotency_[idem] = fingerprint;
   transaction_ids_[tx] = fingerprint;
   ++state_version_;
