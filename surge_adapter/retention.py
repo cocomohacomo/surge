@@ -142,14 +142,63 @@ def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
     body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
     if manifest.get("manifest_sha256") != _digest(body):
         raise ValueError("RETENTION_MANIFEST_DIGEST_MISMATCH")
+    if not isinstance(manifest.get("policy_version"), str) or not manifest["policy_version"].strip():
+        raise ValueError("RETENTION_MANIFEST_POLICY_VERSION_INVALID")
+    _utc(manifest.get("created_at"), "created_at")
+    capacity = manifest.get("capacity")
+    if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
+        raise ValueError("RETENTION_MANIFEST_CAPACITY_INVALID")
+    weights = manifest.get("weights")
+    if not isinstance(weights, dict) or set(weights) != set(DEFAULT_WEIGHTS):
+        raise ValueError("RETENTION_MANIFEST_WEIGHTS_INVALID")
+    normalized_weights = {key: _unit(value, f"weight_{key}") for key, value in weights.items()}
+    if not math.isclose(sum(normalized_weights.values()), 1.0, abs_tol=1e-9):
+        raise ValueError("RETENTION_MANIFEST_WEIGHTS_INVALID")
     records = manifest.get("records")
     if not isinstance(records, list) or len(records) != manifest.get("record_count"):
         raise ValueError("RETENTION_MANIFEST_RECORD_COUNT_MISMATCH")
-    ids = [item.get("record_id") for item in records if isinstance(item, dict)]
-    if len(ids) != len(records) or len(ids) != len(set(ids)):
+    ids: list[str] = []
+    for item in records:
+        if not isinstance(item, dict):
+            raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
+        record_id = item.get("record_id")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
+        ids.append(record_id)
+        if item.get("state") not in {"ACTIVE", "ARCHIVED"}:
+            raise ValueError("RETENTION_MANIFEST_STATE_INVALID")
+        _utc(item.get("last_accessed_at"), "last_accessed_at")
+        _unit(item.get("retention_score"), "retention_score")
+        factors = item.get("factors")
+        if not isinstance(factors, dict) or set(factors) != set(DEFAULT_WEIGHTS):
+            raise ValueError("RETENTION_MANIFEST_FACTORS_INVALID")
+        for key, value in factors.items():
+            _unit(value, f"factor_{key}")
+        for key in ("provenance_refs", "lineage_refs"):
+            refs = item.get(key)
+            if (not isinstance(refs, list) or
+                any(not isinstance(ref, str) or not ref for ref in refs) or
+                refs != sorted(set(refs))):
+                raise ValueError("RETENTION_MANIFEST_REFERENCES_INVALID")
+        source_digest = item.get("source_digest")
+        if source_digest is not None and (not isinstance(source_digest, str) or not source_digest):
+            raise ValueError("RETENTION_MANIFEST_SOURCE_DIGEST_INVALID")
+    if len(ids) != len(set(ids)) or ids != sorted(ids):
         raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
-    if any(item.get("state") not in {"ACTIVE", "ARCHIVED"} for item in records):
-        raise ValueError("RETENTION_MANIFEST_STATE_INVALID")
+    ranking = manifest.get("ranking")
+    expected_ranking = [item["record_id"] for item in sorted(
+        records, key=lambda item: (-item["retention_score"], item["record_id"]))]
+    if ranking != expected_ranking:
+        raise ValueError("RETENTION_MANIFEST_RANKING_INVALID")
+    active_ids = set(expected_ranking[:capacity])
+    if any(item["state"] != ("ACTIVE" if item["record_id"] in active_ids else "ARCHIVED")
+           for item in records):
+        raise ValueError("RETENTION_MANIFEST_CAPACITY_ASSIGNMENT_INVALID")
+    active_count = len(active_ids)
+    archived_count = len(records) - active_count
+    if (manifest.get("active_count") != active_count or
+        manifest.get("archived_count") != archived_count):
+        raise ValueError("RETENTION_MANIFEST_STATE_COUNTS_INVALID")
     if manifest.get("deletion_performed") is not False:
         raise ValueError("RETENTION_MANIFEST_MUST_NOT_CLAIM_DELETION")
     return True
