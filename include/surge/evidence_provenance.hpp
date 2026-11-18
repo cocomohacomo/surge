@@ -23,6 +23,7 @@ struct EvidenceProvenanceRecord {
   std::uint64_t recorded_state_version{0};
 };
 
+class EvidenceProvenanceSnapshotDomain;
 class EvidenceProvenanceLedger {
  public:
   explicit EvidenceProvenanceLedger(std::string journal_path);
@@ -43,6 +44,7 @@ class EvidenceProvenanceLedger {
   }
 
  private:
+  friend class EvidenceProvenanceSnapshotDomain;
   bool apply(const EvidenceProvenanceRecord&, std::string& error);
   std::unique_ptr<EventJournal> owned_journal_;
   EventJournal* journal_{nullptr};
