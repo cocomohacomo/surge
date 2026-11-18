@@ -7,7 +7,6 @@ from pathlib import Path
 from tools.journal_backup import create_backup, restore_backup, verify_backup, writer_lock
 
 
-
 def _quoted(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -17,7 +16,7 @@ def _frame(payload):
     return struct.pack("<I", len(encoded)) + encoded + struct.pack("<I", zlib.crc32(encoded))
 
 
-def _valid_journal():
+def _valid_journal(commit_version=1):
     tx, idem, event_id, kind, payload = "tx-1", "idem-1", "event-1", "TEST", "payload"
     fingerprint = 1469598103934665603
     for value in (tx, "0", event_id, kind, payload):
@@ -27,10 +26,10 @@ def _valid_journal():
         fingerprint ^= 0xFF
         fingerprint = (fingerprint * 1099511628211) & ((1 << 64) - 1)
     digest = f"{fingerprint:016x}"
-    return (_valid_journal() +
+    return (b"SURGEJ1\n" +
             _frame(f"B {_quoted(tx)} {_quoted(idem)} 0 {_quoted(digest)}") +
             _frame(f"E {_quoted(tx)} {_quoted(event_id)} {_quoted(kind)} {_quoted(payload)}") +
-            _frame(f"C {_quoted(tx)} 1 1 {_quoted(digest)}"))
+            _frame(f"C {_quoted(tx)} {commit_version} 1 {_quoted(digest)}"))
 
 
 class JournalBackupTests(unittest.TestCase):
@@ -38,11 +37,13 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, backup, restored = root / "live.sgj", root / "backup.sgj", root / "restored.sgj"
-            source.write_bytes(b"SURGEJ1\nexample-journal-payload")
+            source.write_bytes(_valid_journal())
             manifest_path = create_backup(source, backup)
             self.assertTrue(manifest_path.exists())
             manifest = verify_backup(backup)
             self.assertEqual(manifest["size_bytes"], source.stat().st_size)
+            self.assertEqual(manifest["replay"]["state_version"], 1)
+            self.assertEqual(manifest["replay"]["committed_event_count"], 1)
             restore_backup(backup, restored)
             self.assertEqual(restored.read_bytes(), source.read_bytes())
 
@@ -50,7 +51,7 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "live.sgj"
-            source.write_bytes(b"SURGEJ1\n")
+            source.write_bytes(_valid_journal())
             with writer_lock(source):
                 with self.assertRaisesRegex(RuntimeError, "JOURNAL_WRITER_LOCKED"):
                     create_backup(source, root / "blocked.sgj")
@@ -67,9 +68,9 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, backup, target = root / "live.sgj", root / "backup.sgj", root / "target.sgj"
-            source.write_bytes(b"SURGEJ1\nsource")
+            source.write_bytes(_valid_journal())
             create_backup(source, backup)
-            target.write_bytes(b"SURGEJ1\nexisting")
+            target.write_bytes(_valid_journal() + b"existing")
             with self.assertRaisesRegex(FileExistsError, "RESTORE_DESTINATION_EXISTS"):
                 restore_backup(backup, target)
             restore_backup(backup, target, replace_existing=True)
@@ -79,11 +80,8 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, backup = root / "live.sgj", root / "backup.sgj"
-            # Valid frame checksums, but an impossible State Version in COMMIT.
-            valid = _valid_journal()
-            bad_commit = _frame('C "tx-1" 2 1 "0000000000000000"')
-            source.write_bytes(valid[:valid.rfind(_frame('C "tx-1" 1 1 "' + valid.split(b'"')[-2].decode() + '"'))] if False else
-                               valid[:-len(_frame('C "tx-1" 1 1 "' + "0000000000000000" + '"'))] + bad_commit)
+            # All frame checksums are valid, but COMMIT advances to the wrong version.
+            source.write_bytes(_valid_journal(commit_version=2))
             with self.assertRaisesRegex(ValueError, "BACKUP_JOURNAL_COMMIT_INVARIANT_FAILED"):
                 create_backup(source, backup)
             self.assertFalse(backup.exists())
@@ -92,7 +90,7 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, backup = root / "live.sgj", root / "backup.sgj"
-            source.write_bytes(_valid_journal() + b"\\x01\\x02")
+            source.write_bytes(_valid_journal() + b"\x01\x02")
             with self.assertRaisesRegex(ValueError, "BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL"):
                 create_backup(source, backup)
             self.assertFalse(backup.exists())
@@ -104,7 +102,7 @@ class JournalBackupTests(unittest.TestCase):
             source.write_bytes(_valid_journal())
             create_backup(source, backup)
             target.write_bytes(b"untouched")
-            backup.write_bytes(_valid_journal()[:-1] + b"\\x00")
+            backup.write_bytes(b"corrupt")
             with self.assertRaisesRegex(ValueError, "BACKUP_DIGEST_OR_SIZE_MISMATCH"):
                 restore_backup(backup, target, replace_existing=True)
             self.assertEqual(target.read_bytes(), b"untouched")
@@ -113,9 +111,9 @@ class JournalBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, backup = root / "live.sgj", root / "backup.sgj"
-            source.write_bytes(b"SURGEJ1\nsource")
+            source.write_bytes(_valid_journal())
             create_backup(source, backup)
-            backup.write_bytes(b"SURGEJ1\ntampered")
+            backup.write_bytes(_valid_journal() + b"tampered")
             with self.assertRaisesRegex(ValueError, "BACKUP_DIGEST_OR_SIZE_MISMATCH"):
                 verify_backup(backup)
 
