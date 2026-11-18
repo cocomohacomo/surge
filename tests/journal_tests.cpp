@@ -276,6 +276,45 @@ int main(int argc, char** argv) {
       {{"ev-commit-lost","TEST","commit marker lost after sync failure"}});
     CHECK(retry.committed&&!retry.duplicate&&retry.state_version==1);
   }
+  // Configurable memory budgets fail closed before durable append and on replay.
+  const auto bounded_path = (root / "bounded.sgj").string();
+  {
+    EventJournalLimits limits;
+    limits.max_events = 2;
+    limits.max_payload_bytes = 12;
+    limits.max_transactions = 2;
+    EventJournal bounded(bounded_path, limits);
+    CHECK(bounded.open());
+    const auto first = bounded.commit("bounded-1", "bounded-idem-1", 0,
+        {{"bounded-event-1", "TEST", "123456"}});
+    CHECK(first.committed);
+    const auto second = bounded.commit("bounded-2", "bounded-idem-2", 1,
+        {{"bounded-event-2", "TEST", "abcdef"}});
+    CHECK(second.committed);
+    const auto rejected = bounded.commit("bounded-3", "bounded-idem-3", 2,
+        {{"bounded-event-3", "TEST", "x"}});
+    CHECK(!rejected.committed);
+    CHECK(rejected.error == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+    CHECK(bounded.state_version() == 2);
+  }
+  {
+    EventJournalLimits limits;
+    limits.max_events = 1;
+    EventJournal bounded_replay(bounded_path, limits);
+    CHECK(!bounded_replay.open());
+    CHECK(bounded_replay.last_error() == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+  }
+  {
+    EventJournalLimits limits;
+    limits.max_payload_bytes = 3;
+    EventJournal payload_limited((root / "payload-limited.sgj").string(), limits);
+    CHECK(payload_limited.open());
+    const auto rejected = payload_limited.commit("payload-tx", "payload-idem", 0,
+        {{"payload-event", "TEST", "four"}});
+    CHECK(!rejected.committed);
+    CHECK(rejected.error == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+    CHECK(payload_limited.state_version() == 0);
+  }
   std::filesystem::remove_all(root);
   std::cout << "SURGE EventJournal tests: sync uncertainty recovery passed\n";
 }

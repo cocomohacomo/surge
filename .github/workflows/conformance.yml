@@ -116,4 +116,4 @@ jobs:
       - name: Build benchmark
         run: cmake --build build-bench --target surge_journal_bench --config Release --parallel 2
       - name: Run benchmark smoke test
-        run: ./build-bench/surge_journal_bench 100 64
+        run: ctest --test-dir build-bench -C Release --output-on-failure -R surge_journal_benchmark
