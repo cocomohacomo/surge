@@ -69,6 +69,7 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
     std::uint64_t state_version, std::uint64_t journal_sequence,
     std::string* bytes, std::string* error) const {
   if (!bytes) return fail(error, "SNAPSHOT_OUTPUT_REQUIRED");
+  bytes->clear();
   if (domains_.empty()) return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
   std::string bundle;
   put_u32(&bundle, static_cast<std::uint32_t>(domains_.size()));
