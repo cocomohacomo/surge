@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/snapshot.hpp"
+#include "surge/event_journal.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -24,6 +25,17 @@ class SnapshotDomain {
   virtual bool capture(std::string* payload, std::string* error) const = 0;
   virtual std::unique_ptr<PreparedSnapshotRestore> prepare_restore(
       const std::string& payload, std::string* error) = 0;
+  // Build a detached state from the checkpoint and apply every later event
+  // before publishing any domain. Adapters must preserve transaction order.
+  virtual std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(
+      const std::string& payload, const std::vector<JournalEvent>& tail,
+      std::string* error) {
+    if (!tail.empty()) {
+      if (error) *error = "SNAPSHOT_DOMAIN_TAIL_REPLAY_UNSUPPORTED";
+      return nullptr;
+    }
+    return prepare_restore(payload, error);
+  }
 };
 
 struct SnapshotCoordinatorLimits {
@@ -43,6 +55,13 @@ class SnapshotCoordinator {
                std::uint64_t minimum_state_version,
                std::uint64_t minimum_journal_sequence,
                std::string* error);
+  // Atomically prepare all registered domains from the snapshot plus a
+  // bounded journal tail. The caller must quiesce all writers/readers.
+  bool restore_with_tail(const std::string& bytes, EventJournal& journal,
+               const std::string& expected_context_id,
+               std::uint64_t minimum_state_version,
+               std::uint64_t minimum_journal_sequence,
+               JournalTailLimits tail_limits, std::string* error);
  private:
   SnapshotCoordinatorLimits limits_;
   std::vector<SnapshotDomain*> domains_;

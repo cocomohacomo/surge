@@ -148,4 +148,69 @@ bool SnapshotCoordinator::restore(const std::string& bytes,
   if (error) error->clear();
   return true;
 }
+
+bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
+    EventJournal& journal, const std::string& expected_context_id,
+    std::uint64_t minimum_state_version,
+    std::uint64_t minimum_journal_sequence,
+    JournalTailLimits tail_limits, std::string* error) {
+  SnapshotDocument document;
+  if (!SnapshotCodec::decode(bytes, limits_.envelope, &document, error))
+    return false;
+  if (document.schema_id != "surge.snapshot.bundle.v1")
+    return fail(error, "SNAPSHOT_BUNDLE_SCHEMA_MISMATCH");
+  if (document.context_id != expected_context_id)
+    return fail(error, "SNAPSHOT_CONTEXT_MISMATCH");
+  if (document.state_version < minimum_state_version ||
+      document.journal_sequence < minimum_journal_sequence)
+    return fail(error, "SNAPSHOT_WATERMARK_REGRESSION");
+  // EventJournal currently uses one monotonically increasing transaction
+  // watermark for both fields. Refuse ambiguous checkpoint coordinates.
+  if (document.state_version != document.journal_sequence)
+    return fail(error, "SNAPSHOT_JOURNAL_WATERMARK_MISMATCH");
+  if (domains_.empty())
+    return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
+
+  const auto tail = journal.committed_tail(document.journal_sequence, tail_limits);
+  if (!tail.ok)
+    return fail(error, tail.error.empty() ? "SNAPSHOT_JOURNAL_TAIL_UNAVAILABLE" : tail.error.c_str());
+  if (tail.current_state_version < document.state_version)
+    return fail(error, "SNAPSHOT_JOURNAL_BEHIND_CHECKPOINT");
+
+  const std::string& bundle = document.payload;
+  std::size_t pos = 0;
+  std::uint32_t count = 0;
+  if (!get_u32(bundle, &pos, &count) || count != domains_.size() ||
+      count > limits_.max_domains)
+    return fail(error, "SNAPSHOT_DOMAIN_SET_MISMATCH");
+
+  std::vector<PreparedEntry> prepared;
+  prepared.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    std::string id, schema, payload;
+    if (!get_field(bundle, &pos, 4096, &id) ||
+        !get_field(bundle, &pos, 4096, &schema) ||
+        !get_field(bundle, &pos, limits_.max_domain_payload_bytes, &payload))
+      return fail(error, "SNAPSHOT_BUNDLE_TRUNCATED");
+    SnapshotDomain* domain = domains_[i];
+    if (!is_valid_utf8(id) || !is_valid_utf8(schema) ||
+        id != domain->domain_id() || schema != domain->schema_id())
+      return fail(error, "SNAPSHOT_DOMAIN_SCHEMA_MISMATCH");
+    std::string domain_error;
+    auto staged = domain->prepare_restore_with_tail(payload, tail.events, &domain_error);
+    if (!staged)
+      return fail(error, domain_error.empty() ? "SNAPSHOT_DOMAIN_TAIL_PREPARE_FAILED" : domain_error.c_str());
+    prepared.push_back({domain, std::move(staged)});
+  }
+  if (pos != bundle.size())
+    return fail(error, "SNAPSHOT_BUNDLE_TRAILING_DATA");
+  // The application must quiesce writers. This final watermark check catches
+  // accidental concurrent commits during staging before any state is published.
+  if (journal.state_version() != tail.current_state_version)
+    return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
+
+  for (auto& entry : prepared) entry.restore->commit();
+  if (error) error->clear();
+  return true;
+}
 }  // namespace surge
