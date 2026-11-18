@@ -14,7 +14,7 @@ struct SnapshotStoreLimits {
 struct SnapshotStoreResult {
   bool ok{false};
   bool used_backup{false};
-  SnapshotDocument document;
+  // Metadata only; payload remains in bytes to avoid duplicating large snapshots.\n  SnapshotDocument document;
   std::string bytes;
   std::string error;
 };
