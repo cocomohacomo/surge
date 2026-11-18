@@ -14,6 +14,13 @@ struct JournalEvent {
   std::string kind;
   std::string payload;
 };
+struct EventJournalLimits {
+  // Zero means unlimited for backward compatibility. Non-zero limits are
+  // enforced during replay and before appending a new transaction.
+  std::size_t max_events{0};
+  std::size_t max_payload_bytes{0};
+  std::size_t max_transactions{0};
+};
 struct JournalCommitResult {
   bool committed{false};
   bool duplicate{false};
@@ -29,6 +36,7 @@ class EventJournal {
   using AppendFrameGate = std::function<bool(std::size_t frame_index)>;
   using SyncFrameGate = std::function<bool(std::size_t frame_index)>;
   explicit EventJournal(std::string path);
+  EventJournal(std::string path, EventJournalLimits limits);
   ~EventJournal();
   EventJournal(std::string path, AppendFrameGate append_frame_gate);
   EventJournal(std::string path, AppendFrameGate append_frame_gate,
@@ -47,6 +55,8 @@ class EventJournal {
   void release_writer_lock();
   bool append_frame(const std::string& payload);
   std::string path_;
+  EventJournalLimits limits_{};
+  std::size_t retained_payload_bytes_{0};
   std::intptr_t lock_handle_{-1};
   AppendFrameGate append_frame_gate_;
   SyncFrameGate sync_frame_gate_;
