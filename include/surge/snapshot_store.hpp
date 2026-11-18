@@ -12,6 +12,7 @@ struct SnapshotStoreLimits {
 };
 
 struct SnapshotStoreResult {
+  // document contains envelope metadata only; the payload remains in bytes.
   bool ok{false};
   bool used_backup{false};
   // Metadata only; payload remains in bytes to avoid duplicating large snapshots.\n  SnapshotDocument document;
