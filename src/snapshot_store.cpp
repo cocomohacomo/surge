@@ -265,7 +265,7 @@ SnapshotStoreResult load_generation(const fs::path& path,
     return result;
   SnapshotLimits limits;
   limits.max_total_bytes = maximum_bytes;
-  if (!SnapshotCodec::decode(result.bytes, limits, &result.document,
+  if (!SnapshotCodec::inspect(result.bytes, limits, &result.document,
                              &result.error)) {
     result.bytes.clear();
     result.error = std::string("SNAPSHOT_STORE_GENERATION_INVALID:") + result.error;
