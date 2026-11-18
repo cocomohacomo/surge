@@ -362,6 +362,32 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
   return true;
 }
 
+
+bool SnapshotStore::mirror_current_to_backup(std::string* error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
+  if (limits_.max_file_bytes == 0)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_INVALID");
+  const auto current = native_path(path_);
+  const auto backup = native_path(path_ + ".bak");
+  const auto temporary = native_path(path_ + ".bak.tmp");
+  const auto valid = load_generation(current, limits_.max_file_bytes, false);
+  if (!valid.ok)
+    return fail(error, "SNAPSHOT_STORE_CURRENT_GENERATION_INVALID");
+  remove_if_present(temporary);
+  if (!copy_durable_file(current, temporary, limits_.max_file_bytes, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  if (!atomic_replace(temporary, backup, error) ||
+      !sync_parent_directory(current, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  if (error) error->clear();
+  return true;
+}
+
 SnapshotStoreResult SnapshotStore::load() const {
   std::lock_guard<std::mutex> lock(mutex_);
   SnapshotStoreResult primary;

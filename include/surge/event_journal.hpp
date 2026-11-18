@@ -33,6 +33,12 @@ struct JournalTailLimits {
   std::size_t max_events{65536};
   std::size_t max_total_bytes{16U * 1024U * 1024U};
 };
+struct JournalCheckpointInfo {
+  bool compacted{false};
+  std::uint64_t base_state_version{0};
+  std::string context_id;
+  std::string snapshot_digest;
+};
 struct JournalTailResult {
   bool ok{false};
   std::uint64_t after_state_version{0};
@@ -60,13 +66,20 @@ class EventJournal {
                              std::uint64_t expected_state_version,
                              const std::vector<JournalEvent>& events);
   std::uint64_t state_version() const;
+  // After compaction this is the active tail only. Rebuild domain state from
+  // SnapshotStore with SnapshotCoordinator::restore_from_store.
   std::vector<JournalEvent> committed_events() const;
   // Returns all committed events after a transaction-state watermark. The
   // result is all-or-nothing and rejects gaps, future watermarks, and limits.
   JournalTailResult committed_tail(std::uint64_t after_state_version,
                                    JournalTailLimits limits = {}) const;
   std::string last_error() const;
+  JournalCheckpointInfo checkpoint_info() const;
  private:
+  friend class SnapshotCoordinator;
+  bool compact_after_checkpoint(const std::string& snapshot_bytes,
+                                const std::string& expected_context_id,
+                                std::string* error);
   bool recover();
   bool acquire_writer_lock();
   void release_writer_lock();
@@ -81,6 +94,10 @@ class EventJournal {
   mutable std::mutex mutex_;
   bool opened_{false};
   std::uint64_t state_version_{0};
+  std::uint64_t checkpoint_base_state_version_{0};
+  std::string checkpoint_context_id_;
+  std::string checkpoint_snapshot_digest_;
+  bool compacted_{false};
   std::vector<JournalEvent> events_;
   std::map<std::string, std::string> idempotency_;
   std::map<std::string, std::string> transaction_ids_;

@@ -1,5 +1,9 @@
 #include "surge/event_journal.hpp"
+#include "surge/snapshot.hpp"
+#include "surge/sha256.hpp"
+#include <algorithm>
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -20,6 +24,7 @@
 namespace surge {
 namespace {
 constexpr char kMagic[] = "SURGEJ1\n";
+constexpr char kMagicV2[] = "SURGEJ2\n";
 constexpr std::uint32_t kMaxFrame = 16U * 1024U * 1024U;
 
 bool sync_file_to_stable_storage(const std::string& path) {
@@ -98,6 +103,105 @@ std::string commit_frame(const std::string& tx, std::uint64_t version,
   out << "C " << std::quoted(tx) << ' ' << version << ' ' << count << ' '
       << std::quoted(fingerprint);
   return out.str();
+}
+
+bool append_header_token(std::string& out, const std::string& token) {
+  if (token.size() > kMaxFrame - std::min<std::size_t>(kMaxFrame, out.size()))
+    return false;
+  out.append(token);
+  return out.size() <= kMaxFrame;
+}
+bool append_header_quoted(std::string& out, const std::string& value) {
+  std::ostringstream quoted;
+  quoted << std::quoted(value);
+  return append_header_token(out, quoted.str());
+}
+bool encode_checkpoint_header(
+    std::uint64_t base_version, const std::string& context_id,
+    const std::string& digest,
+    const std::map<std::string, std::string>& idempotency,
+    const std::map<std::string, std::string>& transactions,
+    const std::map<std::string, bool>& event_ids,
+    std::string& output) {
+  output = "H ";
+  auto number = [&](std::uint64_t value) {
+    return append_header_token(output, std::to_string(value));
+  };
+  auto count = [&](std::size_t value) {
+    return append_header_token(output, std::to_string(value));
+  };
+  auto space = [&]() { return append_header_token(output, " "); };
+  if (context_id.empty() || digest.size() != 64 ||
+      idempotency.size() != transactions.size() ||
+      !number(base_version) || !space() ||
+      !append_header_quoted(output, context_id) || !space() ||
+      !append_header_quoted(output, digest) || !space() ||
+      !count(idempotency.size())) return false;
+  for (const auto& item : idempotency)
+    if (!space() || !append_header_quoted(output, item.first) || !space() ||
+        !append_header_quoted(output, item.second)) return false;
+  if (!space() || !count(transactions.size())) return false;
+  for (const auto& item : transactions)
+    if (!space() || !append_header_quoted(output, item.first) || !space() ||
+        !append_header_quoted(output, item.second)) return false;
+  if (!space() || !count(event_ids.size())) return false;
+  for (const auto& item : event_ids)
+    if (!space() || !append_header_quoted(output, item.first)) return false;
+  return output.size() <= kMaxFrame;
+}
+bool decode_checkpoint_header(
+    const std::string& payload, std::uint64_t& base_version,
+    std::string& context_id, std::string& digest,
+    std::map<std::string, std::string>& idempotency,
+    std::map<std::string, std::string>& transactions,
+    std::map<std::string, bool>& event_ids) {
+  std::istringstream in(payload);
+  char type = 0;
+  std::size_t count = 0;
+  if (!(in >> type >> base_version >> std::quoted(context_id) >>
+        std::quoted(digest) >> count) || type != 'H' ||
+      context_id.empty() || !is_valid_utf8(context_id) ||
+      digest.size() != 64 || count > kMaxFrame / 8) return false;
+  for (char c : digest)
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string key, fingerprint;
+    if (!(in >> std::quoted(key) >> std::quoted(fingerprint)) ||
+        key.empty() || fingerprint.empty() ||
+        !idempotency.emplace(key, fingerprint).second) return false;
+  }
+  if (!(in >> count) || count > kMaxFrame / 8) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string tx, fingerprint;
+    if (!(in >> std::quoted(tx) >> std::quoted(fingerprint)) ||
+        tx.empty() || fingerprint.empty() ||
+        !transactions.emplace(tx, fingerprint).second) return false;
+  }
+  if (idempotency.size() != transactions.size() ||
+      !(in >> count) || count > kMaxFrame / 4) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    if (!(in >> std::quoted(id)) || id.empty() ||
+        !event_ids.emplace(id, true).second) return false;
+  }
+  std::string extra;
+  return !(in >> extra);
+}
+bool atomic_replace_file(const std::string& source,
+                         const std::string& destination) {
+#ifdef _WIN32
+  return MoveFileExA(source.c_str(), destination.c_str(),
+      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+  return ::rename(source.c_str(), destination.c_str()) == 0;
+#endif
+}
+bool copy_file_durable(const std::string& source,
+                       const std::string& destination) {
+  std::error_code ec;
+  std::filesystem::copy_file(source, destination,
+      std::filesystem::copy_options::overwrite_existing, ec);
+  return !ec && sync_file_to_stable_storage(destination);
 }
 }  // namespace
 
@@ -218,15 +322,24 @@ bool EventJournal::append_frame(const std::string& payload) {
 
 bool EventJournal::recover() {
   state_version_ = 0;
+  checkpoint_base_state_version_ = 0;
+  checkpoint_context_id_.clear();
+  checkpoint_snapshot_digest_.clear();
+  compacted_ = false;
+  append_frame_count_ = 0;
   retained_payload_bytes_ = 0;
   events_.clear(); idempotency_.clear(); transaction_ids_.clear(); event_ids_.clear();
   std::ifstream in(path_, std::ios::binary);
   if (!in) { last_error_ = "JOURNAL_OPEN_READ_ERROR"; return false; }
   std::array<char, sizeof(kMagic) - 1> magic{};
   in.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-  if (!in || std::string(magic.data(), magic.size()) != std::string(kMagic, sizeof(kMagic)-1)) {
+  const std::string magic_value(magic.data(), magic.size());
+  if (!in || (magic_value != std::string(kMagic, sizeof(kMagic)-1) &&
+              magic_value != std::string(kMagicV2, sizeof(kMagicV2)-1))) {
     last_error_ = "JOURNAL_HEADER_INVALID"; return false;
   }
+  compacted_ = magic_value == std::string(kMagicV2, sizeof(kMagicV2)-1);
+  bool checkpoint_header_seen = !compacted_;
   struct Pending {
     std::string idem, fingerprint;
     std::uint64_t expected{};
@@ -272,7 +385,26 @@ bool EventJournal::recover() {
     }
     std::istringstream frame(payload);
     char type = 0; frame >> type;
-    if (type == 'B') {
+    if (type == 'H') {
+      if (!compacted_ || checkpoint_header_seen || !pending.empty() ||
+          !events_.empty() || state_version_ != 0 ||
+          !decode_checkpoint_header(payload, checkpoint_base_state_version_,
+              checkpoint_context_id_, checkpoint_snapshot_digest_,
+              idempotency_, transaction_ids_, event_ids_)) {
+        last_error_ = "JOURNAL_CHECKPOINT_HEADER_INVALID";
+        return false;
+      }
+      if (limits_.max_transactions &&
+          transaction_ids_.size() > limits_.max_transactions) {
+        last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED";
+        return false;
+      }
+      state_version_ = checkpoint_base_state_version_;
+      checkpoint_header_seen = true;
+    } else if (!checkpoint_header_seen) {
+      last_error_ = "JOURNAL_CHECKPOINT_HEADER_MISSING";
+      return false;
+    } else if (type == 'B') {
       std::string tx, idem, fingerprint; std::uint64_t expected = 0;
       if (!(frame >> std::quoted(tx) >> std::quoted(idem) >> expected >> std::quoted(fingerprint)) ||
           tx.empty() || idem.empty() || fingerprint.empty() || pending.count(tx)) {
@@ -328,6 +460,10 @@ bool EventJournal::recover() {
     } else {
       last_error_ = "JOURNAL_RECORD_TYPE_INVALID"; return false;
     }
+  }
+  if (!checkpoint_header_seen) {
+    last_error_ = "JOURNAL_CHECKPOINT_HEADER_MISSING";
+    return false;
   }
   if (!pending.empty()) {
     for (const auto& item : pending) {
@@ -434,6 +570,10 @@ JournalTailResult EventJournal::committed_tail(
     result.error = "JOURNAL_TAIL_WATERMARK_AHEAD";
     return result;
   }
+  if (after_state_version < checkpoint_base_state_version_) {
+    result.error = "JOURNAL_TAIL_BEHIND_COMPACTION_BASE";
+    return result;
+  }
   if (after_state_version == state_version_) {
     result.ok = true;
     return result;
@@ -488,6 +628,110 @@ JournalTailResult EventJournal::committed_tail(
   result.ok = true;
   return result;
 }
+
+bool EventJournal::compact_after_checkpoint(
+    const std::string& snapshot_bytes, const std::string& expected_context_id,
+    std::string* error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!opened_) {
+    if (error) *error = "JOURNAL_NOT_OPEN";
+    return false;
+  }
+  SnapshotDocument document;
+  if (!SnapshotCodec::inspect(snapshot_bytes, {}, &document, error))
+    return false;
+  if (document.context_id != expected_context_id ||
+      document.state_version != state_version_ ||
+      document.journal_sequence != state_version_) {
+    if (error) *error = "JOURNAL_COMPACTION_SNAPSHOT_WATERMARK_MISMATCH";
+    return false;
+  }
+
+  const auto digest = sha256_hex(snapshot_bytes);
+  std::string header;
+  if (!encode_checkpoint_header(state_version_, expected_context_id, digest,
+          idempotency_, transaction_ids_, event_ids_, header)) {
+    if (error) *error = "JOURNAL_COMPACTION_MANIFEST_LIMIT_EXCEEDED";
+    return false;
+  }
+
+  const std::string temporary = path_ + ".compact.tmp";
+  const std::string backup_temporary = path_ + ".bak.tmp";
+  const std::string backup = path_ + ".bak";
+  std::error_code ignored;
+  std::filesystem::remove(temporary, ignored);
+  std::filesystem::remove(backup_temporary, ignored);
+
+  {
+    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      if (error) *error = "JOURNAL_COMPACTION_TEMP_OPEN_FAILED";
+      return false;
+    }
+    out.write(kMagicV2, static_cast<std::streamsize>(sizeof(kMagicV2) - 1));
+    put_u32(out, static_cast<std::uint32_t>(header.size()));
+    out.write(header.data(), static_cast<std::streamsize>(header.size()));
+    put_u32(out, crc32(header));
+    out.flush();
+    if (!out) {
+      out.close();
+      std::filesystem::remove(temporary, ignored);
+      if (error) *error = "JOURNAL_COMPACTION_TEMP_WRITE_FAILED";
+      return false;
+    }
+  }
+  if (!sync_file_to_stable_storage(temporary)) {
+    std::filesystem::remove(temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_TEMP_SYNC_FAILED";
+    return false;
+  }
+
+  if (!copy_file_durable(path_, backup_temporary)) {
+    std::filesystem::remove(temporary, ignored);
+    std::filesystem::remove(backup_temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_BACKUP_COPY_FAILED";
+    return false;
+  }
+  if (!atomic_replace_file(backup_temporary, backup) ||
+      !sync_parent_directory(path_)) {
+    std::filesystem::remove(temporary, ignored);
+    std::filesystem::remove(backup_temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_BACKUP_SYNC_FAILED";
+    return false;
+  }
+  if (!atomic_replace_file(temporary, path_)) {
+    std::filesystem::remove(temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_REPLACE_FAILED";
+    return false;
+  }
+  if (!sync_parent_directory(path_)) {
+    opened_ = false;
+    if (error) *error = "JOURNAL_COMPACTION_DIRECTORY_SYNC_FAILED";
+    return false;  // New file may be installed; reopen and inspect its checkpoint.
+  }
+
+  events_.clear();
+  retained_payload_bytes_ = 0;
+  checkpoint_base_state_version_ = state_version_;
+  checkpoint_context_id_ = expected_context_id;
+  checkpoint_snapshot_digest_ = digest;
+  compacted_ = true;
+  append_frame_count_ = 0;
+  last_error_.clear();
+  if (error) error->clear();
+  return true;
+}
+
+JournalCheckpointInfo EventJournal::checkpoint_info() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  JournalCheckpointInfo info;
+  info.compacted = compacted_;
+  info.base_state_version = checkpoint_base_state_version_;
+  info.context_id = checkpoint_context_id_;
+  info.snapshot_digest = checkpoint_snapshot_digest_;
+  return info;
+}
+
 std::string EventJournal::last_error() const {
   std::lock_guard<std::mutex> lock(mutex_); return last_error_;
 }

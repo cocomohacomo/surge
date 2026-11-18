@@ -28,6 +28,9 @@ class SnapshotStore {
  public:
   explicit SnapshotStore(std::string path, SnapshotStoreLimits limits = {});
   bool save(const std::string& bytes, std::string* error);
+  // Makes the backup an exact durable copy of the current generation. Used
+  // before journal replacement so both recovery generations share a watermark.
+  bool mirror_current_to_backup(std::string* error);
   SnapshotStoreResult load() const;
 
   const std::string& path() const { return path_; }
