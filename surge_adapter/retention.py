@@ -147,7 +147,8 @@ def build_retention_manifest(
 
 
 def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
-    if not isinstance(manifest, dict) or manifest.get("manifest_version") != MANIFEST_VERSION:
+    if (not isinstance(manifest, dict) or isinstance(manifest.get("manifest_version"), bool)
+            or manifest.get("manifest_version") != MANIFEST_VERSION):
         raise ValueError("RETENTION_MANIFEST_VERSION_INVALID")
     body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
     if manifest.get("manifest_sha256") != _digest(body):
@@ -164,8 +165,11 @@ def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
     normalized_weights = {key: _unit(value, f"weight_{key}") for key, value in weights.items()}
     if not math.isclose(sum(normalized_weights.values()), 1.0, abs_tol=1e-9):
         raise ValueError("RETENTION_MANIFEST_WEIGHTS_INVALID")
+    record_count = manifest.get("record_count")
+    if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 0:
+        raise ValueError("RETENTION_MANIFEST_RECORD_COUNT_MISMATCH")
     records = manifest.get("records")
-    if not isinstance(records, list) or len(records) != manifest.get("record_count"):
+    if not isinstance(records, list) or len(records) != record_count:
         raise ValueError("RETENTION_MANIFEST_RECORD_COUNT_MISMATCH")
     ids: list[str] = []
     for item in records:
@@ -184,6 +188,19 @@ def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
             raise ValueError("RETENTION_MANIFEST_FACTORS_INVALID")
         for key, value in factors.items():
             _unit(value, f"factor_{key}")
+        expected_score = round(sum(factors[key] * normalized_weights[key]
+                                    for key in DEFAULT_WEIGHTS), 12)
+        if not math.isclose(item["retention_score"], expected_score, abs_tol=1e-12):
+            raise ValueError("RETENTION_MANIFEST_SCORE_MISMATCH")
+        age_days = max(0.0, (_utc(manifest["created_at"], "created_at") -
+                             _utc(item["last_accessed_at"], "last_accessed_at")).total_seconds() / 86400.0)
+        expected_recency = round(math.exp(-age_days / 30.0), 12)
+        if not math.isclose(factors["recency"], expected_recency, abs_tol=1e-12):
+            raise ValueError("RETENTION_MANIFEST_RECENCY_MISMATCH")
+        expected_reason = ("WITHIN_CAPACITY" if item["state"] == "ACTIVE"
+                           else "CAPACITY_PRESSURE_LOWEST_RETENTION_SCORE")
+        if item.get("decision_reason") != expected_reason:
+            raise ValueError("RETENTION_MANIFEST_DECISION_REASON_INVALID")
         for key in ("provenance_refs", "lineage_refs"):
             refs = item.get(key)
             if (not isinstance(refs, list) or
@@ -206,8 +223,11 @@ def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
         raise ValueError("RETENTION_MANIFEST_CAPACITY_ASSIGNMENT_INVALID")
     active_count = len(active_ids)
     archived_count = len(records) - active_count
-    if (manifest.get("active_count") != active_count or
-        manifest.get("archived_count") != archived_count):
+    stored_active = manifest.get("active_count")
+    stored_archived = manifest.get("archived_count")
+    if (isinstance(stored_active, bool) or not isinstance(stored_active, int) or
+        isinstance(stored_archived, bool) or not isinstance(stored_archived, int) or
+        stored_active != active_count or stored_archived != archived_count):
         raise ValueError("RETENTION_MANIFEST_STATE_COUNTS_INVALID")
     if manifest.get("deletion_performed") is not False:
         raise ValueError("RETENTION_MANIFEST_MUST_NOT_CLAIM_DELETION")
