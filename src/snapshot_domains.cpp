@@ -31,23 +31,23 @@ bool decode_history(const std::string& payload,std::map<std::string,std::vector<
  }
  if(in>>extra)return false;output.swap(candidate);return true;
 }
-class PreparedEvidence final:public PreparedSnapshotRestore{
+}  // namespace
+class PreparedEvidenceSnapshotRestore final:public PreparedSnapshotRestore{
  public:PreparedEvidence(EvidenceProvenanceLedger*o,std::map<std::string,std::vector<EvidenceProvenanceRecord>>c):owner(o),candidate(std::move(c)){}
  void commit()noexcept override{owner->history_.swap(candidate);}
  private:EvidenceProvenanceLedger*owner;std::map<std::string,std::vector<EvidenceProvenanceRecord>>candidate;
 };
-class PreparedChaos final:public PreparedSnapshotRestore{
+class PreparedChaosSnapshotRestore final:public PreparedSnapshotRestore{
  public:PreparedChaos(ChaosClusterLedger*o,ChaosClusterLedger::State c):owner(o),candidate(std::move(c)){}
  void commit()noexcept override{try{std::lock_guard<std::mutex> lock(owner->mutex_);owner->state_.swap(candidate);}catch(...){std::terminate();}}
  private:ChaosClusterLedger*owner;ChaosClusterLedger::State candidate;
 };
-}
 std::string EvidenceProvenanceSnapshotDomain::domain_id()const{return "evidence_provenance";}
 std::string EvidenceProvenanceSnapshotDomain::schema_id()const{return "surge.evidence-provenance.v1";}
 bool EvidenceProvenanceSnapshotDomain::capture(std::string*p,std::string*e)const{if(!p)return fail(e,"SNAPSHOT_OUTPUT_REQUIRED");*p=encode_history(ledger_.history_);if(e)e->clear();return true;}
 std::unique_ptr<PreparedSnapshotRestore> EvidenceProvenanceSnapshotDomain::prepare_restore(const std::string&p,std::string*e){
  std::map<std::string,std::vector<EvidenceProvenanceRecord>> c;if(!decode_history(p,c)){fail(e,"SNAPSHOT_EVIDENCE_PROVENANCE_INVALID");return nullptr;}
- if(e)e->clear();return std::make_unique<PreparedEvidence>(&ledger_,std::move(c));
+ if(e)e->clear();return std::make_unique<PreparedEvidenceSnapshotRestore>(&ledger_,std::move(c));
 }
 std::string ChaosClusterSnapshotDomain::domain_id()const{return "chaos_cluster";}
 std::string ChaosClusterSnapshotDomain::schema_id()const{return "surge.chaos-cluster.native-v1";}
@@ -57,6 +57,6 @@ bool ChaosClusterSnapshotDomain::capture(std::string*p,std::string*e)const{
 std::unique_ptr<PreparedSnapshotRestore> ChaosClusterSnapshotDomain::prepare_restore(const std::string&p,std::string*e){
  ChaosClusterLedger::State c;if(!ChaosClusterLedger::decode(p,c)){fail(e,"SNAPSHOT_CHAOS_CLUSTER_INVALID");return nullptr;}
  for(const auto&x:c)if(x.first.empty()||x.first!=x.second.cluster_id){fail(e,"SNAPSHOT_CHAOS_CLUSTER_ID_MISMATCH");return nullptr;}
- if(e)e->clear();return std::make_unique<PreparedChaos>(&ledger_,std::move(c));
+ if(e)e->clear();return std::make_unique<PreparedChaosSnapshotRestore>(&ledger_,std::move(c));
 }
 } // namespace surge
