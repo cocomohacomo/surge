@@ -96,3 +96,9 @@ add_test(NAME surge_classification_proposal_journal COMMAND surge_classification
 add_executable(surge_check_failure_probe tests/check_failure_probe.cpp)
 add_test(NAME surge_test_check_failure_is_detected COMMAND surge_check_failure_probe)
 set_tests_properties(surge_test_check_failure_is_detected PROPERTIES WILL_FAIL TRUE)
+
+if(SURGE_BUILD_BENCHMARKS)
+  add_test(NAME surge_journal_benchmark_smoke COMMAND surge_journal_bench 100 64 100)
+  add_test(NAME surge_journal_benchmark_memory_limit COMMAND surge_journal_bench 101 64 100)
+  set_tests_properties(surge_journal_benchmark_memory_limit PROPERTIES WILL_FAIL TRUE)
+endif()
