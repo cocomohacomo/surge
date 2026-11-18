@@ -290,7 +290,7 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
   SnapshotDocument document;
   SnapshotLimits codec_limits;
   codec_limits.max_total_bytes = limits_.max_file_bytes;
-  if (!SnapshotCodec::decode(bytes, codec_limits, &document, error))
+  if (!SnapshotCodec::inspect(bytes, codec_limits, &document, error))
     return false;
 
   const auto current = native_path(path_);
@@ -310,30 +310,39 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
     remove_if_present(temporary);
     return false;
   }
-  if (limits_.keep_backup && current_exists) {
+  SnapshotStoreResult current_generation;
+  if (current_exists)
+    current_generation = load_generation(current, limits_.max_file_bytes, false);
+  SnapshotStoreResult backup_generation;
+  if (!current_generation.ok)
+    backup_generation = load_generation(backup, limits_.max_file_bytes, true);
+  const SnapshotStoreResult& previous =
+      current_generation.ok ? current_generation : backup_generation;
+  if (previous.ok) {
+    if (document.context_id != previous.document.context_id)
+      return fail(error, "SNAPSHOT_STORE_CONTEXT_MISMATCH");
+    if (document.state_version < previous.document.state_version ||
+        document.journal_sequence < previous.document.journal_sequence)
+      return fail(error, "SNAPSHOT_STORE_WATERMARK_REGRESSION");
+    if (document.state_version == previous.document.state_version &&
+        document.journal_sequence == previous.document.journal_sequence &&
+        bytes != previous.bytes)
+      return fail(error, "SNAPSHOT_STORE_SAME_WATERMARK_CONFLICT");
+  }
+
+  if (limits_.keep_backup && current_generation.ok) {
     // Never replace a known-good backup with a corrupt current generation.
-    // If current is valid, promote it to the recovery generation first.
-    const auto existing = load_generation(current, limits_.max_file_bytes, false);
-    if (existing.ok) {
-      if (!copy_durable_file(current, backup_temporary,
-                             limits_.max_file_bytes, error)) {
-        remove_if_present(temporary);
-        remove_if_present(backup_temporary);
-        return false;
-      }
-      if (!atomic_replace(backup_temporary, backup, error) ||
-          !sync_parent_directory(current, error)) {
-        remove_if_present(temporary);
-        remove_if_present(backup_temporary);
-        return false;
-      }
-    } else {
-      const auto previous = load_generation(backup, limits_.max_file_bytes, true);
-      if (!previous.ok) {
-        // No valid old generation exists. Keep the corrupt file only until
-        // the new durable generation is atomically installed.
-        remove_if_present(backup_temporary);
-      }
+    if (!copy_durable_file(current, backup_temporary,
+                           limits_.max_file_bytes, error)) {
+      remove_if_present(temporary);
+      remove_if_present(backup_temporary);
+      return false;
+    }
+    if (!atomic_replace(backup_temporary, backup, error) ||
+        !sync_parent_directory(current, error)) {
+      remove_if_present(temporary);
+      remove_if_present(backup_temporary);
+      return false;
     }
   }
 
