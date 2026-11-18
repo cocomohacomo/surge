@@ -316,7 +316,12 @@ def _load_auth_key(key_file: pathlib.Path) -> bytes:
 
 
 def _canonical_manifest(manifest: dict) -> bytes:
-    body = {key: value for key, value in manifest.items() if key != "auth"}
+    body = dict(manifest)
+    auth = body.get("auth")
+    if isinstance(auth, dict):
+        auth = dict(auth)
+        auth.pop("hmac_sha256", None)
+        body["auth"] = auth
     return json.dumps(body, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":"), allow_nan=False).encode("utf-8")
 
@@ -359,10 +364,10 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path, *,
             manifest["auth"] = {
                 "algorithm": "HMAC-SHA256",
                 "key_id": key_id,
-                "hmac_sha256": hmac.new(
-                    auth_key, _canonical_manifest(manifest), hashlib.sha256
-                ).hexdigest(),
             }
+            manifest["auth"]["hmac_sha256"] = hmac.new(
+                auth_key, _canonical_manifest(manifest), hashlib.sha256
+            ).hexdigest()
         atomic_write_json(pathlib.Path(str(backup) + ".manifest.json"), manifest)
     return pathlib.Path(str(backup) + ".manifest.json")
 
