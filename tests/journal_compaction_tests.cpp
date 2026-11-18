@@ -191,6 +191,14 @@ int main() {
     CHECK(!backup.checkpoint_info().compacted);
     CHECK(backup.state_version() == compacted_version);
     CHECK(backup.committed_events().size() == 40);
+    surge_test::CounterDomain full_replay_counter;
+    SnapshotCoordinator full_replay;
+    std::string error;
+    CHECK(full_replay.register_domain(&full_replay_counter, &error));
+    CHECK(full_replay.restore_with_tail(first_checkpoint, backup,
+        "counter-context", 0, 0,
+        JournalTailLimits{4096, 8U * 1024U * 1024U}, &error));
+    CHECK(full_replay_counter.value == 20);
   }
 
   remove_generations(journal_path);
