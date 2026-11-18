@@ -21,6 +21,20 @@ The in-process mutex protects threads in one process. The OS lock protects compe
 
 After restore, reopen the file with EventJournal and run full replay/conformance before serving traffic. A matching digest proves byte identity, not semantic validity.
 
+## Retention metadata transactions
+
+Retention manifests and tombstone proposals can be appended through the
+retention-only C ABI, one event per transaction so every journal consumer can
+advance its global State Version exactly once per transaction. These events participate in the same global journal
+State Version and idempotency rules as other transactions. Only
+`RETENTION_MANIFEST_RECORDED` and `RETENTION_TOMBSTONE_PROPOSED` are accepted
+through this surface; arbitrary graph/domain event kinds are rejected.
+`surge_retention_journal_get_events` returns the verified journal's retained
+metadata event stream, and the Python projection rebuild validates canonical
+SHA-256 digests, event-ID binding, archived targets, and source-digest
+consistency. This records decisions, not physical erasure. Manifest JSON files
+are optional cache/export copies and can be rebuilt from journal events.
+
 ## Migration policy
 
 No general schema migrator is claimed implemented yet. Until one exists:
@@ -42,3 +56,11 @@ In-place mutation, implicit downgrade and migration without a verified backup ar
 - a versioned migration registry and executable migration tooling;
 - authenticated/encrypted backups and key rotation;
 - operational metrics for lock contention, fsync latency, journal growth and restore time.
+
+
+## Retention integration limits
+
+Journaled retention decisions are append-only metadata. They do not yet
+rewrite or compact journal segments, snapshot domain state, physically delete
+payloads, or perform cryptographic erasure. Those operations require a
+separate verified snapshot/compaction design and crash-recovery drills.

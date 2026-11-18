@@ -100,12 +100,22 @@ def build_retention_manifest(
             "dependency": _unit(source.get("dependency", 0.0), "dependency"),
             "recency": recency,
         }
+        source_digest = source.get("source_digest")
+        if source_digest is not None and (not isinstance(source_digest, str) or not source_digest):
+            raise ValueError("RETENTION_SOURCE_DIGEST_INVALID")
+        refs = {}
+        for key in ("provenance_refs", "lineage_refs"):
+            value = source.get(key, [])
+            if (not isinstance(value, list) or
+                any(not isinstance(ref, str) or not ref for ref in value)):
+                raise ValueError(f"RETENTION_{key.upper()}_INVALID")
+            refs[key] = sorted(set(value))
         score = sum(factors[key] * normalized_weights[key] for key in factors)
         planned.append({
             "record_id": record_id,
-            "source_digest": source.get("source_digest"),
-            "provenance_refs": sorted(set(source.get("provenance_refs", []))),
-            "lineage_refs": sorted(set(source.get("lineage_refs", []))),
+            "source_digest": source_digest,
+            "provenance_refs": refs["provenance_refs"],
+            "lineage_refs": refs["lineage_refs"],
             "last_accessed_at": last_accessed.isoformat().replace("+00:00", "Z"),
             "retention_score": round(score, 12),
             "factors": {key: round(value, 12) for key, value in factors.items()},
@@ -137,19 +147,88 @@ def build_retention_manifest(
 
 
 def verify_retention_manifest(manifest: dict[str, Any]) -> bool:
-    if not isinstance(manifest, dict) or manifest.get("manifest_version") != MANIFEST_VERSION:
+    if (not isinstance(manifest, dict) or isinstance(manifest.get("manifest_version"), bool)
+            or manifest.get("manifest_version") != MANIFEST_VERSION):
         raise ValueError("RETENTION_MANIFEST_VERSION_INVALID")
     body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
     if manifest.get("manifest_sha256") != _digest(body):
         raise ValueError("RETENTION_MANIFEST_DIGEST_MISMATCH")
-    records = manifest.get("records")
-    if not isinstance(records, list) or len(records) != manifest.get("record_count"):
+    if not isinstance(manifest.get("policy_version"), str) or not manifest["policy_version"].strip():
+        raise ValueError("RETENTION_MANIFEST_POLICY_VERSION_INVALID")
+    _utc(manifest.get("created_at"), "created_at")
+    capacity = manifest.get("capacity")
+    if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
+        raise ValueError("RETENTION_MANIFEST_CAPACITY_INVALID")
+    weights = manifest.get("weights")
+    if not isinstance(weights, dict) or set(weights) != set(DEFAULT_WEIGHTS):
+        raise ValueError("RETENTION_MANIFEST_WEIGHTS_INVALID")
+    normalized_weights = {key: _unit(value, f"weight_{key}") for key, value in weights.items()}
+    if not math.isclose(sum(normalized_weights.values()), 1.0, abs_tol=1e-9):
+        raise ValueError("RETENTION_MANIFEST_WEIGHTS_INVALID")
+    record_count = manifest.get("record_count")
+    if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 0:
         raise ValueError("RETENTION_MANIFEST_RECORD_COUNT_MISMATCH")
-    ids = [item.get("record_id") for item in records if isinstance(item, dict)]
-    if len(ids) != len(records) or len(ids) != len(set(ids)):
+    records = manifest.get("records")
+    if not isinstance(records, list) or len(records) != record_count:
+        raise ValueError("RETENTION_MANIFEST_RECORD_COUNT_MISMATCH")
+    ids: list[str] = []
+    for item in records:
+        if not isinstance(item, dict):
+            raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
+        record_id = item.get("record_id")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
+        ids.append(record_id)
+        if item.get("state") not in {"ACTIVE", "ARCHIVED"}:
+            raise ValueError("RETENTION_MANIFEST_STATE_INVALID")
+        _utc(item.get("last_accessed_at"), "last_accessed_at")
+        _unit(item.get("retention_score"), "retention_score")
+        factors = item.get("factors")
+        if not isinstance(factors, dict) or set(factors) != set(DEFAULT_WEIGHTS):
+            raise ValueError("RETENTION_MANIFEST_FACTORS_INVALID")
+        for key, value in factors.items():
+            _unit(value, f"factor_{key}")
+        expected_score = round(sum(factors[key] * normalized_weights[key]
+                                    for key in DEFAULT_WEIGHTS), 12)
+        if not math.isclose(item["retention_score"], expected_score, abs_tol=1e-12):
+            raise ValueError("RETENTION_MANIFEST_SCORE_MISMATCH")
+        age_days = max(0.0, (_utc(manifest["created_at"], "created_at") -
+                             _utc(item["last_accessed_at"], "last_accessed_at")).total_seconds() / 86400.0)
+        expected_recency = round(math.exp(-age_days / 30.0), 12)
+        if not math.isclose(factors["recency"], expected_recency, abs_tol=1e-12):
+            raise ValueError("RETENTION_MANIFEST_RECENCY_MISMATCH")
+        expected_reason = ("WITHIN_CAPACITY" if item["state"] == "ACTIVE"
+                           else "CAPACITY_PRESSURE_LOWEST_RETENTION_SCORE")
+        if item.get("decision_reason") != expected_reason:
+            raise ValueError("RETENTION_MANIFEST_DECISION_REASON_INVALID")
+        for key in ("provenance_refs", "lineage_refs"):
+            refs = item.get(key)
+            if (not isinstance(refs, list) or
+                any(not isinstance(ref, str) or not ref for ref in refs) or
+                refs != sorted(set(refs))):
+                raise ValueError("RETENTION_MANIFEST_REFERENCES_INVALID")
+        source_digest = item.get("source_digest")
+        if source_digest is not None and (not isinstance(source_digest, str) or not source_digest):
+            raise ValueError("RETENTION_MANIFEST_SOURCE_DIGEST_INVALID")
+    if len(ids) != len(set(ids)) or ids != sorted(ids):
         raise ValueError("RETENTION_MANIFEST_RECORDS_INVALID")
-    if any(item.get("state") not in {"ACTIVE", "ARCHIVED"} for item in records):
-        raise ValueError("RETENTION_MANIFEST_STATE_INVALID")
+    ranking = manifest.get("ranking")
+    expected_ranking = [item["record_id"] for item in sorted(
+        records, key=lambda item: (-item["retention_score"], item["record_id"]))]
+    if ranking != expected_ranking:
+        raise ValueError("RETENTION_MANIFEST_RANKING_INVALID")
+    active_ids = set(expected_ranking[:capacity])
+    if any(item["state"] != ("ACTIVE" if item["record_id"] in active_ids else "ARCHIVED")
+           for item in records):
+        raise ValueError("RETENTION_MANIFEST_CAPACITY_ASSIGNMENT_INVALID")
+    active_count = len(active_ids)
+    archived_count = len(records) - active_count
+    stored_active = manifest.get("active_count")
+    stored_archived = manifest.get("archived_count")
+    if (isinstance(stored_active, bool) or not isinstance(stored_active, int) or
+        isinstance(stored_archived, bool) or not isinstance(stored_archived, int) or
+        stored_active != active_count or stored_archived != archived_count):
+        raise ValueError("RETENTION_MANIFEST_STATE_COUNTS_INVALID")
     if manifest.get("deletion_performed") is not False:
         raise ValueError("RETENTION_MANIFEST_MUST_NOT_CLAIM_DELETION")
     return True
@@ -188,6 +267,93 @@ def create_payload_tombstone(
     }
     return {**body, "event_sha256": _digest(body)}
 
+
+
+def _verify_tombstone_event(event: dict[str, Any]) -> bool:
+    if not isinstance(event, dict) or event.get("event_type") != "PAYLOAD_TOMBSTONE_PROPOSED":
+        raise ValueError("RETENTION_TOMBSTONE_EVENT_INVALID")
+    body = {key: value for key, value in event.items() if key != "event_sha256"}
+    if event.get("event_sha256") != _digest(body):
+        raise ValueError("RETENTION_TOMBSTONE_DIGEST_MISMATCH")
+    if event.get("physical_deletion_performed") is not False:
+        raise ValueError("RETENTION_TOMBSTONE_MUST_NOT_CLAIM_DELETION")
+    for key in ("record_id", "manifest_sha256", "reason", "actor", "policy_version"):
+        if not isinstance(event.get(key), str) or not event[key].strip():
+            raise ValueError("RETENTION_TOMBSTONE_FIELD_INVALID")
+    _utc(event.get("created_at"), "created_at")
+    return True
+
+
+def persist_retention_manifest(core: Any, manifest: dict[str, Any], *,
+                               transaction_id: str, idempotency_key: str,
+                               expected_state_version: int) -> dict[str, Any]:
+    """Persist a verified manifest as an append-only EventJournal event."""
+    verify_retention_manifest(manifest)
+    payload = _canonical(manifest).decode("utf-8")
+    return core.commit_retention_events(
+        transaction_id, idempotency_key, expected_state_version,
+        [{"event_id": "retention:manifest:" + manifest["manifest_sha256"],
+          "kind": "RETENTION_MANIFEST_RECORDED", "payload": payload}])
+
+
+def persist_payload_tombstone(core: Any, event: dict[str, Any], *,
+                              transaction_id: str, idempotency_key: str,
+                              expected_state_version: int) -> dict[str, Any]:
+    """Persist a tombstone proposal; this never deletes payload bytes."""
+    _verify_tombstone_event(event)
+    payload = _canonical(event).decode("utf-8")
+    return core.commit_retention_events(
+        transaction_id, idempotency_key, expected_state_version,
+        [{"event_id": "retention:tombstone:" + event["event_sha256"],
+          "kind": "RETENTION_TOMBSTONE_PROPOSED", "payload": payload}])
+
+
+def replay_retention_projection(events: Iterable[dict[str, str]]) -> dict[str, Any]:
+    """Rebuild verified retention metadata from journal events, fail-closed."""
+    manifests: dict[str, dict[str, Any]] = {}
+    tombstones: dict[str, dict[str, Any]] = {}
+    seen_event_ids: set[str] = set()
+    for row in events:
+        if not isinstance(row, dict) or set(row) != {"event_id", "kind", "payload"}:
+            raise ValueError("RETENTION_JOURNAL_EVENT_INVALID")
+        event_id, kind, payload = row["event_id"], row["kind"], row["payload"]
+        if not all(isinstance(x, str) and x for x in (event_id, kind, payload)):
+            raise ValueError("RETENTION_JOURNAL_EVENT_INVALID")
+        if event_id in seen_event_ids:
+            raise ValueError("RETENTION_JOURNAL_DUPLICATE_EVENT_ID")
+        seen_event_ids.add(event_id)
+        try:
+            value = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ValueError("RETENTION_JOURNAL_PAYLOAD_INVALID") from exc
+        if kind == "RETENTION_MANIFEST_RECORDED":
+            verify_retention_manifest(value)
+            digest = value["manifest_sha256"]
+            if event_id != "retention:manifest:" + digest:
+                raise ValueError("RETENTION_MANIFEST_EVENT_ID_MISMATCH")
+            manifests[digest] = value
+        elif kind == "RETENTION_TOMBSTONE_PROPOSED":
+            _verify_tombstone_event(value)
+            if event_id != "retention:tombstone:" + value["event_sha256"]:
+                raise ValueError("RETENTION_TOMBSTONE_EVENT_ID_MISMATCH")
+            tombstones[value["event_sha256"]] = value
+        else:
+            raise ValueError("RETENTION_JOURNAL_EVENT_KIND_INVALID")
+
+    for tombstone in tombstones.values():
+        manifest = manifests.get(tombstone["manifest_sha256"])
+        if manifest is None:
+            raise ValueError("RETENTION_TOMBSTONE_MANIFEST_MISSING")
+        item = next((record for record in manifest["records"]
+                     if record["record_id"] == tombstone["record_id"]), None)
+        if item is None or item["state"] != "ARCHIVED":
+            raise ValueError("RETENTION_TOMBSTONE_TARGET_NOT_ARCHIVED")
+        if item.get("source_digest") != tombstone.get("source_digest"):
+            raise ValueError("RETENTION_TOMBSTONE_SOURCE_DIGEST_MISMATCH")
+    latest = next(reversed(list(manifests.values())), None)
+    return {"manifests": manifests, "tombstones": tombstones,
+            "latest_manifest": latest,
+            "physical_deletion_performed": False}
 
 def write_retention_manifest(path: pathlib.Path, manifest: dict[str, Any]) -> None:
     verify_retention_manifest(manifest)

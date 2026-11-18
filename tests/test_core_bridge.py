@@ -7,6 +7,12 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from surge_adapter.semantic_core_bridge import SemanticCoreBridge
+from surge_adapter.retention import (
+    build_retention_manifest, create_payload_tombstone,
+    persist_retention_manifest, persist_payload_tombstone,
+    replay_retention_projection,
+)
+from tools.journal_backup import create_backup, restore_backup, verify_backup
 from surge_adapter.packet_ingest import (
     CppCoreBridge, PacketRejected, RecognitionPacketAdapter, normalize_source,
 )
@@ -968,6 +974,72 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                 with self.assertRaisesRegex(PacketRejected, "SCHEMA_INVALID"):
                     adapter.admit_to_core(packet, "abc", core)
                 self.assertEqual(core.state_version, 0)
+
+    def test_retention_manifest_and_tombstone_are_journaled_and_replayed(self):
+        now = "2026-11-19T00:00:00Z"
+        records = [
+            {"record_id": "retained", "last_accessed_at": now,
+             "salience": 0.9, "utility": 0.9},
+            {"record_id": "archived", "last_accessed_at": "2026-09-01T00:00:00Z",
+             "salience": 0.1, "utility": 0.1, "source_digest": "sha-archived"},
+        ]
+        manifest = build_retention_manifest(
+            records, capacity=1, policy_version="retention-v1", now=now)
+        tombstone = create_payload_tombstone(
+            "archived", manifest=manifest, reason="approved expiry",
+            actor="test-retention", policy_version="tombstone-v1", created_at=now)
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "retention.sgj"
+            with SemanticCoreBridge(journal) as core:
+                first = persist_retention_manifest(
+                    core, manifest, transaction_id="retention-manifest-tx",
+                    idempotency_key="retention-manifest-idem",
+                    expected_state_version=core.state_version)
+                self.assertTrue(first["committed"])
+                self.assertEqual(first["state_version"], 1)
+                second = persist_payload_tombstone(
+                    core, tombstone, transaction_id="retention-tombstone-tx",
+                    idempotency_key="retention-tombstone-idem",
+                    expected_state_version=core.state_version)
+                self.assertTrue(second["committed"])
+                self.assertEqual(second["state_version"], 2)
+                duplicate = persist_retention_manifest(
+                    core, manifest, transaction_id="retention-manifest-tx",
+                    idempotency_key="retention-manifest-idem",
+                    expected_state_version=0)
+                self.assertTrue(duplicate["duplicate"])
+                projection = replay_retention_projection(core.get_retention_events())
+                self.assertEqual(len(projection["manifests"]), 1)
+                self.assertEqual(len(projection["tombstones"]), 1)
+                self.assertFalse(projection["physical_deletion_performed"])
+            with SemanticCoreBridge(journal) as recovered:
+                projection = replay_retention_projection(recovered.get_retention_events())
+                self.assertEqual(projection["latest_manifest"]["manifest_sha256"],
+                                 manifest["manifest_sha256"])
+                self.assertIn(tombstone["event_sha256"], projection["tombstones"])
+                self.assertEqual(recovered.state_version, 2)
+            backup = pathlib.Path(tmp) / "retention-backup.sgj"
+            restored = pathlib.Path(tmp) / "retention-restored.sgj"
+            create_backup(journal, backup)
+            self.assertEqual(verify_backup(backup)["sha256"],
+                             hashlib.sha256(backup.read_bytes()).hexdigest())
+            restore_backup(backup, restored)
+            with SemanticCoreBridge(restored) as from_backup:
+                restored_projection = replay_retention_projection(
+                    from_backup.get_retention_events())
+                self.assertEqual(restored_projection["latest_manifest"]["manifest_sha256"],
+                                 manifest["manifest_sha256"])
+                self.assertEqual(len(restored_projection["tombstones"]), 1)
+                self.assertEqual(from_backup.state_version, 2)
+
+    def test_retention_journal_rejects_non_retention_event_kind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "retention-invalid.sgj") as core:
+                with self.assertRaisesRegex(PacketRejected, "EVENT_KIND_FORBIDDEN"):
+                    core.commit_retention_events(
+                        "invalid-retention-tx", "invalid-retention-idem", 0,
+                        [{"event_id": "invalid-event", "kind": "CLAIM_ADDED",
+                          "payload": "{}"}])
 
 
 if __name__ == "__main__":

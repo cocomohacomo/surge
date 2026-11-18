@@ -91,12 +91,27 @@ class _ChaosPatternHypothesis(ctypes.Structure):
                 ("counterexample_refs", ctypes.POINTER(ctypes.c_char_p)), ("counterexample_count", ctypes.c_size_t),
                 ("alternative_hypothesis_refs", ctypes.POINTER(ctypes.c_char_p)), ("alternative_hypothesis_count", ctypes.c_size_t)]
 
+class _JournalEvent(ctypes.Structure):
+    _fields_ = [("event_id", ctypes.c_char_p), ("kind", ctypes.c_char_p),
+                ("payload", ctypes.c_char_p)]
+
+
 class SemanticCoreBridge(CppCoreBridge):
     """Packet admission + typed SemanticDelta commit over one shared journal."""
 
     def __init__(self, journal_path, library_path=None):
         super().__init__(journal_path, library_path)
         lib = self._lib
+        lib.surge_retention_journal_commit.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
+            ctypes.POINTER(_JournalEvent), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_retention_journal_commit.restype = ctypes.c_int
+        lib.surge_retention_journal_get_events.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        lib.surge_retention_journal_get_events.restype = ctypes.c_int
         lib.surge_packet_core_admit_and_apply_with_proposal.argtypes = [
             ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
@@ -1429,3 +1444,60 @@ class SemanticCoreBridge(CppCoreBridge):
             "FOCUS_BUFFER_TOO_SMALL")
         return result if result.get("found") else None
 
+
+
+    def commit_retention_events(self, transaction_id: str, idempotency_key: str,
+                                expected_state_version: int,
+                                events: list[dict[str, str]]) -> dict[str, Any]:
+        """Append exactly one allowlisted retention event in one transaction."""
+        if not isinstance(events, list) or len(events) != 1:
+            raise PacketRejected("RETENTION_JOURNAL_EVENTS_INVALID")
+        keepalive = []
+        rows = []
+        for event in events:
+            if not isinstance(event, dict):
+                raise PacketRejected("RETENTION_JOURNAL_EVENT_INVALID")
+            try:
+                encoded = [event[key].encode("utf-8") for key in ("event_id", "kind", "payload")]
+            except (KeyError, AttributeError):
+                raise PacketRejected("RETENTION_JOURNAL_EVENT_INVALID")
+            keepalive.extend(encoded)
+            rows.append(_JournalEvent(*encoded))
+        array = (_JournalEvent * len(rows))(*rows)
+        duplicate, version = ctypes.c_int(0), ctypes.c_uint64(0)
+        error = ctypes.create_string_buffer(512)
+        ok = self._lib.surge_retention_journal_commit(
+            self._handle, transaction_id.encode("utf-8"), idempotency_key.encode("utf-8"),
+            int(expected_state_version), array, len(array), ctypes.byref(duplicate),
+            ctypes.byref(version), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "RETENTION_JOURNAL_COMMIT_FAILED")
+        return {"committed": True, "duplicate": bool(duplicate.value),
+                "state_version": int(version.value)}
+
+    def get_retention_events(self) -> list[dict[str, str]]:
+        """Replay only allowlisted retention events from the authoritative journal."""
+        required = ctypes.c_size_t(0)
+        error = ctypes.create_string_buffer(512)
+        self._lib.surge_retention_journal_get_events(
+            self._handle, None, 0, ctypes.byref(required), error, len(error))
+        if required.value <= 1:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "RETENTION_JOURNAL_SIZE_QUERY_FAILED")
+        output = ctypes.create_string_buffer(required.value)
+        ok = self._lib.surge_retention_journal_get_events(
+            self._handle, output, len(output), ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "RETENTION_JOURNAL_READ_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("RETENTION_JOURNAL_JSON_INVALID") from exc
+        if not isinstance(value, list) or any(
+            not isinstance(item, dict) or set(item) != {"event_id", "kind", "payload"}
+            for item in value
+        ):
+            raise PacketRejected("RETENTION_JOURNAL_RESPONSE_INVALID")
+        return value
