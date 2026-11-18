@@ -227,3 +227,15 @@ events also require explicit version-only handling in ContextGraph. The graph
 now advances the shared State Version for this evidence-owned event without
 applying it as graph state. The regression covers both retention event kinds
 and this pre-existing external owner event.
+
+
+## EventJournal commit uncertainty
+
+EventJournal now exposes a sync-barrier fault-injection seam. A failed sync
+before the COMMIT marker is verified as an incomplete transaction that replay
+discards. A failed sync after the COMMIT marker write returns
+`JOURNAL_COMMIT_OUTCOME_UNKNOWN`; recovery plus an exact idempotent retry
+resolves both cases: marker survived (duplicate) and marker was lost (new
+commit). The tests model the loss of an unsynchronized marker by truncating to
+the last synchronized EVENT frame. This is deterministic fault injection, not
+a physical power-loss simulation.

@@ -106,6 +106,11 @@ EventJournal::EventJournal(std::string path) : path_(std::move(path)) {}
 EventJournal::EventJournal(std::string path, AppendFrameGate append_frame_gate)
     : path_(std::move(path)), append_frame_gate_(std::move(append_frame_gate)) {}
 
+EventJournal::EventJournal(std::string path, AppendFrameGate append_frame_gate,
+                           SyncFrameGate sync_frame_gate)
+    : path_(std::move(path)), append_frame_gate_(std::move(append_frame_gate)),
+      sync_frame_gate_(std::move(sync_frame_gate)) {}
+
 EventJournal::~EventJournal() { release_writer_lock(); }
 
 bool EventJournal::acquire_writer_lock() {
@@ -189,6 +194,17 @@ bool EventJournal::append_frame(const std::string& payload) {
   out.flush();
   if (!out) { last_error_ = "JOURNAL_WRITE_ERROR"; return false; }
   out.close();
+  if (sync_frame_gate_) {
+    try {
+      if (!sync_frame_gate_(append_frame_count_)) {
+        last_error_ = "JOURNAL_INJECTED_SYNC_FAILURE";
+        return false;
+      }
+    } catch (...) {
+      last_error_ = "JOURNAL_SYNC_GATE_EXCEPTION";
+      return false;
+    }
+  }
   if (!sync_file_to_stable_storage(path_)) {
     last_error_ = "JOURNAL_SYNC_ERROR";
     return false;
@@ -341,7 +357,16 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     }
   }
   if (!append_frame(commit_frame(tx, expected + 1, events.size(), fingerprint))) {
-    opened_ = false; return {false, false, state_version_, last_error_};
+    opened_ = false;
+    if (last_error_ == "JOURNAL_INJECTED_SYNC_FAILURE" ||
+        last_error_ == "JOURNAL_SYNC_GATE_EXCEPTION" ||
+        last_error_ == "JOURNAL_SYNC_ERROR") {
+      // The COMMIT frame may have reached the filesystem even though its
+      // stable-storage barrier failed. Recovery plus idempotent retry resolves
+      // whether the transaction committed.
+      return {false, false, state_version_, "JOURNAL_COMMIT_OUTCOME_UNKNOWN"};
+    }
+    return {false, false, state_version_, last_error_};
   }
   for (const auto& event : events) { events_.push_back(event); event_ids_[event.event_id] = true; }
   idempotency_[idem] = fingerprint;

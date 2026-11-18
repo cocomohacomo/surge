@@ -202,6 +202,80 @@ int main(int argc, char** argv) {
       CHECK(recovered.committed_events().size() == 3);
     }
   }
+  // A failed sync barrier before the COMMIT marker is definitely uncommitted:
+  // replay discards the incomplete transaction and an exact retry can proceed.
+  const auto precommit_sync_path=(root/"precommit-sync-failure.sgj").string();
+  {
+    EventJournal journal(precommit_sync_path, EventJournal::AppendFrameGate{},
+      [](std::size_t frame_index) { return frame_index != 1; });
+    CHECK(journal.open());
+    const auto failed=journal.commit("tx-precommit-sync","idem-precommit-sync",0,
+      {{"ev-precommit-sync","TEST","sync failed before commit marker"}});
+    CHECK(!failed.committed);
+    CHECK(failed.error=="JOURNAL_INJECTED_SYNC_FAILURE");
+    CHECK(journal.state_version()==0);
+  }
+  {
+    EventJournal recovered(precommit_sync_path);
+    CHECK(recovered.open());
+    CHECK(recovered.state_version()==0);
+    CHECK(recovered.committed_events().empty());
+    const auto retry=recovered.commit("tx-precommit-sync","idem-precommit-sync",0,
+      {{"ev-precommit-sync","TEST","sync failed before commit marker"}});
+    CHECK(retry.committed&&!retry.duplicate&&retry.state_version==1);
+  }
+
+  // A failed sync barrier after writing the COMMIT marker is ambiguous. On
+  // reopen the marker is replayed if present; exact idempotent retry resolves
+  // the result without duplicating the transaction.
+  const auto commit_sync_path=(root/"commit-sync-failure.sgj").string();
+  {
+    EventJournal journal(commit_sync_path, EventJournal::AppendFrameGate{},
+      [](std::size_t frame_index) { return frame_index != 2; });
+    CHECK(journal.open());
+    const auto failed=journal.commit("tx-commit-sync","idem-commit-sync",0,
+      {{"ev-commit-sync","TEST","commit marker sync barrier failed"}});
+    CHECK(!failed.committed);
+    CHECK(failed.error=="JOURNAL_COMMIT_OUTCOME_UNKNOWN");
+    CHECK(journal.state_version()==0);
+  }
+  {
+    EventJournal recovered(commit_sync_path);
+    CHECK(recovered.open());
+    CHECK(recovered.state_version()==1);
+    CHECK(recovered.committed_events().size()==1);
+    const auto retry=recovered.commit("tx-commit-sync","idem-commit-sync",0,
+      {{"ev-commit-sync","TEST","commit marker sync barrier failed"}});
+    CHECK(retry.committed&&retry.duplicate&&retry.state_version==1);
+  }
+  // Model a power-loss outcome where the unsynchronized COMMIT marker is
+  // absent after restart but the earlier BEGIN/EVENT frames had reached disk.
+  const auto commit_sync_lost_path=(root/"commit-sync-marker-lost.sgj").string();
+  std::uintmax_t size_after_event_frame=0;
+  {
+    EventJournal journal(commit_sync_lost_path, EventJournal::AppendFrameGate{},
+      [&](std::size_t frame_index) {
+        if (frame_index==1)
+          size_after_event_frame=std::filesystem::file_size(commit_sync_lost_path);
+        return frame_index!=2;
+      });
+    CHECK(journal.open());
+    const auto failed=journal.commit("tx-commit-lost","idem-commit-lost",0,
+      {{"ev-commit-lost","TEST","commit marker lost after sync failure"}});
+    CHECK(!failed.committed);
+    CHECK(failed.error=="JOURNAL_COMMIT_OUTCOME_UNKNOWN");
+    CHECK(size_after_event_frame>0);
+  }
+  std::filesystem::resize_file(commit_sync_lost_path,size_after_event_frame);
+  {
+    EventJournal recovered(commit_sync_lost_path);
+    CHECK(recovered.open());
+    CHECK(recovered.state_version()==0);
+    CHECK(recovered.committed_events().empty());
+    const auto retry=recovered.commit("tx-commit-lost","idem-commit-lost",0,
+      {{"ev-commit-lost","TEST","commit marker lost after sync failure"}});
+    CHECK(retry.committed&&!retry.duplicate&&retry.state_version==1);
+  }
   std::filesystem::remove_all(root);
-  std::cout << "SURGE EventJournal tests: 6 groups passed\n";
+  std::cout << "SURGE EventJournal tests: sync uncertainty recovery passed\n";
 }
