@@ -31,7 +31,7 @@ Frames are append-only. A transaction is visible only after a valid C frame. A p
 
 CRC-32 detects accidental frame corruption; it is not a cryptographic authenticity mechanism. The idempotency fingerprint uses FNV-1a and is not cryptographic. Applications requiring adversarial tamper evidence must add a cryptographic MAC/signature and trusted key management.
 
-The implementation flushes C++ streams after each frame. It does not currently issue an OS-level fsync/FlushFileBuffers barrier. It therefore provides restart recovery for complete flushed records and safe handling of truncated tails, but does not claim power-loss durability across all filesystems/storage devices. That stronger durability contract is a follow-up.
+The implementation flushes each C++ stream frame and then calls `fsync` on POSIX or `FlushFileBuffers` on Windows before reporting the append as successful. Initial journal creation also synchronizes the file and, on POSIX, its parent directory. This is stronger than stream flush alone, but it is not a universal guarantee against every storage-controller, filesystem, virtualized-volume, or hardware failure. Windows parent-directory metadata durability is not explicitly synchronized. Power-loss guarantees must therefore be stated per supported platform/filesystem and validated with platform-specific fault testing.
 
 ## Explicit non-goals
 

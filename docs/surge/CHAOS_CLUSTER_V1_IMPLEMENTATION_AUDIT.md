@@ -30,9 +30,9 @@ independent semantic-quality evaluation.
 | P1 | Retrieval diversity | Partial | Focus retrieval ranks known member Salience before UNKNOWN within admission-reason groups, round-robins groups, excludes inactive memberships, and emits selection rationale. It does not yet provide configurable multi-factor scoring or use all cluster-level dimensions to alter selection. |
 | P1 | Retrieval query dimensions | Partial | Typed Chaos retrieval now filters association type/status, valid-time, member admission-time, producer provenance and member refs; hypothesis/counterexample controls and bounded parent/child lineage traversal are implemented. Independent member/association/hypothesis pagination, stable offsets, score-based ranking policies, unknown-score ordering, and page/dataset completeness metadata are now implemented. Association endpoint expansion and exhaustive retrieval-budget combinations still need conformance coverage. |
 | P1 | Lifecycle and operations | Partial | ARCHIVED -> DORMANT reactivation is an explicit provenance-bound transition; atomic merge, fork/split/subset promotion, and CC8 lifecycle reason/provenance history are implemented. Expanded conflict, migration and lifecycle conformance remains. |
-| P1 | CC01-CC20 executable conformance | Partial | C++/C ABI/Python tests cover persistence, replay, lifecycle, association, hypotheses, promotion/fork/split, Focus and retrieval. Dedicated C++ regressions now explicitly cover CC02, CC04, CC06, CC10, CC12 and CC19; retention tests cover CC05/CC20 planner invariants. CC14/CC15 and the full 20-case restart/negative matrix still need explicit end-to-end execution. |
+| P1 | CC01-CC20 executable conformance | Partial | C++/C ABI/Python tests cover persistence, replay, lifecycle, association, hypotheses, promotion/fork/split, Focus and retrieval. Dedicated C++ regressions now explicitly cover CC02, CC04, CC06, CC10, CC12 and CC19; retention tests cover CC05/CC20 planner invariants. CC14/CC15 now have a shared-EventJournal end-to-end regression covering non-promotion, QuestionAspect resolution isolation, and independent restart replay; the full 20-case restart/negative matrix remains open. |
 | P2 | Memory and forgetting | Partial | A deterministic, digest-verified retention manifest planner now exposes salience/utility/interest/dependency/recency factors, archives without deleting, and emits explicit manifest-bound tombstone proposals. Core journal integration, payload compaction, restore drill and physical deletion verification remain open. |
-| P2 | Operational safety | Partial | Same-process exclusive writer-lock exclusion, injected append failures at BEGIN/EVENT/COMMIT boundaries, truncated-tail recovery, checksum-corruption rejection, and backup/restore verification are covered; Linux/Windows/macOS CI exercises journal locking and backup parity. True multi-process contention, concurrent Core-handle mutation, real power-loss testing, fuzzing and sanitizer runs remain outstanding. |
+| P2 | Operational safety | Partial | EventJournal acquires an OS-level exclusive writer lock (POSIX `flock`, Windows exclusive `CreateFile` sharing mode), serializes same-handle operations with a mutex, and synchronizes appended frames (`fsync` / `FlushFileBuffers`). Injected append failures, truncated-tail recovery, checksum rejection, and backup/restore verification are covered. A true multi-process contention test, concurrent ContextGraph/ChaosClusterLedger handle mutation safety, platform-specific power-loss fault testing, fuzzing and sanitizer runs remain outstanding. |
 | P2 | Performance | Unverified | No declared-hardware measurement proves 30 MiB model integration, RTF <0.01, p99 latency or peak RSS for the v1.0 path. |
 
 ## Implementation order
@@ -156,5 +156,28 @@ for disagreeing recognizers (CC06), stale subset promotion rejection without
 partial state change (CC10), changed payload under a reused idempotency identity
 (CC12), and provenance-bound ARCHIVED -> DORMANT reactivation followed by new
 membership (CC19). These are regression tests, not a claim that all CC01-CC20
-cases are closed. CC14 (hypothesis never becomes Claim) and CC15 (Question
-resolution does not promote/close the Chaos Cluster) remain explicit gaps.
+cases are closed. CC14 and CC15 now have shared-EventJournal end-to-end negative and restart assertions; the broader CC01-CC20 matrix remains incomplete.
+
+
+## Follow-up: CC14 / CC15 lifecycle isolation
+
+A shared-EventJournal regression now exercises ContextGraph and
+ChaosClusterLedger together. Reviewing a PatternHypothesis to
+`PROMOTED_TO_EVIDENCE_REVIEW` does not create a Claim node or populate the
+Cluster promotion map. Resolving a QuestionAspect does not change the Chaos
+Cluster lifecycle or lifecycle history. The test closes and reopens the shared
+journal and verifies that both domains replay independently. This closes the
+specific CC14/CC15 regression gap, but does not close the remaining CC01-CC20
+matrix.
+
+
+## Follow-up: EventJournal implementation fact-check
+
+The original durability paragraph in `EVENT_JOURNAL_v0.1.md` understated the
+implementation: each appended frame is flushed and synchronized with
+`fsync` (POSIX) or `FlushFileBuffers` (Windows). The writer lock is also
+cross-process at the OS level (`flock` on POSIX and exclusive sharing on
+Windows), although the automated regression suite still needs a true
+multi-process contention test. This does not constitute a universal power-loss
+guarantee; filesystem and hardware behavior still require platform-specific
+fault testing.

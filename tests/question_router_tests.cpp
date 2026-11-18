@@ -1,5 +1,7 @@
 #include "test_support.hpp"
 #include "surge/question_router.hpp"
+#include "surge/chaos_cluster.hpp"
+#include "surge/event_journal.hpp"
 #include <filesystem>
 #include <iostream>
 using namespace surge;
@@ -78,6 +80,64 @@ int main(){
     auto missing=QuestionRouter::route(graph,"contradiction-1","");
     CHECK(!missing.committed && missing.error=="QUESTION_ROUTE_REQUEST_INVALID");
   }
+  // CC14/CC15: hypothesis review and Question resolution are independent
+  // state machines. Neither operation may promote a PatternHypothesis to a
+  // Claim or transition the separately journaled Chaos Cluster.
+  {
+    const auto shared_path=(root/"cc14-cc15-independent.sgj").string();
+    EventJournal shared(shared_path);
+    ContextGraph graph(shared); CHECK(graph.open());
+    ChaosClusterLedger chaos(shared); CHECK(chaos.open());
+    CHECK(graph.apply(base_delta(false)).committed);
+    const ChaosProvenance provenance{"recognizer","1","policy-cc14","2026-11-19T00:00:00Z"};
+    CHECK(chaos.create("cc14-create","cc14-create-idem",graph.state_version(),
+      "chaos-independent",provenance).committed);
+    ChaosMember member{"cc14-member","event-cc14","NO_STABLE_TOPIC",
+      "2026-11-19T00:00:01Z","",provenance};
+    CHECK(chaos.admit_member("cc14-admit","cc14-admit-idem",graph.state_version(),
+      "chaos-independent",member).committed);
+    ChaosPatternHypothesis hypothesis;
+    hypothesis.hypothesis_id="hypothesis-not-claim";
+    hypothesis.statement="an unverified pattern candidate";
+    hypothesis.member_refs={"cc14-member"};
+    hypothesis.provenance=provenance;
+    CHECK(chaos.add_pattern_hypothesis("cc14-hypothesis","cc14-hypothesis-idem",
+      graph.state_version(),"chaos-independent",hypothesis).committed);
+    CHECK(chaos.review_pattern_hypothesis("cc14-review","cc14-review-idem",
+      graph.state_version(),"chaos-independent","hypothesis-not-claim",
+      "PROMOTED_TO_EVIDENCE_REVIEW","UNVERIFIED",{},provenance).committed);
+    ChaosCluster before; CHECK(chaos.get("chaos-independent",before));
+    CHECK(before.lifecycle==ChaosLifecycle::Accumulating);
+    CHECK(before.promoted_member_targets.empty());
+    CHECK(graph.nodes().count("hypothesis-not-claim")==0);
+
+    auto routed=QuestionRouter::route(graph,"contradiction-1","policy-cc15");
+    CHECK(routed.committed);
+    std::string error;
+    CHECK(graph.set_question_aspect_status(routed.question_aspect_id,
+      QuestionAspectStatus::Resolved,graph.state_version(),error));
+    ChaosCluster after; CHECK(chaos.get("chaos-independent",after));
+    CHECK(after.lifecycle==before.lifecycle);
+    CHECK(after.lifecycle_history.size()==before.lifecycle_history.size());
+    CHECK(after.promoted_member_targets.empty());
+    CHECK(after.pattern_hypotheses.at("hypothesis-not-claim").status==
+      "PROMOTED_TO_EVIDENCE_REVIEW");
+    CHECK(graph.nodes().count("hypothesis-not-claim")==0);
+    CHECK(graph.nodes().at(routed.question_id).kind==NodeKind::Question);
+    CHECK(graph.question_aspect_status(routed.question_aspect_id)==QuestionAspectStatus::Resolved);
+  }
+  {
+    const auto shared_path=(root/"cc14-cc15-independent.sgj").string();
+    EventJournal shared(shared_path);
+    ContextGraph graph(shared); CHECK(graph.open());
+    ChaosClusterLedger chaos(shared); CHECK(chaos.open());
+    ChaosCluster recovered; CHECK(chaos.get("chaos-independent",recovered));
+    CHECK(recovered.lifecycle==ChaosLifecycle::Accumulating);
+    CHECK(recovered.promoted_member_targets.empty());
+    CHECK(recovered.pattern_hypotheses.at("hypothesis-not-claim").status==
+      "PROMOTED_TO_EVIDENCE_REVIEW");
+    CHECK(graph.nodes().count("hypothesis-not-claim")==0);
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE QuestionRouter tests: 4 groups passed\n";
+  std::cout<<"SURGE QuestionRouter tests: scoped lifecycle, CC14 and CC15 passed\n";
 }
