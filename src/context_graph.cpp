@@ -1,4 +1,5 @@
 #include "surge/context_graph.hpp"
+#include "surge/snapshot_domains.hpp"
 #include "surge/sha256.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
