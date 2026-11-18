@@ -10,6 +10,7 @@ import os
 import pathlib
 import shutil
 import tempfile
+import struct
 from datetime import datetime, timezone
 
 MAGIC = b"SURGEJ1\n"
@@ -124,6 +125,184 @@ def atomic_write_json(destination: pathlib.Path, value: dict) -> None:
             raise
 
 
+
+def _fnv1a_request_fingerprint(tx: str, version: int,
+                               events: list[tuple[str, str, str]]) -> str:
+    value = 1469598103934665603
+    mask = (1 << 64) - 1
+
+    def mix(text: str) -> None:
+        nonlocal value
+        for byte in text.encode("utf-8"):
+            value ^= byte
+            value = (value * 1099511628211) & mask
+        value ^= 0xFF
+        value = (value * 1099511628211) & mask
+
+    mix(tx)
+    mix(str(version))
+    for event_id, kind, payload in events:
+        mix(event_id)
+        mix(kind)
+        mix(payload)
+    return f"{value:016x}"
+
+
+def _parse_frame_tokens(payload: str) -> list[str]:
+    """Parse the small std::quoted token grammar used by EventJournal."""
+    tokens: list[str] = []
+    index = 0
+    size = len(payload)
+    while index < size:
+        while index < size and payload[index].isspace():
+            index += 1
+        if index >= size:
+            break
+        if payload[index] == '"':
+            index += 1
+            chars: list[str] = []
+            closed = False
+            while index < size:
+                char = payload[index]
+                index += 1
+                if char == '"':
+                    closed = True
+                    break
+                if char == "\\" and index < size:
+                    following = payload[index]
+                    if following in ('"', "\\"):
+                        chars.append(following)
+                        index += 1
+                    else:
+                        chars.append("\\")
+                else:
+                    chars.append(char)
+            if not closed:
+                raise ValueError("BACKUP_JOURNAL_RECORD_INVALID")
+            tokens.append("".join(chars))
+        else:
+            start = index
+            while index < size and not payload[index].isspace():
+                index += 1
+            tokens.append(payload[start:index])
+    return tokens
+
+
+def inspect_journal(path: pathlib.Path) -> dict:
+    """Validate the EventJournal frame and transaction stream without mutation.
+
+    A torn final frame or uncommitted transaction is reported as a recoverable
+    tail, matching the C++ replay truncation rule. Complete corrupt frames fail.
+    """
+    path = pathlib.Path(path)
+    file_size = path.stat().st_size
+    pending: dict[str, dict] = {}
+    transaction_ids: set[str] = set()
+    idempotency_keys: set[str] = set()
+    event_ids: set[str] = set()
+    state_version = 0
+    committed_events = 0
+    committed_transactions = 0
+    recoverable_start: int | None = None
+
+    with path.open("rb") as stream:
+        if stream.read(len(MAGIC)) != MAGIC:
+            raise ValueError("BACKUP_JOURNAL_HEADER_INVALID")
+        while True:
+            frame_start = stream.tell()
+            length_bytes = stream.read(4)
+            if not length_bytes:
+                break
+            if len(length_bytes) != 4:
+                recoverable_start = frame_start
+                break
+            length = struct.unpack("<I", length_bytes)[0]
+            if length > 16 * 1024 * 1024:
+                raise ValueError("BACKUP_JOURNAL_FRAME_LENGTH_INVALID")
+            raw_payload = stream.read(length)
+            if len(raw_payload) != length:
+                recoverable_start = frame_start
+                break
+            crc_bytes = stream.read(4)
+            if len(crc_bytes) != 4:
+                recoverable_start = frame_start
+                break
+            expected_crc = struct.unpack("<I", crc_bytes)[0]
+            import zlib
+            if zlib.crc32(raw_payload) & 0xFFFFFFFF != expected_crc:
+                raise ValueError(f"BACKUP_JOURNAL_CHECKSUM_MISMATCH@{frame_start}")
+            try:
+                payload = raw_payload.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("BACKUP_JOURNAL_UTF8_INVALID") from exc
+            tokens = _parse_frame_tokens(payload)
+            if not tokens:
+                raise ValueError("BACKUP_JOURNAL_RECORD_INVALID")
+            record_type = tokens[0]
+            if record_type == "B":
+                if len(tokens) < 5:
+                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
+                tx, idem, expected_text, fingerprint = tokens[1:5]
+                try:
+                    expected = int(expected_text, 10)
+                except ValueError as exc:
+                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID") from exc
+                if not tx or not idem or not fingerprint or tx in pending:
+                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
+                pending[tx] = {"idem": idem, "expected": expected,
+                               "fingerprint": fingerprint, "events": [],
+                               "begin_offset": frame_start}
+            elif record_type == "E":
+                if len(tokens) < 5:
+                    raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
+                tx, event_id, kind, event_payload = tokens[1:5]
+                if tx not in pending or not event_id or not kind:
+                    raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
+                pending[tx]["events"].append((event_id, kind, event_payload))
+            elif record_type == "C":
+                if len(tokens) < 5:
+                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
+                tx, version_text, count_text, fingerprint = tokens[1:5]
+                if tx not in pending:
+                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
+                try:
+                    version, count = int(version_text, 10), int(count_text, 10)
+                except ValueError as exc:
+                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID") from exc
+                item = pending[tx]
+                events = item["events"]
+                if (item["expected"] != state_version or version != state_version + 1
+                        or len(events) != count or item["fingerprint"] != fingerprint
+                        or _fnv1a_request_fingerprint(tx, item["expected"], events) != fingerprint
+                        or item["idem"] in idempotency_keys or tx in transaction_ids):
+                    raise ValueError("BACKUP_JOURNAL_COMMIT_INVARIANT_FAILED")
+                for event_id, _, _ in events:
+                    if event_id in event_ids:
+                        raise ValueError("BACKUP_JOURNAL_EVENT_ID_DUPLICATE")
+                event_ids.update(event_id for event_id, _, _ in events)
+                idempotency_keys.add(item["idem"])
+                transaction_ids.add(tx)
+                committed_events += len(events)
+                committed_transactions += 1
+                state_version = version
+                del pending[tx]
+            else:
+                raise ValueError("BACKUP_JOURNAL_RECORD_TYPE_INVALID")
+
+    if pending:
+        earliest = min(item["begin_offset"] for item in pending.values())
+        recoverable_start = earliest if recoverable_start is None else min(
+            recoverable_start, earliest)
+    recoverable_tail_bytes = (file_size - recoverable_start
+                              if recoverable_start is not None else 0)
+    return {
+        "state_version": state_version,
+        "committed_transactions": committed_transactions,
+        "committed_event_count": committed_events,
+        "recoverable_tail_bytes": recoverable_tail_bytes,
+    }
+
+
 def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
     journal, backup = journal.resolve(), backup.resolve()
     if journal == backup:
@@ -131,9 +310,9 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
     with writer_lock(journal):
         if not journal.is_file():
             raise FileNotFoundError("JOURNAL_NOT_FOUND")
-        with journal.open("rb") as stream:
-            if stream.read(len(MAGIC)) != MAGIC:
-                raise ValueError("JOURNAL_HEADER_INVALID")
+        replay = inspect_journal(journal)
+        if replay["recoverable_tail_bytes"]:
+            raise ValueError("BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL")
         atomic_copy(journal, backup)
         manifest = {
             "manifest_version": 1,
@@ -142,6 +321,7 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
             "backup_file": backup.name,
             "size_bytes": backup.stat().st_size,
             "sha256": sha256_file(backup),
+            "replay": replay,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "consistency": "writer-lock-held-during-copy",
         }
@@ -155,15 +335,22 @@ def verify_backup(backup: pathlib.Path) -> dict:
     if not backup.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("BACKUP_OR_MANIFEST_NOT_FOUND")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("manifest_version") != 1 or manifest.get("journal_format") != "SURGEJ1":
+    if (not isinstance(manifest, dict) or
+        manifest.get("manifest_version") != 1 or
+        manifest.get("journal_format") != "SURGEJ1"):
         raise ValueError("BACKUP_MANIFEST_VERSION_INVALID")
-    with backup.open("rb") as stream:
-        if stream.read(len(MAGIC)) != MAGIC:
-            raise ValueError("BACKUP_JOURNAL_HEADER_INVALID")
     if (manifest.get("backup_file") != backup.name or
+        isinstance(manifest.get("size_bytes"), bool) or
+        not isinstance(manifest.get("size_bytes"), int) or
         manifest.get("size_bytes") != backup.stat().st_size or
+        not isinstance(manifest.get("sha256"), str) or
         manifest.get("sha256") != sha256_file(backup)):
         raise ValueError("BACKUP_DIGEST_OR_SIZE_MISMATCH")
+    replay = inspect_journal(backup)
+    if replay["recoverable_tail_bytes"]:
+        raise ValueError("BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL")
+    if manifest.get("replay") != replay:
+        raise ValueError("BACKUP_REPLAY_METADATA_MISMATCH")
     return manifest
 
 
