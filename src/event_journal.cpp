@@ -321,15 +321,24 @@ bool EventJournal::append_frame(const std::string& payload) {
 
 bool EventJournal::recover() {
   state_version_ = 0;
+  checkpoint_base_state_version_ = 0;
+  checkpoint_context_id_.clear();
+  checkpoint_snapshot_digest_.clear();
+  compacted_ = false;
+  append_frame_count_ = 0;
   retained_payload_bytes_ = 0;
   events_.clear(); idempotency_.clear(); transaction_ids_.clear(); event_ids_.clear();
   std::ifstream in(path_, std::ios::binary);
   if (!in) { last_error_ = "JOURNAL_OPEN_READ_ERROR"; return false; }
   std::array<char, sizeof(kMagic) - 1> magic{};
   in.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-  if (!in || std::string(magic.data(), magic.size()) != std::string(kMagic, sizeof(kMagic)-1)) {
+  const std::string magic_value(magic.data(), magic.size());
+  if (!in || (magic_value != std::string(kMagic, sizeof(kMagic)-1) &&
+              magic_value != std::string(kMagicV2, sizeof(kMagicV2)-1))) {
     last_error_ = "JOURNAL_HEADER_INVALID"; return false;
   }
+  compacted_ = magic_value == std::string(kMagicV2, sizeof(kMagicV2)-1);
+  bool checkpoint_header_seen = !compacted_;
   struct Pending {
     std::string idem, fingerprint;
     std::uint64_t expected{};
@@ -375,7 +384,26 @@ bool EventJournal::recover() {
     }
     std::istringstream frame(payload);
     char type = 0; frame >> type;
-    if (type == 'B') {
+    if (type == 'H') {
+      if (!compacted_ || checkpoint_header_seen || !pending.empty() ||
+          !events_.empty() || state_version_ != 0 ||
+          !decode_checkpoint_header(payload, checkpoint_base_state_version_,
+              checkpoint_context_id_, checkpoint_snapshot_digest_,
+              idempotency_, transaction_ids_, event_ids_)) {
+        last_error_ = "JOURNAL_CHECKPOINT_HEADER_INVALID";
+        return false;
+      }
+      if (limits_.max_transactions &&
+          transaction_ids_.size() > limits_.max_transactions) {
+        last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED";
+        return false;
+      }
+      state_version_ = checkpoint_base_state_version_;
+      checkpoint_header_seen = true;
+    } else if (!checkpoint_header_seen) {
+      last_error_ = "JOURNAL_CHECKPOINT_HEADER_MISSING";
+      return false;
+    } else if (type == 'B') {
       std::string tx, idem, fingerprint; std::uint64_t expected = 0;
       if (!(frame >> std::quoted(tx) >> std::quoted(idem) >> expected >> std::quoted(fingerprint)) ||
           tx.empty() || idem.empty() || fingerprint.empty() || pending.count(tx)) {
@@ -431,6 +459,10 @@ bool EventJournal::recover() {
     } else {
       last_error_ = "JOURNAL_RECORD_TYPE_INVALID"; return false;
     }
+  }
+  if (!checkpoint_header_seen) {
+    last_error_ = "JOURNAL_CHECKPOINT_HEADER_MISSING";
+    return false;
   }
   if (!pending.empty()) {
     for (const auto& item : pending) {
