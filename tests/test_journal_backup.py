@@ -223,6 +223,46 @@ class JournalBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_TOO_SHORT"):
                 create_backup(source, backup, key_file=key, key_id="weak")
 
+    def test_keyring_verifies_and_restores_backups_across_key_rotation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "live.sgj"
+            source.write_bytes(_valid_journal())
+            key_v1, key_v2 = root / "key-v1.bin", root / "key-v2.bin"
+            key_v1.write_bytes(b"1" * 32)
+            key_v2.write_bytes(b"2" * 32)
+            backup_v1, backup_v2 = root / "backup-v1.sgj", root / "backup-v2.sgj"
+            create_backup(source, backup_v1, key_file=key_v1, key_id="ops-v1")
+            create_backup(source, backup_v2, key_file=key_v2, key_id="ops-v2")
+            keyring = root / "keyring.json"
+            keyring.write_text(json.dumps({
+                "ops-v1": key_v1.name,
+                "ops-v2": key_v2.name,
+            }), encoding="utf-8")
+
+            verify_backup(backup_v1, keyring_file=keyring, require_auth=True)
+            verify_backup(backup_v2, keyring_file=keyring, require_auth=True)
+            restored = root / "restored-v1.sgj"
+            restore_backup(backup_v1, restored, keyring_file=keyring, require_auth=True)
+            self.assertEqual(restored.read_bytes(), source.read_bytes())
+
+            incomplete_keyring = root / "incomplete-keyring.json"
+            incomplete_keyring.write_text(json.dumps({"ops-v2": key_v2.name}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_NOT_IN_KEYRING"):
+                verify_backup(backup_v1, keyring_file=incomplete_keyring, require_auth=True)
+
+    def test_keyring_rejects_conflicting_key_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup, key = root / "live.sgj", root / "backup.sgj", root / "key.bin"
+            source.write_bytes(_valid_journal())
+            key.write_bytes(b"K" * 32)
+            create_backup(source, backup, key_file=key, key_id="ops-v1")
+            keyring = root / "keyring.json"
+            keyring.write_text(json.dumps({"ops-v1": key.name}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_SOURCE_CONFLICT"):
+                verify_backup(backup, key_file=key, keyring_file=keyring, require_auth=True)
+
     def test_backup_digest_tampering_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
