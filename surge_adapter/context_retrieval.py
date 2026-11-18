@@ -469,8 +469,9 @@ class ContextRetriever:
                for v in (lineage_depth, max_members, max_associations, max_hypotheses,
                          member_offset, association_offset, hypothesis_offset)):
             raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
-        if (lineage_depth > 8 or max_members > 10000 or max_associations > 10000
-                or max_hypotheses > 1000 or member_offset > 10000000
+        if (lineage_depth > 8 or not 1 <= max_members <= 10000
+                or not 1 <= max_associations <= 10000 or not 1 <= max_hypotheses <= 1000
+                or member_offset > 10000000
                 or association_offset > 10000000 or hypothesis_offset > 1000000):
             raise ValueError("CHAOS_RETRIEVAL_BUDGET_INVALID")
         if ranking_policy not in {"SOURCE_ORDER", "SCORE_THEN_ID", "DIVERSITY_THEN_SCORE"}:
@@ -635,6 +636,8 @@ class ContextRetriever:
                 filtered_members, filtered_associations, filtered_hypotheses)
 
         def page(items: list[dict[str, Any]], offset: int, limit: int, identity: str):
+            if offset > len(items):
+                raise ValueError("CHAOS_RETRIEVAL_OFFSET_OUT_OF_RANGE")
             selected = items[offset:offset + limit]
             omitted = [str(item.get(identity, "")) for item in items[offset + limit:]]
             next_offset = offset + len(selected) if offset + len(selected) < len(items) else None
@@ -720,10 +723,15 @@ class ContextRetriever:
             "omitted_association_refs": omitted_association_refs,
             "omitted_hypothesis_refs": omitted_hypothesis_refs,
             "source_omitted": source_omitted,
-            "complete": source_complete and member_page["next_offset"] is None and
-                        association_page["next_offset"] is None and
-                        hypothesis_page["next_offset"] is None and
-                        not unresolved_lineage_refs and not omitted_lineage_refs,
+            "page_complete": source_complete and member_page["next_offset"] is None and
+                             association_page["next_offset"] is None and
+                             hypothesis_page["next_offset"] is None and
+                             not unresolved_lineage_refs and not omitted_lineage_refs,
+            "complete": source_complete and member_offset == 0 and association_offset == 0
+                        and hypothesis_offset == 0 and member_page["next_offset"] is None
+                        and association_page["next_offset"] is None
+                        and hypothesis_page["next_offset"] is None
+                        and not unresolved_lineage_refs and not omitted_lineage_refs,
         }
         return result
 
