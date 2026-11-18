@@ -113,12 +113,18 @@ bool copy_durable_file(const fs::path& source, const fs::path& destination,
     return fail(error, "SNAPSHOT_STORE_BACKUP_TEMP_OPEN_FAILED");
   }
   std::array<char, kIoChunk> buffer{};
+  unsigned long long copied = 0;
   bool ok = true;
   for (;;) {
     DWORD read_count = 0;
     if (!ReadFile(input, buffer.data(), static_cast<DWORD>(buffer.size()),
                   &read_count, nullptr)) { ok = false; break; }
     if (read_count == 0) break;
+    copied += read_count;
+    if (copied > maximum_bytes ||
+        copied > static_cast<unsigned long long>(size.QuadPart)) {
+      ok = false; break;
+    }
     DWORD offset = 0;
     while (offset < read_count) {
       DWORD written = 0;
@@ -130,6 +136,7 @@ bool copy_durable_file(const fs::path& source, const fs::path& destination,
     }
     if (!ok) break;
   }
+  if (copied != static_cast<unsigned long long>(size.QuadPart)) ok = false;
   if (ok && !FlushFileBuffers(output)) ok = false;
   if (!CloseHandle(output)) ok = false;
   if (!CloseHandle(input)) ok = false;
@@ -150,12 +157,18 @@ bool copy_durable_file(const fs::path& source, const fs::path& destination,
     return fail(error, "SNAPSHOT_STORE_BACKUP_TEMP_OPEN_FAILED");
   }
   std::array<char, kIoChunk> buffer{};
+  unsigned long long copied = 0;
   bool ok = true;
   for (;;) {
     const auto count = ::read(input, buffer.data(), buffer.size());
     if (count < 0 && errno == EINTR) continue;
     if (count < 0) { ok = false; break; }
     if (count == 0) break;
+    copied += static_cast<unsigned long long>(count);
+    if (copied > maximum_bytes ||
+        copied > static_cast<unsigned long long>(info.st_size)) {
+      ok = false; break;
+    }
     ssize_t offset = 0;
     while (offset < count) {
       const auto written = ::write(output, buffer.data() + offset,
@@ -166,6 +179,7 @@ bool copy_durable_file(const fs::path& source, const fs::path& destination,
     }
     if (!ok) break;
   }
+  if (copied != static_cast<unsigned long long>(info.st_size)) ok = false;
   if (ok && ::fsync(output) != 0) ok = false;
   if (::close(output) != 0) ok = false;
   if (::close(input) != 0) ok = false;
@@ -338,6 +352,10 @@ SnapshotStoreResult SnapshotStore::load() const {
   SnapshotStoreResult primary;
   if (path_.empty()) {
     primary.error = "SNAPSHOT_STORE_PATH_REQUIRED";
+    return primary;
+  }
+  if (limits_.max_file_bytes == 0) {
+    primary.error = "SNAPSHOT_STORE_FILE_LIMIT_INVALID";
     return primary;
   }
   const auto current = native_path(path_);
