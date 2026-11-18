@@ -399,11 +399,15 @@ int main(){
       "retention-manifest-idem",0,
       {{"retention:manifest:test","RETENTION_MANIFEST_RECORDED","{}"}});
     CHECK(committed.committed&&committed.state_version==1);
+    const auto tombstone=journal.commit("retention-tombstone-tx",
+      "retention-tombstone-idem",1,
+      {{"retention:tombstone:test","RETENTION_TOMBSTONE_PROPOSED","{}"}});
+    CHECK(tombstone.committed&&tombstone.state_version==2);
   }
   {
     ContextGraph recovered(retention_path);
     CHECK(recovered.open());
-    CHECK(recovered.state_version()==1);
+    CHECK(recovered.state_version()==2);
     CHECK(recovered.nodes().empty());
   }
   std::filesystem::remove_all(root);
