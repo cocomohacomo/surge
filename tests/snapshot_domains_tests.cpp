@@ -78,9 +78,13 @@ int main() {
       {{"question/G", NodeKind::Question, "unresolved question", {}}},
       {{"aspect/G", NodeKind::QuestionAspect, "validity aspect", {"question/G"}}},
       {{"interest/G", NodeKind::Interest, "interest", {"aspect/G", "cluster/G"}}}};
+  seed.relations = {{{"supports/G", RelationKind::Supports, "evidence/G", "claim/G"}}};
   seed.focus = SetFocus{{"cluster/G", "interest/G", false}};
   seed.claim_validity_updates = {
       {"claim/G", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
+       "evidence/G", 1, "", ""}};
+  seed.evidence_validity_updates = {
+      {"evidence/G", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
        "evidence/G", 1, "", ""}};
   CHECK(graph.apply(seed).committed);
   bool reactivated = false;
@@ -155,10 +159,14 @@ int main() {
   CHECK(restored_question.candidate_ids.size() == 3);
   CHECK(graph.nodes().size() == 7);
   CHECK(graph.nodes().count("extra/G") == 1);
+  CHECK(graph.relations().size() == 1);
+  const auto duplicate_delta = graph.apply(extra);
+  CHECK(duplicate_delta.committed && duplicate_delta.duplicate);
   CHECK(graph.focus().has_value() && graph.focus()->cluster_id == "cluster/G");
   CHECK(graph.question_memory_state("question/G") == QuestionMemoryState::Active);
   CHECK(graph.question_reference_count("question/G") == 1);
   CHECK(graph.latest_claim_validity("claim/G")->validity.revision == 1);
+  CHECK(graph.latest_evidence_validity("evidence/G")->validity.revision == 1);
 
   // Differential oracle: replay the entire journal from an independent copy.
   std::filesystem::copy_file(path, copy_path,
