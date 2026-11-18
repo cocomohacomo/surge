@@ -11,11 +11,18 @@ import os
 import pathlib
 import re
 import shutil
+import sqlite3
 import tempfile
 import struct
 from datetime import datetime, timezone
 
 MAGIC = b"SURGEJ1\n"
+IO_CHUNK_BYTES = 64 * 1024
+MAX_FRAME_BYTES = 16 * 1024 * 1024
+MAX_KEY_BYTES = 4096
+MAX_KEYRING_BYTES = 64 * 1024
+MAX_PENDING_TRANSACTIONS = 256
+VALIDATION_DB_CACHE_KIB = 2048
 
 
 @contextlib.contextmanager
@@ -72,7 +79,7 @@ def writer_lock(journal: pathlib.Path):
 def sha256_file(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        for chunk in iter(lambda: stream.read(IO_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -95,7 +102,7 @@ def atomic_copy(source: pathlib.Path, destination: pathlib.Path) -> None:
     temp = pathlib.Path(temp_name)
     try:
         with os.fdopen(fd, "wb") as output, source.open("rb") as input_stream:
-            shutil.copyfileobj(input_stream, output, 1024 * 1024)
+            shutil.copyfileobj(input_stream, output, IO_CHUNK_BYTES)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temp, destination)
@@ -128,27 +135,28 @@ def atomic_write_json(destination: pathlib.Path, value: dict) -> None:
 
 
 
+def _fnv1a_mix(value: int, text: str) -> int:
+    mask = (1 << 64) - 1
+    for byte in text.encode("utf-8"):
+        value ^= byte
+        value = (value * 1099511628211) & mask
+    value ^= 0xFF
+    return (value * 1099511628211) & mask
+
+
 def _fnv1a_request_fingerprint(tx: str, version: int,
                                events: list[tuple[str, str, str]]) -> str:
-    value = 1469598103934665603
-    mask = (1 << 64) - 1
-
-    def mix(text: str) -> None:
-        nonlocal value
-        for byte in text.encode("utf-8"):
-            value ^= byte
-            value = (value * 1099511628211) & mask
-        value ^= 0xFF
-        value = (value * 1099511628211) & mask
-
-    mix(tx)
-    mix(str(version))
+    value = _fnv1a_mix(1469598103934665603, tx)
+    value = _fnv1a_mix(value, str(version))
     for event_id, kind, payload in events:
-        mix(event_id)
-        mix(kind)
-        mix(payload)
+        value = _fnv1a_mix(value, event_id)
+        value = _fnv1a_mix(value, kind)
+        value = _fnv1a_mix(value, payload)
     return f"{value:016x}"
 
+
+def _new_fingerprint(tx: str, version: int) -> int:
+    return _fnv1a_mix(_fnv1a_mix(1469598103934665603, tx), str(version))
 
 def _parse_frame_tokens(payload: str) -> list[str]:
     """Parse the small std::quoted token grammar used by EventJournal."""
@@ -190,111 +198,155 @@ def _parse_frame_tokens(payload: str) -> list[str]:
     return tokens
 
 
-def inspect_journal(path: pathlib.Path) -> dict:
-    """Validate the EventJournal frame and transaction stream without mutation.
-
-    A torn final frame or uncommitted transaction is reported as a recoverable
-    tail, matching the C++ replay truncation rule. Complete corrupt frames fail.
-    """
+def inspect_journal(path: pathlib.Path, *,
+                    max_pending_transactions: int = MAX_PENDING_TRANSACTIONS) -> dict:
+    """Validate a journal with bounded RAM and disk-backed uniqueness indexes."""
+    if (isinstance(max_pending_transactions, bool) or
+            not isinstance(max_pending_transactions, int) or
+            not 1 <= max_pending_transactions <= 4096):
+        raise ValueError("BACKUP_PENDING_TRANSACTION_LIMIT_INVALID")
     path = pathlib.Path(path)
     file_size = path.stat().st_size
     pending: dict[str, dict] = {}
-    transaction_ids: set[str] = set()
-    idempotency_keys: set[str] = set()
-    event_ids: set[str] = set()
     state_version = 0
     committed_events = 0
     committed_transactions = 0
     recoverable_start: int | None = None
+    import zlib
 
-    with path.open("rb") as stream:
-        if stream.read(len(MAGIC)) != MAGIC:
-            raise ValueError("BACKUP_JOURNAL_HEADER_INVALID")
-        while True:
-            frame_start = stream.tell()
-            length_bytes = stream.read(4)
-            if not length_bytes:
-                break
-            if len(length_bytes) != 4:
-                recoverable_start = frame_start
-                break
-            length = struct.unpack("<I", length_bytes)[0]
-            if length > 16 * 1024 * 1024:
-                raise ValueError("BACKUP_JOURNAL_FRAME_LENGTH_INVALID")
-            raw_payload = stream.read(length)
-            if len(raw_payload) != length:
-                recoverable_start = frame_start
-                break
-            crc_bytes = stream.read(4)
-            if len(crc_bytes) != 4:
-                recoverable_start = frame_start
-                break
-            expected_crc = struct.unpack("<I", crc_bytes)[0]
-            import zlib
-            if zlib.crc32(raw_payload) & 0xFFFFFFFF != expected_crc:
-                raise ValueError(f"BACKUP_JOURNAL_CHECKSUM_MISMATCH@{frame_start}")
-            try:
-                payload = raw_payload.decode("utf-8")
-            except UnicodeDecodeError as exc:
-                raise ValueError("BACKUP_JOURNAL_UTF8_INVALID") from exc
-            tokens = _parse_frame_tokens(payload)
-            if not tokens:
-                raise ValueError("BACKUP_JOURNAL_RECORD_INVALID")
-            record_type = tokens[0]
-            if record_type == "B":
-                if len(tokens) < 5:
-                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
-                tx, idem, expected_text, fingerprint = tokens[1:5]
-                try:
-                    expected = int(expected_text, 10)
-                except ValueError as exc:
-                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID") from exc
-                if not tx or not idem or not fingerprint or tx in pending:
-                    raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
-                pending[tx] = {"idem": idem, "expected": expected,
-                               "fingerprint": fingerprint, "events": [],
-                               "begin_offset": frame_start}
-            elif record_type == "E":
-                if len(tokens) < 5:
-                    raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
-                tx, event_id, kind, event_payload = tokens[1:5]
-                if tx not in pending or not event_id or not kind:
-                    raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
-                pending[tx]["events"].append((event_id, kind, event_payload))
-            elif record_type == "C":
-                if len(tokens) < 5:
-                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
-                tx, version_text, count_text, fingerprint = tokens[1:5]
-                if tx not in pending:
-                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
-                try:
-                    version, count = int(version_text, 10), int(count_text, 10)
-                except ValueError as exc:
-                    raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID") from exc
-                item = pending[tx]
-                events = item["events"]
-                if (item["expected"] != state_version or version != state_version + 1
-                        or len(events) != count or item["fingerprint"] != fingerprint
-                        or _fnv1a_request_fingerprint(tx, item["expected"], events) != fingerprint
-                        or item["idem"] in idempotency_keys or tx in transaction_ids):
-                    raise ValueError("BACKUP_JOURNAL_COMMIT_INVARIANT_FAILED")
-                for event_id, _, _ in events:
-                    if event_id in event_ids:
-                        raise ValueError("BACKUP_JOURNAL_EVENT_ID_DUPLICATE")
-                event_ids.update(event_id for event_id, _, _ in events)
-                idempotency_keys.add(item["idem"])
-                transaction_ids.add(tx)
-                committed_events += len(events)
-                committed_transactions += 1
-                state_version = version
-                del pending[tx]
-            else:
-                raise ValueError("BACKUP_JOURNAL_RECORD_TYPE_INVALID")
+    with tempfile.TemporaryDirectory(prefix="surge-journal-index-") as temp_dir:
+        db = sqlite3.connect(str(pathlib.Path(temp_dir) / "index.sqlite3"))
+        try:
+            db.execute(f"PRAGMA cache_size=-{VALIDATION_DB_CACHE_KIB}")
+            db.execute("PRAGMA temp_store=FILE")
+            db.execute("PRAGMA journal_mode=OFF")
+            db.execute("PRAGMA synchronous=OFF")
+            db.executescript("""
+                CREATE TABLE transaction_ids (value TEXT PRIMARY KEY) WITHOUT ROWID;
+                CREATE TABLE idempotency_keys (value TEXT PRIMARY KEY) WITHOUT ROWID;
+                CREATE TABLE committed_event_ids (value TEXT PRIMARY KEY) WITHOUT ROWID;
+                CREATE TABLE pending_event_ids (
+                    tx TEXT NOT NULL, value TEXT NOT NULL,
+                    PRIMARY KEY (tx, value)
+                ) WITHOUT ROWID;
+            """)
+            with path.open("rb") as stream:
+                if stream.read(len(MAGIC)) != MAGIC:
+                    raise ValueError("BACKUP_JOURNAL_HEADER_INVALID")
+                while True:
+                    frame_start = stream.tell()
+                    length_bytes = stream.read(4)
+                    if not length_bytes:
+                        break
+                    if len(length_bytes) != 4:
+                        recoverable_start = frame_start
+                        break
+                    length = struct.unpack("<I", length_bytes)[0]
+                    if length > MAX_FRAME_BYTES:
+                        raise ValueError("BACKUP_JOURNAL_FRAME_LENGTH_INVALID")
+                    raw_payload = stream.read(length)
+                    if len(raw_payload) != length:
+                        recoverable_start = frame_start
+                        break
+                    crc_bytes = stream.read(4)
+                    if len(crc_bytes) != 4:
+                        recoverable_start = frame_start
+                        break
+                    expected_crc = struct.unpack("<I", crc_bytes)[0]
+                    if zlib.crc32(raw_payload) & 0xFFFFFFFF != expected_crc:
+                        raise ValueError(f"BACKUP_JOURNAL_CHECKSUM_MISMATCH@{frame_start}")
+                    try:
+                        payload = raw_payload.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise ValueError("BACKUP_JOURNAL_UTF8_INVALID") from exc
+                    tokens = _parse_frame_tokens(payload)
+                    if not tokens:
+                        raise ValueError("BACKUP_JOURNAL_RECORD_INVALID")
+                    record_type = tokens[0]
+                    if record_type == "B":
+                        if len(tokens) < 5:
+                            raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
+                        tx, idem, expected_text, fingerprint = tokens[1:5]
+                        try:
+                            expected = int(expected_text, 10)
+                        except ValueError as exc:
+                            raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID") from exc
+                        if not tx or not idem or not fingerprint or tx in pending:
+                            raise ValueError("BACKUP_JOURNAL_BEGIN_RECORD_INVALID")
+                        if len(pending) >= max_pending_transactions:
+                            raise ValueError("BACKUP_PENDING_TRANSACTION_LIMIT")
+                        pending[tx] = {
+                            "idem": idem, "expected": expected,
+                            "fingerprint": fingerprint,
+                            "fingerprint_state": _new_fingerprint(tx, expected),
+                            "event_count": 0, "begin_offset": frame_start,
+                            "duplicate_event_id": False,
+                        }
+                    elif record_type == "E":
+                        if len(tokens) < 5:
+                            raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
+                        tx, event_id, kind, event_payload = tokens[1:5]
+                        if tx not in pending or not event_id or not kind:
+                            raise ValueError("BACKUP_JOURNAL_EVENT_RECORD_INVALID")
+                        item = pending[tx]
+                        value = item["fingerprint_state"]
+                        value = _fnv1a_mix(value, event_id)
+                        value = _fnv1a_mix(value, kind)
+                        item["fingerprint_state"] = _fnv1a_mix(value, event_payload)
+                        item["event_count"] += 1
+                        try:
+                            db.execute("INSERT INTO pending_event_ids(tx, value) VALUES (?, ?)",
+                                       (tx, event_id))
+                        except sqlite3.IntegrityError:
+                            item["duplicate_event_id"] = True
+                    elif record_type == "C":
+                        if len(tokens) < 5:
+                            raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
+                        tx, version_text, count_text, fingerprint = tokens[1:5]
+                        if tx not in pending:
+                            raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID")
+                        try:
+                            version, count = int(version_text, 10), int(count_text, 10)
+                        except ValueError as exc:
+                            raise ValueError("BACKUP_JOURNAL_COMMIT_RECORD_INVALID") from exc
+                        item = pending[tx]
+                        duplicate_committed_event = db.execute(
+                            """SELECT 1 FROM pending_event_ids p
+                               JOIN committed_event_ids c ON c.value=p.value
+                               WHERE p.tx=? LIMIT 1""", (tx,)
+                        ).fetchone()
+                        invalid = (
+                            item["expected"] != state_version or version != state_version + 1
+                            or item["event_count"] != count
+                            or item["fingerprint"] != fingerprint
+                            or f"{item['fingerprint_state']:016x}" != fingerprint
+                            or item["duplicate_event_id"]
+                        )
+                        if invalid or duplicate_committed_event:
+                            raise ValueError("BACKUP_JOURNAL_COMMIT_INVARIANT_FAILED")
+                        try:
+                            db.execute("INSERT INTO transaction_ids(value) VALUES (?)", (tx,))
+                            db.execute("INSERT INTO idempotency_keys(value) VALUES (?)", (item["idem"],))
+                        except sqlite3.IntegrityError as exc:
+                            raise ValueError("BACKUP_JOURNAL_COMMIT_INVARIANT_FAILED") from exc
+                        db.execute(
+                            """INSERT INTO committed_event_ids(value)
+                               SELECT value FROM pending_event_ids WHERE tx=?""", (tx,)
+                        )
+                        db.execute("DELETE FROM pending_event_ids WHERE tx=?", (tx,))
+                        committed_events += item["event_count"]
+                        committed_transactions += 1
+                        state_version = version
+                        del pending[tx]
+                    else:
+                        raise ValueError("BACKUP_JOURNAL_RECORD_TYPE_INVALID")
+            if pending:
+                earliest = min(item["begin_offset"] for item in pending.values())
+                recoverable_start = earliest if recoverable_start is None else min(
+                    recoverable_start, earliest)
+        finally:
+            db.close()
 
-    if pending:
-        earliest = min(item["begin_offset"] for item in pending.values())
-        recoverable_start = earliest if recoverable_start is None else min(
-            recoverable_start, earliest)
     recoverable_tail_bytes = (file_size - recoverable_start
                               if recoverable_start is not None else 0)
     return {
@@ -304,14 +356,16 @@ def inspect_journal(path: pathlib.Path) -> dict:
         "recoverable_tail_bytes": recoverable_tail_bytes,
     }
 
-
 def _load_auth_key(key_file: pathlib.Path) -> bytes:
     try:
-        key = pathlib.Path(key_file).read_bytes()
+        with pathlib.Path(key_file).open("rb") as stream:
+            key = stream.read(MAX_KEY_BYTES + 1)
     except OSError as exc:
         raise ValueError("BACKUP_AUTH_KEY_UNREADABLE") from exc
     if len(key) < 32:
         raise ValueError("BACKUP_AUTH_KEY_TOO_SHORT")
+    if len(key) > MAX_KEY_BYTES:
+        raise ValueError("BACKUP_AUTH_KEY_TOO_LARGE")
     return key
 
 
@@ -328,7 +382,11 @@ def _canonical_manifest(manifest: dict) -> bytes:
 
 def _load_keyring(keyring_file: pathlib.Path) -> dict[str, pathlib.Path]:
     try:
-        raw = json.loads(pathlib.Path(keyring_file).read_text(encoding="utf-8"))
+        with pathlib.Path(keyring_file).open("rb") as stream:
+            encoded = stream.read(MAX_KEYRING_BYTES + 1)
+        if len(encoded) > MAX_KEYRING_BYTES:
+            raise ValueError("BACKUP_KEYRING_TOO_LARGE")
+        raw = json.loads(encoded.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("BACKUP_KEYRING_INVALID") from exc
     if not isinstance(raw, dict) or not raw:

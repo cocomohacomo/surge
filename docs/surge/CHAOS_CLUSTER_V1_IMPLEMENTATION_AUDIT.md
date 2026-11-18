@@ -306,3 +306,21 @@ overlap period where older backups remain verifiable while new backups use a
 rotated key. Missing key IDs and conflicting direct-key/keyring inputs fail
 closed. The keyring contains paths, not secret bytes; key storage and keyring
 access control remain operator responsibilities.
+
+
+## Edge-PC journal validation memory guardrail
+
+The backup/restore validator has been changed from journal-sized in-memory
+uniqueness sets and retained event lists to incremental fingerprinting plus a
+temporary disk-backed SQLite uniqueness index. The SQLite page cache is fixed
+at 2 MiB; frame parsing remains bounded by the 16 MiB EventJournal frame
+ceiling; file copy/hash I/O uses 64 KiB chunks; pending transaction metadata is
+capped at 256 by default. Key and keyring reads have explicit size ceilings.
+This removes memory growth proportional to the total number of historical
+journal IDs from the Python backup validator.
+
+This is not a claim that all EventJournal/Core replay paths are memory-bounded.
+The native EventJournal currently retains replayed events and uniqueness maps
+in memory, and must be treated as a separate P0 memory workstream before large
+journals are opened on constrained edge PCs. No fixed peak RSS or target-device
+performance claim is made by the validator change.
