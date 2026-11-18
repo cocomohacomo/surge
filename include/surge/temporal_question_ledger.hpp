@@ -13,6 +13,8 @@ struct TemporalQuestionResult {
  bool committed{false},duplicate{false}; std::uint64_t state_version{0};
  std::string status,error; TemporalQuestion question;
 };
+class TemporalQuestionSnapshotDomain;
+class PreparedTemporalQuestionSnapshotRestore;
 class TemporalQuestionLedger {
  public:
  explicit TemporalQuestionLedger(EventJournal&,std::size_t max_questions=16384);
@@ -23,6 +25,8 @@ class TemporalQuestionLedger {
  std::vector<TemporalQuestion> for_claim(const std::string&) const;
  std::size_t size() const; std::string last_error() const;
  private:
+ friend class TemporalQuestionSnapshotDomain;
+ friend class PreparedTemporalQuestionSnapshotRestore;
  bool apply_event(const JournalEvent&);
  EventJournal& journal_; const std::size_t max_questions_;
  std::map<std::string,TemporalQuestion> questions_; std::string last_error_;
