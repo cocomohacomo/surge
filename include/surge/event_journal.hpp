@@ -22,7 +22,7 @@ struct JournalCommitResult {
 };
 
 // Append-only, commit-marker journal. A transaction becomes visible only after
-// its COMMIT frame has been written and flushed. CRC32 detects accidental frame
+// its COMMIT frame has been written and synchronized to stable storage. CRC32 detects accidental frame
 // corruption; it is not a cryptographic authenticity mechanism.
 class EventJournal {
  public:
