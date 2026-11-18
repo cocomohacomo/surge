@@ -1,6 +1,7 @@
 #include "surge/event_journal.hpp"
 #include "surge/snapshot.hpp"
 #include "surge/sha256.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <filesystem>
