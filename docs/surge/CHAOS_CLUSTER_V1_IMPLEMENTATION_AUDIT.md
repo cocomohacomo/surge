@@ -248,3 +248,19 @@ replay time, journal size, and event count using real platform durability
 barriers. CI runs a small smoke workload only; it is not a performance gate.
 This does not measure recognition-model inference, RTF, peak RSS, or the
 30MB model target. Those require a separate adapter and target-device run.
+
+
+## Backup/restore replay validation
+
+The Python backup utility now performs a non-mutating EventJournal v1 replay
+before copying or restoring. It validates frame length/CRC, UTF-8 payloads,
+record grammar, BEGIN/EVENT/COMMIT ordering, State Version progression,
+request fingerprints, idempotency keys, and globally unique event IDs. It
+rejects complete corrupt frames and recoverable torn/uncommitted tails rather
+than silently creating a backup that requires truncation. The backup manifest
+records replay State Version and committed transaction/event counts, which are
+recomputed during verification. Restore validates before acquiring the target
+writer lock and before atomic replacement, so a failed validation leaves an
+existing destination untouched. Native C++ replay after restore remains a
+required deployment drill; the Python validator mirrors the v1 journal format
+and is not a cryptographic authenticity layer.
