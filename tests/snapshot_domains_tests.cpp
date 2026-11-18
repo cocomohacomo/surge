@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <iostream>
 
-#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\\n"; std::exit(1); } } while (0)
+#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\n"; std::exit(1); } } while (0)
 
 namespace {
 void register_all(surge::SnapshotCoordinator& coordinator,
@@ -214,6 +214,6 @@ int main() {
 
   std::filesystem::remove(path, ec);
   std::filesystem::remove(copy_path, ec);
-  std::cout << "SURGE snapshot plus journal-tail differential tests passed\\n";
+  std::cout << "SURGE snapshot plus journal-tail differential tests passed\n";
   return 0;
 }
