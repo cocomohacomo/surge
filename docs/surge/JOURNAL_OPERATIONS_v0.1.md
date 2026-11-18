@@ -60,11 +60,12 @@ are optional cache/export copies and can be rebuilt from journal events.
 
 The backup CLI and Python API support optional HMAC-SHA256 manifest
 authentication using a caller-supplied key file and non-secret key ID. The key
-is never stored in the repository or backup. Production verification and
-restore should use `--require-auth` with the approved key. Legacy unsigned
-backups remain available only for compatibility unless authentication is
-required. HMAC does not encrypt data; see
-`JOURNAL_BACKUP_AUTH_v0.1.md` for key handling, rotation, and limitations.
+is never stored in the repository or backup. Verification and restore can use
+an external keyring mapping multiple key IDs to key files, supporting overlap
+during key rotation. Production verification and restore should use
+`--require-auth`. Legacy unsigned backups remain available only for
+compatibility unless authentication is required. HMAC does not encrypt data;
+see `JOURNAL_BACKUP_AUTH_v0.1.md` for key handling, rotation, and limitations.
 
 ## Migration policy
 
