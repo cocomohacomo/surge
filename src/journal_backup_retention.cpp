@@ -65,7 +65,7 @@ bool prune_verified_journal_backup(const std::string& journal_path,
   // Require a separately readable backup generation. A valid primary alone
   // is insufficient because pruning must preserve recovery after primary loss.
   SnapshotStore backup_store(snapshot_store.backup_path(),
-      SnapshotStoreLimits{64U * 1024U * 1024U, false});
+      SnapshotStoreLimits{snapshot_store.max_file_bytes(), false});
   const auto backup_snapshot = backup_store.load();
   if (!matches_checkpoint(backup_snapshot, checkpoint))
     return fail(error, "JOURNAL_BACKUP_PRUNE_BACKUP_SNAPSHOT_MISMATCH");
