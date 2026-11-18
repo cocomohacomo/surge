@@ -159,8 +159,9 @@ typedef struct SurgeJournalEventInput {
   const char* payload;
 } SurgeJournalEventInput;
 
-// Append retention metadata only. This API deliberately rejects arbitrary
-// domain event kinds and never performs physical payload deletion.
+// Append one retention metadata event per transaction. The single-event
+// contract preserves one State Version increment per event for all reducers.
+// Arbitrary domain event kinds and physical payload deletion are forbidden.
 int surge_retention_journal_commit(void* handle, const char* transaction_id,
     const char* idempotency_key, uint64_t expected_state_version,
     const SurgeJournalEventInput* events, size_t event_count,
