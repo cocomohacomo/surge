@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import ctypes
 import hashlib
+import hmac
 import json
 import os
 import pathlib
@@ -304,7 +305,40 @@ def inspect_journal(path: pathlib.Path) -> dict:
     }
 
 
-def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
+def _load_auth_key(key_file: pathlib.Path) -> bytes:
+    try:
+        key = pathlib.Path(key_file).read_bytes()
+    except OSError as exc:
+        raise ValueError("BACKUP_AUTH_KEY_UNREADABLE") from exc
+    if len(key) < 32:
+        raise ValueError("BACKUP_AUTH_KEY_TOO_SHORT")
+    return key
+
+
+def _canonical_manifest(manifest: dict) -> bytes:
+    body = dict(manifest)
+    auth = body.get("auth")
+    if isinstance(auth, dict):
+        auth = dict(auth)
+        auth.pop("hmac_sha256", None)
+        body["auth"] = auth
+    return json.dumps(body, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _validate_auth_options(key_file, key_id):
+    if (key_file is None) != (key_id is None):
+        raise ValueError("BACKUP_AUTH_KEY_AND_ID_REQUIRED_TOGETHER")
+    if key_file is None:
+        return None
+    if not isinstance(key_id, str) or not key_id.strip():
+        raise ValueError("BACKUP_AUTH_KEY_ID_INVALID")
+    return _load_auth_key(key_file)
+
+
+def create_backup(journal: pathlib.Path, backup: pathlib.Path, *,
+                  key_file: pathlib.Path | None = None, key_id: str | None = None) -> pathlib.Path:
+    auth_key = _validate_auth_options(key_file, key_id)
     journal, backup = journal.resolve(), backup.resolve()
     if journal == backup:
         raise ValueError("BACKUP_PATH_EQUALS_SOURCE")
@@ -326,11 +360,22 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "consistency": "writer-lock-held-during-copy",
         }
+        if auth_key is not None:
+            manifest["auth"] = {
+                "algorithm": "HMAC-SHA256",
+                "key_id": key_id,
+            }
+            manifest["auth"]["hmac_sha256"] = hmac.new(
+                auth_key, _canonical_manifest(manifest), hashlib.sha256
+            ).hexdigest()
         atomic_write_json(pathlib.Path(str(backup) + ".manifest.json"), manifest)
     return pathlib.Path(str(backup) + ".manifest.json")
 
 
-def verify_backup(backup: pathlib.Path) -> dict:
+def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
+                  key_id: str | None = None, require_auth: bool = False) -> dict:
+    if key_id is not None and (not isinstance(key_id, str) or not key_id.strip()):
+        raise ValueError("BACKUP_AUTH_KEY_ID_INVALID")
     backup = backup.resolve()
     manifest_path = pathlib.Path(str(backup) + ".manifest.json")
     if not backup.is_file() or not manifest_path.is_file():
@@ -368,13 +413,37 @@ def verify_backup(backup: pathlib.Path) -> dict:
         raise ValueError("BACKUP_JOURNAL_HAS_RECOVERABLE_TAIL")
     if manifest.get("replay") != replay:
         raise ValueError("BACKUP_REPLAY_METADATA_MISMATCH")
+
+    auth = manifest.get("auth")
+    if auth is None:
+        if require_auth or key_file is not None or key_id is not None:
+            raise ValueError("BACKUP_AUTH_SIGNATURE_REQUIRED")
+    else:
+        if (not isinstance(auth, dict) or set(auth) != {"algorithm", "key_id", "hmac_sha256"} or
+            auth.get("algorithm") != "HMAC-SHA256" or
+            not isinstance(auth.get("key_id"), str) or not auth["key_id"].strip() or
+            not isinstance(auth.get("hmac_sha256"), str) or
+            not re.fullmatch(r"[0-9a-f]{64}", auth["hmac_sha256"])):
+            raise ValueError("BACKUP_AUTH_METADATA_INVALID")
+        if key_file is None:
+            raise ValueError("BACKUP_AUTH_KEY_REQUIRED")
+        if key_id is not None and key_id != auth["key_id"]:
+            raise ValueError("BACKUP_AUTH_KEY_ID_MISMATCH")
+        auth_key = _load_auth_key(key_file)
+        expected = hmac.new(auth_key, _canonical_manifest(manifest),
+                            hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, auth["hmac_sha256"]):
+            raise ValueError("BACKUP_AUTH_SIGNATURE_MISMATCH")
     return manifest
 
 
 def restore_backup(backup: pathlib.Path, destination: pathlib.Path,
-                   replace_existing: bool = False) -> None:
+                   replace_existing: bool = False, *,
+                   key_file: pathlib.Path | None = None,
+                   key_id: str | None = None,
+                   require_auth: bool = False) -> None:
     backup, destination = backup.resolve(), destination.resolve()
-    verify_backup(backup)
+    verify_backup(backup, key_file=key_file, key_id=key_id, require_auth=require_auth)
     if backup == destination:
         raise ValueError("RESTORE_PATH_EQUALS_BACKUP")
     with writer_lock(destination):
@@ -389,19 +458,32 @@ def main() -> None:
     backup = sub.add_parser("backup")
     backup.add_argument("journal", type=pathlib.Path)
     backup.add_argument("destination", type=pathlib.Path)
+    backup.add_argument("--key-file", type=pathlib.Path)
+    backup.add_argument("--key-id")
     verify = sub.add_parser("verify")
     verify.add_argument("backup", type=pathlib.Path)
+    verify.add_argument("--key-file", type=pathlib.Path)
+    verify.add_argument("--key-id")
+    verify.add_argument("--require-auth", action="store_true")
     restore = sub.add_parser("restore")
     restore.add_argument("backup", type=pathlib.Path)
     restore.add_argument("destination", type=pathlib.Path)
     restore.add_argument("--replace", action="store_true")
+    restore.add_argument("--key-file", type=pathlib.Path)
+    restore.add_argument("--key-id")
+    restore.add_argument("--require-auth", action="store_true")
     args = parser.parse_args()
     if args.command == "backup":
-        print(create_backup(args.journal, args.destination))
+        print(create_backup(args.journal, args.destination,
+                             key_file=args.key_file, key_id=args.key_id))
     elif args.command == "verify":
-        print(json.dumps(verify_backup(args.backup), ensure_ascii=False, indent=2))
+        print(json.dumps(verify_backup(args.backup, key_file=args.key_file,
+                                       key_id=args.key_id, require_auth=args.require_auth),
+                         ensure_ascii=False, indent=2))
     else:
-        restore_backup(args.backup, args.destination, args.replace)
+        restore_backup(args.backup, args.destination, args.replace,
+                       key_file=args.key_file, key_id=args.key_id,
+                       require_auth=args.require_auth)
         print("RESTORE_WRITTEN; reopen with EventJournal to validate replay")
 
 
