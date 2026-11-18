@@ -45,6 +45,8 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
       - name: Snapshot store atomic replacement and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
+      - name: Copy-on-write journal compaction and recovery tests
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_compaction_conformance
       - name: Python journal backup and lock parity tests
         run: python -m unittest discover -s tests -p test_journal_backup.py -v
 
