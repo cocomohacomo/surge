@@ -18,6 +18,7 @@ int main() {
   std::string encoded, error;
   CHECK(SnapshotCodec::encode(source, {}, &encoded, &error));
   CHECK(error.empty());
+  const std::string valid_encoded = encoded;
   SnapshotDocument restored;
   CHECK(SnapshotCodec::decode(encoded, {}, &restored, &error));
   CHECK(restored.schema_id == source.schema_id);
@@ -38,7 +39,7 @@ int main() {
 
   SnapshotDocument unchanged;
   unchanged.context_id = "sentinel";
-  CHECK(!SnapshotCodec::decode(encoded + "trailing", {}, &unchanged, &error));
+  CHECK(!SnapshotCodec::decode(valid_encoded + "trailing", {}, &unchanged, &error));
   CHECK(unchanged.context_id == "sentinel");
   std::cout << "SURGE snapshot codec tests passed\n";
   return 0;
