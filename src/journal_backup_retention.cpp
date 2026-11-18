@@ -47,6 +47,14 @@ bool matches_checkpoint(const SnapshotStoreResult& snapshot,
   return snapshot.document.state_version != checkpoint.base_state_version ||
          sha256_hex(snapshot.bytes) == checkpoint.snapshot_digest;
 }
+bool is_exact_checkpoint(const SnapshotStoreResult& snapshot,
+                         const JournalCheckpointInfo& checkpoint) {
+  return snapshot.ok &&
+      snapshot.document.context_id == checkpoint.context_id &&
+      snapshot.document.state_version == checkpoint.base_state_version &&
+      snapshot.document.journal_sequence == checkpoint.base_state_version &&
+      sha256_hex(snapshot.bytes) == checkpoint.snapshot_digest;
+}
 }  // namespace
 
 bool prune_verified_journal_backup(const std::string& journal_path,
@@ -73,6 +81,9 @@ bool prune_verified_journal_backup(const std::string& journal_path,
   const auto backup_snapshot = backup_store.load();
   if (!matches_checkpoint(backup_snapshot, checkpoint))
     return fail(error, "JOURNAL_BACKUP_PRUNE_BACKUP_SNAPSHOT_MISMATCH");
+  if (!is_exact_checkpoint(current_snapshot, checkpoint) &&
+      !is_exact_checkpoint(backup_snapshot, checkpoint))
+    return fail(error, "JOURNAL_BACKUP_PRUNE_EXACT_CHECKPOINT_COPY_REQUIRED");
 
   const auto backup_path = fs::u8path(journal_path + ".bak");
   std::error_code ec;
