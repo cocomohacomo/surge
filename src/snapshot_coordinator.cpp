@@ -168,6 +168,8 @@ bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
   // watermark for both fields. Refuse ambiguous checkpoint coordinates.
   if (document.state_version != document.journal_sequence)
     return fail(error, "SNAPSHOT_JOURNAL_WATERMARK_MISMATCH");
+  if (domains_.empty())
+    return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
 
   const auto tail = journal.committed_tail(document.journal_sequence, tail_limits);
   if (!tail.ok)
