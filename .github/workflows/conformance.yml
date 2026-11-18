@@ -62,3 +62,47 @@ jobs:
         run: python tools/validate_fixtures.py
       - name: Python adapter regression tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+  asan-ubsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+      - name: Configure sanitizer build
+        run: >-
+          cmake -S . -B build-asan
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=Debug
+          -DSURGE_ENABLE_SANITIZERS=ON
+      - name: Build
+        run: cmake --build build-asan --parallel 2
+      - name: Run C++ conformance under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-asan --output-on-failure
+
+  libfuzzer-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+      - name: Configure fuzz target
+        run: >-
+          cmake -S . -B build-fuzz
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DSURGE_BUILD_FUZZERS=ON
+      - name: Build EventJournal fuzz target
+        run: cmake --build build-fuzz --target surge_journal_fuzz --parallel 2
+      - name: Run bounded fuzz smoke test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./build-fuzz/surge_journal_fuzz -max_total_time=20 -max_len=65536
