@@ -444,10 +444,12 @@ JournalTailResult EventJournal::committed_tail(
   }
 
   std::uint64_t expected_version = after_state_version + 1;
+  bool saw_first_transaction = false;
   for (const auto& event : events_) {
     if (event.state_version <= after_state_version) continue;
-    if (event.state_version < expected_version ||
-        (event.state_version > expected_version &&
+    if ((!saw_first_transaction && event.state_version != expected_version) ||
+        (saw_first_transaction && event.state_version < expected_version) ||
+        (saw_first_transaction && event.state_version > expected_version &&
          (expected_version == std::numeric_limits<std::uint64_t>::max() ||
           event.state_version != expected_version + 1))) {
       result.events.clear();
@@ -455,7 +457,9 @@ JournalTailResult EventJournal::committed_tail(
       result.error = "JOURNAL_TAIL_VERSION_GAP";
       return result;
     }
-    if (event.state_version > expected_version) ++expected_version;
+    if (saw_first_transaction && event.state_version > expected_version)
+      ++expected_version;
+    saw_first_transaction = true;
     if (result.events.size() >= limits.max_events) {
       result.events.clear();
       result.total_bytes = 0;
