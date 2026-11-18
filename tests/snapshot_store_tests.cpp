@@ -103,7 +103,7 @@ int main() {
 
   // Backup recovery is read-only: it does not silently rewrite the primary.
   CHECK(std::filesystem::file_size(path) ==
-        std::string("corrupt-current-generation").size());
+        std::string("corrupt-again").size());
 
   remove_generation(path);
   remove_generation(limited_path);
