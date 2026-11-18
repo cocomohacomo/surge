@@ -37,10 +37,10 @@ COMMIT-marker sync failure without claiming to simulate physical power loss.
 
 `tools/journal_backup.py` supports:
 - `backup JOURNAL DESTINATION`: acquire the same writer lock, copy to a temporary file, fsync, atomically rename, and write a SHA-256/size manifest;
-- `verify BACKUP`: verify the manifest, format header, byte count and digest;
-- `restore BACKUP DESTINATION [--replace]`: verify first, acquire the destination writer lock, and atomically restore. Existing destinations are never overwritten without explicit `--replace`.
+- `verify BACKUP`: verify the manifest, format header, byte count, SHA-256 digest, every frame CRC, transaction ordering, State Version progression, idempotency uniqueness, event-ID uniqueness, and request fingerprints;
+- `restore BACKUP DESTINATION [--replace]`: perform the same non-mutating replay validation first, acquire the destination writer lock, and atomically restore. Existing destinations are never overwritten without explicit `--replace`.
 
-After restore, reopen the file with EventJournal and run full replay/conformance before serving traffic. A matching digest proves byte identity, not semantic validity.
+Backup creation and verification reject a torn or uncommitted recoverable tail rather than silently normalizing it. A complete frame with a bad checksum or invalid transaction sequence fails closed. The manifest records replay State Version, committed transaction count, and committed event count; these are compared against a fresh replay during verification. The validator mirrors the EventJournal v1 framing and transaction invariants in Python. After restore, reopen the file with the native C++ EventJournal and run full conformance before serving traffic. SHA-256 proves byte identity against the manifest, not authenticity if an attacker can replace both the backup and its manifest.
 
 ## Retention metadata transactions
 
