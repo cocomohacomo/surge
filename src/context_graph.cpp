@@ -846,6 +846,13 @@ bool ContextGraphSnapshotDomain::capture(std::string* payload,
 std::unique_ptr<PreparedSnapshotRestore>
 ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
                                              std::string* error) {
+  return prepare_restore_with_tail(payload, {}, error);
+}
+
+std::unique_ptr<PreparedSnapshotRestore>
+ContextGraphSnapshotDomain::prepare_restore_with_tail(
+    const std::string& payload, const std::vector<JournalEvent>& tail,
+    std::string* error) {
   std::istringstream in(payload);
   std::string magic, extra;
   std::size_t count = 0;
@@ -1042,6 +1049,86 @@ ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
       return fail_restore("SNAPSHOT_CONTEXT_GRAPH_IDEMPOTENCY_INVALID");
   }
   if (in >> extra) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TRAILING_DATA");
+
+  bool have_meta = false;
+  std::uint64_t transaction_version = 0;
+  auto close_meta = [&]() { have_meta = false; };
+  for (const auto& event : tail) {
+    if (event.state_version == 0) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_WATERMARK_INVALID");
+    if (transaction_version != 0 && event.state_version < transaction_version)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_ORDER_INVALID");
+    if (transaction_version != 0 && event.state_version > transaction_version && have_meta)
+      close_meta();
+    transaction_version = event.state_version;
+
+    if (event.kind == "DELTA_META") {
+      if (have_meta) close_meta();
+      std::istringstream meta(event.payload);
+      std::string delta_id, key, fingerprint, trailing;
+      std::uint64_t expected = 0;
+      if (!(meta >> std::quoted(delta_id) >> std::quoted(key) >> expected >>
+            std::quoted(fingerprint)) || (meta >> trailing) ||
+          delta_id.empty() || key.empty() || fingerprint.empty() ||
+          event.state_version == 0 || expected + 1 != event.state_version ||
+          !idempotency.emplace(key, fingerprint).second)
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_DELTA_META_INVALID");
+      have_meta = true;
+      continue;
+    }
+
+    const bool question_memory =
+        event.kind == "QUESTION_MEMORY_REFERENCED" ||
+        event.kind == "QUESTION_MEMORY_REFERENCE_CASCADE" ||
+        event.kind == "QUESTION_MEMORY_STATE_SET" ||
+        event.kind == "QUESTION_ASPECT_STATUS_SET" ||
+        event.kind == "QUESTION_ASPECT_STATUS_BATCH_SET";
+    if (question_memory) {
+      if (have_meta) close_meta();
+      if (!graph_.replay_event(candidate, event, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_QUESTION_EVENT_INVALID");
+      continue;
+    }
+    if (event.kind == "TEMPORAL_REASSESSMENT_V1") {
+      if (have_meta) close_meta();
+      TemporalReassessmentRecord record;
+      if (!decode_reassessment(event.payload, record) ||
+          record.evaluated_state_version + 1 != event.state_version ||
+          record.recorded_state_version != event.state_version ||
+          !graph_.replay_event(candidate, event, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_REASSESSMENT_INVALID");
+      continue;
+    }
+
+    const bool graph_delta_event =
+        event.kind == "NODE_ADD" || event.kind == "RELATION_ADD" ||
+        event.kind == "SCOPE_SPAN_ADD" || event.kind == "FOCUS_SET" ||
+        event.kind == "CLAIM_VALIDITY_SET" ||
+        event.kind == "EVIDENCE_VALIDITY_SET" ||
+        event.kind == "DEPENDENCY_EVALUATION";
+    if (!graph_delta_event) {
+      // Events owned by other SURGE domains still advance the shared journal
+      // watermark but do not mutate ContextGraph.
+      if (have_meta && event.state_version != transaction_version)
+        close_meta();
+      continue;
+    }
+    if (!have_meta)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_DELTA_META_MISSING");
+    if (event.kind == "CLAIM_VALIDITY_SET") {
+      ClaimValidityRecord record;
+      if (!decode_claim_validity(event.payload, record) ||
+          record.recorded_state_version != event.state_version)
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_CLAIM_VALIDITY_VERSION_INVALID");
+    }
+    if (event.kind == "EVIDENCE_VALIDITY_SET") {
+      EvidenceValidityRecord record;
+      if (!decode_evidence_validity(event.payload, record) ||
+          record.recorded_state_version != event.state_version)
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_EVIDENCE_VALIDITY_VERSION_INVALID");
+    }
+    if (!graph_.replay_event(candidate, event, detail))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TAIL_DELTA_EVENT_INVALID");
+  }
   if (error) error->clear();
   return std::make_unique<PreparedContextGraphSnapshotRestore>(
       &graph_, std::move(candidate), std::move(idempotency));
