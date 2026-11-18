@@ -189,6 +189,93 @@ def create_payload_tombstone(
     return {**body, "event_sha256": _digest(body)}
 
 
+
+def _verify_tombstone_event(event: dict[str, Any]) -> bool:
+    if not isinstance(event, dict) or event.get("event_type") != "PAYLOAD_TOMBSTONE_PROPOSED":
+        raise ValueError("RETENTION_TOMBSTONE_EVENT_INVALID")
+    body = {key: value for key, value in event.items() if key != "event_sha256"}
+    if event.get("event_sha256") != _digest(body):
+        raise ValueError("RETENTION_TOMBSTONE_DIGEST_MISMATCH")
+    if event.get("physical_deletion_performed") is not False:
+        raise ValueError("RETENTION_TOMBSTONE_MUST_NOT_CLAIM_DELETION")
+    for key in ("record_id", "manifest_sha256", "reason", "actor", "policy_version"):
+        if not isinstance(event.get(key), str) or not event[key].strip():
+            raise ValueError("RETENTION_TOMBSTONE_FIELD_INVALID")
+    _utc(event.get("created_at"), "created_at")
+    return True
+
+
+def persist_retention_manifest(core: Any, manifest: dict[str, Any], *,
+                               transaction_id: str, idempotency_key: str,
+                               expected_state_version: int) -> dict[str, Any]:
+    """Persist a verified manifest as an append-only EventJournal event."""
+    verify_retention_manifest(manifest)
+    payload = _canonical(manifest).decode("utf-8")
+    return core.commit_retention_events(
+        transaction_id, idempotency_key, expected_state_version,
+        [{"event_id": "retention:manifest:" + manifest["manifest_sha256"],
+          "kind": "RETENTION_MANIFEST_RECORDED", "payload": payload}])
+
+
+def persist_payload_tombstone(core: Any, event: dict[str, Any], *,
+                              transaction_id: str, idempotency_key: str,
+                              expected_state_version: int) -> dict[str, Any]:
+    """Persist a tombstone proposal; this never deletes payload bytes."""
+    _verify_tombstone_event(event)
+    payload = _canonical(event).decode("utf-8")
+    return core.commit_retention_events(
+        transaction_id, idempotency_key, expected_state_version,
+        [{"event_id": "retention:tombstone:" + event["event_sha256"],
+          "kind": "RETENTION_TOMBSTONE_PROPOSED", "payload": payload}])
+
+
+def replay_retention_projection(events: Iterable[dict[str, str]]) -> dict[str, Any]:
+    """Rebuild verified retention metadata from journal events, fail-closed."""
+    manifests: dict[str, dict[str, Any]] = {}
+    tombstones: dict[str, dict[str, Any]] = {}
+    seen_event_ids: set[str] = set()
+    for row in events:
+        if not isinstance(row, dict) or set(row) != {"event_id", "kind", "payload"}:
+            raise ValueError("RETENTION_JOURNAL_EVENT_INVALID")
+        event_id, kind, payload = row["event_id"], row["kind"], row["payload"]
+        if not all(isinstance(x, str) and x for x in (event_id, kind, payload)):
+            raise ValueError("RETENTION_JOURNAL_EVENT_INVALID")
+        if event_id in seen_event_ids:
+            raise ValueError("RETENTION_JOURNAL_DUPLICATE_EVENT_ID")
+        seen_event_ids.add(event_id)
+        try:
+            value = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ValueError("RETENTION_JOURNAL_PAYLOAD_INVALID") from exc
+        if kind == "RETENTION_MANIFEST_RECORDED":
+            verify_retention_manifest(value)
+            digest = value["manifest_sha256"]
+            if event_id != "retention:manifest:" + digest:
+                raise ValueError("RETENTION_MANIFEST_EVENT_ID_MISMATCH")
+            manifests[digest] = value
+        elif kind == "RETENTION_TOMBSTONE_PROPOSED":
+            _verify_tombstone_event(value)
+            if event_id != "retention:tombstone:" + value["event_sha256"]:
+                raise ValueError("RETENTION_TOMBSTONE_EVENT_ID_MISMATCH")
+            tombstones[value["event_sha256"]] = value
+        else:
+            raise ValueError("RETENTION_JOURNAL_EVENT_KIND_INVALID")
+
+    for tombstone in tombstones.values():
+        manifest = manifests.get(tombstone["manifest_sha256"])
+        if manifest is None:
+            raise ValueError("RETENTION_TOMBSTONE_MANIFEST_MISSING")
+        item = next((record for record in manifest["records"]
+                     if record["record_id"] == tombstone["record_id"]), None)
+        if item is None or item["state"] != "ARCHIVED":
+            raise ValueError("RETENTION_TOMBSTONE_TARGET_NOT_ARCHIVED")
+        if item.get("source_digest") != tombstone.get("source_digest"):
+            raise ValueError("RETENTION_TOMBSTONE_SOURCE_DIGEST_MISMATCH")
+    latest = next(reversed(list(manifests.values())), None)
+    return {"manifests": manifests, "tombstones": tombstones,
+            "latest_manifest": latest,
+            "physical_deletion_performed": False}
+
 def write_retention_manifest(path: pathlib.Path, manifest: dict[str, Any]) -> None:
     verify_retention_manifest(manifest)
     path = pathlib.Path(path)
