@@ -91,6 +91,19 @@ class RetentionManifestTests(unittest.TestCase):
                                      weights={key: 0.1 for key in
                                               ("salience", "utility", "interest", "dependency", "recency")})
 
+    def test_recomputed_digest_does_not_hide_inconsistent_ranking(self):
+        manifest = build_retention_manifest(
+            self.records(), capacity=2, policy_version="p1", now=NOW)
+        manifest["ranking"] = list(reversed(manifest["ranking"]))
+        body = {key: value for key, value in manifest.items()
+                if key != "manifest_sha256"}
+        canonical = json.dumps(body, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False).encode("utf-8")
+        import hashlib
+        manifest["manifest_sha256"] = hashlib.sha256(canonical).hexdigest()
+        with self.assertRaisesRegex(ValueError, "RANKING_INVALID"):
+            verify_retention_manifest(manifest)
+
     def test_invalid_score_and_naive_time_fail_closed(self):
         bad = [{"record_id": "x", "last_accessed_at": NOW, "salience": float("nan")}]
         with self.assertRaisesRegex(ValueError, "OUT_OF_RANGE"):
