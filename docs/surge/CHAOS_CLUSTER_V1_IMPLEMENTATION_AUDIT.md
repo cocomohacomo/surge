@@ -264,3 +264,12 @@ writer lock and before atomic replacement, so a failed validation leaves an
 existing destination untouched. Native C++ replay after restore remains a
 required deployment drill; the Python validator mirrors the v1 journal format
 and is not a cryptographic authenticity layer.
+
+
+## Native restore replay drill
+
+Added the `surge_journal_verify` C++ utility, which opens a restored journal
+through the production EventJournal implementation and reports replayed State
+Version and committed event count. The Python backup/restore regression invokes
+this native verifier on the restored copy in CI whenever the CMake target is
+available, complementing the independent Python preflight validator.
