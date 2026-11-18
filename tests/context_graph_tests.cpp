@@ -403,11 +403,15 @@ int main(){
       "retention-tombstone-idem",1,
       {{"retention:tombstone:test","RETENTION_TOMBSTONE_PROPOSED","{}"}});
     CHECK(tombstone.committed&&tombstone.state_version==2);
+    const auto provenance=journal.commit("evidence-provenance-tx",
+      "evidence-provenance-idem",2,
+      {{"evidence-provenance:test:1","EVIDENCE_PROVENANCE_SET_V1","{}"}});
+    CHECK(provenance.committed&&provenance.state_version==3);
   }
   {
     ContextGraph recovered(retention_path);
     CHECK(recovered.open());
-    CHECK(recovered.state_version()==2);
+    CHECK(recovered.state_version()==3);
     CHECK(recovered.nodes().empty());
   }
   std::filesystem::remove_all(root);
