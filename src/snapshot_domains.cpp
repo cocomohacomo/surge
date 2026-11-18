@@ -1,4 +1,5 @@
 #include "surge/snapshot_domains.hpp"
+#include <exception>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
