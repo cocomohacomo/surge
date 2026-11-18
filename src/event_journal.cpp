@@ -23,6 +23,7 @@
 namespace surge {
 namespace {
 constexpr char kMagic[] = "SURGEJ1\n";
+constexpr char kMagicV2[] = "SURGEJ2\n";
 constexpr std::uint32_t kMaxFrame = 16U * 1024U * 1024U;
 
 bool sync_file_to_stable_storage(const std::string& path) {
