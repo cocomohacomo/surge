@@ -17,7 +17,10 @@ The operation requires:
    exact base watermark its envelope SHA-256 must match the journal manifest.
 3. The snapshot backup is independently readable and satisfies the same
    checkpoint conditions. A valid primary alone is not sufficient.
-4. The retained journal backup is a regular file, opens as a non-compacted
+4. At least one of the two snapshot generations must be the exact compacted
+   base envelope, verified by SHA-256. Two later snapshots without the exact
+   base copy are not sufficient evidence for pruning.
+5. The retained journal backup is a regular file, opens as a non-compacted
    journal, and ends exactly at the compacted base watermark.
 
 Only then is `journal.bak` removed and its parent directory synchronized.
