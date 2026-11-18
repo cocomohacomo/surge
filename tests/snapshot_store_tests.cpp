@@ -47,6 +47,7 @@ int main() {
   const auto generation_one = encode("ctx", 1, "state-one");
   const auto generation_two = encode("ctx", 2, "state-two");
   const auto generation_three = encode("ctx", 3, "state-three");
+  const auto generation_four = encode("ctx", 4, "state-four");
   std::string error;
 
   SnapshotStore store(path.u8string());
@@ -95,6 +96,12 @@ int main() {
   loaded = store.load();
   CHECK(loaded.ok && loaded.used_backup && loaded.bytes == generation_one);
 
+  CHECK(store.save(generation_four, &error));
+  CHECK(store.mirror_current_to_backup(&error));
+  write_text(path, "corrupt-mirrored-current");
+  loaded = store.load();
+  CHECK(loaded.ok && loaded.used_backup && loaded.bytes == generation_four);
+
   SnapshotStoreLimits small_limits;
   small_limits.max_file_bytes = generation_one.size() - 1;
   SnapshotStore limited(limited_path.u8string(), small_limits);
@@ -111,7 +118,7 @@ int main() {
 
   // Backup recovery is read-only: it does not silently rewrite the primary.
   CHECK(std::filesystem::file_size(path) ==
-        std::string("corrupt-again").size());
+        std::string("corrupt-mirrored-current").size());
 
   remove_generation(path);
   remove_generation(limited_path);
