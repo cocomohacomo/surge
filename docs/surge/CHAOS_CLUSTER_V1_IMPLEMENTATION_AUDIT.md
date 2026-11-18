@@ -285,3 +285,14 @@ legacy backups in strict mode. Tests cover signed round-trip restore, missing
 and wrong keys, key-ID mismatch, manifest tampering, unsigned rejection, and
 short keys. Encryption, KMS/HSM integration, automated key rotation, and
 off-host immutable replication remain separate operational work.
+
+
+## HMAC-authenticated backups
+
+Optional HMAC-SHA256 signatures now bind canonical backup-manifest metadata,
+including the algorithm and key ID, to an external key file of at least 32
+bytes. Strict verification/restore mode rejects unsigned legacy backups and
+uses constant-time signature comparison. Tests cover signed backup/restore,
+missing and wrong keys, key-ID mismatch/tampering, unsigned rejection, and
+short keys. HMAC is integrity/authenticity only; encryption, KMS/HSM integration,
+automated rotation, and off-host immutable replication remain unimplemented.
