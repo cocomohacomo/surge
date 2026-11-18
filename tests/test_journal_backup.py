@@ -151,6 +151,70 @@ class JournalBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "BACKUP_REPLAY_METADATA_MISMATCH"):
                 verify_backup(backup)
 
+    def test_authenticated_backup_verifies_and_restores_when_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup, restored, key = (
+                root / "live.sgj", root / "backup.sgj",
+                root / "restored.sgj", root / "backup.key")
+            source.write_bytes(_valid_journal())
+            key.write_bytes(b"K" * 32)
+            create_backup(source, backup, key_file=key, key_id="backup-key-2026")
+            manifest = verify_backup(
+                backup, key_file=key, key_id="backup-key-2026", require_auth=True)
+            self.assertEqual(manifest["auth"]["algorithm"], "HMAC-SHA256")
+            restore_backup(
+                backup, restored, key_file=key,
+                key_id="backup-key-2026", require_auth=True)
+            self.assertEqual(restored.read_bytes(), source.read_bytes())
+
+    def test_authenticated_backup_rejects_missing_wrong_and_rotated_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup = root / "live.sgj", root / "backup.sgj"
+            key, wrong_key = root / "key.bin", root / "wrong-key.bin"
+            source.write_bytes(_valid_journal())
+            key.write_bytes(b"A" * 32)
+            wrong_key.write_bytes(b"B" * 32)
+            create_backup(source, backup, key_file=key, key_id="key-v1")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_REQUIRED"):
+                verify_backup(backup, require_auth=True)
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_ID_MISMATCH"):
+                verify_backup(backup, key_file=key, key_id="key-v2")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_SIGNATURE_MISMATCH"):
+                verify_backup(backup, key_file=wrong_key, key_id="key-v1")
+
+    def test_authenticated_backup_rejects_manifest_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup, key = root / "live.sgj", root / "backup.sgj", root / "key.bin"
+            source.write_bytes(_valid_journal())
+            key.write_bytes(b"S" * 32)
+            manifest_path = create_backup(source, backup, key_file=key, key_id="signing-key")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["created_at"] = "2026-01-01T00:00:00+00:00"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_SIGNATURE_MISMATCH"):
+                verify_backup(backup, key_file=key, require_auth=True)
+
+    def test_unsigned_backup_is_rejected_when_authentication_is_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup = root / "live.sgj", root / "backup.sgj"
+            source.write_bytes(_valid_journal())
+            create_backup(source, backup)
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_SIGNATURE_REQUIRED"):
+                verify_backup(backup, require_auth=True)
+
+    def test_authentication_key_must_be_at_least_32_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, backup, key = root / "live.sgj", root / "backup.sgj", root / "key.bin"
+            source.write_bytes(_valid_journal())
+            key.write_bytes(b"short")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_KEY_TOO_SHORT"):
+                create_backup(source, backup, key_file=key, key_id="weak")
+
     def test_backup_digest_tampering_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
