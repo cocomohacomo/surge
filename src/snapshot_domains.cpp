@@ -36,6 +36,31 @@ bool decode_history(const std::string& payload,std::map<std::string,std::vector<
  return true;
 }
 
+
+bool decode_provenance_event(const std::string& payload,
+                             EvidenceProvenanceRecord& record) {
+  std::istringstream in(payload);
+  auto& p = record.provenance;
+  if (!(in >> std::quoted(p.evidence_id) >> p.revision >>
+        record.recorded_state_version) || p.evidence_id.empty() ||
+      p.revision == 0 || record.recorded_state_version == 0) return false;
+  auto read_optional = [&in](std::optional<std::string>& value) {
+    int present = 0;
+    if (!(in >> present) || (present != 0 && present != 1)) return false;
+    if (!present) { value.reset(); return true; }
+    std::string timestamp;
+    if (!(in >> std::quoted(timestamp)) ||
+        !is_valid_rfc3339_timestamp(timestamp)) return false;
+    value = std::move(timestamp);
+    return true;
+  };
+  if (!read_optional(p.observed_at) ||
+      !read_optional(p.source_published_at) ||
+      !read_optional(p.source_retrieved_at)) return false;
+  std::string extra;
+  return !(in >> extra);
+}
+
 bool write_strings(std::ostream& out, const std::vector<std::string>& values) {
   out << values.size() << ' ';
   for (const auto& value : values) out << std::quoted(value) << ' ';
@@ -251,9 +276,31 @@ std::string EvidenceProvenanceSnapshotDomain::domain_id()const{return "evidence_
 std::string EvidenceProvenanceSnapshotDomain::schema_id()const{return "surge.evidence-provenance.v1";}
 bool EvidenceProvenanceSnapshotDomain::capture(std::string*p,std::string*e)const{if(!p)return fail(e,"SNAPSHOT_OUTPUT_REQUIRED");*p=encode_history(ledger_.history_);if(e)e->clear();return true;}
 std::unique_ptr<PreparedSnapshotRestore> EvidenceProvenanceSnapshotDomain::prepare_restore(const std::string&p,std::string*e){
- std::map<std::string,std::vector<EvidenceProvenanceRecord>> c;if(!decode_history(p,c)){fail(e,"SNAPSHOT_EVIDENCE_PROVENANCE_INVALID");return nullptr;}
- if (e) { e->clear(); }
- return std::make_unique<PreparedEvidenceSnapshotRestore>(&ledger_, std::move(c));
+ return prepare_restore_with_tail(p, {}, e);
+}
+std::unique_ptr<PreparedSnapshotRestore>
+EvidenceProvenanceSnapshotDomain::prepare_restore_with_tail(
+    const std::string& payload, const std::vector<JournalEvent>& tail,
+    std::string* error) {
+ std::map<std::string,std::vector<EvidenceProvenanceRecord>> candidate;
+ if(!decode_history(payload,candidate)){fail(error,"SNAPSHOT_EVIDENCE_PROVENANCE_INVALID");return nullptr;}
+ for(const auto& event:tail){
+  if(event.kind!="EVIDENCE_PROVENANCE_SET_V1")continue;
+  EvidenceProvenanceRecord record;
+  if(!decode_provenance_event(event.payload,record) ||
+     record.recorded_state_version!=event.state_version ||
+     record.recorded_state_version==0){
+   fail(error,"SNAPSHOT_EVIDENCE_TAIL_EVENT_INVALID");return nullptr;
+  }
+  auto& revisions=candidate[record.provenance.evidence_id];
+  if(record.provenance.revision!=revisions.size()+1 ||
+     (!revisions.empty() && record.recorded_state_version<=revisions.back().recorded_state_version)){
+   fail(error,"SNAPSHOT_EVIDENCE_TAIL_REVISION_INVALID");return nullptr;
+  }
+  revisions.push_back(std::move(record));
+ }
+ if(error)error->clear();
+ return std::make_unique<PreparedEvidenceSnapshotRestore>(&ledger_,std::move(candidate));
 }
 std::string ChaosClusterSnapshotDomain::domain_id()const{return "chaos_cluster";}
 std::string ChaosClusterSnapshotDomain::schema_id()const{return "surge.chaos-cluster.native-v1";}
@@ -265,10 +312,31 @@ bool ChaosClusterSnapshotDomain::capture(std::string*p,std::string*e)const{
  return true;
 }
 std::unique_ptr<PreparedSnapshotRestore> ChaosClusterSnapshotDomain::prepare_restore(const std::string&p,std::string*e){
- ChaosClusterLedger::State c;if(!ChaosClusterLedger::decode(p,c)){fail(e,"SNAPSHOT_CHAOS_CLUSTER_INVALID");return nullptr;}
- for(const auto&x:c)if(x.first.empty()||x.first!=x.second.cluster_id){fail(e,"SNAPSHOT_CHAOS_CLUSTER_ID_MISMATCH");return nullptr;}
- if (e) { e->clear(); }
- return std::make_unique<PreparedChaosSnapshotRestore>(&ledger_, std::move(c));
+ return prepare_restore_with_tail(p, {}, e);
+}
+std::unique_ptr<PreparedSnapshotRestore>
+ChaosClusterSnapshotDomain::prepare_restore_with_tail(
+    const std::string& payload, const std::vector<JournalEvent>& tail,
+    std::string* error) {
+ ChaosClusterLedger::State candidate;
+ if(!ChaosClusterLedger::decode(payload,candidate)){fail(error,"SNAPSHOT_CHAOS_CLUSTER_INVALID");return nullptr;}
+ for(const auto&x:candidate)if(x.first.empty()||x.first!=x.second.cluster_id){fail(error,"SNAPSHOT_CHAOS_CLUSTER_ID_MISMATCH");return nullptr;}
+ for(const auto& event:tail){
+  if(event.kind!="CHAOS_CLUSTER_SNAPSHOT")continue;
+  ChaosClusterLedger::State next;
+  if(!ChaosClusterLedger::decode(event.payload,next)){
+   fail(error,"SNAPSHOT_CHAOS_TAIL_EVENT_INVALID");return nullptr;
+  }
+  for(const auto& item:next){
+   if(item.first.empty()||item.first!=item.second.cluster_id ||
+      item.second.state_version!=event.state_version){
+    fail(error,"SNAPSHOT_CHAOS_TAIL_WATERMARK_INVALID");return nullptr;
+   }
+  }
+  candidate.swap(next);
+ }
+ if(error)error->clear();
+ return std::make_unique<PreparedChaosSnapshotRestore>(&ledger_,std::move(candidate));
 }
 
 std::string TemporalBoundarySnapshotDomain::domain_id() const {
@@ -287,14 +355,31 @@ bool TemporalBoundarySnapshotDomain::capture(std::string* payload,
 std::unique_ptr<PreparedSnapshotRestore>
 TemporalBoundarySnapshotDomain::prepare_restore(const std::string& payload,
                                                  std::string* error) {
+  return prepare_restore_with_tail(payload, {}, error);
+}
+std::unique_ptr<PreparedSnapshotRestore>
+TemporalBoundarySnapshotDomain::prepare_restore_with_tail(
+    const std::string& payload, const std::vector<JournalEvent>& tail,
+    std::string* error) {
   std::map<std::string, TemporalBoundaryPending> candidate;
   if (!decode_boundary(payload, ledger_.max_claims_, candidate)) {
     fail(error, "SNAPSHOT_TEMPORAL_BOUNDARY_INVALID");
     return nullptr;
   }
+  TemporalBoundaryLedger staged(ledger_.journal_, ledger_.max_claims_);
+  staged.pending_ = std::move(candidate);
+  for (const auto& event : tail) {
+    if (event.kind != "TEMPORAL_BOUNDARY_CONTRIBUTION_V1" &&
+        event.kind != "TEMPORAL_BOUNDARY_CLEARED_V1" &&
+        event.kind != "TEMPORAL_BOUNDARY_CANDIDATE_SELECTED_V1") continue;
+    if (!staged.apply_event(event)) {
+      fail(error, "SNAPSHOT_TEMPORAL_BOUNDARY_TAIL_EVENT_INVALID");
+      return nullptr;
+    }
+  }
   if (error) error->clear();
   return std::make_unique<PreparedTemporalBoundarySnapshotRestore>(
-      &ledger_, std::move(candidate));
+      &ledger_, std::move(staged.pending_));
 }
 std::string TemporalQuestionSnapshotDomain::domain_id() const {
   return "temporal_question";
@@ -312,13 +397,28 @@ bool TemporalQuestionSnapshotDomain::capture(std::string* payload,
 std::unique_ptr<PreparedSnapshotRestore>
 TemporalQuestionSnapshotDomain::prepare_restore(const std::string& payload,
                                                  std::string* error) {
+  return prepare_restore_with_tail(payload, {}, error);
+}
+std::unique_ptr<PreparedSnapshotRestore>
+TemporalQuestionSnapshotDomain::prepare_restore_with_tail(
+    const std::string& payload, const std::vector<JournalEvent>& tail,
+    std::string* error) {
   std::map<std::string, TemporalQuestion> candidate;
   if (!decode_questions(payload, ledger_.max_questions_, candidate)) {
     fail(error, "SNAPSHOT_TEMPORAL_QUESTION_INVALID");
     return nullptr;
   }
+  TemporalQuestionLedger staged(ledger_.journal_, ledger_.max_questions_);
+  staged.questions_ = std::move(candidate);
+  for (const auto& event : tail) {
+    if (event.kind != "TEMPORAL_QUESTION_SNAPSHOT_V1") continue;
+    if (!staged.apply_event(event)) {
+      fail(error, "SNAPSHOT_TEMPORAL_QUESTION_TAIL_EVENT_INVALID");
+      return nullptr;
+    }
+  }
   if (error) error->clear();
   return std::make_unique<PreparedTemporalQuestionSnapshotRestore>(
-      &ledger_, std::move(candidate));
+      &ledger_, std::move(staged.questions_));
 }
 } // namespace surge
