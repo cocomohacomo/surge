@@ -6,6 +6,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SURGE_ENABLE_SANITIZERS "Build all targets with AddressSanitizer and UBSan" OFF)
 option(SURGE_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
+option(SURGE_BUILD_BENCHMARKS "Build opt-in performance benchmarks" OFF)
 
 if(SURGE_ENABLE_SANITIZERS)
   if(MSVC)
@@ -16,6 +17,11 @@ if(SURGE_ENABLE_SANITIZERS)
 endif()
 add_library(surge_core SHARED src/c_api.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp)
 target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(SURGE_BUILD_BENCHMARKS)
+  add_executable(surge_journal_bench benchmarks/event_journal_bench.cpp)
+  target_link_libraries(surge_journal_bench PRIVATE surge_core)
+endif()
 
 if(SURGE_BUILD_FUZZERS)
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
