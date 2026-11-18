@@ -110,14 +110,9 @@ bool append_header_token(std::string& out, const std::string& token) {
   return out.size() <= kMaxFrame;
 }
 bool append_header_quoted(std::string& out, const std::string& value) {
-  if (!append_header_token(out, "\\"")) return false;
-  for (char c : value) {
-    if ((c == '\\"' || c == '\\\\') &&
-        !append_header_token(out, "\\\\"")) return false;
-    const char one[] = {c};
-    if (!append_header_token(out, std::string(one, 1))) return false;
-  }
-  return append_header_token(out, "\\"");
+  std::ostringstream quoted;
+  quoted << std::quoted(value);
+  return append_header_token(out, quoted.str());
 }
 bool encode_checkpoint_header(
     std::uint64_t base_version, const std::string& context_id,
