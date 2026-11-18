@@ -21,6 +21,9 @@ target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 if(SURGE_BUILD_BENCHMARKS)
   add_executable(surge_journal_bench benchmarks/event_journal_bench.cpp)
   target_link_libraries(surge_journal_bench PRIVATE surge_core)
+  if(WIN32)
+    target_link_libraries(surge_journal_bench PRIVATE psapi)
+  endif()
 endif()
 
 if(SURGE_BUILD_FUZZERS)

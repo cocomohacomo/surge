@@ -194,6 +194,16 @@ int main() {
     CHECK(counter.value == 25);
   }
 
+  // A compacted identity manifest must obey the same configured lifetime
+  // event-ID budget as an un-compacted journal.
+  {
+    EventJournalLimits limits;
+    limits.max_event_ids = 39;  // The checkpoint manifest retains 40 IDs.
+    EventJournal bounded(journal_path.u8string(), limits);
+    CHECK(!bounded.open());
+    CHECK(bounded.last_error() == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+  }
+
   // The old journal generation remains a complete replay source at the
   // checkpoint watermark, independently of the compacted current journal.
   {

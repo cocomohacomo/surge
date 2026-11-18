@@ -11,7 +11,14 @@
 #include <string>
 #include <vector>
 
-#ifdef __linux__
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__linux__) || defined(__APPLE__)
+#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
@@ -40,7 +47,16 @@ double percentile(const std::vector<double>& values, double fraction) {
 }
 
 long peak_rss_kib() {
-#ifdef __linux__
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS counters{};
+  counters.cb = sizeof(counters);
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) return -1;
+  return static_cast<long>(counters.PeakWorkingSetSize / 1024U);
+#elif defined(__APPLE__)
+  struct rusage usage {};
+  if (getrusage(RUSAGE_SELF, &usage) != 0) return -1;
+  return static_cast<long>(usage.ru_maxrss / 1024L);
+#elif defined(__linux__)
   std::ifstream status("/proc/self/status");
   std::string key;
   while (status >> key) {
@@ -53,8 +69,35 @@ long peak_rss_kib() {
     std::string rest;
     std::getline(status, rest);
   }
-#endif
   return -1;
+#else
+  return -1;
+#endif
+}
+
+long current_rss_kib() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS counters{};
+  counters.cb = sizeof(counters);
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) return -1;
+  return static_cast<long>(counters.WorkingSetSize / 1024U);
+#elif defined(__linux__)
+  std::ifstream status("/proc/self/status");
+  std::string key;
+  while (status >> key) {
+    if (key == "VmRSS:") {
+      long value = 0;
+      std::string unit;
+      status >> value >> unit;
+      return value;
+    }
+    std::string rest;
+    std::getline(status, rest);
+  }
+  return -1;
+#else
+  return -1;
+#endif
 }
 }  // namespace
 
@@ -131,6 +174,7 @@ int main(int argc, char** argv) {
   const auto replay_ms = std::chrono::duration<double, std::milli>(
       replay_stop - replay_start).count();
   const long rss_kib = peak_rss_kib();
+  const long current_rss = current_rss_kib();
 
   std::cout << "{\n"
             << "  \"transactions\": " << transactions << ",\n"
@@ -145,6 +189,7 @@ int main(int argc, char** argv) {
             << "  \"replay_ms\": " << replay_ms << ",\n"
             << "  \"journal_bytes\": " << bytes << ",\n"
             << "  \"replayed_events\": " << replayed << ",\n"
+            << "  \"current_rss_kib\": " << current_rss << ",\n"
             << "  \"peak_rss_kib\": " << rss_kib << "\n"
             << "}\n";
   std::filesystem::remove_all(root, ec);

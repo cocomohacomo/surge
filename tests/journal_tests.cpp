@@ -304,6 +304,30 @@ int main(int argc, char** argv) {
     CHECK(!bounded_replay.open());
     CHECK(bounded_replay.last_error() == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
   }
+  // Unique event identities are lifetime-retained even after payload pruning,
+  // so deployments can bound this index independently of active event limits.
+  const auto event_id_limited_path = (root / "event-id-limited.sgj").string();
+  {
+    EventJournalLimits limits;
+    limits.max_event_ids = 2;
+    EventJournal bounded_ids(event_id_limited_path, limits);
+    CHECK(bounded_ids.open());
+    const auto first = bounded_ids.commit("ids-tx-1", "ids-idem-1", 0,
+        {{"ids-event-1", "TEST", "a"}, {"ids-event-2", "TEST", "b"}});
+    CHECK(first.committed);
+    const auto rejected = bounded_ids.commit("ids-tx-2", "ids-idem-2", 1,
+        {{"ids-event-3", "TEST", "c"}});
+    CHECK(!rejected.committed);
+    CHECK(rejected.error == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+    CHECK(bounded_ids.state_version() == 1);
+  }
+  {
+    EventJournalLimits limits;
+    limits.max_event_ids = 1;
+    EventJournal bounded_ids_replay(event_id_limited_path, limits);
+    CHECK(!bounded_ids_replay.open());
+    CHECK(bounded_ids_replay.last_error() == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
+  }
   {
     EventJournalLimits limits;
     limits.max_payload_bytes = 3;
