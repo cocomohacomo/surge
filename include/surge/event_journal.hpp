@@ -27,9 +27,12 @@ struct JournalCommitResult {
 class EventJournal {
  public:
   using AppendFrameGate = std::function<bool(std::size_t frame_index)>;
+  using SyncFrameGate = std::function<bool(std::size_t frame_index)>;
   explicit EventJournal(std::string path);
   ~EventJournal();
   EventJournal(std::string path, AppendFrameGate append_frame_gate);
+  EventJournal(std::string path, AppendFrameGate append_frame_gate,
+               SyncFrameGate sync_frame_gate);
   bool open();
   JournalCommitResult commit(const std::string& transaction_id,
                              const std::string& idempotency_key,
@@ -46,6 +49,7 @@ class EventJournal {
   std::string path_;
   std::intptr_t lock_handle_{-1};
   AppendFrameGate append_frame_gate_;
+  SyncFrameGate sync_frame_gate_;
   std::size_t append_frame_count_{0};
   mutable std::mutex mutex_;
   bool opened_{false};
