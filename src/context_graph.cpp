@@ -866,12 +866,30 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
   if (!(in >> magic >> count) || magic != "CGS1" || count > 100000)
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_HEADER_INVALID");
   std::string detail;
+  std::map<std::string, GraphNode> pending_nodes;
   for (std::size_t i = 0; i < count; ++i) {
     std::string encoded;
     GraphNode node;
     if (!(in >> std::quoted(encoded)) || !decode_node(encoded, node) ||
-        !graph_.apply_node(candidate, node, detail))
+        node.id.empty() || !pending_nodes.emplace(node.id, node).second)
       return fail_restore("SNAPSHOT_CONTEXT_GRAPH_NODE_INVALID");
+  }
+  // Node references may point forward in canonical ID order. Rebuild in
+  // dependency order rather than assuming lexical order is topological.
+  while (!pending_nodes.empty()) {
+    bool progressed = false;
+    for (auto it = pending_nodes.begin(); it != pending_nodes.end();) {
+      const bool references_ready = std::all_of(
+          it->second.references.begin(), it->second.references.end(),
+          [&candidate](const std::string& ref) { return candidate.nodes.count(ref) != 0; });
+      if (!references_ready) { ++it; continue; }
+      if (!graph_.apply_node(candidate, it->second, detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_NODE_INVALID");
+      it = pending_nodes.erase(it);
+      progressed = true;
+    }
+    if (!progressed)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_NODE_REFERENCE_CYCLE_OR_MISSING");
   }
   if (!(in >> count) || count > 1000000)
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_RELATION_COUNT_INVALID");
