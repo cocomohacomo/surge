@@ -168,6 +168,16 @@ bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
   // watermark for both fields. Refuse ambiguous checkpoint coordinates.
   if (document.state_version != document.journal_sequence)
     return fail(error, "SNAPSHOT_JOURNAL_WATERMARK_MISMATCH");
+  const auto checkpoint = journal.checkpoint_info();
+  if (checkpoint.compacted) {
+    if (document.context_id != checkpoint.context_id)
+      return fail(error, "SNAPSHOT_JOURNAL_CHECKPOINT_CONTEXT_MISMATCH");
+    if (document.state_version < checkpoint.base_state_version)
+      return fail(error, "SNAPSHOT_CHECKPOINT_BEHIND_COMPACTION_BASE");
+    if (document.state_version == checkpoint.base_state_version &&
+        sha256_hex(bytes) != checkpoint.snapshot_digest)
+      return fail(error, "SNAPSHOT_JOURNAL_CHECKPOINT_DIGEST_MISMATCH");
+  }
   if (domains_.empty())
     return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
 
@@ -213,4 +223,45 @@ bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
   if (error) error->clear();
   return true;
 }
+
+bool SnapshotCoordinator::restore_from_store(
+    SnapshotStore& store, EventJournal& journal,
+    const std::string& expected_context_id,
+    std::uint64_t minimum_state_version,
+    std::uint64_t minimum_journal_sequence,
+    JournalTailLimits tail_limits, std::string* error) {
+  const auto stored = store.load();
+  if (!stored.ok)
+    return fail(error, stored.error.empty() ? "SNAPSHOT_STORE_LOAD_FAILED" : stored.error.c_str());
+  if (stored.document.context_id != expected_context_id)
+    return fail(error, "SNAPSHOT_CONTEXT_MISMATCH");
+  return restore_with_tail(stored.bytes, journal, expected_context_id,
+      minimum_state_version, minimum_journal_sequence, tail_limits, error);
+}
+
+bool SnapshotCoordinator::compact(EventJournal& journal, SnapshotStore& store,
+                                  const std::string& context_id,
+                                  std::string* error) {
+  const auto version = journal.state_version();
+  std::string bytes;
+  if (!capture(context_id, version, version, &bytes, error))
+    return false;
+  if (journal.state_version() != version)
+    return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_CAPTURE");
+  if (!store.save(bytes, error))
+    return false;
+  const auto verified = store.load();
+  if (!verified.ok || verified.used_backup || verified.bytes != bytes)
+    return fail(error, "SNAPSHOT_STORE_DURABLE_VERIFY_FAILED");
+  // Mirror the exact checkpoint before journal replacement. Thus either
+  // journal generation can be paired with a valid copy at the same watermark.
+  if (!store.mirror_current_to_backup(error))
+    return false;
+  if (journal.state_version() != version)
+    return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_COMPACTION");
+  if (!journal.compact_after_checkpoint(bytes, context_id, error))
+    return false;
+  return true;
+}
+
 }  // namespace surge
