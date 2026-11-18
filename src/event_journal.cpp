@@ -315,7 +315,11 @@ bool EventJournal::recover() {
           (limits_.max_transactions && transaction_ids_.size() >= limits_.max_transactions)) {
         last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
       }
-      for (const auto& event : p.events) { events_.push_back(event); event_ids_[event.event_id] = true; }
+      for (auto event : p.events) {
+        event.state_version = version;
+        events_.push_back(std::move(event));
+        event_ids_[events_.back().event_id] = true;
+      }
       retained_payload_bytes_ += added_payload_bytes;
       idempotency_[p.idem] = p.fingerprint;
       transaction_ids_[tx] = p.fingerprint;
@@ -359,6 +363,8 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
   }
   if (transaction_ids_.count(tx)) return {false, false, state_version_, "TRANSACTION_ID_REUSED"};
   if (expected != state_version_) return {false, false, state_version_, "STATE_VERSION_CONFLICT"};
+  if (state_version_ == std::numeric_limits<std::uint64_t>::max())
+    return {false, false, state_version_, "STATE_VERSION_EXHAUSTED"};
   std::map<std::string, bool> batch_ids;
   std::size_t added_payload_bytes = 0;
   for (const auto& event : events) {
@@ -396,11 +402,16 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     }
     return {false, false, state_version_, last_error_};
   }
-  for (const auto& event : events) { events_.push_back(event); event_ids_[event.event_id] = true; }
+  const auto committed_version = state_version_ + 1;
+  for (auto event : events) {
+    event.state_version = committed_version;
+    events_.push_back(std::move(event));
+    event_ids_[events_.back().event_id] = true;
+  }
   retained_payload_bytes_ += added_payload_bytes;
   idempotency_[idem] = fingerprint;
   transaction_ids_[tx] = fingerprint;
-  ++state_version_;
+  state_version_ = committed_version;
   return {true, false, state_version_, {}};
 }
 std::uint64_t EventJournal::state_version() const {
@@ -408,6 +419,67 @@ std::uint64_t EventJournal::state_version() const {
 }
 std::vector<JournalEvent> EventJournal::committed_events() const {
   std::lock_guard<std::mutex> lock(mutex_); return events_;
+}
+JournalTailResult EventJournal::committed_tail(
+    std::uint64_t after_state_version, JournalTailLimits limits) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  JournalTailResult result;
+  result.after_state_version = after_state_version;
+  result.current_state_version = state_version_;
+  if (!opened_) {
+    result.error = "JOURNAL_TAIL_NOT_OPEN";
+    return result;
+  }
+  if (after_state_version > state_version_) {
+    result.error = "JOURNAL_TAIL_WATERMARK_AHEAD";
+    return result;
+  }
+  if (after_state_version == state_version_) {
+    result.ok = true;
+    return result;
+  }
+  if (limits.max_events == 0 || limits.max_payload_bytes == 0) {
+    result.error = "JOURNAL_TAIL_LIMIT_INVALID";
+    return result;
+  }
+
+  std::uint64_t expected_version = after_state_version + 1;
+  for (const auto& event : events_) {
+    if (event.state_version <= after_state_version) continue;
+    if (event.state_version < expected_version ||
+        (event.state_version > expected_version &&
+         (expected_version == std::numeric_limits<std::uint64_t>::max() ||
+          event.state_version != expected_version + 1))) {
+      result.events.clear();
+      result.payload_bytes = 0;
+      result.error = "JOURNAL_TAIL_VERSION_GAP";
+      return result;
+    }
+    if (event.state_version > expected_version) ++expected_version;
+    if (result.events.size() >= limits.max_events) {
+      result.events.clear();
+      result.payload_bytes = 0;
+      result.error = "JOURNAL_TAIL_EVENT_LIMIT_EXCEEDED";
+      return result;
+    }
+    if (event.payload.size() > limits.max_payload_bytes -
+            std::min(limits.max_payload_bytes, result.payload_bytes)) {
+      result.events.clear();
+      result.payload_bytes = 0;
+      result.error = "JOURNAL_TAIL_PAYLOAD_LIMIT_EXCEEDED";
+      return result;
+    }
+    result.payload_bytes += event.payload.size();
+    result.events.push_back(event);
+  }
+  if (expected_version != state_version_ || result.events.empty()) {
+    result.events.clear();
+    result.payload_bytes = 0;
+    result.error = "JOURNAL_TAIL_VERSION_GAP";
+    return result;
+  }
+  result.ok = true;
+  return result;
 }
 std::string EventJournal::last_error() const {
   std::lock_guard<std::mutex> lock(mutex_); return last_error_;
