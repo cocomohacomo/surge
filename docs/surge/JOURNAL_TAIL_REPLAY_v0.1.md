@@ -6,9 +6,9 @@ The journal's state version advances once per committed transaction, not once pe
 
 ## Bounded tail read
 
-EventJournal::committed_tail(after_state_version, limits) returns every committed event belonging to transactions strictly after the supplied watermark. Events from the same transaction share one state_version. The default read budget is 65,536 events and 16 MiB of payload.
+EventJournal::committed_tail(after_state_version, limits) returns every committed event belonging to transactions strictly after the supplied watermark. Events from the same transaction share one state_version. The default read budget is 65,536 events and 16 MiB of combined event ID, kind, and payload bytes.
 
-The operation is read-only and all-or-nothing. It rejects a closed journal, a watermark ahead of the current state, version gaps or regressions, and event/payload budget exhaustion. On failure, the returned event list is empty. A watermark equal to the current state returns an empty successful tail.
+The operation is read-only and all-or-nothing. It rejects a closed journal, a watermark ahead of the current state, version gaps or regressions, and event/combined event-byte budget exhaustion. On failure, the returned event list is empty. A watermark equal to the current state returns an empty successful tail.
 
 ## Restore safety
 
