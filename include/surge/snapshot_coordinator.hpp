@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/snapshot.hpp"
+#include "surge/snapshot_store.hpp"
 #include "surge/event_journal.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +63,15 @@ class SnapshotCoordinator {
                std::uint64_t minimum_state_version,
                std::uint64_t minimum_journal_sequence,
                JournalTailLimits tail_limits, std::string* error);
+  bool restore_from_store(SnapshotStore& store, EventJournal& journal,
+               const std::string& expected_context_id,
+               std::uint64_t minimum_state_version,
+               std::uint64_t minimum_journal_sequence,
+               JournalTailLimits tail_limits, std::string* error);
+  // Capture and durably save one complete checkpoint before atomically
+  // replacing the journal with its compacted generation.
+  bool compact(EventJournal& journal, SnapshotStore& store,
+               const std::string& context_id, std::string* error);
  private:
   SnapshotCoordinatorLimits limits_;
   std::vector<SnapshotDomain*> domains_;
