@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import ctypes
 import hashlib
+import hmac
 import json
 import os
 import pathlib
@@ -304,7 +305,35 @@ def inspect_journal(path: pathlib.Path) -> dict:
     }
 
 
-def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
+def _load_auth_key(key_file: pathlib.Path) -> bytes:
+    try:
+        key = pathlib.Path(key_file).read_bytes()
+    except OSError as exc:
+        raise ValueError("BACKUP_AUTH_KEY_UNREADABLE") from exc
+    if len(key) < 32:
+        raise ValueError("BACKUP_AUTH_KEY_TOO_SHORT")
+    return key
+
+
+def _canonical_manifest(manifest: dict) -> bytes:
+    body = {key: value for key, value in manifest.items() if key != "auth"}
+    return json.dumps(body, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _validate_auth_options(key_file, key_id):
+    if (key_file is None) != (key_id is None):
+        raise ValueError("BACKUP_AUTH_KEY_AND_ID_REQUIRED_TOGETHER")
+    if key_file is None:
+        return None
+    if not isinstance(key_id, str) or not key_id.strip():
+        raise ValueError("BACKUP_AUTH_KEY_ID_INVALID")
+    return _load_auth_key(key_file)
+
+
+def create_backup(journal: pathlib.Path, backup: pathlib.Path, *,
+                  key_file: pathlib.Path | None = None, key_id: str | None = None) -> pathlib.Path:
+    auth_key = _validate_auth_options(key_file, key_id)
     journal, backup = journal.resolve(), backup.resolve()
     if journal == backup:
         raise ValueError("BACKUP_PATH_EQUALS_SOURCE")
@@ -326,11 +355,20 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path) -> pathlib.Path:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "consistency": "writer-lock-held-during-copy",
         }
+        if auth_key is not None:
+            manifest["auth"] = {
+                "algorithm": "HMAC-SHA256",
+                "key_id": key_id,
+                "hmac_sha256": hmac.new(
+                    auth_key, _canonical_manifest(manifest), hashlib.sha256
+                ).hexdigest(),
+            }
         atomic_write_json(pathlib.Path(str(backup) + ".manifest.json"), manifest)
     return pathlib.Path(str(backup) + ".manifest.json")
 
 
-def verify_backup(backup: pathlib.Path) -> dict:
+def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
+                  key_id: str | None = None, require_auth: bool = False) -> dict:
     backup = backup.resolve()
     manifest_path = pathlib.Path(str(backup) + ".manifest.json")
     if not backup.is_file() or not manifest_path.is_file():
