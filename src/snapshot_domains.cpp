@@ -33,12 +33,12 @@ bool decode_history(const std::string& payload,std::map<std::string,std::vector<
 }
 }  // namespace
 class PreparedEvidenceSnapshotRestore final:public PreparedSnapshotRestore{
- public:PreparedEvidence(EvidenceProvenanceLedger*o,std::map<std::string,std::vector<EvidenceProvenanceRecord>>c):owner(o),candidate(std::move(c)){}
+ public:PreparedEvidenceSnapshotRestore(EvidenceProvenanceLedger*o,std::map<std::string,std::vector<EvidenceProvenanceRecord>>c):owner(o),candidate(std::move(c)){}
  void commit()noexcept override{owner->history_.swap(candidate);}
  private:EvidenceProvenanceLedger*owner;std::map<std::string,std::vector<EvidenceProvenanceRecord>>candidate;
 };
 class PreparedChaosSnapshotRestore final:public PreparedSnapshotRestore{
- public:PreparedChaos(ChaosClusterLedger*o,ChaosClusterLedger::State c):owner(o),candidate(std::move(c)){}
+ public:PreparedChaosSnapshotRestore(ChaosClusterLedger*o,ChaosClusterLedger::State c):owner(o),candidate(std::move(c)){}
  void commit()noexcept override{try{std::lock_guard<std::mutex> lock(owner->mutex_);owner->state_.swap(candidate);}catch(...){std::terminate();}}
  private:ChaosClusterLedger*owner;ChaosClusterLedger::State candidate;
 };
