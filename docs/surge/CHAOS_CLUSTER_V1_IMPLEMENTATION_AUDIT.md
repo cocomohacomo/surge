@@ -200,3 +200,10 @@ interpreting those payloads as graph mutations. This is an explicit
 cross-domain event registration, not a permissive ignore-unknown fallback.
 A regression opens and reopens a journal containing both retention event kinds
 and verifies graph state remains unchanged while the global version advances.
+
+
+The same replay audit found that standalone `EVIDENCE_PROVENANCE_SET_V1`
+events also require explicit version-only handling in ContextGraph. The graph
+now advances the shared State Version for this evidence-owned event without
+applying it as graph state. The regression covers both retention event kinds
+and this pre-existing external owner event.
