@@ -2,7 +2,7 @@
 
 ## Domain adapter
 
-Each registered state domain supplies a stable domain ID, an exact schema ID, deterministic capture bytes, and a two-phase restore implementation. `prepare_restore` must validate and allocate all replacement state without mutating live state. It returns a prepared object whose `commit()` is noexcept and performs only the already-prepared state swap.
+Each registered state domain supplies a stable UTF-8 domain ID, an exact UTF-8 schema ID, deterministic capture bytes, and a two-phase restore implementation. The caller must establish a quiescent read boundary across all registered domains and pass the state version and journal sequence belonging to that same boundary. The coordinator does not independently lock domain writers or infer a common watermark. `prepare_restore` must validate and allocate all replacement state without mutating live state. It returns a prepared object whose `commit()` is noexcept and performs only the already-prepared state swap.
 
 The coordinator sorts domains by ID to make bundle order deterministic. Duplicate IDs, missing domains, extra domains, schema mismatch, context mismatch, truncated data, and watermark regression fail closed.
 
@@ -12,7 +12,7 @@ All domains must prepare successfully before the coordinator calls any commit. T
 
 ## Bundle encoding
 
-The outer SnapshotCodec envelope carries context ID, state version, journal sequence, and SHA-256 integrity. Its payload contains a u32 domain count followed by sorted entries. Each entry has u32-length-prefixed UTF-8 domain ID, schema ID, and opaque domain payload. Per-domain payloads are bounded by the coordinator.
+The outer SnapshotCodec envelope carries context ID, state version, journal sequence, and SHA-256 integrity. Its payload contains a u32 domain count followed by sorted entries. Each entry has u32-length-prefixed UTF-8 domain ID, schema ID, and opaque domain payload. Per-domain payloads are bounded by the coordinator (8 MiB by default), and the aggregate bundle is bounded by the outer payload ceiling (60 MiB by default).
 
 ## Replay and compaction are still gated
 
