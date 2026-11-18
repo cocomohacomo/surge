@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 namespace surge {
 namespace {
@@ -67,6 +68,8 @@ bool SnapshotCodec::encode(const SnapshotDocument& doc,
   output->clear();
   if (doc.schema_id.empty() || doc.context_id.empty())
     return fail(error, "SNAPSHOT_METADATA_REQUIRED");
+  if (!is_valid_utf8(doc.schema_id) || !is_valid_utf8(doc.context_id))
+    return fail(error, "SNAPSHOT_METADATA_INVALID_UTF8");
   if (doc.schema_id.size() > kMaxMetadata || doc.context_id.size() > kMaxMetadata)
     return fail(error, "SNAPSHOT_METADATA_TOO_LARGE");
   if (doc.payload.size() > payload_limit(limits) ||
@@ -112,7 +115,8 @@ bool SnapshotCodec::decode(const std::string& bytes,
   SnapshotDocument candidate;
   if (!get_string(content, &pos, kMaxMetadata, &candidate.schema_id) ||
       !get_string(content, &pos, kMaxMetadata, &candidate.context_id) ||
-      candidate.schema_id.empty() || candidate.context_id.empty())
+      candidate.schema_id.empty() || candidate.context_id.empty() ||
+      !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id))
     return fail(error, "SNAPSHOT_METADATA_INVALID");
   if (!get_u64(content, &pos, &candidate.state_version) ||
       !get_u64(content, &pos, &candidate.journal_sequence))
