@@ -473,7 +473,8 @@ def restore_backup(backup: pathlib.Path, destination: pathlib.Path,
                    keyring_file: pathlib.Path | None = None,
                    require_auth: bool = False) -> None:
     backup, destination = backup.resolve(), destination.resolve()
-    verify_backup(backup, key_file=key_file, key_id=key_id,\n                  keyring_file=keyring_file, require_auth=require_auth)
+    verify_backup(backup, key_file=key_file, key_id=key_id,
+                  keyring_file=keyring_file, require_auth=require_auth)
     if backup == destination:
         raise ValueError("RESTORE_PATH_EQUALS_BACKUP")
     with writer_lock(destination):
