@@ -975,11 +975,6 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     adapter.admit_to_core(packet, "abc", core)
                 self.assertEqual(core.state_version, 0)
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_retention_manifest_and_tombstone_are_journaled_and_replayed(self):
         now = "2026-11-19T00:00:00Z"
         records = [
@@ -1045,3 +1040,7 @@ if __name__ == "__main__":
                         "invalid-retention-tx", "invalid-retention-idem", 0,
                         [{"event_id": "invalid-event", "kind": "CLAIM_ADDED",
                           "payload": "{}"}])
+
+
+if __name__ == "__main__":
+    unittest.main()
