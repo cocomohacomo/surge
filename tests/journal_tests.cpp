@@ -4,8 +4,30 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <chrono>
+#include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 using namespace surge;
-int main() {
+int main(int argc, char** argv) {
+  // Child mode used by the parent test to hold the OS writer lock in a
+  // genuinely separate process until a release marker appears.
+  if (argc == 4 && std::string(argv[1]) == "--hold-lock") {
+    EventJournal holder(argv[2]);
+    if (!holder.open()) return 2;
+    { std::ofstream ready(argv[3]); ready << "ready\\n"; }
+    const std::filesystem::path release = std::string(argv[3]) + ".release";
+    for (int i = 0; i < 500; ++i) {
+      if (std::filesystem::exists(release)) return 0;
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return 3;
+  }
   const auto root = std::filesystem::temp_directory_path() / "surge-v09-journal-tests";
   std::filesystem::remove_all(root);
   const auto lock_path = (root / "writer-lock.sgj").string();
@@ -19,6 +41,54 @@ int main() {
   {
     EventJournal after_release(lock_path);
     CHECK(after_release.open());
+  }
+  // Cross-process writer exclusion: a child holds the journal lock while
+  // the parent attempts to open the same journal through another process.
+  {
+    const auto process_path = (root / "multiprocess.sgj").string();
+    const auto ready_path = (root / "multiprocess.ready").string();
+    const auto release_path = ready_path + ".release";
+    const auto executable = std::filesystem::absolute(argv[0]).string();
+#ifdef _WIN32
+    STARTUPINFOA startup{}; startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::string command = "\\"" + executable + "\\" --hold-lock \\"" +
+      process_path + "\\" \\"" + ready_path + "\\"";
+    std::vector<char> command_buffer(command.begin(), command.end());
+    command_buffer.push_back('\\0');
+    CHECK(CreateProcessA(nullptr, command_buffer.data(), nullptr, nullptr, FALSE,
+      CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process) != 0);
+#else
+    const pid_t child = fork();
+    CHECK(child >= 0);
+    if (child == 0) {
+      execl(executable.c_str(), executable.c_str(), "--hold-lock",
+        process_path.c_str(), ready_path.c_str(), static_cast<char*>(nullptr));
+      _exit(127);
+    }
+#endif
+    bool ready = false;
+    for (int i = 0; i < 500; ++i) {
+      if (std::filesystem::exists(ready_path)) { ready = true; break; }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(ready);
+    {
+      EventJournal competing_process(process_path);
+      CHECK(!competing_process.open());
+      CHECK(competing_process.last_error() == "JOURNAL_WRITER_LOCKED");
+    }
+    { std::ofstream release(release_path); release << "release\\n"; }
+#ifdef _WIN32
+    CHECK(WaitForSingleObject(process.hProcess, 5000) == WAIT_OBJECT_0);
+    DWORD exit_code = 1; CHECK(GetExitCodeProcess(process.hProcess, &exit_code) != 0);
+    CHECK(exit_code == 0);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+#else
+    int status = 0;
+    CHECK(waitpid(child, &status, 0) == child);
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+#endif
   }
   const auto path = (root / "events.sgj").string();
   {
