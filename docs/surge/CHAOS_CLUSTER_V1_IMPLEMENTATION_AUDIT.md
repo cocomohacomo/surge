@@ -31,7 +31,7 @@ independent semantic-quality evaluation.
 | P1 | Retrieval query dimensions | Partial | Typed Chaos retrieval now filters association type/status, valid-time, member admission-time, producer provenance and member refs; hypothesis/counterexample controls and bounded parent/child lineage traversal are implemented. Independent member/association/hypothesis pagination, stable offsets, score-based ranking policies, unknown-score ordering, and page/dataset completeness metadata are now implemented. Association endpoint expansion and exhaustive retrieval-budget combinations still need conformance coverage. |
 | P1 | Lifecycle and operations | Partial | ARCHIVED -> DORMANT reactivation is an explicit provenance-bound transition; atomic merge, fork/split/subset promotion, and CC8 lifecycle reason/provenance history are implemented. Expanded conflict, migration and lifecycle conformance remains. |
 | P1 | CC01-CC20 executable conformance | Partial | C++/C ABI/Python tests cover selected persistence, replay, lifecycle, association, hypothesis, promotion/fork/split and Focus paths. The complete 20-case semantic matrix is not yet executed end-to-end. |
-| P2 | Memory and forgetting | Partial/Missing | Lifecycle dormancy/archive exists, but manifest compaction, inspectable eviction factors, recoverable archive workflow, payload tombstone policy and restore drill are not complete. |
+| P2 | Memory and forgetting | Partial | A deterministic, digest-verified retention manifest planner now exposes salience/utility/interest/dependency/recency factors, archives without deleting, and emits explicit manifest-bound tombstone proposals. Core journal integration, payload compaction, restore drill and physical deletion verification remain open. |
 | P2 | Operational safety | Unverified | Multi-process writer coordination, concurrent Core-handle mutation contract, hostile-input fuzzing, sanitizers, crash/power-loss and backup/restore drills remain outstanding. |
 | P2 | Performance | Unverified | No declared-hardware measurement proves 30 MiB model integration, RTF <0.01, p99 latency or peak RSS for the v1.0 path. |
 
@@ -133,3 +133,15 @@ score. Member Salience, Association Confidence and PatternHypothesis Confidence
 are used only for ordering; missing scores remain last and scores do not alter
 epistemic status or evidence relations. Regression tests cover score ordering,
 pagination, terminal-page semantics, out-of-range offsets and invalid budgets.
+
+
+## Follow-up: auditable retention manifests
+
+The Python retention planner now emits deterministic ACTIVE/ARCHIVED decisions
+with factor-level explanations, source digests, provenance and lineage refs.
+Coherence/organization is excluded from eviction scoring. Manifests are
+canonical-digest verified and atomically written. Tombstone proposals are
+explicit, actor/reason/policy-bound, manifest-bound events and do not claim
+physical deletion. The authoritative EventJournal is never rewritten by this
+module. Core journal integration, payload compaction and restore drills remain
+open; see `CHAOS_CLUSTER_MEMORY_RETENTION_v0.1.md`.
