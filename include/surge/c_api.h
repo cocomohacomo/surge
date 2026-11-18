@@ -153,6 +153,22 @@ typedef struct SurgeScopeSpanInput {
   size_t packet_count;
 } SurgeScopeSpanInput;
 
+typedef struct SurgeJournalEventInput {
+  const char* event_id;
+  const char* kind;
+  const char* payload;
+} SurgeJournalEventInput;
+
+// Append retention metadata only. This API deliberately rejects arbitrary
+// domain event kinds and never performs physical payload deletion.
+int surge_retention_journal_commit(void* handle, const char* transaction_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeJournalEventInput* events, size_t event_count,
+    int* duplicate, uint64_t* state_version, char* error, size_t error_capacity);
+int surge_retention_journal_get_events(void* handle, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
 int surge_packet_core_admit(
