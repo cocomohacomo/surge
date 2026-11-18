@@ -158,3 +158,17 @@ partial state change (CC10), changed payload under a reused idempotency identity
 membership (CC19). These are regression tests, not a claim that all CC01-CC20
 cases are closed. CC14 (hypothesis never becomes Claim) and CC15 (Question
 resolution does not promote/close the Chaos Cluster) remain explicit gaps.
+
+
+## Retention-to-EventJournal integration
+
+The retention planner now has a restricted C ABI transaction surface and a
+Python bridge. Manifests and tombstone proposals are persisted as append-only
+journal events under the global transaction/idempotency model. Replay rebuilds
+the retention projection and rejects digest mismatch, event-ID mismatch,
+missing manifest references, non-archived tombstone targets, and source digest
+mismatch. The C ABI allowlists only the two implemented retention event kinds.
+This does not compact the journal or perform physical deletion. Remaining
+work includes snapshot/segment compaction, restore drills against semantic
+projections, authenticated/off-host backup, crash injection at sync boundaries,
+and power-loss validation.
