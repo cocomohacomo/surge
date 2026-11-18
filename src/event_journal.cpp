@@ -438,7 +438,7 @@ JournalTailResult EventJournal::committed_tail(
     result.ok = true;
     return result;
   }
-  if (limits.max_events == 0 || limits.max_payload_bytes == 0) {
+  if (limits.max_events == 0 || limits.max_total_bytes == 0) {
     result.error = "JOURNAL_TAIL_LIMIT_INVALID";
     return result;
   }
@@ -451,7 +451,7 @@ JournalTailResult EventJournal::committed_tail(
          (expected_version == std::numeric_limits<std::uint64_t>::max() ||
           event.state_version != expected_version + 1))) {
       result.events.clear();
-      result.payload_bytes = 0;
+      result.total_bytes = 0;
       result.error = "JOURNAL_TAIL_VERSION_GAP";
       return result;
     }
@@ -462,14 +462,17 @@ JournalTailResult EventJournal::committed_tail(
       result.error = "JOURNAL_TAIL_EVENT_LIMIT_EXCEEDED";
       return result;
     }
-    if (event.payload.size() > limits.max_payload_bytes -
-            std::min(limits.max_payload_bytes, result.payload_bytes)) {
+    const auto remaining = limits.max_total_bytes -
+        std::min(limits.max_total_bytes, result.total_bytes);
+    if (event.event_id.size() > remaining ||
+        event.kind.size() > remaining - std::min(remaining, event.event_id.size()) ||
+        event.payload.size() > remaining - std::min(remaining, event.event_id.size() + event.kind.size())) {
       result.events.clear();
       result.payload_bytes = 0;
-      result.error = "JOURNAL_TAIL_PAYLOAD_LIMIT_EXCEEDED";
+      result.error = "JOURNAL_TAIL_TOTAL_BYTES_LIMIT_EXCEEDED";
       return result;
     }
-    result.payload_bytes += event.payload.size();
+    result.total_bytes += event.event_id.size() + event.kind.size() + event.payload.size();
     result.events.push_back(event);
   }
   if (expected_version != state_version_ || result.events.empty()) {
