@@ -326,6 +326,25 @@ def _canonical_manifest(manifest: dict) -> bytes:
                       separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+def _load_keyring(keyring_file: pathlib.Path) -> dict[str, pathlib.Path]:
+    try:
+        raw = json.loads(pathlib.Path(keyring_file).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("BACKUP_KEYRING_INVALID") from exc
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError("BACKUP_KEYRING_INVALID")
+    keyring: dict[str, pathlib.Path] = {}
+    for key_id, key_path in raw.items():
+        if (not isinstance(key_id, str) or not key_id.strip() or
+            not isinstance(key_path, str) or not key_path.strip()):
+            raise ValueError("BACKUP_KEYRING_ENTRY_INVALID")
+        candidate = pathlib.Path(key_path)
+        if not candidate.is_absolute():
+            candidate = pathlib.Path(keyring_file).resolve().parent / candidate
+        keyring[key_id] = candidate
+    return keyring
+
+
 def _validate_auth_options(key_file, key_id):
     if (key_file is None) != (key_id is None):
         raise ValueError("BACKUP_AUTH_KEY_AND_ID_REQUIRED_TOGETHER")
@@ -373,9 +392,12 @@ def create_backup(journal: pathlib.Path, backup: pathlib.Path, *,
 
 
 def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
-                  key_id: str | None = None, require_auth: bool = False) -> dict:
+                  key_id: str | None = None, keyring_file: pathlib.Path | None = None,
+                  require_auth: bool = False) -> dict:
     if key_id is not None and (not isinstance(key_id, str) or not key_id.strip()):
         raise ValueError("BACKUP_AUTH_KEY_ID_INVALID")
+    if key_file is not None and keyring_file is not None:
+        raise ValueError("BACKUP_AUTH_KEY_SOURCE_CONFLICT")
     backup = backup.resolve()
     manifest_path = pathlib.Path(str(backup) + ".manifest.json")
     if not backup.is_file() or not manifest_path.is_file():
@@ -416,7 +438,7 @@ def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
 
     auth = manifest.get("auth")
     if auth is None:
-        if require_auth or key_file is not None or key_id is not None:
+        if require_auth or key_file is not None or key_id is not None or keyring_file is not None:
             raise ValueError("BACKUP_AUTH_SIGNATURE_REQUIRED")
     else:
         if (not isinstance(auth, dict) or set(auth) != {"algorithm", "key_id", "hmac_sha256"} or
@@ -425,11 +447,18 @@ def verify_backup(backup: pathlib.Path, *, key_file: pathlib.Path | None = None,
             not isinstance(auth.get("hmac_sha256"), str) or
             not re.fullmatch(r"[0-9a-f]{64}", auth["hmac_sha256"])):
             raise ValueError("BACKUP_AUTH_METADATA_INVALID")
-        if key_file is None:
-            raise ValueError("BACKUP_AUTH_KEY_REQUIRED")
         if key_id is not None and key_id != auth["key_id"]:
             raise ValueError("BACKUP_AUTH_KEY_ID_MISMATCH")
-        auth_key = _load_auth_key(key_file)
+        if keyring_file is not None:
+            keyring = _load_keyring(keyring_file)
+            selected_key = keyring.get(auth["key_id"])
+            if selected_key is None:
+                raise ValueError("BACKUP_AUTH_KEY_NOT_IN_KEYRING")
+        elif key_file is not None:
+            selected_key = key_file
+        else:
+            raise ValueError("BACKUP_AUTH_KEY_REQUIRED")
+        auth_key = _load_auth_key(selected_key)
         expected = hmac.new(auth_key, _canonical_manifest(manifest),
                             hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, auth["hmac_sha256"]):
@@ -441,9 +470,10 @@ def restore_backup(backup: pathlib.Path, destination: pathlib.Path,
                    replace_existing: bool = False, *,
                    key_file: pathlib.Path | None = None,
                    key_id: str | None = None,
+                   keyring_file: pathlib.Path | None = None,
                    require_auth: bool = False) -> None:
     backup, destination = backup.resolve(), destination.resolve()
-    verify_backup(backup, key_file=key_file, key_id=key_id, require_auth=require_auth)
+    verify_backup(backup, key_file=key_file, key_id=key_id,\n                  keyring_file=keyring_file, require_auth=require_auth)
     if backup == destination:
         raise ValueError("RESTORE_PATH_EQUALS_BACKUP")
     with writer_lock(destination):
