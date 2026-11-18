@@ -966,6 +966,11 @@ ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
   }
   if (!read_enum_map(candidate.claim_statuses, 2, candidate.nodes, NodeKind::Claim))
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_STATUS_INVALID");
+  std::size_t claim_node_count = 0;
+  for (const auto& node : candidate.nodes)
+    if (node.second.kind == NodeKind::Claim) ++claim_node_count;
+  if (candidate.claim_statuses.size() != claim_node_count)
+    return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_STATUS_INCOMPLETE");
 
   if (!(in >> count) || count > 100000)
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLAIM_VALIDITY_COUNT_INVALID");
