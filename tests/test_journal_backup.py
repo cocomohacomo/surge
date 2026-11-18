@@ -6,7 +6,7 @@ import struct
 import zlib
 from pathlib import Path
 
-from tools.journal_backup import create_backup, restore_backup, verify_backup, writer_lock
+from tools.journal_backup import (create_backup, restore_backup, verify_backup, writer_lock, inspect_journal, _fnv1a_request_fingerprint)
 
 
 def _quoted(value):
@@ -272,6 +272,45 @@ class JournalBackupTests(unittest.TestCase):
             backup.write_bytes(_valid_journal() + b"tampered")
             with self.assertRaisesRegex(ValueError, "BACKUP_DIGEST_OR_SIZE_MISMATCH"):
                 verify_backup(backup)
+
+
+    def test_streaming_validator_scales_without_in_memory_global_id_sets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "many.sgj"
+            data = bytearray(b"SURGEJ1\n")
+            for index in range(1500):
+                tx = f"tx-{index}"
+                idem = f"idem-{index}"
+                event_id = f"event-{index}"
+                events = [(event_id, "TEST", "payload")]
+                fingerprint = _fnv1a_request_fingerprint(tx, index, events)
+                data.extend(_frame(f"B {_quoted(tx)} {_quoted(idem)} {index} {_quoted(fingerprint)}"))
+                data.extend(_frame(f"E {_quoted(tx)} {_quoted(event_id)} {_quoted('TEST')} {_quoted('payload')}"))
+                data.extend(_frame(f"C {_quoted(tx)} {index + 1} 1 {_quoted(fingerprint)}"))
+            journal.write_bytes(data)
+            result = inspect_journal(journal)
+            self.assertEqual(result["state_version"], 1500)
+            self.assertEqual(result["committed_transactions"], 1500)
+            self.assertEqual(result["committed_event_count"], 1500)
+            self.assertEqual(result["recoverable_tail_bytes"], 0)
+
+    def test_streaming_validator_bounds_pending_transaction_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "pending.sgj"
+            journal.write_bytes(
+                b"SURGEJ1\n"
+                + _frame(f"B {_quoted('tx-1')} {_quoted('idem-1')} 0 {_quoted('0000000000000000')}")
+                + _frame(f"B {_quoted('tx-2')} {_quoted('idem-2')} 0 {_quoted('0000000000000000')}")
+            )
+            with self.assertRaisesRegex(ValueError, "BACKUP_PENDING_TRANSACTION_LIMIT"):
+                inspect_journal(journal, max_pending_transactions=1)
+
+    def test_streaming_validator_rejects_invalid_resource_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "valid.sgj"
+            journal.write_bytes(_valid_journal())
+            with self.assertRaisesRegex(ValueError, "BACKUP_PENDING_TRANSACTION_LIMIT_INVALID"):
+                inspect_journal(journal, max_pending_transactions=0)
 
 
 if __name__ == "__main__":
