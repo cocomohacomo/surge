@@ -22,7 +22,7 @@ int main() {
 
     const auto all = journal.committed_tail(0);
     CHECK(all.ok && all.after_state_version == 0 && all.current_state_version == 2);
-    CHECK(all.events.size() == 3 && all.payload_bytes == 14);
+    CHECK(all.events.size() == 3 && all.total_bytes == 55);
     CHECK(all.events[0].state_version == 1 && all.events[1].state_version == 1);
     CHECK(all.events[2].state_version == 2);
 
@@ -38,9 +38,9 @@ int main() {
     CHECK(journal.committed_tail(0, event_limit).error ==
           "JOURNAL_TAIL_EVENT_LIMIT_EXCEEDED");
     JournalTailLimits byte_limit;
-    byte_limit.max_payload_bytes = 4;
+    byte_limit.max_total_bytes = 4;
     CHECK(journal.committed_tail(0, byte_limit).error ==
-          "JOURNAL_TAIL_PAYLOAD_LIMIT_EXCEEDED");
+          "JOURNAL_TAIL_TOTAL_BYTES_LIMIT_EXCEEDED");
   }
   {
     EventJournal recovered(path);
