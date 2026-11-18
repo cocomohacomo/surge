@@ -14,6 +14,7 @@ class ContextGraphSnapshotDomain final : public SnapshotDomain {
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: ContextGraph& graph_;
 };
 class EvidenceProvenanceSnapshotDomain final : public SnapshotDomain {
@@ -23,6 +24,7 @@ class EvidenceProvenanceSnapshotDomain final : public SnapshotDomain {
   std::string schema_id() const override;
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: EvidenceProvenanceLedger& ledger_;
 };
 class ChaosClusterSnapshotDomain final : public SnapshotDomain {
@@ -32,6 +34,7 @@ class ChaosClusterSnapshotDomain final : public SnapshotDomain {
   std::string schema_id() const override;
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: ChaosClusterLedger& ledger_;
 };
 class TemporalBoundarySnapshotDomain final : public SnapshotDomain {
@@ -41,6 +44,7 @@ class TemporalBoundarySnapshotDomain final : public SnapshotDomain {
   std::string schema_id() const override;
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: TemporalBoundaryLedger& ledger_;
 };
 class TemporalQuestionSnapshotDomain final : public SnapshotDomain {
@@ -50,6 +54,7 @@ class TemporalQuestionSnapshotDomain final : public SnapshotDomain {
   std::string schema_id() const override;
   bool capture(std::string*, std::string*) const override;
   std::unique_ptr<PreparedSnapshotRestore> prepare_restore(const std::string&, std::string*) override;
+  std::unique_ptr<PreparedSnapshotRestore> prepare_restore_with_tail(const std::string&, const std::vector<JournalEvent>&, std::string*) override;
  private: TemporalQuestionLedger& ledger_;
 };
 }  // namespace surge
