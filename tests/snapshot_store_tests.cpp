@@ -46,7 +46,6 @@ int main() {
 
   const auto generation_one = encode("ctx", 1, "state-one");
   const auto generation_two = encode("ctx", 2, "state-two");
-  const auto generation_three = encode("ctx", 3, "state-three");
   std::string error;
 
   SnapshotStore store(path.u8string());
