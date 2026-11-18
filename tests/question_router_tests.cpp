@@ -139,5 +139,5 @@ int main(){
     CHECK(graph.nodes().count("hypothesis-not-claim")==0);
   }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE QuestionRouter tests: scoped lifecycle, CC14 and CC15 passed\\n";
+  std::cout<<"SURGE QuestionRouter tests: scoped lifecycle, CC14 and CC15 passed\n";
 }
