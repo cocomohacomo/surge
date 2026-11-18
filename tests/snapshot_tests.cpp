@@ -26,6 +26,11 @@ int main() {
   CHECK(restored.state_version == source.state_version);
   CHECK(restored.journal_sequence == source.journal_sequence);
   CHECK(restored.payload == source.payload);
+  SnapshotDocument metadata;
+  CHECK(SnapshotCodec::inspect(valid_encoded, {}, &metadata, &error));
+  CHECK(metadata.context_id == source.context_id);
+  CHECK(metadata.state_version == source.state_version);
+  CHECK(metadata.payload.empty());
 
   std::string damaged = encoded;
   damaged[damaged.size() / 2] ^= 0x01;
