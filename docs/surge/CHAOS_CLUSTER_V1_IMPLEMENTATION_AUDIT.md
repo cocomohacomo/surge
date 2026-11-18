@@ -324,3 +324,21 @@ The native EventJournal currently retains replayed events and uniqueness maps
 in memory, and must be treated as a separate P0 memory workstream before large
 journals are opened on constrained edge PCs. No fixed peak RSS or target-device
 performance claim is made by the validator change.
+
+
+## EventJournal explicit resource budgets and benchmark readiness
+
+An opt-in `EventJournalLimits` profile now supports maximum retained event
+count, retained payload bytes, and transaction count. Zero preserves legacy
+unlimited behavior. Limits are enforced consistently while replaying an
+existing journal and before writing a new transaction. Exceeding a limit
+returns `JOURNAL_RESOURCE_LIMIT_EXCEEDED` or fails open with that error; no
+journal bytes are removed. This gives edge deployments a fail-closed ceiling
+rather than allowing history growth to continue until allocator failure.
+
+The benchmark accepts an optional event ceiling, samples at most about 8,192
+append latencies, and reports Linux process peak RSS (VmHWM). Benchmark smoke
+coverage includes a bounded successful run and an expected over-limit failure.
+This is a benchmarkable guardrail, not proof of a particular MiB ceiling.
+Snapshot/compaction remains intentionally disabled pending all-domain snapshot
+reducer registration and differential replay equivalence.
