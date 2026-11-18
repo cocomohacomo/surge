@@ -2258,9 +2258,9 @@ int surge_retention_journal_get_events(void* opaque,char* output,size_t output_c
       event.kind!="RETENTION_RESTORE_VERIFIED")continue;
    if(!first)value+=",";
    first=false;
-   value+="{\\"event_id\\":"+json_quote(event.event_id)+
-     ",\\"kind\\":"+json_quote(event.kind)+
-     ",\\"payload\\":"+json_quote(event.payload)+"}";
+   value+="{\"event_id\":"+json_quote(event.event_id)+
+     ",\"kind\":"+json_quote(event.kind)+
+     ",\"payload\":"+json_quote(event.payload)+"}";
    if(value.size()>16*1024*1024){copy_text(error,error_cap,"RETENTION_JOURNAL_RESPONSE_TOO_LARGE");return 0;}
   }
   value+="]";
