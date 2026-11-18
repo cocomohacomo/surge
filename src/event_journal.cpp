@@ -569,6 +569,10 @@ JournalTailResult EventJournal::committed_tail(
     result.error = "JOURNAL_TAIL_WATERMARK_AHEAD";
     return result;
   }
+  if (after_state_version < checkpoint_base_state_version_) {
+    result.error = "JOURNAL_TAIL_BEHIND_COMPACTION_BASE";
+    return result;
+  }
   if (after_state_version == state_version_) {
     result.ok = true;
     return result;
@@ -623,6 +627,110 @@ JournalTailResult EventJournal::committed_tail(
   result.ok = true;
   return result;
 }
+
+bool EventJournal::compact_after_checkpoint(
+    const std::string& snapshot_bytes, const std::string& expected_context_id,
+    std::string* error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!opened_) {
+    if (error) *error = "JOURNAL_NOT_OPEN";
+    return false;
+  }
+  SnapshotDocument document;
+  if (!SnapshotCodec::inspect(snapshot_bytes, {}, &document, error))
+    return false;
+  if (document.context_id != expected_context_id ||
+      document.state_version != state_version_ ||
+      document.journal_sequence != state_version_) {
+    if (error) *error = "JOURNAL_COMPACTION_SNAPSHOT_WATERMARK_MISMATCH";
+    return false;
+  }
+
+  const auto digest = sha256_hex(snapshot_bytes);
+  std::string header;
+  if (!encode_checkpoint_header(state_version_, expected_context_id, digest,
+          idempotency_, transaction_ids_, event_ids_, header)) {
+    if (error) *error = "JOURNAL_COMPACTION_MANIFEST_LIMIT_EXCEEDED";
+    return false;
+  }
+
+  const std::string temporary = path_ + ".compact.tmp";
+  const std::string backup_temporary = path_ + ".bak.tmp";
+  const std::string backup = path_ + ".bak";
+  std::error_code ignored;
+  std::filesystem::remove(temporary, ignored);
+  std::filesystem::remove(backup_temporary, ignored);
+
+  {
+    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      if (error) *error = "JOURNAL_COMPACTION_TEMP_OPEN_FAILED";
+      return false;
+    }
+    out.write(kMagicV2, static_cast<std::streamsize>(sizeof(kMagicV2) - 1));
+    put_u32(out, static_cast<std::uint32_t>(header.size()));
+    out.write(header.data(), static_cast<std::streamsize>(header.size()));
+    put_u32(out, crc32(header));
+    out.flush();
+    if (!out) {
+      out.close();
+      std::filesystem::remove(temporary, ignored);
+      if (error) *error = "JOURNAL_COMPACTION_TEMP_WRITE_FAILED";
+      return false;
+    }
+  }
+  if (!sync_file_to_stable_storage(temporary)) {
+    std::filesystem::remove(temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_TEMP_SYNC_FAILED";
+    return false;
+  }
+
+  if (!copy_file_durable(path_, backup_temporary)) {
+    std::filesystem::remove(temporary, ignored);
+    std::filesystem::remove(backup_temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_BACKUP_COPY_FAILED";
+    return false;
+  }
+  if (!atomic_replace_file(backup_temporary, backup) ||
+      !sync_parent_directory(path_)) {
+    std::filesystem::remove(temporary, ignored);
+    std::filesystem::remove(backup_temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_BACKUP_SYNC_FAILED";
+    return false;
+  }
+  if (!atomic_replace_file(temporary, path_)) {
+    std::filesystem::remove(temporary, ignored);
+    if (error) *error = "JOURNAL_COMPACTION_REPLACE_FAILED";
+    return false;
+  }
+  if (!sync_parent_directory(path_)) {
+    opened_ = false;
+    if (error) *error = "JOURNAL_COMPACTION_DIRECTORY_SYNC_FAILED";
+    return false;  // New file may be installed; reopen and inspect its checkpoint.
+  }
+
+  events_.clear();
+  retained_payload_bytes_ = 0;
+  checkpoint_base_state_version_ = state_version_;
+  checkpoint_context_id_ = expected_context_id;
+  checkpoint_snapshot_digest_ = digest;
+  compacted_ = true;
+  append_frame_count_ = 0;
+  last_error_.clear();
+  if (error) error->clear();
+  return true;
+}
+
+JournalCheckpointInfo EventJournal::checkpoint_info() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  JournalCheckpointInfo info;
+  info.compacted = compacted_;
+  info.base_state_version = checkpoint_base_state_version_;
+  info.context_id = checkpoint_context_id_;
+  info.snapshot_digest = checkpoint_snapshot_digest_;
+  return info;
+}
+
 std::string EventJournal::last_error() const {
   std::lock_guard<std::mutex> lock(mutex_); return last_error_;
 }
