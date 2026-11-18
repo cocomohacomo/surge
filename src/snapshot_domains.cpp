@@ -131,8 +131,28 @@ bool decode_boundary(const std::string& payload,
       return true;
     };
     if (!read_map(p.selected_candidate_ids) ||
-        !read_map(p.selected_through_candidate_ids) ||
-        !candidate.emplace(key, std::move(p)).second) return false;
+        !read_map(p.selected_through_candidate_ids)) return false;
+    const std::set<std::string> evidence_ids(p.evidence_ids.begin(), p.evidence_ids.end());
+    const std::set<std::string> packet_ids(p.packet_ids.begin(), p.packet_ids.end());
+    if (evidence_ids.size() != p.evidence_ids.size() ||
+        packet_ids.size() != p.packet_ids.size()) return false;
+    std::map<std::string, std::set<std::string>> ids_by_role;
+    for (const auto& c : p.candidates) {
+      if (!evidence_ids.count(c.evidence_id) || !packet_ids.count(c.packet_id))
+        return false;
+      if ((c.role == "VALID_FROM" && (c.valid_from.empty() || !c.valid_until.empty())) ||
+          (c.role == "VALID_UNTIL" && (!c.valid_from.empty() || c.valid_until.empty())) ||
+          (c.role == "INTERVAL" && (c.valid_from.empty() || c.valid_until.empty())))
+        return false;
+      ids_by_role[c.role].insert(c.candidate_id);
+    }
+    for (const auto& selected : p.selected_candidate_ids) {
+      if (!ids_by_role[selected.first].count(selected.second)) return false;
+    }
+    for (const auto& selected : p.selected_through_candidate_ids) {
+      if (!ids_by_role[selected.first].count(selected.second)) return false;
+    }
+    if (!candidate.emplace(key, std::move(p)).second) return false;
   }
   if (in >> extra) return false;
   output.swap(candidate);
@@ -169,12 +189,19 @@ bool decode_questions(const std::string& payload, std::size_t maximum_questions,
           std::quoted(q.status) >> std::quoted(q.last_event_id)) ||
         key.empty() || key != q.question_id || q.claim_id.empty() ||
         q.role.empty() || q.last_event_id.empty() ||
+        q.question_id != "question/temporal/" + q.claim_id + "/" + q.role ||
         (q.status != "OPEN" && q.status != "UNDER_REVIEW" &&
          q.status != "RESOLVED_PENDING_APPROVAL" && q.status != "REOPENED"))
       return false;
     if (!read_strings(in, q.candidate_ids, 4096) ||
         !read_strings(in, q.evidence_ids, 8192) ||
-        !read_strings(in, q.packet_ids, 8192) ||
+        !read_strings(in, q.packet_ids, 8192)) return false;
+    const std::set<std::string> candidate_ids(q.candidate_ids.begin(), q.candidate_ids.end());
+    const std::set<std::string> evidence_ids(q.evidence_ids.begin(), q.evidence_ids.end());
+    const std::set<std::string> packet_ids(q.packet_ids.begin(), q.packet_ids.end());
+    if (candidate_ids.size() != q.candidate_ids.size() ||
+        evidence_ids.size() != q.evidence_ids.size() ||
+        packet_ids.size() != q.packet_ids.size() ||
         !candidate.emplace(key, std::move(q)).second) return false;
   }
   if (in >> extra) return false;
