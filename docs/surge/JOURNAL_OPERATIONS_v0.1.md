@@ -96,3 +96,30 @@ Journaled retention decisions are append-only metadata. They do not yet
 rewrite or compact journal segments, snapshot domain state, physically delete
 payloads, or perform cryptographic erasure. Those operations require a
 separate verified snapshot/compaction design and crash-recovery drills.
+
+
+## Edge-PC resource-bounded backup validation
+
+The Python backup validator no longer retains journal-wide transaction IDs,
+idempotency keys, or event IDs in Python sets, and it does not retain complete
+transaction event payload lists. It streams each frame, updates the request
+fingerprint incrementally, and uses a disposable SQLite index on disk for
+global uniqueness checks. SQLite's page cache is capped at 2 MiB and temporary
+storage is file-backed. The maximum frame remains the EventJournal format
+limit of 16 MiB; copy and digest I/O use 64 KiB chunks. Concurrent pending
+transactions are capped at 256 by default (the API accepts an explicit limit
+from 1 through 4096). An incomplete tail's temporary indexes are discarded.
+
+Key material reads are capped at 4 KiB and keyring JSON at 64 KiB. These bounds
+prevent accidental oversized operator files from causing unbounded reads.
+The temporary index requires free disk space proportional to journal
+identifiers, so operators must provision scratch space and may select a
+suitable temp directory through the host's standard temporary-directory
+configuration.
+
+This design bounds validation memory independently of total journal history,
+but it does not assert a fixed process RSS: one frame can still be up to 16 MiB,
+and Python/SQLite/runtime overhead varies by platform. Target-PC peak RSS and
+scratch-space measurements remain required before a deployment memory limit is
+claimed. The backup validator is an offline maintenance operation and does not
+consume SURGE Core's normal recognition memory budget.
