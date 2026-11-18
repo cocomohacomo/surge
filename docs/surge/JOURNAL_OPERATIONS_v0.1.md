@@ -56,6 +56,16 @@ SHA-256 digests, event-ID binding, archived targets, and source-digest
 consistency. This records decisions, not physical erasure. Manifest JSON files
 are optional cache/export copies and can be rebuilt from journal events.
 
+## Authenticated backup option
+
+The backup CLI and Python API support optional HMAC-SHA256 manifest
+authentication using a caller-supplied key file and non-secret key ID. The key
+is never stored in the repository or backup. Production verification and
+restore should use `--require-auth` with the approved key. Legacy unsigned
+backups remain available only for compatibility unless authentication is
+required. HMAC does not encrypt data; see
+`JOURNAL_BACKUP_AUTH_v0.1.md` for key handling, rotation, and limitations.
+
 ## Migration policy
 
 No general schema migrator is claimed implemented yet. Until one exists:
