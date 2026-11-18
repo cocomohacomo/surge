@@ -461,6 +461,7 @@ bool ContextGraph::replay(){
   if(e.kind=="TEMPORAL_BOUNDARY_CONTRIBUTION_V1"||e.kind=="TEMPORAL_BOUNDARY_CLEARED_V1"||e.kind=="TEMPORAL_BOUNDARY_CANDIDATE_SELECTED_V1"||e.kind=="TEMPORAL_QUESTION_SNAPSHOT_V1"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="CHAOS_CLUSTER_SNAPSHOT"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="RETENTION_MANIFEST_RECORDED"||e.kind=="RETENTION_TOMBSTONE_PROPOSED"){if(have_meta){++version;have_meta=false;}++version;continue;}
+  if(e.kind=="EVIDENCE_PROVENANCE_SET_V1"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="DELTA_META"){if(have_meta){++version;have_meta=false;}std::istringstream i(e.payload);std::string id,fp;std::uint64_t expected=0;
    if(!(i>>std::quoted(id)>>std::quoted(key)>>expected>>std::quoted(fp))||id.empty()||key.empty()||fp.empty()||expected!=version){last_error_="JOURNAL_DELTA_META_INVALID";return false;}idempotency_[key]=fp;have_meta=true;semantic_packet_waiting_for_delta=false;continue;}
   if(e.kind=="QUESTION_MEMORY_REFERENCED"||e.kind=="QUESTION_MEMORY_REFERENCE_CASCADE"||e.kind=="QUESTION_MEMORY_STATE_SET"||e.kind=="QUESTION_ASPECT_STATUS_SET"||e.kind=="QUESTION_ASPECT_STATUS_BATCH_SET"){if(have_meta){++version;have_meta=false;}if(!replay_event(rebuilt,e,last_error_)){last_error_="JOURNAL_QUESTION_MEMORY_EVENT_INVALID:"+last_error_;return false;}++version;continue;}
