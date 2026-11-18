@@ -296,3 +296,13 @@ uses constant-time signature comparison. Tests cover signed backup/restore,
 missing and wrong keys, key-ID mismatch/tampering, unsigned rejection, and
 short keys. HMAC is integrity/authenticity only; encryption, KMS/HSM integration,
 automated rotation, and off-host immutable replication remain unimplemented.
+
+
+## Backup key rotation support
+
+The backup verifier and restore API can now resolve multiple HMAC keys through
+an external JSON keyring mapping key IDs to key-file paths. This supports an
+overlap period where older backups remain verifiable while new backups use a
+rotated key. Missing key IDs and conflicting direct-key/keyring inputs fail
+closed. The keyring contains paths, not secret bytes; key storage and keyring
+access control remain operator responsibilities.
