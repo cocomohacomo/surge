@@ -24,7 +24,7 @@ int main(){using namespace surge;
  ep.revision=2;ep.observed_at="2026-11-19T00:01:00Z";CHECK(evidence.append(ep,journal.state_version(),er,error));
  CHECK(chaos.create("tx-create-b","idem-create-b",journal.state_version(),"chaos-b",cp).committed);
  auto b3=boundary.add("btx3","bidem3","b-event-3",journal.state_version(),{"claim/A","VALID_FROM","2026-06-01T00:00:00+09:00","","evidence/b3","packet/b3"});CHECK(b3.committed);
- auto q2=questions.synchronize("qtx2","qidem2","q-event-2",journal.state_version(),b3.pending);CHECK(q2.committed&&q2.status=="REOPENED");
+ auto q2=questions.synchronize("qtx2","qidem2","q-event-2",journal.state_version(),b3.pending);CHECK(q2.committed&&q2.status=="UNDER_REVIEW");
  CHECK(evidence.history().at("evidence-a").size()==2);CHECK(chaos.list().size()==2);CHECK(boundary.pending_claim_count()==1);CHECK(questions.size()==1);
  CHECK(co.restore(bytes,"ctx",0,0,&error));
  CHECK(evidence.history().at("evidence-a").size()==1);CHECK(chaos.list().size()==1);CHECK(chaos.list().front().cluster_id=="chaos-a");
