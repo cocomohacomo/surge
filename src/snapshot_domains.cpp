@@ -152,6 +152,13 @@ bool decode_boundary(const std::string& payload,
     for (const auto& selected : p.selected_through_candidate_ids) {
       if (!ids_by_role[selected.first].count(selected.second)) return false;
     }
+    for (const auto& c : p.candidates) {
+      const auto selected = p.selected_candidate_ids.find(c.role);
+      const bool expected_selected = selected != p.selected_candidate_ids.end()
+          ? selected->second == c.candidate_id
+          : ids_by_role[c.role].size() == 1;
+      if (c.selected != expected_selected) return false;
+    }
     if (!candidate.emplace(key, std::move(p)).second) return false;
   }
   if (in >> extra) return false;
