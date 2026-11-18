@@ -147,7 +147,7 @@ int main() {
   // Restore from the checkpoint and replay the bounded committed tail.
   if (!coordinator.restore_with_tail(snapshot, journal, "ctx", 0, 0,
           JournalTailLimits{4096, 4U * 1024U * 1024U}, &error)) {
-    std::cerr << "tail restore error: " << error << "\\n";
+    std::cerr << "tail restore error: " << error << "\n";
     return 2;
   }
   CHECK(evidence.history().at("evidence-a").size() == 2);
