@@ -53,6 +53,10 @@ bool prune_verified_journal_backup(const std::string& journal_path,
     EventJournal& active_journal, SnapshotStore& snapshot_store,
     std::string* error) {
   if (journal_path.empty()) return fail(error, "JOURNAL_BACKUP_PATH_REQUIRED");
+  const auto requested_path = fs::absolute(fs::u8path(journal_path)).lexically_normal();
+  const auto active_path = fs::absolute(fs::u8path(active_journal.path())).lexically_normal();
+  if (requested_path != active_path)
+    return fail(error, "JOURNAL_BACKUP_PRUNE_ACTIVE_PATH_MISMATCH");
   const auto checkpoint = active_journal.checkpoint_info();
   if (!checkpoint.compacted || checkpoint.context_id.empty() ||
       checkpoint.snapshot_digest.size() != 64)
