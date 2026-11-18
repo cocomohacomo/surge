@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import tempfile
 import struct
@@ -334,17 +335,33 @@ def verify_backup(backup: pathlib.Path) -> dict:
     manifest_path = pathlib.Path(str(backup) + ".manifest.json")
     if not backup.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("BACKUP_OR_MANIFEST_NOT_FOUND")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("BACKUP_MANIFEST_INVALID") from exc
     if (not isinstance(manifest, dict) or
+        isinstance(manifest.get("manifest_version"), bool) or
         manifest.get("manifest_version") != 1 or
         manifest.get("journal_format") != "SURGEJ1"):
         raise ValueError("BACKUP_MANIFEST_VERSION_INVALID")
-    if (manifest.get("backup_file") != backup.name or
-        isinstance(manifest.get("size_bytes"), bool) or
+    created_at = manifest.get("created_at")
+    try:
+        timestamp = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError("BACKUP_MANIFEST_TIMESTAMP_INVALID")
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("BACKUP_MANIFEST_TIMESTAMP_INVALID") from exc
+    if (not isinstance(manifest.get("source_name"), str) or
+        not manifest["source_name"] or
+        manifest.get("backup_file") != backup.name or
+        manifest.get("consistency") != "writer-lock-held-during-copy"):
+        raise ValueError("BACKUP_MANIFEST_FIELDS_INVALID")
+    digest = manifest.get("sha256")
+    if (isinstance(manifest.get("size_bytes"), bool) or
         not isinstance(manifest.get("size_bytes"), int) or
         manifest.get("size_bytes") != backup.stat().st_size or
-        not isinstance(manifest.get("sha256"), str) or
-        manifest.get("sha256") != sha256_file(backup)):
+        not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) or
+        digest != sha256_file(backup)):
         raise ValueError("BACKUP_DIGEST_OR_SIZE_MISMATCH")
     replay = inspect_journal(backup)
     if replay["recoverable_tail_bytes"]:
