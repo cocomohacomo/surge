@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   if (argc == 4 && std::string(argv[1]) == "--hold-lock") {
     EventJournal holder(argv[2]);
     if (!holder.open()) return 2;
-    { std::ofstream ready(argv[3]); ready << "ready\\n"; }
+    { std::ofstream ready(argv[3]); ready << "ready\n"; }
     const std::filesystem::path release = std::string(argv[3]) + ".release";
     for (int i = 0; i < 500; ++i) {
       if (std::filesystem::exists(release)) return 0;
@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
     std::string command = "\"" + executable + "\" --hold-lock \"" +
       process_path + "\" \"" + ready_path + "\"";
     std::vector<char> command_buffer(command.begin(), command.end());
-    command_buffer.push_back('\\0');
+    command_buffer.push_back('\0');
     CHECK(CreateProcessA(nullptr, command_buffer.data(), nullptr, nullptr, FALSE,
       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process) != 0);
 #else
@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
       CHECK(!competing_process.open());
       CHECK(competing_process.last_error() == "JOURNAL_WRITER_LOCKED");
     }
-    { std::ofstream release(release_path); release << "release\\n"; }
+    { std::ofstream release(release_path); release << "release\n"; }
 #ifdef _WIN32
     CHECK(WaitForSingleObject(process.hProcess, 5000) == WAIT_OBJECT_0);
     DWORD exit_code = 1; CHECK(GetExitCodeProcess(process.hProcess, &exit_code) != 0);
