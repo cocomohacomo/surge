@@ -100,12 +100,22 @@ def build_retention_manifest(
             "dependency": _unit(source.get("dependency", 0.0), "dependency"),
             "recency": recency,
         }
+        source_digest = source.get("source_digest")
+        if source_digest is not None and (not isinstance(source_digest, str) or not source_digest):
+            raise ValueError("RETENTION_SOURCE_DIGEST_INVALID")
+        refs = {}
+        for key in ("provenance_refs", "lineage_refs"):
+            value = source.get(key, [])
+            if (not isinstance(value, list) or
+                any(not isinstance(ref, str) or not ref for ref in value)):
+                raise ValueError(f"RETENTION_{key.upper()}_INVALID")
+            refs[key] = sorted(set(value))
         score = sum(factors[key] * normalized_weights[key] for key in factors)
         planned.append({
             "record_id": record_id,
-            "source_digest": source.get("source_digest"),
-            "provenance_refs": sorted(set(source.get("provenance_refs", []))),
-            "lineage_refs": sorted(set(source.get("lineage_refs", []))),
+            "source_digest": source_digest,
+            "provenance_refs": refs["provenance_refs"],
+            "lineage_refs": refs["lineage_refs"],
             "last_accessed_at": last_accessed.isoformat().replace("+00:00", "Z"),
             "retention_score": round(score, 12),
             "factors": {key: round(value, 12) for key, value in factors.items()},
