@@ -15,7 +15,8 @@ struct SnapshotStoreResult {
   // document contains envelope metadata only; the payload remains in bytes.
   bool ok{false};
   bool used_backup{false};
-  // Metadata only; payload remains in bytes to avoid duplicating large snapshots.\n  SnapshotDocument document;
+  // Metadata only; payload remains in bytes to avoid duplicating large snapshots.
+  SnapshotDocument document;
   std::string bytes;
   std::string error;
 };
