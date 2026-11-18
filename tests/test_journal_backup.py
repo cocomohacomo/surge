@@ -196,6 +196,14 @@ class JournalBackupTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_SIGNATURE_MISMATCH"):
                 verify_backup(backup, key_file=key, require_auth=True)
+            manifest = json.loads(create_backup(
+                source, root / "fresh.sgj", key_file=key, key_id="signing-key"
+            ).read_text(encoding="utf-8"))
+            manifest["auth"]["key_id"] = "forged-key-id"
+            (root / "fresh.sgj.manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "BACKUP_AUTH_SIGNATURE_MISMATCH"):
+                verify_backup(root / "fresh.sgj", key_file=key, require_auth=True)
 
     def test_unsigned_backup_is_rejected_when_authentication_is_required(self):
         with tempfile.TemporaryDirectory() as directory:
