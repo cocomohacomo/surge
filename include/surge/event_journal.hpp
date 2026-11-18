@@ -21,6 +21,9 @@ struct EventJournalLimits {
   std::size_t max_events{0};
   std::size_t max_payload_bytes{0};
   std::size_t max_transactions{0};
+  // Lifetime unique event IDs, including identities retained in a compacted J2 manifest.
+  // Zero means unlimited. Set this for a hard bound on event-ID index growth.
+  std::size_t max_event_ids{0};
 };
 struct JournalCommitResult {
   bool committed{false};
