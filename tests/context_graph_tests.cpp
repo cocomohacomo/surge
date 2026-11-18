@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/event_journal.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -388,6 +389,31 @@ int main(){
       CHECK(history[1].evaluated_state_version==3&&history[1].recorded_state_version==4);
     }
   }
+  // Shared-journal owner event: ContextGraph must advance the global
+  // transaction version without interpreting retention metadata as graph data.
+  const auto retention_path=(root/"retention-owner-events.sgj").string();
+  {
+    EventJournal journal(retention_path);
+    ContextGraph graph(journal); CHECK(graph.open());
+    const auto committed=journal.commit("retention-manifest-tx",
+      "retention-manifest-idem",0,
+      {{"retention:manifest:test","RETENTION_MANIFEST_RECORDED","{}"}});
+    CHECK(committed.committed&&committed.state_version==1);
+    const auto tombstone=journal.commit("retention-tombstone-tx",
+      "retention-tombstone-idem",1,
+      {{"retention:tombstone:test","RETENTION_TOMBSTONE_PROPOSED","{}"}});
+    CHECK(tombstone.committed&&tombstone.state_version==2);
+    const auto provenance=journal.commit("evidence-provenance-tx",
+      "evidence-provenance-idem",2,
+      {{"evidence-provenance:test:1","EVIDENCE_PROVENANCE_SET_V1","{}"}});
+    CHECK(provenance.committed&&provenance.state_version==3);
+  }
+  {
+    ContextGraph recovered(retention_path);
+    CHECK(recovered.open());
+    CHECK(recovered.state_version()==3);
+    CHECK(recovered.nodes().empty());
+  }
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: 6 groups passed\n";
+  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }

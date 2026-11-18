@@ -2211,4 +2211,62 @@ int surge_chaos_cluster_get(void* opaque,const char* id,char* output,size_t outp
  return surge_chaos_cluster_get_bounded(opaque,id,10000,10000,1000,1000,1000,output,output_cap,required,error,error_cap);
 }
 
+int surge_retention_journal_commit(void* opaque,const char* tx,const char* idem,
+    uint64_t expected,const SurgeJournalEventInput* inputs,size_t count,
+    int* duplicate,uint64_t* version,char* error,size_t cap) {
+ try {
+  if(!opaque||!tx||!*tx||!idem||!*idem||!inputs||count!=1||
+     std::strlen(tx)>256||std::strlen(idem)>256) {
+   copy_text(error,cap,"RETENTION_JOURNAL_ARGUMENT_INVALID");return 0;
+  }
+  std::vector<surge::JournalEvent> events;
+  events.reserve(count);
+  for(size_t i=0;i<count;++i) {
+   const auto& in=inputs[i];
+   if(!in.event_id||!*in.event_id||!in.kind||!in.payload||
+      std::strlen(in.event_id)>256||std::strlen(in.kind)>96||
+      std::strlen(in.payload)>4*1024*1024) {
+    copy_text(error,cap,"RETENTION_JOURNAL_EVENT_INVALID");return 0;
+   }
+   const std::string kind(in.kind);
+   if(kind!="RETENTION_MANIFEST_RECORDED"&&
+      kind!="RETENTION_TOMBSTONE_PROPOSED") {
+    copy_text(error,cap,"RETENTION_JOURNAL_EVENT_KIND_FORBIDDEN");return 0;
+   }
+   events.push_back({in.event_id,kind,in.payload});
+  }
+  auto* handle=static_cast<Handle*>(opaque);
+  auto result=handle->journal.commit(tx,idem,expected,events);
+  if(duplicate)*duplicate=result.duplicate?1:0;
+  if(version)*version=result.state_version;
+  copy_text(error,cap,result.error);
+  return result.committed?1:0;
+ } catch(const std::exception& x){copy_text(error,cap,x.what());return 0;}
+   catch(...){copy_text(error,cap,"RETENTION_JOURNAL_UNKNOWN_EXCEPTION");return 0;}
+}
+int surge_retention_journal_get_events(void* opaque,char* output,size_t output_cap,
+    size_t* required,char* error,size_t error_cap) {
+ try {
+  if(!opaque){copy_text(error,error_cap,"RETENTION_JOURNAL_HANDLE_REQUIRED");return 0;}
+  const auto events=static_cast<Handle*>(opaque)->journal.committed_events();
+  std::string value="[";
+  bool first=true;
+  for(const auto& event:events) {
+   if(event.kind!="RETENTION_MANIFEST_RECORDED"&&
+      event.kind!="RETENTION_TOMBSTONE_PROPOSED")continue;
+   if(!first)value+=",";
+   first=false;
+   value+="{\"event_id\":"+json_quote(event.event_id)+
+     ",\"kind\":"+json_quote(event.kind)+
+     ",\"payload\":"+json_quote(event.payload)+"}";
+   if(value.size()>16*1024*1024){copy_text(error,error_cap,"RETENTION_JOURNAL_RESPONSE_TOO_LARGE");return 0;}
+  }
+  value+="]";
+  if(required)*required=value.size()+1;
+  if(!output||output_cap<value.size()+1){copy_text(error,error_cap,"RETENTION_JOURNAL_BUFFER_TOO_SMALL");return 0;}
+  copy_text(output,output_cap,value);copy_text(error,error_cap,"");return 1;
+ } catch(const std::exception& x){copy_text(error,error_cap,x.what());return 0;}
+   catch(...){copy_text(error,error_cap,"RETENTION_JOURNAL_READ_UNKNOWN_EXCEPTION");return 0;}
+}
+
 }

@@ -181,3 +181,49 @@ Windows), although the automated regression suite still needs a true
 multi-process contention test. This does not constitute a universal power-loss
 guarantee; filesystem and hardware behavior still require platform-specific
 fault testing.
+
+## Retention-to-EventJournal integration
+
+The retention planner now has a restricted C ABI transaction surface and a
+Python bridge. Manifests and tombstone proposals are persisted as append-only
+journal events under the global transaction/idempotency model. Replay rebuilds
+the retention projection and rejects digest mismatch, event-ID mismatch,
+missing manifest references, non-archived tombstone targets, and source digest
+mismatch. The C ABI allowlists only the two implemented retention event kinds.
+This does not compact the journal or perform physical deletion. Remaining
+work includes snapshot/segment compaction, restore drills against semantic
+projections, authenticated/off-host backup, crash injection at sync boundaries,
+and power-loss validation.
+
+
+## EventJournal retention integration and recovery validation
+
+Retention manifests and tombstone proposals are now persisted through a
+retention-only C ABI and Python bridge as atomic, idempotent EventJournal
+transactions. Replay validates manifest structure and digest, deterministic
+ranking/capacity assignment, event-ID binding, tombstone digest, archived
+record membership, and source digest agreement. Regression coverage includes
+idempotent retry, restart replay, rejection of non-retention event kinds, and
+backup/restore followed by full Core open and retention projection replay.
+
+A snapshot/compaction design contract has been added. It deliberately keeps
+compaction disabled until every journal consumer has a versioned snapshot and
+replay reducer and differential replay proves state equivalence. Current work
+does not physically delete payloads or rewrite the authoritative journal.
+
+
+## Shared-journal replay ownership
+
+ContextGraph replay now explicitly advances its global State Version across
+`RETENTION_MANIFEST_RECORDED` and `RETENTION_TOMBSTONE_PROPOSED` events without
+interpreting those payloads as graph mutations. This is an explicit
+cross-domain event registration, not a permissive ignore-unknown fallback.
+A regression opens and reopens a journal containing both retention event kinds
+and verifies graph state remains unchanged while the global version advances.
+
+
+The same replay audit found that standalone `EVIDENCE_PROVENANCE_SET_V1`
+events also require explicit version-only handling in ContextGraph. The graph
+now advances the shared State Version for this evidence-owned event without
+applying it as graph state. The regression covers both retention event kinds
+and this pre-existing external owner event.
