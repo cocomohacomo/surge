@@ -453,19 +453,32 @@ def main() -> None:
     backup = sub.add_parser("backup")
     backup.add_argument("journal", type=pathlib.Path)
     backup.add_argument("destination", type=pathlib.Path)
+    backup.add_argument("--key-file", type=pathlib.Path)
+    backup.add_argument("--key-id")
     verify = sub.add_parser("verify")
     verify.add_argument("backup", type=pathlib.Path)
+    verify.add_argument("--key-file", type=pathlib.Path)
+    verify.add_argument("--key-id")
+    verify.add_argument("--require-auth", action="store_true")
     restore = sub.add_parser("restore")
     restore.add_argument("backup", type=pathlib.Path)
     restore.add_argument("destination", type=pathlib.Path)
     restore.add_argument("--replace", action="store_true")
+    restore.add_argument("--key-file", type=pathlib.Path)
+    restore.add_argument("--key-id")
+    restore.add_argument("--require-auth", action="store_true")
     args = parser.parse_args()
     if args.command == "backup":
-        print(create_backup(args.journal, args.destination))
+        print(create_backup(args.journal, args.destination,
+                             key_file=args.key_file, key_id=args.key_id))
     elif args.command == "verify":
-        print(json.dumps(verify_backup(args.backup), ensure_ascii=False, indent=2))
+        print(json.dumps(verify_backup(args.backup, key_file=args.key_file,
+                                       key_id=args.key_id, require_auth=args.require_auth),
+                         ensure_ascii=False, indent=2))
     else:
-        restore_backup(args.backup, args.destination, args.replace)
+        restore_backup(args.backup, args.destination, args.replace,
+                       key_file=args.key_file, key_id=args.key_id,
+                       require_auth=args.require_auth)
         print("RESTORE_WRITTEN; reopen with EventJournal to validate replay")
 
 
