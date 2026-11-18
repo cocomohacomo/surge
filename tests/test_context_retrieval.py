@@ -253,20 +253,6 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     member={"member_ref": "merged-member", "event_ref": "merged-event",
                             "admission_reason": "HIGH_NOVELTY", "admitted_at": "2026-11-18T02:00:01Z"},
                     provenance=provenance)
-                for ref, value in (("a", 0.25), ("b", 0.95)):
-                    core.record_chaos_entity_observation(
-                        operation_id=f"member-score-{ref}", idempotency_key=f"member-score-{ref}",
-                        expected_state_version=core.state_version, cluster_id="query-source",
-                        entity_kind="MEMBER", entity_ref=ref,
-                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
-                                     "policy_version": "salience-v1", "observed_at": "2026-11-18T03:01:00Z"})
-                for ref, value in (("edge-analogy", 0.25), ("edge-cooccur", 0.9)):
-                    core.record_chaos_entity_observation(
-                        operation_id=f"edge-score-{ref}", idempotency_key=f"edge-score-{ref}",
-                        expected_state_version=core.state_version, cluster_id="query-source",
-                        entity_kind="ASSOCIATION", entity_ref=ref,
-                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
-                                     "policy_version": "confidence-v1", "observed_at": "2026-11-18T03:01:00Z"})
                 core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
                     expected_state_version=core.state_version, cluster_id="merge-source",
                     target_lifecycle="REVIEWABLE", reason="ready to merge", provenance=provenance)
@@ -316,6 +302,20 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     hypothesis={"hypothesis_id":"h-query","statement":"candidate pattern",
                                 "member_refs":["a","b"],"counterexample_refs":["b"]},
                     provenance=provenance)
+                for ref, value in (("a", 0.25), ("b", 0.95)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"member-score-{ref}", idempotency_key=f"member-score-{ref}",
+                        expected_state_version=core.state_version, cluster_id="query-source",
+                        entity_kind="MEMBER", entity_ref=ref,
+                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
+                                     "policy_version": "salience-v1", "observed_at": "2026-11-18T03:01:00Z"})
+                for ref, value in (("edge-analogy", 0.25), ("edge-cooccur", 0.9)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"edge-score-{ref}", idempotency_key=f"edge-score-{ref}",
+                        expected_state_version=core.state_version, cluster_id="query-source",
+                        entity_kind="ASSOCIATION", entity_ref=ref,
+                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
+                                     "policy_version": "confidence-v1", "observed_at": "2026-11-18T03:01:00Z"})
                 core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
                     expected_state_version=core.state_version, cluster_id="query-source",
                     target_lifecycle="REVIEWABLE", reason="ready for merge", provenance=provenance)
