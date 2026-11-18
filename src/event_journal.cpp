@@ -1,5 +1,8 @@
 #include "surge/event_journal.hpp"
+#include "surge/snapshot.hpp"
+#include "surge/sha256.hpp"
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -98,6 +101,110 @@ std::string commit_frame(const std::string& tx, std::uint64_t version,
   out << "C " << std::quoted(tx) << ' ' << version << ' ' << count << ' '
       << std::quoted(fingerprint);
   return out.str();
+}
+
+bool append_header_token(std::string& out, const std::string& token) {
+  if (token.size() > kMaxFrame - std::min<std::size_t>(kMaxFrame, out.size()))
+    return false;
+  out.append(token);
+  return out.size() <= kMaxFrame;
+}
+bool append_header_quoted(std::string& out, const std::string& value) {
+  if (!append_header_token(out, "\\"")) return false;
+  for (char c : value) {
+    if ((c == '\\"' || c == '\\\\') &&
+        !append_header_token(out, "\\\\"")) return false;
+    const char one[] = {c};
+    if (!append_header_token(out, std::string(one, 1))) return false;
+  }
+  return append_header_token(out, "\\"");
+}
+bool encode_checkpoint_header(
+    std::uint64_t base_version, const std::string& context_id,
+    const std::string& digest,
+    const std::map<std::string, std::string>& idempotency,
+    const std::map<std::string, std::string>& transactions,
+    const std::map<std::string, bool>& event_ids,
+    std::string& output) {
+  output = "H ";
+  auto number = [&](std::uint64_t value) {
+    return append_header_token(output, std::to_string(value));
+  };
+  auto count = [&](std::size_t value) {
+    return append_header_token(output, std::to_string(value));
+  };
+  auto space = [&]() { return append_header_token(output, " "); };
+  if (context_id.empty() || digest.size() != 64 ||
+      idempotency.size() != transactions.size() ||
+      !number(base_version) || !space() ||
+      !append_header_quoted(output, context_id) || !space() ||
+      !append_header_quoted(output, digest) || !space() ||
+      !count(idempotency.size())) return false;
+  for (const auto& item : idempotency)
+    if (!space() || !append_header_quoted(output, item.first) || !space() ||
+        !append_header_quoted(output, item.second)) return false;
+  if (!space() || !count(transactions.size())) return false;
+  for (const auto& item : transactions)
+    if (!space() || !append_header_quoted(output, item.first) || !space() ||
+        !append_header_quoted(output, item.second)) return false;
+  if (!space() || !count(event_ids.size())) return false;
+  for (const auto& item : event_ids)
+    if (!space() || !append_header_quoted(output, item.first)) return false;
+  return output.size() <= kMaxFrame;
+}
+bool decode_checkpoint_header(
+    const std::string& payload, std::uint64_t& base_version,
+    std::string& context_id, std::string& digest,
+    std::map<std::string, std::string>& idempotency,
+    std::map<std::string, std::string>& transactions,
+    std::map<std::string, bool>& event_ids) {
+  std::istringstream in(payload);
+  char type = 0;
+  std::size_t count = 0;
+  if (!(in >> type >> base_version >> std::quoted(context_id) >>
+        std::quoted(digest) >> count) || type != 'H' ||
+      context_id.empty() || !is_valid_utf8(context_id) ||
+      digest.size() != 64 || count > kMaxFrame / 8) return false;
+  for (char c : digest)
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string key, fingerprint;
+    if (!(in >> std::quoted(key) >> std::quoted(fingerprint)) ||
+        key.empty() || fingerprint.empty() ||
+        !idempotency.emplace(key, fingerprint).second) return false;
+  }
+  if (!(in >> count) || count > kMaxFrame / 8) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string tx, fingerprint;
+    if (!(in >> std::quoted(tx) >> std::quoted(fingerprint)) ||
+        tx.empty() || fingerprint.empty() ||
+        !transactions.emplace(tx, fingerprint).second) return false;
+  }
+  if (idempotency.size() != transactions.size() ||
+      !(in >> count) || count > kMaxFrame / 4) return false;
+  for (std::size_t i = 0; i < count; ++i) {
+    std::string id;
+    if (!(in >> std::quoted(id)) || id.empty() ||
+        !event_ids.emplace(id, true).second) return false;
+  }
+  std::string extra;
+  return !(in >> extra);
+}
+bool atomic_replace_file(const std::string& source,
+                         const std::string& destination) {
+#ifdef _WIN32
+  return MoveFileExA(source.c_str(), destination.c_str(),
+      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+  return ::rename(source.c_str(), destination.c_str()) == 0;
+#endif
+}
+bool copy_file_durable(const std::string& source,
+                       const std::string& destination) {
+  std::error_code ec;
+  std::filesystem::copy_file(source, destination,
+      std::filesystem::copy_options::overwrite_existing, ec);
+  return !ec && sync_file_to_stable_storage(destination);
 }
 }  // namespace
 
