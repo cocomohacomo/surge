@@ -3,11 +3,21 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\n"; std::exit(1); } } while (0)
 
 namespace {
+class ValueDomain;
+class ValueRestore final : public surge::PreparedSnapshotRestore {
+ public:
+  ValueRestore(ValueDomain* owner, int value) : owner_(owner), value_(value) {}
+  void commit() noexcept override;
+ private:
+  ValueDomain* owner_;
+  int value_;
+};
 class ValueDomain final : public surge::SnapshotDomain {
  public:
   int value{0};
@@ -20,11 +30,20 @@ class ValueDomain final : public surge::SnapshotDomain {
     return true;
   }
   std::unique_ptr<surge::PreparedSnapshotRestore> prepare_restore(
-      const std::string&, std::string* error) override {
-    if (error) *error = "NOT_USED";
-    return nullptr;
+      const std::string& payload, std::string* error) override {
+    std::istringstream input(payload);
+    int candidate = 0;
+    char extra = 0;
+    if (!(input >> candidate) || (input >> extra)) {
+      if (error) *error = "VALUE_SNAPSHOT_INVALID";
+      return nullptr;
+    }
+    if (error) error->clear();
+    return std::make_unique<ValueRestore>(this, candidate);
   }
 };
+void ValueRestore::commit() noexcept { owner_->value = value_; }
+
 void remove_generation(const std::filesystem::path& path) {
   std::error_code ec;
   std::filesystem::remove(path, ec);
