@@ -5,7 +5,7 @@
 #define CHECK(x) do{if(!(x)){std::cerr<<"CHECK failed: "#x<<" at "<<__LINE__<<"\n";std::exit(1);}}while(0)
 int main(){using namespace surge;
  const auto path=(std::filesystem::temp_directory_path()/"surge_snapshot_domain_adapters.journal").string();std::error_code ec;std::filesystem::remove(path,ec);
- EventJournal journal(path);CHECK(journal.open());EvidenceProvenanceLedger evidence(journal);CHECK(evidence.replay());ChaosClusterLedger chaos(journal);
+ EventJournal journal(path);CHECK(journal.open());EvidenceProvenanceLedger evidence(journal);CHECK(evidence.replay());ChaosClusterLedger chaos(journal);CHECK(chaos.open());
  ChaosProvenance cp{"test","1","policy-1","2026-11-19T00:00:00Z"};
  CHECK(chaos.create("tx-create-a","idem-create-a",journal.state_version(),"chaos-a",cp).committed);
  EvidenceProvenance ep;ep.evidence_id="evidence-a";ep.revision=1;ep.observed_at="2026-11-19T00:00:00Z";EvidenceProvenanceRecord er;std::string error;
