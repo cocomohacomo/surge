@@ -12,6 +12,27 @@ EventJournal remains a single-writer append-only journal. The writer lock is an 
 
 The in-process mutex protects threads in one process. The OS lock protects competing processes and backup/restore operations. Do not delete the sidecar lock file while any process may hold it.
 
+## Commit outcome after a failed sync barrier
+
+A failed stable-storage barrier has two different meanings depending on which
+frame failed:
+
+- If BEGIN or an EVENT frame fails to synchronize, no COMMIT marker has been
+  issued. The transaction is not committed; recovery discards the incomplete
+  tail and the caller may retry.
+- If the COMMIT frame has been written but its `fsync` /
+  `FlushFileBuffers` barrier fails, the result is
+  `JOURNAL_COMMIT_OUTCOME_UNKNOWN`. The frame may be present after restart or
+  may have been lost in a power failure. The caller MUST reopen/recover the
+  journal and retry with the exact same transaction ID, idempotency key,
+  expected State Version, and event payloads. Recovery either reports the
+  original transaction as a duplicate or permits the exact retry to commit.
+
+Do not generate a new idempotency key after an ambiguous commit result. That
+could duplicate a transaction whose COMMIT marker survived. The
+`SyncFrameGate` test seam exercises pre-COMMIT sync failure and ambiguous
+COMMIT-marker sync failure without claiming to simulate physical power loss.
+
 ## Backup and restore
 
 `tools/journal_backup.py` supports:
