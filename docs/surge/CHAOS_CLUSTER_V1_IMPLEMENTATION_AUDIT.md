@@ -28,7 +28,7 @@ independent semantic-quality evaluation.
 | P1 | PatternHypothesis auditability | Partial | Exclusion reasons, append-only review revisions and confidence observations now persist and are exposed in bounded JSON; negative/terminal transition and migration matrix still needs expansion. |
 | P1 | Association valid-time | Partial | UTC valid_from/valid_until persist in CC6; temporal C ABI/Python proposal and explicit as-of expiry transaction append EXPIRED provenance revisions. Automatic scheduling is intentionally external to Core. |
 | P1 | Retrieval diversity | Partial | Focus retrieval ranks known member Salience before UNKNOWN within admission-reason groups, round-robins groups, excludes inactive memberships, and emits selection rationale. It does not yet provide configurable multi-factor scoring or use all cluster-level dimensions to alter selection. |
-| P1 | Retrieval query dimensions | Partial | Typed Chaos retrieval now filters association type/status, valid-time, member admission-time, producer provenance and member refs; hypothesis/counterexample controls and bounded parent/child lineage traversal are implemented. Pagination, association endpoint expansion and all retrieval-budget combinations still need conformance coverage. |
+| P1 | Retrieval query dimensions | Partial | Typed Chaos retrieval now filters association type/status, valid-time, member admission-time, producer provenance and member refs; hypothesis/counterexample controls and bounded parent/child lineage traversal are implemented. Independent member/association/hypothesis pagination, stable offsets, score-based ranking policies, unknown-score ordering, and page/dataset completeness metadata are now implemented. Association endpoint expansion and exhaustive retrieval-budget combinations still need conformance coverage. |
 | P1 | Lifecycle and operations | Partial | ARCHIVED -> DORMANT reactivation is an explicit provenance-bound transition; atomic merge, fork/split/subset promotion, and CC8 lifecycle reason/provenance history are implemented. Expanded conflict, migration and lifecycle conformance remains. |
 | P1 | CC01-CC20 executable conformance | Partial | C++/C ABI/Python tests cover selected persistence, replay, lifecycle, association, hypothesis, promotion/fork/split and Focus paths. The complete 20-case semantic matrix is not yet executed end-to-end. |
 | P2 | Memory and forgetting | Partial/Missing | Lifecycle dormancy/archive exists, but manifest compaction, inspectable eviction factors, recoverable archive workflow, payload tombstone policy and restore drill are not complete. |
@@ -120,3 +120,16 @@ hypothesis/counterexample controls, and bounded lineage-depth traversal. It
 returns query parameters, source omission metadata, unresolved/omitted lineage
 refs and a state-version consistency check. Lineage metadata reads use zero
 content budgets so linked clusters do not silently expand the root payload.
+
+
+## Follow-up: ranking and pagination
+
+The typed Chaos retrieval API now supports independent offsets and positive
+page limits for members, associations and PatternHypotheses. It exposes
+per-collection totals/offsets/next offsets and distinguishes terminal-page
+completeness from full-dataset completeness. Ranking policies are explicit:
+source order, score then stable ID, or reason/type/status diversity followed by
+score. Member Salience, Association Confidence and PatternHypothesis Confidence
+are used only for ordering; missing scores remain last and scores do not alter
+epistemic status or evidence relations. Regression tests cover score ordering,
+pagination, terminal-page semantics, out-of-range offsets and invalid budgets.
