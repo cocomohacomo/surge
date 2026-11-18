@@ -19,6 +19,8 @@ struct TemporalBoundaryLedgerResult {
  bool committed{false},duplicate{false}; std::uint64_t state_version{0};
  std::string status,error; TemporalBoundaryPending pending;
 };
+class TemporalBoundarySnapshotDomain;
+class PreparedTemporalBoundarySnapshotRestore;
 class TemporalBoundaryLedger {
  public:
  explicit TemporalBoundaryLedger(EventJournal&,std::size_t max_claims=4096);
@@ -29,6 +31,8 @@ class TemporalBoundaryLedger {
  bool get(const std::string&,TemporalBoundaryPending&) const;
  std::size_t pending_claim_count() const; std::string last_error() const;
  private:
+ friend class TemporalBoundarySnapshotDomain;
+ friend class PreparedTemporalBoundarySnapshotRestore;
  bool apply_event(const JournalEvent&);
  bool validate_contribution(const TemporalBoundaryContribution&,std::string&) const;
  void refresh_pending(TemporalBoundaryPending&) const;
