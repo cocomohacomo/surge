@@ -1450,7 +1450,7 @@ class SemanticCoreBridge(CppCoreBridge):
                                 expected_state_version: int,
                                 events: list[dict[str, str]]) -> dict[str, Any]:
         """Append allowlisted retention metadata in one EventJournal transaction."""
-        if not isinstance(events, list) or not events or len(events) > 128:
+        if not isinstance(events, list) or len(events) != 1:
             raise PacketRejected("RETENTION_JOURNAL_EVENTS_INVALID")
         keepalive = []
         rows = []
