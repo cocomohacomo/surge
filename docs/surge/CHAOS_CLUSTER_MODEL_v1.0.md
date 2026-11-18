@@ -176,3 +176,14 @@ and complete retrieval-budget conformance, broader score-aware ranking,
 memory compaction/manifests/tombstones, multi-process/crash/power-loss testing,
 fuzzing/sanitizers, and target-hardware performance measurements. The audit
 document is authoritative for the current gap list.
+
+
+## 16. Score-aware ranking and paginated retrieval
+
+The typed query interface supports per-collection pagination and three explicit
+ranking policies: source order, score-then-ID, and diversity-then-score.
+Member Salience, Association Confidence and PatternHypothesis Confidence are
+independent ordering signals. Unknown values remain last. The retrieval API
+reports page totals, offsets, next offsets, page completeness and whole-dataset
+completeness separately. Ranking is a retrieval policy only and cannot promote
+a hypothesis or establish a semantic relation.

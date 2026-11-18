@@ -302,6 +302,20 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                     hypothesis={"hypothesis_id":"h-query","statement":"candidate pattern",
                                 "member_refs":["a","b"],"counterexample_refs":["b"]},
                     provenance=provenance)
+                for ref, value in (("a", 0.25), ("b", 0.95)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"member-score-{ref}", idempotency_key=f"member-score-{ref}",
+                        expected_state_version=core.state_version, cluster_id="query-source",
+                        entity_kind="MEMBER", entity_ref=ref,
+                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
+                                     "policy_version": "salience-v1", "observed_at": "2026-11-18T03:01:00Z"})
+                for ref, value in (("edge-analogy", 0.25), ("edge-cooccur", 0.9)):
+                    core.record_chaos_entity_observation(
+                        operation_id=f"edge-score-{ref}", idempotency_key=f"edge-score-{ref}",
+                        expected_state_version=core.state_version, cluster_id="query-source",
+                        entity_kind="ASSOCIATION", entity_ref=ref,
+                        observation={"value": value, "scorer_id": "ranker", "scorer_version": "1",
+                                     "policy_version": "confidence-v1", "observed_at": "2026-11-18T03:01:00Z"})
                 core.transition_chaos_cluster(operation_id="source-review", idempotency_key="source-review",
                     expected_state_version=core.state_version, cluster_id="query-source",
                     target_lifecycle="REVIEWABLE", reason="ready for merge", provenance=provenance)
@@ -320,6 +334,29 @@ class PersistentContextRetrievalTests(unittest.TestCase):
                 self.assertEqual(result["target"]["pattern_hypotheses"][0]["counterexample_refs"], [])
                 self.assertEqual(result["lineage"][0]["cluster_id"], "query-source")
                 self.assertTrue(result["complete"])
+                ranked_page = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", max_members=1, max_associations=1, max_hypotheses=1,
+                    ranking_policy="SCORE_THEN_ID")
+                self.assertEqual(ranked_page["target"]["members"][0]["member_ref"], "b")
+                self.assertEqual(ranked_page["target"]["associations"][0]["association_id"], "edge-cooccur")
+                self.assertEqual(ranked_page["pages"]["members"]["next_offset"], 1)
+                self.assertFalse(ranked_page["complete"])
+                next_member_page = ContextRetriever(core).retrieve_chaos_cluster(
+                    "query-root", max_members=1, member_offset=1,
+                    ranking_policy="SCORE_THEN_ID")
+                self.assertEqual(next_member_page["target"]["members"][0]["member_ref"], "a")
+                self.assertIsNone(next_member_page["pages"]["members"]["next_offset"])
+                self.assertTrue(next_member_page["page_complete"])
+                self.assertFalse(next_member_page["complete"])
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", member_offset=99)
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", max_members=0)
+                with self.assertRaises(ValueError):
+                    ContextRetriever(core).retrieve_chaos_cluster(
+                        "query-root", ranking_policy="UNSAFE")
                 before = core.state_version
                 no_match = ContextRetriever(core).retrieve_chaos_cluster(
                     "query-root", association_types=["CONTRADICTION"])
