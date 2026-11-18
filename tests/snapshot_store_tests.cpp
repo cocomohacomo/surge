@@ -65,6 +65,12 @@ int main() {
   loaded = store.load();
   CHECK(loaded.ok && !loaded.used_backup);
   CHECK(loaded.bytes == generation_two && loaded.document.state_version == 2);
+  CHECK(loaded.document.payload.empty());
+  CHECK(!store.save(generation_one, &error));
+  auto divergent_same_version = encode("ctx", 2, "different-state");
+  CHECK(!store.save(divergent_same_version, &error));
+  loaded = store.load();
+  CHECK(loaded.ok && loaded.bytes == generation_two);
 
   // Invalid input is rejected before touching either committed generation.
   CHECK(!store.save("not-a-snapshot", &error));
