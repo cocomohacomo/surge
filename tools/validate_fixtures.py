@@ -22,6 +22,22 @@ def main():
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema, format_checker=FormatChecker())
 
+    language_schema = load(ROOT / "schemas/surge-language-pack-v1.0.schema.json")
+    Draft202012Validator.check_schema(language_schema)
+    language_validator = Draft202012Validator(language_schema, format_checker=FormatChecker())
+    language_manifests = sorted((ROOT / "tests/fixtures/language-packs").glob("*/manifest.json"))
+    if len(language_manifests) < 2:
+        raise AssertionError("expected at least two structurally distinct language pack fixtures")
+    language_ids = set()
+    for manifest_path in language_manifests:
+        manifest = load(manifest_path)
+        errors = list(language_validator.iter_errors(manifest))
+        if errors:
+            raise AssertionError(f"invalid Language Set manifest {manifest_path}: {errors}")
+        language_ids.add(manifest["language"]["id"])
+    if not {"ja", "en"}.issubset(language_ids):
+        raise AssertionError(f"Japanese and English fixtures are required, got {language_ids}")
+
     chaos_schema = load(ROOT / "schemas/surge-chaos-cluster-v1.0.schema.json")
     Draft202012Validator.check_schema(chaos_schema)
     chaos_validator = Draft202012Validator(chaos_schema, format_checker=FormatChecker())
@@ -105,7 +121,8 @@ def main():
         raise AssertionError("D19 zero denominator must be inconclusive")
     if by_id["D20"]["expected"]["error"] != "BENCHMARK_PROFILE_IMMUTABLE":
         raise AssertionError("D20 profile immutability expectation missing")
-    print("JSON Schema Draft 2020-12: 5/5 v0.9 schemas + Chaos Cluster v1.0 valid")
+    print("JSON Schema Draft 2020-12: 5/5 v0.9 schemas + Chaos Cluster v1.0 + Language Set v1.0 valid")
+    print(f"Language Set manifest fixtures: {len(language_manifests)} valid; ja/en coverage passed")
     print("Chaos Cluster semantic conformance inventory: 20/20 cases valid")
     print("Chaos Cluster schema positive/negative examples: passed")
     print(f"Conformance fixture inventory: {len(cases)}/20 cases valid")
