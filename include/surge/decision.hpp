@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,8 @@ struct DecisionPolicy {
   double minimum_score{-1.0e9};
   double minimum_margin{0.0};
   bool require_valid_evidence{true};
+  // Optional multiplicative calibration by evidence family. Missing families use 1.0.
+  std::map<std::string, double> family_weights;
 };
 
 struct CandidateDecisionTrace {
