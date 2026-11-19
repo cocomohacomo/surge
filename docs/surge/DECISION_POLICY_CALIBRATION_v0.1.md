@@ -11,6 +11,7 @@ policy input rather than a hidden application-side scoring branch.
 - `DecisionPolicy.family_weights` maps evidence family names to finite,
   non-negative multiplicative calibration values.
 - An omitted family has multiplier 1.0.
+- The policy map is bounded by `max_family_weights` (default 64); exceeding the cap defers the decision.
 - A zero multiplier disables that family's score contribution without deleting
   its provenance or evidence trace.
 - Invalid, negative, NaN, infinite, or overflowed contributions reject the
