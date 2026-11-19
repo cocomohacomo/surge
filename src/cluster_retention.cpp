@@ -20,6 +20,14 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   if(node==graph.nodes().end()||!is_cluster(node->second.kind)){result.error="CLUSTER_RETENTION_TARGET_NOT_FOUND";return result;}
   if(!by_id.emplace(candidate.cluster_id,candidate).second){result.error="CLUSTER_RETENTION_DUPLICATE_CANDIDATE";return result;}
  }
+ std::set<std::string> dormant_ids, inactive_ids;
+ for(const auto& candidate:candidates){
+  const auto lifecycle=graph.cluster_lifecycle(candidate.cluster_id);
+  if(!lifecycle)continue;
+  if(lifecycle->state==ClusterLifecycleState::Dormant)dormant_ids.insert(candidate.cluster_id);
+  else if(lifecycle->state==ClusterLifecycleState::Archived||lifecycle->state==ClusterLifecycleState::Tombstoned)
+   inactive_ids.insert(candidate.cluster_id);
+ }
  std::size_t graph_cluster_count=0;
  for(const auto& item:graph.nodes())if(is_cluster(item.second.kind)){++graph_cluster_count;if(!by_id.count(item.first)){result.error="CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";return result;}}
  if(by_id.size()!=graph_cluster_count){result.error="CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";return result;}
@@ -30,12 +38,22 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.nodes()){const auto& node=item.second;if(node.kind==NodeKind::Question&&graph.question_memory_state(node.id)==QuestionMemoryState::Active)unresolved_questions.insert(node.id);}
  for(const auto& item:graph.nodes()){const auto& node=item.second;if(node.kind!=NodeKind::QuestionAspect||node.references.size()!=1)continue;const auto status=graph.question_aspect_status(node.id);if(status==QuestionAspectStatus::Open||status==QuestionAspectStatus::Deferred)unresolved_questions.insert(node.references.front());}
  for(const auto& question_id:unresolved_questions){const auto found=memberships.find(question_id);if(found!=memberships.end())for(const auto& cluster_id:found->second)add_ancestors(cluster_id,parents,protected_ids);}
+ for(const auto& id:protected_ids)if(inactive_ids.count(id)){
+  result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;
+ }
  const auto anchors=protected_ids;std::set<std::string> dependency_neighbors;
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned)add_ancestors(item.first,parents,protected_ids);
- std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id)if(!protected_ids.count(item.first))ranked.push_back(item.second);
- std::sort(ranked.begin(),ranked.end(),[](const auto& left,const auto& right){if(left.retention_priority!=right.retention_priority)return left.retention_priority>right.retention_priority;if(left.last_access_sequence!=right.last_access_sequence)return left.last_access_sequence>right.last_access_sequence;return left.cluster_id<right.cluster_id;});
+ std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
+  if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
+  else if(!protected_ids.count(item.first))ranked.push_back(item.second);
+ }
+ std::sort(ranked.begin(),ranked.end(),[&](const auto& left,const auto& right){
+  const bool left_dormant=dormant_ids.count(left.cluster_id)!=0;
+  const bool right_dormant=dormant_ids.count(right.cluster_id)!=0;
+  if(left_dormant!=right_dormant)return !left_dormant;
+  if(left.retention_priority!=right.retention_priority)return left.retention_priority>right.retention_priority;if(left.last_access_sequence!=right.last_access_sequence)return left.last_access_sequence>right.last_access_sequence;return left.cluster_id<right.cluster_id;});
  std::size_t protected_count=0;for(const auto& id:protected_ids)if(by_id.count(id)){result.protected_cluster_ids.push_back(id);++protected_count;}
  if(protected_count>max_retained_clusters){result.error="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED";result.protected_cluster_ids.clear();return result;}
  const auto available=max_retained_clusters-protected_count;std::set<std::string> selected;
@@ -45,6 +63,8 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  // membership's cluster is forgotten.
  const std::set<std::string> retained(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end()),forgotten(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());
  for(const auto& item:memberships){bool in_retained=false,in_forgotten=false;for(const auto& cluster_id:item.second){in_retained=in_retained||retained.count(cluster_id)!=0;in_forgotten=in_forgotten||forgotten.count(cluster_id)!=0;}if(in_retained&&in_forgotten)result.preserved_shared_member_ids.push_back(item.first);}
- std::sort(result.protected_cluster_ids.begin(),result.protected_cluster_ids.end());std::sort(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end());std::sort(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());std::sort(result.preserved_shared_member_ids.begin(),result.preserved_shared_member_ids.end());result.accepted=true;return result;
+ std::sort(result.protected_cluster_ids.begin(),result.protected_cluster_ids.end());std::sort(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end());std::sort(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());std::sort(result.preserved_shared_member_ids.begin(),result.preserved_shared_member_ids.end());
+ std::sort(result.already_inactive_cluster_ids.begin(),result.already_inactive_cluster_ids.end());
+ result.accepted=true;return result;
 }
 }
