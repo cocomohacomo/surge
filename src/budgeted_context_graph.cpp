@@ -142,7 +142,8 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
     }
   }
   for (const auto& item : state.claim_statuses)
-    if (!add(kEntryOverhead + item.first.size(), bytes)) {
+    if (!add(kEntryOverhead + item.first.size(), bytes) ||
+        !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.claim_validity_history) {
