@@ -829,11 +829,61 @@ bool ContextGraph::set_question_memory_state(const std::string& id,QuestionMemor
 bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<std::string,double>>& scores,std::size_t max_active,std::uint64_t expected,std::vector<std::string>& demoted,std::string& error){
  error.clear();demoted.clear();if(expected!=state_version()){error="STATE_VERSION_CONFLICT";return false;}if(scores.size()>4096||max_active>4096){error="QUESTION_MEMORY_CAPACITY_LIMIT";return false;}
  std::map<std::string,double> supplied;for(const auto& item:scores){if(item.first.empty()||!std::isfinite(item.second)||item.second<0||item.second>1){error="QUESTION_MEMORY_SCORE_INVALID";return false;}if(!supplied.emplace(item.first,item.second).second){error="QUESTION_MEMORY_DUPLICATE_SCORE";return false;}auto n=state_.nodes.find(item.first);if(n==state_.nodes.end()||n->second.kind!=NodeKind::Question){error="QUESTION_NOT_FOUND";return false;}}
- std::vector<std::pair<std::string,double>> active;for(const auto& n:state_.nodes){if(n.second.kind!=NodeKind::Question||question_memory_state(n.first)!=QuestionMemoryState::Active)continue;auto v=supplied.find(n.first);if(v==supplied.end()){error="QUESTION_MEMORY_SCORE_MISSING";return false;}active.emplace_back(n.first,v->second);}
- if(active.size()!=supplied.size()){error="QUESTION_MEMORY_SCORE_NOT_ACTIVE";return false;}
- std::sort(active.begin(),active.end(),[](const auto&a,const auto&b){return a.second!=b.second?a.second>b.second:a.first<b.first;});
- if(active.size()<=max_active)return true;
- for(std::size_t i=max_active;i<active.size();++i)demoted.push_back(active[i].first);
+ std::set<std::string> protected_ids;
+ // Active Focus: preserve Questions explicitly attached to the current cluster.
+ if (state_.focus) {
+  for (const auto& item : state_.relations) {
+   const auto& edge = item.second;
+   if (edge.kind != RelationKind::About) continue;
+   const auto from = state_.nodes.find(edge.from), to = state_.nodes.find(edge.to);
+   if (from != state_.nodes.end() && from->second.kind == NodeKind::Question &&
+       edge.to == state_.focus->cluster_id) protected_ids.insert(edge.from);
+   if (to != state_.nodes.end() && to->second.kind == NodeKind::Question &&
+       edge.from == state_.focus->cluster_id) protected_ids.insert(edge.to);
+  }
+ }
+ // Open or deferred QuestionAspects keep their referenced Questions alive.
+ for (const auto& item : state_.nodes) {
+  if (item.second.kind != NodeKind::QuestionAspect ||
+      question_aspect_status(item.first) == QuestionAspectStatus::Resolved) continue;
+  for (const auto& ref : item.second.references) {
+   const auto q = state_.nodes.find(ref);
+   if (q != state_.nodes.end() && q->second.kind == NodeKind::Question)
+    protected_ids.insert(ref);
+  }
+ }
+ // Preserve immediate dependency neighbors of protected Questions so that
+ // forgetting cannot strand an unresolved dependency edge.
+ for (const auto& item : state_.relations) {
+  const auto& edge = item.second;
+  if (edge.kind != RelationKind::DependsOn) continue;
+  if (protected_ids.count(edge.from)) protected_ids.insert(edge.to);
+  if (protected_ids.count(edge.to)) protected_ids.insert(edge.from);
+ }
+ // Questions directly linked to Evidence are retained as provenance anchors.
+ for (const auto& item : state_.relations) {
+  const auto& edge = item.second;
+  if (edge.kind != RelationKind::About) continue;
+  const auto from = state_.nodes.find(edge.from), to = state_.nodes.find(edge.to);
+  if (from != state_.nodes.end() && to != state_.nodes.end() &&
+      ((from->second.kind == NodeKind::Question && to->second.kind == NodeKind::Evidence) ||
+       (to->second.kind == NodeKind::Question && from->second.kind == NodeKind::Evidence))) {
+   if (from->second.kind == NodeKind::Question) protected_ids.insert(edge.from);
+   if (to->second.kind == NodeKind::Question) protected_ids.insert(edge.to);
+  }
+ }
+ std::vector<std::pair<std::string,double>> protected_active, candidates;
+ for(const auto& n:state_.nodes){
+  if(n.second.kind!=NodeKind::Question||question_memory_state(n.first)!=QuestionMemoryState::Active)continue;
+  auto v=supplied.find(n.first);if(v==supplied.end()){error="QUESTION_MEMORY_SCORE_MISSING";return false;}
+  (protected_ids.count(n.first)?protected_active:candidates).emplace_back(n.first,v->second);
+ }
+ if(protected_active.size()+candidates.size()!=supplied.size()){error="QUESTION_MEMORY_SCORE_NOT_ACTIVE";return false;}
+ if(protected_active.size()>max_active){error="QUESTION_MEMORY_PROTECTED_FLOOR_EXCEEDED";return false;}
+ std::sort(candidates.begin(),candidates.end(),[](const auto&a,const auto&b){return a.second!=b.second?a.second>b.second:a.first<b.first;});
+ if(protected_active.size()+candidates.size()<=max_active)return true;
+ const auto keep_candidates=max_active-protected_active.size();
+ for(std::size_t i=keep_candidates;i<candidates.size();++i)demoted.push_back(candidates[i].first);
  const std::string tx="question-memory/capacity/"+std::to_string(expected);std::vector<JournalEvent> events;events.reserve(demoted.size());
  for(const auto&id:demoted){std::ostringstream p;p<<std::quoted(id)<<" DORMANT";events.push_back({tx+"/demote/"+id,"QUESTION_MEMORY_STATE_SET",p.str()});}
  const auto result=journal_->commit(tx,tx,expected,events);if(!result.committed){error=result.error;demoted.clear();return false;}
