@@ -72,7 +72,7 @@ int main(){
       SemanticDelta bad_timestamp;bad_timestamp.delta_id="cluster-bad-time";bad_timestamp.idempotency_key="cluster-bad-time";
       bad_timestamp.expected_state_version=3;
       bad_timestamp.nodes={{{"lifecycle-bad-time",NodeKind::ClusterLifecycle,
-          "ACTIVE 4 \\"not-a-time\\" \\"invalid timestamp\\" \\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\\"",
+          "ACTIVE 4 \"not-a-time\" \"invalid timestamp\" \"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"",
           {"lifecycle-cluster"}}}};
       bad_timestamp.relations={{{"lifecycle-bad-time-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-bad-time"}}};
@@ -84,7 +84,7 @@ int main(){
       missing_membership.idempotency_key="cluster-missing-membership";missing_membership.expected_state_version=3;
       missing_membership.nodes={{{"lifecycle-orphan-cluster",NodeKind::Cluster,"orphan parent",{}}},
         {{"lifecycle-orphan",NodeKind::ClusterLifecycle,
-          "ACTIVE 1 \\"2026-11-20T00:03:00Z\\" \\"orphan metadata\\" \\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\\"",
+          "ACTIVE 1 \"2026-11-20T00:03:00Z\" \"orphan metadata\" \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"",
           {"lifecycle-orphan-cluster"}}}};
       const auto orphan_result=graph.apply(missing_membership);
       CHECK(!orphan_result.committed && orphan_result.error=="CLUSTER_LIFECYCLE_MEMBERSHIP_REQUIRED");
