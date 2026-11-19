@@ -45,5 +45,43 @@ int main() {
     assert(guarded.accounted_resident_bytes() > 0);
   }
   std::remove(path.c_str());
+
+  const std::string question_path = "budgeted_context_graph_question_test.journal";
+  std::remove(question_path.c_str());
+  {
+    EventJournal journal(question_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 8192;
+    limits.transient_bytes = 8192;
+    limits.retained_events = 1;
+    limits.retained_clusters = 4;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget, 8192);
+    std::string error;
+    assert(guarded.recover(error));
+
+    SemanticDelta create;
+    create.delta_id = "question-create";
+    create.idempotency_key = "question-create-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes.push_back({{"q1", NodeKind::Question, "question", {}}});
+    assert(guarded.apply(create).committed);
+
+    assert(guarded.set_question_memory_state("q1", QuestionMemoryState::Dormant,
+        graph.state_version(), error));
+    assert(graph.question_memory_state("q1") == QuestionMemoryState::Dormant);
+    const auto after_first = budget.snapshot();
+    assert(after_first.used[static_cast<std::size_t>(ResourceKind::RetainedEvents)] == 1);
+
+    error.clear();
+    assert(!guarded.set_question_memory_state("q1", QuestionMemoryState::Active,
+        graph.state_version(), error));
+    assert(error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(graph.question_memory_state("q1") == QuestionMemoryState::Dormant);
+  }
+  std::remove(question_path.c_str());
   return 0;
 }
