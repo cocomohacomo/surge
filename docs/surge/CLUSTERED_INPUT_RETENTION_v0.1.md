@@ -150,3 +150,15 @@ set, while replay applies the same removal command.
 This increment does not yet implement shared-reference indexes, automatic
 last-reference tombstoning, physical payload reclamation, or compaction. Those
 remain separate guarded stages.
+
+
+## Canonical membership reference accounting foundation
+
+`ContextGraph::cluster_membership_reference_count` exposes a deterministic
+read-only count of Cluster/ChaosCluster `Contains` edges targeting one
+canonical member. Archived clusters continue to count while their membership
+edge remains present. Unlinking one edge decrements the count without changing
+the canonical node. A zero count is necessary but not sufficient for physical
+reclamation: non-cluster relations, typed-node references, Focus, temporal
+history, provenance and audit/snapshot obligations must also be checked by a
+future reclamation gate. No payload deletion is performed by this counter.
