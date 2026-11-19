@@ -165,7 +165,7 @@ class LLMSemanticRuntime:
             producer_id="surge-llm-recognizer",
             producer_version="0.1",
             model_descriptor=str(getattr(self.recognizer.provider, "model", "provider-neutral")),
-            runtime_descriptor="surge-llm-semantic-runtime/0.2",
+            runtime_descriptor="surge-llm-semantic-runtime/0.3",
             base_state_version=core.state_version,
             candidate_labels=labels,
             candidate_spans=temporal_spans or [],
