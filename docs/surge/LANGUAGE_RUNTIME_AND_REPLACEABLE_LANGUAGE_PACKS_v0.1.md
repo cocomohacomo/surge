@@ -215,3 +215,13 @@ A conforming implementation additionally tests:
 6. locale/style changes are explicit policy changes and produce auditable revisions;
 7. identical input + Language Set digest + policy produces deterministic output;
 8. no application-side normalization path is invoked in production.
+
+## 15. Implementation status update (2026-11-19)
+
+The Core now has an initial UnifiedDecision C ABI in `include/surge/decision_c_api.h`. It accepts flat caller-owned candidate, evidence, surface-set and hypothesis arrays with checked offset/count ranges, returns the selected candidate and exact surface-hypothesis indices, and leaves buffer ownership with the caller. The C ABI version is explicitly queryable.
+
+The first streaming resource reservation primitive is implemented in `include/surge/resource_budget.hpp`. It accounts resident bytes, transient bytes, retained events/clusters, decision candidates and evidence through move-only RAII leases. This is logical accounting, not a process RSS limiter, and it is not yet wired into every allocator or graph/journal path.
+
+UnifiedDecision now defers when all valid evidence has zero effective contribution, rejects non-finite/invalid thresholds, and bounds aggregate surface sets, hypotheses, traces and surface string sizes. Cluster membership IDs use length-prefixed hash preimages; membership validation checks parent/member node existence and relation identity before mutating the caller's delta.
+
+Not yet implemented: the full Language Runtime ABI and package loader, data-only package parser/signature/digest validation, session-pinned activation, generic morphology/lexicon/n-gram runtime, Japanese resource migration, second-language pack, end-to-end Python adapter replacement, and complete resident/transient budget enforcement across EventJournal/ContextGraph/recognition backends. These remain explicit L1-L7 work; the new C ABI is a bridge, not proof of end-to-end integration.
