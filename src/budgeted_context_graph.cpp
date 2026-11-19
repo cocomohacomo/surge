@@ -230,6 +230,8 @@ bool BudgetedContextGraph::recover(std::string& error) {
 }
 
 DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
+  if (!recovered_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED"};
   std::size_t bytes = 0, clusters = 0, retained_events = 0;
   std::string error;
   if (!estimate_delta(delta, bytes, clusters, retained_events, error))
@@ -299,8 +301,27 @@ DeltaResult BudgetedContextGraph::append_cluster_membership(SemanticDelta delta,
   return result;
 }
 
+bool BudgetedContextGraph::reserve_staging(std::size_t bytes,
+    ResourceLease& staging, std::string& error) {
+  if (!recovered_) {
+    error = "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED";
+    return false;
+  }
+  if (max_staging_bytes_ != 0 && bytes > max_staging_bytes_) {
+    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED";
+    return false;
+  }
+  if (bytes && !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error))
+    return false;
+  return true;
+}
+
 bool BudgetedContextGraph::reserve_mutation(std::size_t bytes, std::size_t events,
     ResourceLease& resident, ResourceLease& retained, std::string& error) {
+  if (!recovered_) {
+    error = "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED";
+    return false;
+  }
   if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
     return false;
   if (events && !budget_.try_acquire(ResourceKind::RetainedEvents, events, retained, error)) {
@@ -344,11 +365,7 @@ bool BudgetedContextGraph::record_question_reference_with_dependents(
   }
   ResourceLease staging, resident, retained;
   const auto bytes = 512 + id.size() + max_nodes * 512;
-  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
-    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
-  }
-  if (max_staging_bytes_ &&
-      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_staging(bytes, staging, error)) return false;
   if (!reserve_mutation(512 + id.size() + max_nodes * 64, 1, resident, retained, error))
     return false;
   const auto before = graph_.state_version();
@@ -376,11 +393,7 @@ bool BudgetedContextGraph::enforce_question_memory_capacity(
   }
   const auto bytes = 512 + scores.size()*512;
   ResourceLease staging, resident, retained;
-  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
-    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
-  }
-  if (max_staging_bytes_ &&
-      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_staging(bytes, staging, error)) return false;
   if (!reserve_mutation(bytes, scores.size(), resident, retained, error)) return false;
   const auto before = graph_.state_version();
   if (!graph_.enforce_question_memory_capacity(scores, max_active, expected, demoted, error))
@@ -413,11 +426,7 @@ bool BudgetedContextGraph::apply_question_aspect_statuses(
     bytes += 512 + update.first.size();
   }
   ResourceLease staging, resident, retained;
-  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
-    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
-  }
-  if (max_staging_bytes_ &&
-      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_staging(bytes, staging, error)) return false;
   if (!reserve_mutation(bytes, updates.size(), resident, retained, error)) return false;
   const auto before = graph_.state_version();
   if (!graph_.apply_question_aspect_statuses(updates, expected, error)) return false;
@@ -433,11 +442,7 @@ bool BudgetedContextGraph::reassess_claim(const std::string& claim_id,
   }
   const auto bytes = 2048 + claim_id.size() + reference_at.size();
   ResourceLease staging, resident, retained;
-  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
-    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
-  }
-  if (max_staging_bytes_ &&
-      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_staging(bytes, staging, error)) return false;
   if (!reserve_mutation(bytes, 1, resident, retained, error)) return false;
   const auto before = graph_.state_version();
   if (!graph_.reassess_claim(claim_id, reference_at, expected, result, error)) return false;
