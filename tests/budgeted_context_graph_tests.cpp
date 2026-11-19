@@ -352,5 +352,58 @@ int main() {
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
   }
   std::remove(remaining_question_transient_path.c_str());
+  const std::string cluster_lifecycle_retention_path = "budgeted_cluster_lifecycle_retention_test.journal";
+  std::remove(cluster_lifecycle_retention_path.c_str());
+  {
+    EventJournal journal(cluster_lifecycle_retention_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta create;
+    create.delta_id = "retention-seed";
+    create.idempotency_key = "retention-seed-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes = {{{"ret-root", NodeKind::Cluster, "root", {}}},
+                    {{"ret-low", NodeKind::Cluster, "low priority", {}}}};
+    create.relations.push_back({{"ret-low-parent", RelationKind::Contains,
+        "ret-root", "ret-low"}});
+    assert(graph.apply(create).committed);
+
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 65536;
+    limits.transient_bytes = 65536;
+    limits.retained_events = 128;
+    limits.retained_clusters = 8;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget, 65536);
+    std::string error;
+    assert(guarded.recover(error));
+
+    const std::vector<ClusterRetentionCandidate> candidates{
+        {"ret-root", 1.0, 1, false}, {"ret-low", 0.0, 1, false}};
+    const auto first_plan = ClusterRetentionPlanner::plan(graph, candidates, 1);
+    assert(first_plan.accepted && first_plan.forget_cluster_ids.size() == 1);
+    assert(first_plan.planned_state_version == graph.state_version());
+    const auto first = guarded.apply_retention_plan(first_plan,
+        "2026-11-20T00:00:00Z", "capacity pressure", std::string(64, 'a'),
+        "retention-pass-1", "retention-pass-1-key", error);
+    assert(first.committed && graph.cluster_lifecycle("ret-low")->state ==
+        ClusterLifecycleState::Dormant);
+
+    const auto stale = guarded.apply_retention_plan(first_plan,
+        "2026-11-20T00:00:00Z", "capacity pressure", std::string(64, 'a'),
+        "retention-pass-stale", "retention-pass-stale-key", error);
+    assert(!stale.committed && error == "CLUSTER_RETENTION_PLAN_STALE");
+
+    const auto second_plan = ClusterRetentionPlanner::plan(graph, candidates, 1);
+    assert(second_plan.accepted && second_plan.forget_cluster_ids.size() == 1);
+    const auto second = guarded.apply_retention_plan(second_plan,
+        "2026-11-20T00:01:00Z", "continued capacity pressure", std::string(64, 'b'),
+        "retention-pass-2", "retention-pass-2-key", error);
+    assert(second.committed && graph.cluster_lifecycle("ret-low")->state ==
+        ClusterLifecycleState::Archived);
+  }
+  std::remove(cluster_lifecycle_retention_path.c_str());
+
   return 0;
 }
