@@ -72,6 +72,15 @@ ResourceLease& ResourceLease::operator=(ResourceLease&& other) noexcept {
   return *this;
 }
 
+bool ResourceLease::shrink(std::size_t amount) noexcept {
+  if (!owner_ || amount > amount_) return amount == 0;
+  if (amount == 0) return true;
+  owner_->release(kind_, amount);
+  amount_ -= amount;
+  if (amount_ == 0) owner_ = nullptr;
+  return true;
+}
+
 void ResourceLease::reset() noexcept {
   if (owner_) owner_->release(kind_, amount_);
   owner_ = nullptr;
