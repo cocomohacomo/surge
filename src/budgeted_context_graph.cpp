@@ -1,6 +1,7 @@
 #include "surge/budgeted_context_graph.hpp"
 #include "surge/cluster_retention.hpp"
 #include "surge/sha256.hpp"
+#include <algorithm>
 #include <limits>
 #include <set>
 #include <initializer_list>
@@ -335,8 +336,16 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
     // Preflight guarantees this cannot occur absent an internal accounting bug.
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_RECLAMATION_LEASE_RELEASE_INVARIANT"};
   }
-  accounted_resident_bytes_ = reclaimable_resident_bytes > accounted_resident_bytes_
-      ? 0 : accounted_resident_bytes_ - reclaimable_resident_bytes;
+  accounted_resident_bytes_ = 0;
+  auto recount_resident = [&](const std::vector<ResourceLease>& leases) {
+    for (const auto& lease : leases) {
+      if (!add(lease.amount(), accounted_resident_bytes_)) return false;
+    }
+    return true;
+  };
+  if (!recount_resident(resident_leases_) ||
+      !recount_resident(mutation_resident_leases_))
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
   return result;
 }
 
