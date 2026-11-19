@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "surge/resource_budget.hpp"
 
 namespace surge {
 
@@ -82,6 +83,11 @@ class UnifiedDecision {
  public:
   static DecisionResult evaluate(const std::vector<DecisionCandidate>& candidates,
                                  const DecisionPolicy& policy = {});
+  // Reserves shared candidate/evidence capacity and transient working-set bytes
+  // before allocating decision-local ranking and trace structures.
+  static DecisionResult evaluate_budgeted(
+      const std::vector<DecisionCandidate>& candidates,
+      ResourceBudget& budget, const DecisionPolicy& policy = {});
 };
 
 }  // namespace surge
