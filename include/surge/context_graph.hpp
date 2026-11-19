@@ -10,7 +10,9 @@
 #include <utility>
 
 namespace surge {
-enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
+enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
+enum class ClusterLifecycleState { Active, Dormant, Archived, Tombstoned };
+struct ClusterLifecycleRecord { std::string cluster_id; ClusterLifecycleState state{ClusterLifecycleState::Active}; std::uint64_t revision{0}; std::string recorded_at, reason, provenance_digest; };
 enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts, Duplicates, Contains };
 enum class ClaimStatus { Active, Superseded, Retracted };
 enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
@@ -109,6 +111,7 @@ class ContextGraph {
   }
   bool prepare_events(const SemanticDelta& delta, std::vector<JournalEvent>& events, std::string& error) const;
   std::uint64_t state_version() const { return journal_->state_version(); }
+  std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
   const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
