@@ -414,6 +414,40 @@ int main(){
     CHECK(recovered.state_version()==3);
     CHECK(recovered.nodes().empty());
   }
+  // Input information is assigned to deterministic typed clusters by Core,
+  // and the parent/member containment survives journal replay.
+  const auto cluster_path=(root/"classified-input-clusters.sgj").string();
+  std::string classified_cluster_id;
+  {
+    ContextGraph graph(cluster_path); CHECK(graph.open());
+    SemanticDelta delta;
+    delta.delta_id="cluster-classification-delta";
+    delta.idempotency_key="cluster-classification-idem";
+    delta.expected_state_version=0;
+    delta.nodes={{{"input-root",NodeKind::Cluster,"stream context",{}}},
+                 {{"claim-a",NodeKind::Claim,"candidate claim",{}}}};
+    std::string error;
+    CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
+        "source-digest:span-0-3","claim-a","classification-test",
+        classified_cluster_id,error));
+    CHECK(!classified_cluster_id.empty());
+    CHECK(graph.apply(delta).committed);
+    CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
+    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+        [&](const auto& item){return item.second.from=="input-root" &&
+          item.second.to==classified_cluster_id && item.second.kind==RelationKind::Contains;}));
+    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+        [&](const auto& item){return item.second.from==classified_cluster_id &&
+          item.second.to=="claim-a" && item.second.kind==RelationKind::Contains;}));
+  }
+  {
+    ContextGraph recovered(cluster_path); CHECK(recovered.open());
+    CHECK(recovered.nodes().count(classified_cluster_id)==1);
+    CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
+        [&](const auto& item){return item.second.from==classified_cluster_id &&
+          item.second.to=="claim-a";}));
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
