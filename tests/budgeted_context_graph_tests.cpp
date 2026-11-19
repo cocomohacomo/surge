@@ -114,5 +114,42 @@ int main() {
     assert(graph.question_memory_state("q-low") == QuestionMemoryState::Dormant);
   }
   std::remove(forgetting_path.c_str());
+
+  const std::string dependency_path = "question_dependency_protection_test.journal";
+  std::remove(dependency_path.c_str());
+  {
+    EventJournal journal(dependency_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta create;
+    create.delta_id = "dependency-protected-questions";
+    create.idempotency_key = "dependency-protected-questions-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes.push_back({{"dependency-focus", NodeKind::Cluster, "focused", {}}});
+    create.nodes.push_back({{"q-anchor", NodeKind::Question, "anchor", {}}});
+    create.nodes.push_back({{"q-one-hop", NodeKind::Question, "one hop", {}}});
+    create.nodes.push_back({{"q-two-hop", NodeKind::Question, "two hops", {}}});
+    create.relations.push_back({{"anchor-about-focus", RelationKind::About,
+        "q-anchor", "dependency-focus"}});
+    create.relations.push_back({{"anchor-to-one", RelationKind::DependsOn,
+        "q-anchor", "q-one-hop"}});
+    create.relations.push_back({{"one-to-two", RelationKind::DependsOn,
+        "q-one-hop", "q-two-hop"}});
+    create.focus = SetFocus{{"dependency-focus", "", false}};
+    assert(graph.apply(create).committed);
+
+    std::vector<std::string> demoted;
+    std::string error;
+    const std::vector<std::pair<std::string,double>> scores{
+        {"q-anchor", 0.1}, {"q-one-hop", 0.2}, {"q-two-hop", 0.99}};
+    assert(graph.enforce_question_memory_capacity(scores, 2, graph.state_version(),
+        demoted, error));
+    assert(demoted.size() == 1 && demoted.front() == "q-two-hop");
+    assert(graph.question_memory_state("q-anchor") == QuestionMemoryState::Active);
+    assert(graph.question_memory_state("q-one-hop") == QuestionMemoryState::Active);
+    assert(graph.question_memory_state("q-two-hop") == QuestionMemoryState::Dormant);
+  }
+  std::remove(dependency_path.c_str());
   return 0;
 }
