@@ -74,6 +74,7 @@ class EventJournal {
   JournalTailResult committed_tail(std::uint64_t after_state_version,
                                    JournalTailLimits limits = {}) const;
   std::string last_error() const;
+  const std::string& path() const { return path_; }
   JournalCheckpointInfo checkpoint_info() const;
  private:
   friend class SnapshotCoordinator;

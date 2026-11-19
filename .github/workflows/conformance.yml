@@ -47,6 +47,8 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
       - name: Copy-on-write journal compaction and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_compaction_conformance
+      - name: Verified journal backup retention tests
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_backup_retention_conformance
       - name: Python journal backup and lock parity tests
         run: python -m unittest discover -s tests -p test_journal_backup.py -v
 
