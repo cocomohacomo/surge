@@ -472,7 +472,7 @@ int main(){
     CHECK(conflict_delta.relations.size()==relation_count_before);
     CHECK(!classified_cluster_id.empty());
     const auto classified_commit = graph.apply(delta);
-    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\\n';
+    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\n';
     CHECK(classified_commit.committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
     CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
