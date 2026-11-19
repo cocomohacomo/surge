@@ -79,7 +79,7 @@ int main() {
   {
     EventJournal recovered_journal(journal_path);
     ContextGraph recovered_graph(recovered_journal);
-    CHECK(recovered_graph.open());
+    CHECK(recovered_journal.open());
     CHECK(recovered_journal.state_version() == 2);
     CHECK(recovered_journal.committed_events().empty());
 
