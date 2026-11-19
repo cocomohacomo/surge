@@ -10,6 +10,8 @@
 
 namespace surge {
 
+struct ClusterRetentionPlan;
+
 // Opt-in admission facade for ContextGraph::apply. All semantic-delta writes
 // must pass through this facade for its limits to be effective. Direct calls
 // to ContextGraph mutators remain outside this guard.
@@ -23,6 +25,11 @@ class BudgetedContextGraph {
   // Atomic Core-owned classification + budgeted persistence. Callers provide
   // hints and a base delta; cluster identity and membership are assigned by
   // ContextGraph, then committed through the same resource admission gate.
+  DeltaResult apply_retention_plan(const ClusterRetentionPlan& plan,
+      const std::string& recorded_at, const std::string& reason,
+      const std::string& provenance_digest, const std::string& delta_id,
+      const std::string& idempotency_key, std::string& error);
+
   DeltaResult append_cluster_lifecycle(SemanticDelta delta,
       const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
       const std::string& relation_id, std::string& error);
