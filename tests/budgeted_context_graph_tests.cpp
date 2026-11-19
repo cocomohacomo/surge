@@ -305,5 +305,52 @@ int main() {
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
   }
   std::remove(question_transient_path.c_str());
+
+  // The remaining single-record Question mutations must reserve transient
+  // staging before entering the journal-backed mutator.
+  const std::string remaining_question_transient_path =
+      "budgeted_question_remaining_transient_test.journal";
+  std::remove(remaining_question_transient_path.c_str());
+  {
+    EventJournal journal(remaining_question_transient_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta create;
+    create.delta_id = "question-remaining-transient-create";
+    create.idempotency_key = "question-remaining-transient-create-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes.push_back({{"q-reference", NodeKind::Question, "question", {}}});
+    create.nodes.push_back({{"aspect-reference", NodeKind::QuestionAspect,
+        "question aspect", {"q-reference"}}});
+    assert(graph.apply(create).committed);
+
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 8192;
+    limits.transient_bytes = 1;
+    limits.retained_events = 32;
+    limits.retained_clusters = 4;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget);
+    std::string error;
+    assert(guarded.recover(error));
+
+    const auto before = graph.state_version();
+    bool reactivated = false;
+    assert(!guarded.record_question_reference("q-reference", before,
+        reactivated, error));
+    assert(error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(graph.state_version() == before);
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+
+    error.clear();
+    assert(!guarded.set_question_aspect_status("aspect-reference",
+        QuestionAspectStatus::Resolved, before, error));
+    assert(error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(graph.state_version() == before);
+    assert(graph.question_aspect_status("aspect-reference") == QuestionAspectStatus::Open);
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+  }
+  std::remove(remaining_question_transient_path.c_str());
   return 0;
 }
