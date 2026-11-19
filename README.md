@@ -185,3 +185,12 @@ The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEM
 
 - [Chaos Cluster Model v0.1](docs/surge/CHAOS_CLUSTER_MODEL_v0.1.md): preserves unstructured, weakly associated and competing interpretations without forced topic assignment.
 - [Whole-Codebase Review v0.1](docs/security/WHOLE_CODEBASE_REVIEW_v0.1.md): static review findings, severity and hardening priorities.
+
+
+## Replaceable Language Runtime
+
+- **Language Runtime and Replaceable Language Packs v0.1:** [docs/surge/LANGUAGE_RUNTIME_AND_REPLACEABLE_LANGUAGE_PACKS_v0.1.md](docs/surge/LANGUAGE_RUNTIME_AND_REPLACEABLE_LANGUAGE_PACKS_v0.1.md)
+- **Language Pack Manifest Schema v1.0:** [schemas/surge-language-pack-v1.0.schema.json](schemas/surge-language-pack-v1.0.schema.json)
+- SURGE Core owns language-neutral cognition and decision authority; all language-dependent recognition, models, dictionaries, morphology, n-grams and rendering are supplied by replaceable Language Sets.
+- Language Sets are validated and activated by SURGE at session boundaries. Session provenance, resource ceilings, deterministic switching and offline execution are mandatory.
+- The specification defines the target contract. Runtime ABI, loader, built-in generic stages and executable conformance remain staged implementation work.
