@@ -240,5 +240,69 @@ int main() {
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
   }
   std::remove(transient_path.c_str());
+
+  // The facade cannot mutate against an unaccounted pre-existing graph.
+  const std::string unrecovered_path = "budgeted_context_graph_unrecovered_test.journal";
+  std::remove(unrecovered_path.c_str());
+  {
+    EventJournal journal(unrecovered_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 8192;
+    limits.transient_bytes = 8192;
+    limits.retained_events = 16;
+    limits.retained_clusters = 4;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget);
+    SemanticDelta delta;
+    delta.delta_id = "must-not-commit";
+    delta.idempotency_key = "must-not-commit-key";
+    delta.expected_state_version = graph.state_version();
+    delta.nodes.push_back({{"unrecovered-node", NodeKind::Entity, "payload", {}}});
+    const auto before = graph.state_version();
+    const auto rejected = guarded.apply(delta);
+    assert(!rejected.committed);
+    assert(rejected.error == "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED");
+    assert(graph.state_version() == before);
+    assert(graph.nodes().count("unrecovered-node") == 0);
+  }
+  std::remove(unrecovered_path.c_str());
+
+  // Individual Question mutations also reserve transient work even when the
+  // optional local staging ceiling is disabled.
+  const std::string question_transient_path = "budgeted_question_transient_test.journal";
+  std::remove(question_transient_path.c_str());
+  {
+    EventJournal journal(question_transient_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta create;
+    create.delta_id = "question-transient-create";
+    create.idempotency_key = "question-transient-create-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes.push_back({{"q-transient", NodeKind::Question, "question", {}}});
+    assert(graph.apply(create).committed);
+
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 8192;
+    limits.transient_bytes = 1;
+    limits.retained_events = 16;
+    limits.retained_clusters = 4;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget);
+    std::string error;
+    assert(guarded.recover(error));
+    const auto before = graph.state_version();
+    assert(!guarded.set_question_memory_state("q-transient",
+        QuestionMemoryState::Dormant, before, error));
+    assert(error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(graph.state_version() == before);
+    assert(graph.question_memory_state("q-transient") == QuestionMemoryState::Active);
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+  }
+  std::remove(question_transient_path.c_str());
   return 0;
 }
