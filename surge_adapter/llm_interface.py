@@ -273,10 +273,20 @@ class LLMSemanticRuntime:
         admission, committed = self.packet_adapter.admit_and_apply_to_core(packet, text, core, delta)
         # Accepted contradiction relations are routed by the authoritative
         # Core QuestionRouter after the source/semantic transaction commits.
-        contradiction_routes = [
-            core.route_contradiction(relation_id, policy_version="llm-semantic-runtime-v0.3")
-            for relation_id in contradiction_relation_ids
-        ]
+        contradiction_routes = []
+        for relation_id in contradiction_relation_ids:
+            try:
+                route = core.route_contradiction(
+                    relation_id, policy_version="llm-semantic-runtime-v0.3")
+                contradiction_routes.append({"relation_id": relation_id, **route})
+            except Exception as exc:
+                # The relation is already durable. Preserve its deterministic
+                # ID so the caller can retry Core routing without replaying text.
+                contradiction_routes.append({
+                    "relation_id": relation_id, "committed": False,
+                    "duplicate": False, "focus_selected": False,
+                    "interest_ids": [], "error": str(exc),
+                })
         self.sequence = next_sequence
         if staged_claim is not None:
             self.claim_history.append(staged_claim)
