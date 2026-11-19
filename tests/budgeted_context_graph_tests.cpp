@@ -456,9 +456,9 @@ int main() {
     reclaim.idempotency_key="budgeted-entity-reclaim";reclaim.expected_state_version=1;
     assert(graph.append_cluster_unmembership(reclaim,"budgeted-reclaim-cluster",
         "budgeted-reclaim-entity",error));
+    const auto resident_before = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
     const auto result=guarded.append_entity_reclamation(std::move(reclaim),
         "budgeted-reclaim-entity",error);
-    const auto resident_before = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
     assert(result.committed);
     assert(graph.nodes().count("budgeted-reclaim-entity")==0);
     const auto resident_after = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
