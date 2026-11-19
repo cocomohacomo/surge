@@ -50,8 +50,22 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,
     }
   }
 
-  // Build reverse containment ancestry. Membership is represented once in the
-  // graph; the planner never copies member payloads into cluster records.
+  // Every cluster in the canonical graph must participate in the decision.
+  // A partial candidate set could otherwise make omitted records immortal.
+  std::size_t graph_cluster_count = 0;
+  for (const auto& item : graph.nodes())
+    if (is_cluster(item.second.kind)) {
+      ++graph_cluster_count;
+      if (!by_id.count(item.first)) {
+        result.error = "CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";
+        return result;
+      }
+    }
+  if (by_id.size() != graph_cluster_count) {
+    result.error = "CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";
+    return result;
+  }
+
   std::map<std::string, std::vector<std::string>> parents;
   std::map<std::string, std::vector<std::string>> memberships;
   for (const auto& item : graph.relations()) {
@@ -68,9 +82,6 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,
   std::set<std::string> protected_ids;
   if (graph.focus()) add_ancestors(graph.focus()->cluster_id, parents, protected_ids);
 
-  // Active Questions and Questions with unresolved aspects keep their
-  // containing clusters alive. QuestionAspect parentage is encoded in the
-  // Question node's references, not in a parallel memory store.
   std::set<std::string> unresolved_questions;
   for (const auto& item : graph.nodes()) {
     const auto& node = item.second;
@@ -92,8 +103,6 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,
       add_ancestors(cluster_id, parents, protected_ids);
   }
 
-  // Preserve one-hop cluster dependencies around protected anchors. Snapshot
-  // the initial set first so relation order cannot cause transitive expansion.
   const auto anchors = protected_ids;
   std::set<std::string> dependency_neighbors;
   for (const auto& item : graph.relations()) {
