@@ -30,6 +30,7 @@ int main(){
       invalid_builder_record.reason="invalid same-state transition";
       invalid_builder_record.provenance_digest=std::string(64,'a');
       SemanticDelta invalid_builder_delta;
+      std::string lifecycle_error;
       CHECK(!graph.append_cluster_lifecycle(invalid_builder_delta,invalid_builder_record,
           "invalid-builder-node","invalid-builder-edge",lifecycle_error));
       CHECK(invalid_builder_delta.nodes.empty()&&invalid_builder_delta.relations.empty());
