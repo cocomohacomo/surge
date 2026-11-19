@@ -444,7 +444,7 @@ int main(){
     CHECK(!graph.append_cluster_membership(delta,"missing-parent","TOPIC",
         "partition","claim-a","invalid-parent",invalid_cluster_id,error));
     CHECK(error=="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND");
-    CHECK(!graph.append_cluster_membership(delta,"input-root","A|B","C",
+    CHECK(graph.append_cluster_membership(delta,"input-root","A|B","C",
         "claim-a","invalid-parent",invalid_cluster_id,error));
     const auto delimiter_a=invalid_cluster_id;
     CHECK(graph.append_cluster_membership(delta,"input-root","A","B|C",
