@@ -84,6 +84,37 @@ int surge_unified_decision_evaluate(
       if (!core_policy.family_weights.emplace(family_weights[i].family,
                                                family_weights[i].weight).second) return 0;
     }
+    // Preflight the aggregate number of evidence copies before constructing
+    // nested candidate/hypothesis vectors. Flat caller arrays can otherwise be
+    // referenced repeatedly and amplify into a much larger native working set.
+    size_t materialized_surface_evidence = 0;
+    for (size_t i = 0; i < candidate_count; ++i) {
+      const auto& input = candidates[i];
+      if (!required(input.candidate_id) ||
+          !range_ok(input.surface_set_offset, input.surface_set_count, surface_set_count))
+        return 0;
+      for (size_t j = 0; j < input.surface_set_count; ++j) {
+        const auto& set_input = surface_sets[input.surface_set_offset + j];
+        if (!required(set_input.source_ref) ||
+            !range_ok(set_input.hypothesis_offset, set_input.hypothesis_count, hypothesis_count))
+          return 0;
+        for (size_t k = 0; k < set_input.hypothesis_count; ++k) {
+          const auto& hypothesis_input = hypotheses[set_input.hypothesis_offset + k];
+          if (!required(hypothesis_input.hypothesis_id) || !hypothesis_input.surface ||
+              !range_ok(hypothesis_input.evidence_offset, hypothesis_input.evidence_count,
+                        surface_evidence_count)) return 0;
+          if (hypothesis_input.evidence_count >
+              core_policy.max_surface_evidence_total -
+                  std::min(materialized_surface_evidence,
+                           core_policy.max_surface_evidence_total)) {
+            *disposition = static_cast<int>(surge::DecisionDisposition::Defer);
+            copy_text(reason, reason_capacity, "UNIFIED_SURFACE_EVIDENCE_BUDGET_EXCEEDED");
+            return 1;
+          }
+          materialized_surface_evidence += hypothesis_input.evidence_count;
+        }
+      }
+    }
     std::vector<surge::DecisionEvidence> converted_evidence;
     converted_evidence.reserve(evidence_count);
     for (size_t i = 0; i < evidence_count; ++i) converted_evidence.push_back(convert(evidence[i]));
