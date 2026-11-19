@@ -578,6 +578,7 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
     const std::string& relation_prefix, std::string& assigned_cluster_id,
     std::string& error) const {
  error.clear();
+ assigned_cluster_id.clear();
  if(parent_cluster_id.empty()||classification.empty()||partition_key.empty()||
     member_node_id.empty()||relation_prefix.empty()||
     parent_cluster_id.size()>1024||classification.size()>128||
