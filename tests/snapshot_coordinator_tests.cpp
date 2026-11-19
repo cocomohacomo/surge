@@ -70,7 +70,9 @@ int main() {
   CHECK(capture_guard.register_domain(&capture_graph, &error));
   CHECK(capture_guard.register_domain(&capture_chaos, &error));
   CHECK(!capture_guard.capture("ctx-a", 7, 19, &bytes, &error));
-  CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");\n\n  // Shared transient budget rejects restore before domain publication and
+  CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+
+  // Shared transient budget rejects restore before domain publication and
   // releases every reservation on both rejection and successful completion.
   ResourceBudgetLimits tiny_limits;
   tiny_limits.transient_bytes = 1;
