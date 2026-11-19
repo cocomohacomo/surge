@@ -100,7 +100,7 @@ int main() {
   family_budget.family_weights["two"] = 1.0;
   auto family_overflow = UnifiedDecision::evaluate({decoder_top}, family_budget);
   assert(family_overflow.disposition == DecisionDisposition::Defer);
-  assert(family_overflow.reason == "RECOGNITION_FAMILY_WEIGHT_BUDGET_EXCEEDED");
+  assert(family_overflow.reason == "UNIFIED_FAMILY_WEIGHT_BUDGET_EXCEEDED");
   // Valid but non-discriminating evidence must never authorize a selection.
   DecisionPolicy zero_weight;
   zero_weight.family_weights["lexical"] = 0.0;
