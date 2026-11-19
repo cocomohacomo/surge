@@ -24,8 +24,9 @@ bool decode_cluster_lifecycle_content(const std::string& content,
  std::string state, extra;
  if (!(in >> state >> record.revision >> std::quoted(record.recorded_at) >>
        std::quoted(record.reason) >> std::quoted(record.provenance_digest)) ||
-     (in >> extra) || record.revision == 0 ||
-     !valid_rfc3339_timestamp(record.recorded_at) || record.reason.empty() ||
+     (in >> extra) || record.revision == 0 || record.recorded_at.size() > 64 ||
+     record.reason.empty() || record.reason.size() > 1024 ||
+     !valid_rfc3339_timestamp(record.recorded_at) ||
      record.provenance_digest.size() != 64) return false;
  for (const char ch : record.provenance_digest)
   if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
