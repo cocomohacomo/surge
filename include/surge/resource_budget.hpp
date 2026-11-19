@@ -42,6 +42,8 @@ class ResourceLease {
   ResourceLease(ResourceLease&& other) noexcept;
   ResourceLease& operator=(ResourceLease&& other) noexcept;
   void reset() noexcept;
+  bool shrink(std::size_t amount) noexcept;
+  std::size_t amount() const noexcept { return amount_; }
   explicit operator bool() const noexcept { return owner_ != nullptr; }
 
  private:
