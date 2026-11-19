@@ -427,7 +427,7 @@ int main() {
     SemanticDelta unlink;unlink.delta_id="unlink-budget-op";
     unlink.idempotency_key="unlink-budget-op";unlink.expected_state_version=1;
     const auto removed=guarded.append_cluster_unmembership(std::move(unlink),
-        "unlink-cluster","unlink-member","unlink-budget-id",error);
+        "unlink-cluster","unlink-member",error);
     assert(removed.committed);
     assert(graph.relations().count("unlink-edge")==0);
     assert(graph.nodes().count("unlink-member")==1);
