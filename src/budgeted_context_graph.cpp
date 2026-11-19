@@ -271,6 +271,24 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   return result;
 }
 
+DeltaResult BudgetedContextGraph::append_cluster_membership(SemanticDelta delta,
+    const std::string& parent_cluster_id, const std::string& classification,
+    const std::string& partition_key, const std::string& member_node_id,
+    const std::string& relation_prefix, std::string& assigned_cluster_id,
+    std::string& error) {
+  assigned_cluster_id.clear();
+  error.clear();
+  if (!graph_.append_cluster_membership(delta, parent_cluster_id, classification,
+      partition_key, member_node_id, relation_prefix, assigned_cluster_id, error))
+    return {false, false, graph_.state_version(), error};
+  auto result = apply(delta);
+  if (!result.committed && !result.duplicate) {
+    assigned_cluster_id.clear();
+    error = result.error;
+  }
+  return result;
+}
+
 bool BudgetedContextGraph::reserve_mutation(std::size_t bytes, std::size_t events,
     ResourceLease& resident, ResourceLease& retained, std::string& error) {
   if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
