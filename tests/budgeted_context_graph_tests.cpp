@@ -83,5 +83,36 @@ int main() {
     assert(graph.question_memory_state("q1") == QuestionMemoryState::Dormant);
   }
   std::remove(question_path.c_str());
+
+  const std::string forgetting_path = "question_forgetting_protection_test.journal";
+  std::remove(forgetting_path.c_str());
+  {
+    EventJournal journal(forgetting_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta create;
+    create.delta_id = "protected-questions";
+    create.idempotency_key = "protected-questions-key";
+    create.expected_state_version = graph.state_version();
+    create.nodes.push_back({{"focus-cluster", NodeKind::Cluster, "focused", {}}});
+    create.nodes.push_back({{"q-focus", NodeKind::Question, "focused question", {}}});
+    create.nodes.push_back({{"q-low", NodeKind::Question, "low priority question", {}}});
+    create.relations.push_back({{"q-focus-about-focus", RelationKind::About,
+        "q-focus", "focus-cluster"}});
+    create.focus = SetFocus{{"focus-cluster", "", false}};
+    assert(graph.apply(create).committed);
+
+    std::vector<std::string> demoted;
+    std::string error;
+    const std::vector<std::pair<std::string,double>> scores{
+        {"q-focus", 0.1}, {"q-low", 0.99}};
+    assert(graph.enforce_question_memory_capacity(scores, 1, graph.state_version(),
+        demoted, error));
+    assert(demoted.size() == 1 && demoted.front() == "q-low");
+    assert(graph.question_memory_state("q-focus") == QuestionMemoryState::Active);
+    assert(graph.question_memory_state("q-low") == QuestionMemoryState::Dormant);
+  }
+  std::remove(forgetting_path.c_str());
   return 0;
 }
