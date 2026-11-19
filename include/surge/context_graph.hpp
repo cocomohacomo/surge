@@ -111,6 +111,11 @@ class ContextGraph {
   }
   bool prepare_events(const SemanticDelta& delta, std::vector<JournalEvent>& events, std::string& error) const;
   std::uint64_t state_version() const { return journal_->state_version(); }
+  // Safely encode and append one lifecycle transition plus its required
+  // cluster membership edge to a caller-owned delta. No graph mutation occurs.
+  bool append_cluster_lifecycle(SemanticDelta& delta,
+      const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
+      const std::string& relation_id, std::string& error) const;
   std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
