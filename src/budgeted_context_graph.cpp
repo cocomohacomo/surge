@@ -101,13 +101,17 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
   bytes = 0; clusters = 0; retained_events = 0; error.clear();
   const auto& state = graph.state_;
   for (const auto& item : state.nodes) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_node(item.second, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     if (item.second.kind == NodeKind::Cluster || item.second.kind == NodeKind::ChaosCluster)
       if (!add(1, clusters)) { error = "CONTEXT_GRAPH_CLUSTER_COUNT_OVERFLOW"; return false; }
   }
-  for (const auto& item : state.relations)
+  for (const auto& item : state.relations) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_relation(item.second, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
   for (const auto& item : state.scope_spans) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     AddScopeSpan span{item.second.proposal, {}};
     if (!add_scope(span, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
@@ -128,11 +132,15 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
     if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
-  for (const auto& item : state.question_reference_counts)
+  for (const auto& item : state.question_reference_counts) {
+    if (item.second > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+      error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false;
+    }
     if (!add(kEntryOverhead + item.first.size() + sizeof(item.second), bytes) ||
         !add(static_cast<std::size_t>(item.second), retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
+  }
   for (const auto& item : state.claim_statuses)
     if (!add(kEntryOverhead + item.first.size(), bytes)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
