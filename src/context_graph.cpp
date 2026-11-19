@@ -768,6 +768,21 @@ ClaimTemporalState ContextGraph::evidence_validity_at(const std::string& id,cons
  ClaimValidityRecord compatible; if(latest){compatible.validity.valid_from=latest->validity.valid_from;compatible.validity.valid_until=latest->validity.valid_until;} return latest?evaluate_claim_validity(compatible,instant):ClaimTemporalState::Unknown;
 }
 
+std::optional<ClusterLifecycleRecord> ContextGraph::cluster_lifecycle(
+    const std::string& cluster_id) const {
+ std::optional<ClusterLifecycleRecord> latest;
+ for (const auto& item : state_.nodes) {
+  const auto& node = item.second;
+  if (node.kind != NodeKind::ClusterLifecycle || node.references.size() != 1 ||
+      node.references.front() != cluster_id) continue;
+  ClusterLifecycleRecord record;
+  record.cluster_id = cluster_id;
+  if (!decode_cluster_lifecycle_content(node.content, record)) return std::nullopt;
+  if (!latest || record.revision > latest->revision) latest = std::move(record);
+ }
+ return latest;
+}
+
 QuestionAspectStatus ContextGraph::question_aspect_status(const std::string& id) const {
   const auto found = state_.question_aspect_statuses.find(id);
   return found == state_.question_aspect_statuses.end()
