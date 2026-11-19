@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <limits>
 #include <set>
 #include <utility>
 
@@ -155,6 +156,79 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
   return result;
 }
 }  // namespace
+
+DecisionResult UnifiedDecision::evaluate_budgeted(
+    const std::vector<DecisionCandidate>& candidates, ResourceBudget& budget,
+    const DecisionPolicy& policy) {
+  DecisionResult rejected;
+  rejected.disposition = DecisionDisposition::Defer;
+  rejected.reason = "UNIFIED_RESOURCE_BUDGET_EXCEEDED";
+
+  std::size_t candidate_count = candidates.size();
+  std::size_t evidence_count = 0;
+  std::size_t transient_bytes = 0;
+  const auto add = [](std::size_t value, std::size_t& total) {
+    if (value > std::numeric_limits<std::size_t>::max() - total) return false;
+    total += value;
+    return true;
+  };
+  const auto add_evidence = [&](const DecisionEvidence& evidence) {
+    return add(1, evidence_count) &&
+        add(sizeof(DecisionEvidence), transient_bytes) &&
+        add(evidence.evidence_id.size(), transient_bytes) &&
+        add(evidence.family.size(), transient_bytes) &&
+        add(evidence.correlation_group.size(), transient_bytes);
+  };
+  for (const auto& candidate : candidates) {
+    if (!add(sizeof(DecisionCandidate), transient_bytes) ||
+        !add(candidate.candidate_id.size(), transient_bytes)) {
+      rejected.reason = "UNIFIED_RESOURCE_ESTIMATE_OVERFLOW";
+      return rejected;
+    }
+    for (const auto& evidence : candidate.evidence) {
+      if (!add_evidence(evidence)) {
+        rejected.reason = "UNIFIED_RESOURCE_ESTIMATE_OVERFLOW";
+        return rejected;
+      }
+    }
+    for (const auto& set : candidate.surface_sets) {
+      if (!add(1, candidate_count) ||
+          !add(sizeof(DecisionSurfaceSet), transient_bytes) ||
+          !add(set.source_ref.size(), transient_bytes)) {
+        rejected.reason = "UNIFIED_RESOURCE_ESTIMATE_OVERFLOW";
+        return rejected;
+      }
+      for (const auto& hypothesis : set.hypotheses) {
+        if (!add(1, candidate_count) ||
+            !add(sizeof(DecisionSurfaceHypothesis), transient_bytes) ||
+            !add(hypothesis.hypothesis_id.size(), transient_bytes) ||
+            !add(hypothesis.surface.size(), transient_bytes)) {
+          rejected.reason = "UNIFIED_RESOURCE_ESTIMATE_OVERFLOW";
+          return rejected;
+        }
+        for (const auto& evidence : hypothesis.evidence) {
+          if (!add_evidence(evidence)) {
+            rejected.reason = "UNIFIED_RESOURCE_ESTIMATE_OVERFLOW";
+            return rejected;
+          }
+        }
+      }
+    }
+  }
+
+  ResourceLease candidate_lease, evidence_lease, staging_lease;
+  std::string error;
+  if (candidate_count && !budget.try_acquire(ResourceKind::DecisionCandidates,
+                                               candidate_count, candidate_lease, error))
+    return rejected;
+  if (evidence_count && !budget.try_acquire(ResourceKind::DecisionEvidence,
+                                              evidence_count, evidence_lease, error))
+    return rejected;
+  if (transient_bytes && !budget.try_acquire(ResourceKind::TransientBytes,
+                                               transient_bytes, staging_lease, error))
+    return rejected;
+  return evaluate(candidates, policy);
+}
 
 DecisionResult UnifiedDecision::evaluate(
     const std::vector<DecisionCandidate>& candidates, const DecisionPolicy& policy) {
