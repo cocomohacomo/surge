@@ -39,14 +39,33 @@ bool fail(std::string* error, const char* message) {
   if (error) *error = message;
   return false;
 }
+bool reserve_restore_staging(ResourceBudget* budget, std::size_t amount,
+    std::size_t maximum, ResourceLease& lease, std::string* error) {
+  if (amount > maximum)
+    return fail(error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
+  if (!budget || amount == 0) return true;
+  std::string budget_error;
+  if (!budget->try_acquire(ResourceKind::TransientBytes, amount, lease,
+                           budget_error))
+    return fail(error, budget_error.empty()
+        ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
+        : budget_error.c_str());
+  return true;
+}
+bool checked_add(std::size_t a, std::size_t b, std::size_t* out) {
+  if (b > std::numeric_limits<std::size_t>::max() - a) return false;
+  *out = a + b;
+  return true;
+}
 struct PreparedEntry {
   SnapshotDomain* domain;
   std::unique_ptr<PreparedSnapshotRestore> restore;
 };
 }  // namespace
 
-SnapshotCoordinator::SnapshotCoordinator(SnapshotCoordinatorLimits limits)
-    : limits_(limits) {}
+SnapshotCoordinator::SnapshotCoordinator(SnapshotCoordinatorLimits limits,
+    ResourceBudget* budget)
+    : limits_(limits), budget_(budget) {}
 
 bool SnapshotCoordinator::register_domain(SnapshotDomain* domain,
                                           std::string* error) {
@@ -105,6 +124,12 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
 bool SnapshotCoordinator::restore(const std::string& bytes,
     const std::string& expected_context_id, std::uint64_t minimum_state_version,
     std::uint64_t minimum_journal_sequence, std::string* error) {
+  ResourceLease input_staging;
+  if (!reserve_restore_staging(budget_, bytes.size(),
+      limits_.max_restore_staging_bytes, input_staging, error)) return false;
+  ResourceLease input_staging;
+  if (!reserve_restore_staging(budget_, bytes.size(),
+      limits_.max_restore_staging_bytes, input_staging, error)) return false;
   SnapshotDocument document;
   if (!SnapshotCodec::decode(bytes, limits_.envelope, &document, error))
     return false;
@@ -117,6 +142,14 @@ bool SnapshotCoordinator::restore(const std::string& bytes,
     return fail(error, "SNAPSHOT_WATERMARK_REGRESSION");
 
   const std::string& bundle = document.payload;
+  std::size_t staged_total = 0;
+  if (!checked_add(bytes.size(), bundle.size(), &staged_total))
+    return fail(error, "SNAPSHOT_RESTORE_STAGING_SIZE_OVERFLOW");
+  ResourceLease domain_staging;
+  if (!reserve_restore_staging(budget_, bundle.size(),
+      limits_.max_restore_staging_bytes >= bytes.size()
+          ? limits_.max_restore_staging_bytes - bytes.size() : 0,
+      domain_staging, error)) return false;
   std::size_t pos = 0;
   std::uint32_t count = 0;
   if (!get_u32(bundle, &pos, &count) || count != domains_.size() ||
@@ -184,6 +217,19 @@ bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
   const auto tail = journal.committed_tail(document.journal_sequence, tail_limits);
   if (!tail.ok)
     return fail(error, tail.error.empty() ? "SNAPSHOT_JOURNAL_TAIL_UNAVAILABLE" : tail.error.c_str());
+  std::size_t tail_staging_bytes = 0;
+  if (!checked_add(tail.total_bytes, document.payload.size(),
+                   &tail_staging_bytes))
+    return fail(error, "SNAPSHOT_RESTORE_STAGING_SIZE_OVERFLOW");
+  std::size_t total_restore_staging = 0;
+  if (!checked_add(bytes.size(), tail_staging_bytes, &total_restore_staging) ||
+      total_restore_staging > limits_.max_restore_staging_bytes)
+    return fail(error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
+  ResourceLease tail_staging;
+  if (!reserve_restore_staging(budget_, tail_staging_bytes,
+      limits_.max_restore_staging_bytes >= bytes.size()
+          ? limits_.max_restore_staging_bytes - bytes.size() : 0,
+      tail_staging, error)) return false;
   if (tail.current_state_version < document.state_version)
     return fail(error, "SNAPSHOT_JOURNAL_BEHIND_CHECKPOINT");
 
