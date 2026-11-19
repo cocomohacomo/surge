@@ -1,5 +1,6 @@
 #include "surge/budgeted_context_graph.hpp"
 #include <limits>
+#include <initializer_list>
 #include <utility>
 
 namespace surge {
@@ -9,6 +10,12 @@ constexpr std::size_t kEntryOverhead = 256;
 bool add(std::size_t value, std::size_t& total) {
   if (value > std::numeric_limits<std::size_t>::max() - total) return false;
   total += value;
+  return true;
+}
+
+bool add_parts(std::size_t& total, std::initializer_list<std::size_t> parts) {
+  for (const auto part : parts)
+    if (!add(part, total)) return false;
   return true;
 }
 
@@ -117,74 +124,74 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
   }
   // State maps and append-only histories are persistent allocations too.
   for (const auto& item : state.focus_history) {
-    if (!add(kEntryOverhead + item.cluster_id.size() + item.interest_id.size(), bytes) ||
+    if (!add_parts(bytes, {kEntryOverhead, item.cluster_id.size(), item.interest_id.size()}) ||
         !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
-  if (state.focus && !add(kEntryOverhead + state.focus->cluster_id.size() +
-                          state.focus->interest_id.size(), bytes)) {
+  if (state.focus && !add_parts(bytes, {kEntryOverhead, state.focus->cluster_id.size(),
+                          state.focus->interest_id.size()})) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
   }
   for (const auto& item : state.question_aspect_statuses)
-    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()}) || !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.question_memory_states)
-    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()}) || !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.question_reference_counts) {
     if (item.second > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
       error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false;
     }
-    if (!add(kEntryOverhead + item.first.size() + sizeof(item.second), bytes) ||
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size(), sizeof(item.second)}) ||
         !add(static_cast<std::size_t>(item.second), retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   }
   for (const auto& item : state.claim_statuses)
-    if (!add(kEntryOverhead + item.first.size(), bytes) ||
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()}) ||
         !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.claim_validity_history) {
-    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()})) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     for (const auto& record : item.second)
-      if (!add(kEntryOverhead + record.validity.valid_from.size() +
-          record.validity.valid_until.size() + record.validity.basis_evidence_id.size() +
-          record.validity.review_evidence_id.size() + record.validity.reviewer_id.size(), bytes) ||
+      if (!add_parts(bytes, {kEntryOverhead, record.validity.valid_from.size(),
+          record.validity.valid_until.size(), record.validity.basis_evidence_id.size(),
+          record.validity.review_evidence_id.size(), record.validity.reviewer_id.size()}) ||
           !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
   for (const auto& item : state.evidence_validity_history) {
-    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()})) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     for (const auto& record : item.second)
-      if (!add(kEntryOverhead + record.validity.valid_from.size() +
-          record.validity.valid_until.size() + record.validity.basis_evidence_id.size() +
-          record.validity.review_evidence_id.size() + record.validity.reviewer_id.size(), bytes) ||
+      if (!add_parts(bytes, {kEntryOverhead, record.validity.valid_from.size(),
+          record.validity.valid_until.size(), record.validity.basis_evidence_id.size(),
+          record.validity.review_evidence_id.size(), record.validity.reviewer_id.size()}) ||
           !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
   for (const auto& item : state.dependency_evaluations) {
-    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()}) || !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
     for (const auto& id : item.second.impacted_nodes)
-      if (!add(sizeof(std::string) + id.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+      if (!add_parts(bytes, {sizeof(std::string), id.size()})) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     for (const auto& trigger : item.second.triggered)
-      if (!add(kEntryOverhead + trigger.dependency_id.size() +
-          trigger.prerequisite_id.size() + trigger.dependent_id.size(), bytes)) {
+      if (!add_parts(bytes, {kEntryOverhead, trigger.dependency_id.size(),
+          trigger.prerequisite_id.size(), trigger.dependent_id.size()})) {
         error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
       }
   }
   for (const auto& item : state.reassessment_history) {
-    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    if (!add_parts(bytes, {kEntryOverhead, item.first.size()})) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     for (const auto& record : item.second) {
-      if (!add(kEntryOverhead + record.trace_id.size() + record.claim_id.size() +
-          record.reference_at.size() + record.decision.size() + record.previous_hash.size() +
-          record.snapshot_digest.size() + record.chain_hash.size(), bytes) ||
+      if (!add_parts(bytes, {kEntryOverhead, record.trace_id.size(), record.claim_id.size(),
+          record.reference_at.size(), record.decision.size(), record.previous_hash.size(),
+          record.snapshot_digest.size(), record.chain_hash.size()}) ||
           !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
       for (const auto& evidence : record.evidence)
-        if (!add(kEntryOverhead + evidence.evidence_id.size() + evidence.relation_id.size() +
-            evidence.valid_from.size() + evidence.valid_until.size() +
-            evidence.basis_evidence_id.size(), bytes)) {
+        if (!add_parts(bytes, {kEntryOverhead, evidence.evidence_id.size(), evidence.relation_id.size(),
+            evidence.valid_from.size(), evidence.valid_until.size(),
+            evidence.basis_evidence_id.size()})) {
           error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
         }
     }
