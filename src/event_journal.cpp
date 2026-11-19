@@ -545,7 +545,7 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
   if (expected != state_version_) return {false, false, state_version_, "STATE_VERSION_CONFLICT"};
   if (state_version_ == std::numeric_limits<std::uint64_t>::max())
     return {false, false, state_version_, "STATE_VERSION_EXHAUSTED"};
-  std::map<std::string, bool> batch_ids;
+  std::set<std::string> batch_ids;
   std::size_t added_payload_bytes = 0;
   std::size_t next_identity_bytes = identity_memory_bytes_;
   if (!add_identity_cost(next_identity_bytes, idem, fingerprint, next_identity_bytes) ||
@@ -561,7 +561,7 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     if (!add_identity_cost(next_identity_bytes, event.event_id, {}, next_bytes))
       return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
     next_identity_bytes = next_bytes;
-    batch_ids[event.event_id] = true;
+    batch_ids.insert(event.event_id);
   }
   if ((limits_.max_identity_bytes && next_identity_bytes > limits_.max_identity_bytes) ||
       (limits_.max_events && events.size() > limits_.max_events -
@@ -595,7 +595,7 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
   for (auto event : events) {
     event.state_version = committed_version;
     events_.push_back(std::move(event));
-    event_ids_[events_.back().event_id] = true;
+    event_ids_.insert(events_.back().event_id);
   }
   retained_payload_bytes_ += added_payload_bytes;
   identity_memory_bytes_ = next_identity_bytes;
