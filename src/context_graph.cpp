@@ -453,6 +453,7 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
  for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
  for(const auto& id:d.remove_relation_ids)o<<"X "<<std::quoted(id)<<'\n';
+ for(const auto& id:d.reclaim_entity_node_ids)o<<"Z "<<std::quoted(id)<<'\n';
  for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
  for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  for(const auto& v:d.evidence_validity_updates)o<<"EV "<<std::quoted(v.evidence_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
@@ -465,6 +466,7 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
  i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
  i=0;for(const auto& id:d.remove_relation_ids){std::ostringstream payload;payload<<std::quoted(id);out.push_back({d.delta_id+"/relation-remove/"+std::to_string(i++),"RELATION_REMOVE",payload.str()});}
+ i=0;for(const auto& id:d.reclaim_entity_node_ids){std::ostringstream payload;payload<<std::quoted(id);out.push_back({d.delta_id+"/entity-reclaim/"+std::to_string(i++),"ENTITY_RECLAIMED",payload.str()});}
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
  i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record)});}
@@ -475,6 +477,7 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(s,n,error);}
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="RELATION_REMOVE"){std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_RELATION_REMOVAL_DECODE_FAILED";return false;}return apply_relation_removal(s,id,error);}
+ if(e.kind=="ENTITY_RECLAIMED"){std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_ENTITY_RECLAMATION_DECODE_FAILED";return false;}return apply_entity_reclamation(s,id,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
@@ -600,7 +603,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
     std::vector<JournalEvent>& events, std::string& error) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
-    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus)){
+    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.reclaim_entity_node_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus)){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
@@ -614,6 +617,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
  for(const auto& id:d.remove_relation_ids)if(!apply_relation_removal(staged,id,error))return false;
+ for(const auto& id:d.reclaim_entity_node_ids)if(!apply_entity_reclamation(staged,id,error))return false;
  for (const auto& added : d.nodes) {
   if (added.node.kind != NodeKind::ClusterLifecycle) continue;
   const auto& lifecycle = added.node;
@@ -780,6 +784,78 @@ std::size_t ContextGraph::cluster_membership_reference_count(
    ++count;
  }
  return count;
+}
+
+bool ContextGraph::apply_entity_reclamation(State& state,
+    const std::string& entity_node_id,std::string& error) const {
+ const auto target=state.nodes.find(entity_node_id);
+ if(target==state.nodes.end()||target->second.kind!=NodeKind::Entity){
+  error="ENTITY_RECLAMATION_TARGET_NOT_ELIGIBLE";return false;
+ }
+ if(cluster_membership_reference_count(entity_node_id)!=0){
+  // Count against the staged state, not the owning graph.
+  std::size_t memberships=0;
+  for(const auto& edge:state.relations){
+   const auto& relation=edge.second;
+   if(relation.kind!=RelationKind::Contains||relation.to!=entity_node_id)continue;
+   const auto parent=state.nodes.find(relation.from);
+   if(parent!=state.nodes.end()&&(parent->second.kind==NodeKind::Cluster||
+      parent->second.kind==NodeKind::ChaosCluster))++memberships;
+  }
+  if(memberships!=0){error="ENTITY_RECLAMATION_MEMBERSHIP_REFERENCES_REMAIN";return false;}
+ }
+ for(const auto& edge:state.relations)
+  if(edge.second.from==entity_node_id||edge.second.to==entity_node_id){
+   error="ENTITY_RECLAMATION_RELATION_REFERENCES_REMAIN";return false;
+  }
+ for(const auto& item:state.nodes){
+  if(item.first==entity_node_id)continue;
+  if(std::find(item.second.references.begin(),item.second.references.end(),
+      entity_node_id)!=item.second.references.end()){
+   error="ENTITY_RECLAMATION_TYPED_REFERENCES_REMAIN";return false;
+  }
+ }
+ if((state.focus&&(state.focus->cluster_id==entity_node_id||
+      state.focus->interest_id==entity_node_id))||
+    std::any_of(state.focus_history.begin(),state.focus_history.end(),
+      [&](const FocusRecord& focus){return focus.cluster_id==entity_node_id||
+        focus.interest_id==entity_node_id;})){
+  error="ENTITY_RECLAMATION_FOCUS_REFERENCE_REMAINS";return false;
+ }
+ for(const auto& item:state.scope_spans){
+  const auto& span=item.second.proposal;
+  if(std::find(span.target_refs.begin(),span.target_refs.end(),entity_node_id)!=span.target_refs.end()||
+     std::find(span.antecedent_refs.begin(),span.antecedent_refs.end(),entity_node_id)!=span.antecedent_refs.end()){
+   error="ENTITY_RECLAMATION_SCOPE_REFERENCE_REMAINS";return false;
+  }
+ }
+ for(const auto& item:state.dependency_evaluations){
+  const auto& record=item.second;
+  if(std::find(record.impacted_nodes.begin(),record.impacted_nodes.end(),entity_node_id)!=record.impacted_nodes.end()||
+     std::any_of(record.triggered.begin(),record.triggered.end(),[&](const DependencyTrigger& t){
+       return t.dependency_id==entity_node_id||t.prerequisite_id==entity_node_id||t.dependent_id==entity_node_id;})||
+     std::find(record.rejected_dependencies.begin(),record.rejected_dependencies.end(),entity_node_id)!=record.rejected_dependencies.end()){
+   error="ENTITY_RECLAMATION_DEPENDENCY_HISTORY_REMAINS";return false;
+  }
+ }
+ state.nodes.erase(target);
+ return true;
+}
+
+bool ContextGraph::append_entity_reclamation(SemanticDelta& delta,
+    const std::string& entity_node_id,std::string& error) const {
+ error.clear();
+ if(entity_node_id.empty()){error="ENTITY_RECLAMATION_INPUT_INVALID";return false;}
+ State candidate=state_;
+ for(const auto& relation_id:delta.remove_relation_ids)
+  if(!apply_relation_removal(candidate,relation_id,error))return false;
+ if(!apply_entity_reclamation(candidate,entity_node_id,error))return false;
+ if(std::find(delta.reclaim_entity_node_ids.begin(),
+      delta.reclaim_entity_node_ids.end(),entity_node_id)!=delta.reclaim_entity_node_ids.end()){
+  error="ENTITY_RECLAMATION_DUPLICATE";return false;
+ }
+ delta.reclaim_entity_node_ids.push_back(entity_node_id);
+ return true;
 }
 
 bool ContextGraph::append_cluster_unmembership(SemanticDelta& delta,
@@ -1550,6 +1626,7 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
 
     const bool graph_delta_event =
         event.kind == "NODE_ADD" || event.kind == "RELATION_ADD" ||
+        event.kind == "ENTITY_RECLAIMED" ||
         event.kind == "SCOPE_SPAN_ADD" || event.kind == "FOCUS_SET" ||
         event.kind == "CLAIM_VALIDITY_SET" ||
         event.kind == "EVIDENCE_VALIDITY_SET" ||
