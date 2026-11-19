@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <set>
 #include <sstream>
