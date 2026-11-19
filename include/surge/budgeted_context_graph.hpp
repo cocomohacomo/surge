@@ -47,6 +47,7 @@ class BudgetedContextGraph {
   static bool estimate_delta(const SemanticDelta& delta,
                              std::size_t& resident_bytes,
                              std::size_t& cluster_count,
+                             std::size_t& retained_events,
                              std::string& error);
   static bool estimate_graph(const ContextGraph& graph,
                              std::size_t& resident_bytes,
@@ -62,6 +63,7 @@ class BudgetedContextGraph {
   bool recovered_{false};
   std::vector<ResourceLease> resident_leases_;
   std::vector<ResourceLease> cluster_leases_;
+  std::vector<ResourceLease> recovery_event_leases_;
   std::vector<ResourceLease> mutation_resident_leases_;
   std::vector<ResourceLease> mutation_event_leases_;
 };
