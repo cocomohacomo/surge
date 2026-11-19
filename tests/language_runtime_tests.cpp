@@ -45,5 +45,22 @@ int main() {
   oversized_input.max_input_bytes = limits.max_input_bytes + 1;
   assert(!runtime.install_manifest(oversized_input, error));
   assert(error == "LANGUAGE_SET_MANIFEST_INVALID");
+  {
+    ResourceBudget budget({512, 64, 16, 8, 64, 128});
+    LanguageRuntimeRegistry bounded(budget, limits);
+    LanguageSetManifest pack = ja;
+    pack.language_set_id = "ja-budget";
+    pack.resident_bytes = 400;
+    pack.scratch_bytes = 64;
+    assert(bounded.install_manifest(pack, error));
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 400);
+    assert(bounded.activate_at_boundary("bounded-session", "ja-budget", "1.0.0", true, error));
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 64);
+    assert(!bounded.activate_at_boundary("bounded-session", "ja-budget", "1.0.0", true, error) == false);
+    assert(bounded.release_session("bounded-session"));
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+    assert(bounded.uninstall("ja-budget", "1.0.0", error));
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 0);
+  }
   return 0;
 }
