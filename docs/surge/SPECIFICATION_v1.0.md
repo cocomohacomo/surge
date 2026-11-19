@@ -123,9 +123,9 @@ The lifecycle distinguishes:
 The Core graph now supports append-only `ClusterLifecycle` records attached to
  their target Cluster/ChaosCluster. Each record carries a monotonic per-cluster
 revision, RFC3339 observation text, policy reason and a 64-character lowercase
-SHA-256 provenance digest. Allowed transitions are ACTIVE to DORMANT,
-ARCHIVED or TOMBSTONED; DORMANT to ACTIVE, ARCHIVED or TOMBSTONED; and
-ARCHIVED to ACTIVE or TOMBSTONED. TOMBSTONED is terminal. Lifecycle records
+SHA-256 provenance digest. Allowed transitions are ACTIVE to DORMANT or ARCHIVED; DORMANT to ACTIVE
+or ARCHIVED; and ARCHIVED to ACTIVE or TOMBSTONED. TOMBSTONED is terminal,
+so payload retirement requires an explicit prior ARCHIVED state. Lifecycle records
 are ordinary journaled graph nodes, so replay and graph snapshots retain the
 history. A TOMBSTONED record is currently a logical tombstone marker only: it
 does not remove membership edges or reclaim the target payload. Physical
