@@ -19,7 +19,8 @@ int main() {
     limits.retained_clusters = 1;
     ResourceBudget budget(limits);
     BudgetedContextGraph guarded(graph, budget, 4096);
-    assert(guarded.recover(*new std::string()));
+    std::string error;
+    assert(guarded.recover(error));
 
     SemanticDelta first;
     first.delta_id = "d1"; first.idempotency_key = "k1";
