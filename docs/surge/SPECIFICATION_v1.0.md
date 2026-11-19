@@ -335,3 +335,18 @@ journal backup and syncs the parent directory while retaining the snapshot
 backup. Snapshot capture remains string-materialized within configured payload
 and envelope limits; a streaming/segmented capture API is still needed to
 provide a stricter peak-memory bound.
+
+
+### Snapshot capture staging guard
+
+SnapshotCoordinatorLimits now includes max_capture_staging_bytes. Capture checks
+the combined known staging footprint of the current aggregate bundle, returned
+domain payload, field framing, and the final envelope duplication before
+continuing. Each domain payload also remains bounded by
+max_domain_payload_bytes. The conformance test rejects a capture whose
+calculated staging peak exceeds the configured ceiling.
+
+This is a logical bound over known serialized buffers, not a hard allocator or
+RSS ceiling: a domain's capture callback may allocate its bounded payload
+before the coordinator can inspect its returned size. Strict peak-memory
+control still requires a streaming/segmented SnapshotDomain capture contract.
