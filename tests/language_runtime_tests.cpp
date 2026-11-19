@@ -12,11 +12,17 @@ int main() {
   limits.max_total_resident_bytes = 1000;
   limits.max_scratch_bytes = 256;
   LanguageRuntimeRegistry runtime(limits);
-  LanguageSetManifest ja{"ja-JP", "1.0.0", "sha256:ja", "ja-JP", "Jpan",
+  LanguageSetManifest ja{"ja-JP", "1.0.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ja-JP", "Jpan",
       300, 600, 200, 64, 4096, 64, {"kana-kanji", "normalization"}};
-  LanguageSetManifest en{"en-US", "1.0.0", "sha256:en", "en-US", "Latn",
+  LanguageSetManifest en{"en-US", "1.0.0", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "en-US", "Latn",
       300, 600, 200, 64, 4096, 64, {"lexicon", "normalization"}};
   std::string error;
+  LanguageSetManifest malformed_digest = ja;
+  malformed_digest.language_set_id = "bad-digest";
+  malformed_digest.digest = "sha256:not-a-digest";
+  assert(!runtime.install_manifest(malformed_digest, error));
+  assert(error == "LANGUAGE_SET_MANIFEST_INVALID");
+  assert(runtime.installed_count() == 0);
   assert(runtime.install_manifest(ja, error));
   assert(runtime.install_manifest(en, error));
   assert(runtime.installed_count() == 2);
