@@ -39,6 +39,7 @@ int main() {
 
   DecisionPolicy calibrated;
   calibrated.family_weights["semantic"] = 0.0;
+  calibrated.family_weights["morphology"] = 0.0;
   auto calibration_changes_choice = RecognitionDecision::evaluate(
       {decoder_top, contextual}, calibrated);
   assert(calibration_changes_choice.disposition == DecisionDisposition::Select);
