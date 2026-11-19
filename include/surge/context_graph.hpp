@@ -57,6 +57,8 @@ struct SemanticDelta {
   std::vector<AddRelation> relations;
   // Append-only journal command that removes active Contains edges without deleting members.
   std::vector<std::string> remove_relation_ids;
+  // Explicitly reclaim eligible unreferenced Entity payload nodes.
+  std::vector<std::string> reclaim_entity_node_ids;
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
   std::vector<ClaimValidity> claim_validity_updates;
@@ -100,6 +102,8 @@ class ContextGraph {
   DeltaResult apply(const SemanticDelta& delta);
   // Core-owned classification: persist a member beneath a deterministic typed
   // child cluster, creating the cluster and parent edge in the same delta.
+  bool append_entity_reclamation(SemanticDelta& delta,
+      const std::string& entity_node_id, std::string& error) const;
   bool append_cluster_unmembership(SemanticDelta& delta,
       const std::string& cluster_id, const std::string& member_node_id,
       std::string& error) const;
@@ -184,6 +188,7 @@ class ContextGraph {
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_relation_removal(State&, const std::string&, std::string&) const;
+  bool apply_entity_reclamation(State&, const std::string&, std::string&) const;
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
