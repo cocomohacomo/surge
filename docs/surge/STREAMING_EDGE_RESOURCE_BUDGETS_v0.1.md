@@ -173,3 +173,12 @@ The reservation uses a conservative logical estimate of twice the delta's reside
 A shared staging-reservation helper now applies the same transient-budget admission to the bounded Question dependency traversal, Question capacity demotion, QuestionAspect batch updates and temporal claim reassessment. The optional per-operation staging ceiling is an additional cap, not a switch that disables the shared transient budget. Regression tests cover un-recovered writes, ordinary delta staging rejection and Question mutation staging rejection.
 
 These changes strengthen the opt-in facade only. They do not yet prevent production code from bypassing the facade through public `ContextGraph` mutators, and do not make logical reservations equivalent to process RSS.
+
+
+## Core mutation gateway adoption in the C ABI runtime (2026-11-19)
+
+The production C ABI Handle now owns the ResourceBudget and BudgetedContextGraph gateway alongside its ContextGraph. After journal and graph replay, gateway recovery reserves the existing graph footprint before the handle is published. SemanticDelta commits and the C ABI Question/QuestionAspect mutation endpoints route through the gateway: ordinary graph apply, Question reference/reactivation, dependent reactivation, memory-state changes, capacity demotion, and QuestionAspect status updates.
+
+The legacy surge_packet_core_open ABI currently constructs a compatibility budget whose dimensions are SIZE_MAX. This is deliberate to preserve existing callers and avoid imposing an undocumented host memory profile. Consequently this migration centralizes and exercises the admission boundary, but it does not yet impose a finite resident/transient cap on legacy C ABI clients. A budget-configured open/profile API and host-selected finite limits remain required for enforceable deployment budgets.
+
+Read-only graph access remains on ContextGraph. This change covers the C ABI runtime entry points; standalone C++ users that instantiate ContextGraph directly can still bypass the gateway. The public direct mutators must be restricted or migrated in the next Core API pass. Logical byte estimates remain distinct from allocator usage and RSS.
