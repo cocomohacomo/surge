@@ -59,7 +59,7 @@ int main() {
     const auto first = journal.commit("tx-a", "idem-a", 0,
         {{"event-a", "NOOP", "payload"}});
     CHECK(first.committed);
-    CHECK(journal.identity_memory_bytes() == 401);
+    CHECK(journal.identity_memory_bytes() == 433);
     const auto second = journal.commit("tx-b", "idem-b", 1,
         {{"event-b", "NOOP", "payload"}});
     CHECK(!second.committed && second.error == "JOURNAL_RESOURCE_LIMIT_EXCEEDED");
@@ -68,7 +68,7 @@ int main() {
   }
   {
     EventJournalLimits too_small;
-    too_small.max_identity_bytes = 400;
+    too_small.max_identity_bytes = 432;
     EventJournal rejected(path.u8string(), too_small);
     CHECK(!rejected.open());
     CHECK(rejected.last_error() == "JOURNAL_CHECKPOINT_HEADER_INVALID");
