@@ -113,6 +113,7 @@ bool node_kind(const char* value, surge::NodeKind& out) {
   else if(s=="QUESTION_ASPECT")out=surge::NodeKind::QuestionAspect;
   else if(s=="DEPENDENCY")out=surge::NodeKind::Dependency;
   else if(s=="INTEREST")out=surge::NodeKind::Interest;
+  else if(s=="CLUSTER_LIFECYCLE")out=surge::NodeKind::ClusterLifecycle;
   else return false;
   return true;
 }
@@ -1023,7 +1024,7 @@ int surge_question_get_context_bundle(void* opaque,const char* question_id,size_
   for(const auto& item:graph.nodes()){const auto& n=item.second;if(n.kind!=surge::NodeKind::Claim&&n.kind!=surge::NodeKind::Evidence)continue;bool linked=false;for(const auto& ref:n.references)if(anchors.count(ref)||about_targets.count(ref)){linked=true;break;}if(!linked)for(const auto& rel:graph.relations()){const auto&r=rel.second;if((r.from==n.id&&(anchors.count(r.to)||about_targets.count(r.to)))||(r.to==n.id&&(anchors.count(r.from)||about_targets.count(r.from)))){linked=true;break;}}if(linked){if(n.kind==surge::NodeKind::Claim)claims.insert(n.id);else evidence.insert(n.id);}}
   for(const auto& item:graph.relations()){const auto&r=item.second;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(claims.count(r.from)&&b!=graph.nodes().end()&&b->second.kind==surge::NodeKind::Evidence)evidence.insert(r.to);if(claims.count(r.to)&&a!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Evidence)evidence.insert(r.from);}
   if(questions.size()+aspects.size()+claims.size()+evidence.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_CONTEXT_NODE_LIMIT");return 0;}
-  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";default:return "UNKNOWN";}};
+  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";case surge::NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";default:return "UNKNOWN";}};
   auto mn=[](surge::QuestionMemoryState s){return s==surge::QuestionMemoryState::Active?"ACTIVE":s==surge::QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";};
   auto an=[](surge::QuestionAspectStatus s){return s==surge::QuestionAspectStatus::Open?"OPEN":s==surge::QuestionAspectStatus::Resolved?"RESOLVED":"DEFERRED";};
   auto cn=[](surge::ClaimStatus s){return s==surge::ClaimStatus::Active?"ACTIVE":s==surge::ClaimStatus::Superseded?"SUPERSEDED":"RETRACTED";};
@@ -1449,6 +1450,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
         case surge::NodeKind::Dependency: return "DEPENDENCY";
         case surge::NodeKind::Interest: return "INTEREST";
+        case surge::NodeKind::ClusterLifecycle: return "CLUSTER_LIFECYCLE";
       }
       return "UNKNOWN";
     };
