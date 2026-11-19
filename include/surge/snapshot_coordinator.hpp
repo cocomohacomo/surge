@@ -2,6 +2,7 @@
 #include "surge/snapshot.hpp"
 #include "surge/snapshot_store.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/resource_budget.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -43,11 +44,14 @@ struct SnapshotCoordinatorLimits {
   SnapshotLimits envelope;
   std::size_t max_domains{64};
   std::size_t max_domain_payload_bytes{8U * 1024U * 1024U};
+  // Maximum logical transient reservation for one restore operation.
+  std::size_t max_restore_staging_bytes{64U * 1024U * 1024U};
 };
 
 class SnapshotCoordinator {
  public:
-  explicit SnapshotCoordinator(SnapshotCoordinatorLimits limits = {});
+  explicit SnapshotCoordinator(SnapshotCoordinatorLimits limits = {},
+                                ResourceBudget* budget = nullptr);
   bool register_domain(SnapshotDomain* domain, std::string* error);
   bool capture(const std::string& context_id, std::uint64_t state_version,
                std::uint64_t journal_sequence, std::string* bytes,
@@ -74,6 +78,7 @@ class SnapshotCoordinator {
                const std::string& context_id, std::string* error);
  private:
   SnapshotCoordinatorLimits limits_;
+  ResourceBudget* budget_{nullptr};
   std::vector<SnapshotDomain*> domains_;
 };
 
