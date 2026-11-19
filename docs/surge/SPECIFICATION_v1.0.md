@@ -315,3 +315,23 @@ erasure or an RSS guarantee. Snapshot capture still constructs bounded
 serialized payloads, and the current logical staging budget is not a hard
 allocator/RSS ceiling. Edge-PC peak-memory and latency measurements remain
 outstanding.
+
+
+### Entity ResidentBytes lease reconciliation and journal-backup pruning
+
+BudgetedContextGraph now releases the exact logical Entity node reservation
+after a successful, reference-checked ENTITY_RECLAIMED transaction. It first
+preflights that the active ResidentBytes leases cover the candidate reservation,
+then performs partial lease releases only after the journal-backed graph
+mutation commits. A missing lease causes fail-closed rejection before commit.
+This preserves unrelated reservations in shared aggregate leases. It does not
+release allocator pages or guarantee lower process RSS.
+
+The Entity checkpoint conformance test also exercises the existing explicit
+journal-backup pruning API. Pruning requires a verified compacted active journal,
+readable primary and backup snapshot generations at the same checkpoint, and a
+valid retained journal backup at the expected watermark. It then removes the
+journal backup and syncs the parent directory while retaining the snapshot
+backup. Snapshot capture remains string-materialized within configured payload
+and envelope limits; a streaming/segmented capture API is still needed to
+provide a stricter peak-memory bound.
