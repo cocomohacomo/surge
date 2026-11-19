@@ -57,7 +57,7 @@ int main() {
     ResourceBudgetLimits limits;
     limits.resident_bytes = 8192;
     limits.transient_bytes = 8192;
-    limits.retained_events = 1;
+    limits.retained_events = 2;
     limits.retained_clusters = 4;
     ResourceBudget budget(limits);
     BudgetedContextGraph guarded(graph, budget, 8192);
@@ -75,7 +75,7 @@ int main() {
         graph.state_version(), error));
     assert(graph.question_memory_state("q1") == QuestionMemoryState::Dormant);
     const auto after_first = budget.snapshot();
-    assert(after_first.used[static_cast<std::size_t>(ResourceKind::RetainedEvents)] == 1);
+    assert(after_first.used[static_cast<std::size_t>(ResourceKind::RetainedEvents)] == 2);
 
     error.clear();
     assert(!guarded.set_question_memory_state("q1", QuestionMemoryState::Active,
