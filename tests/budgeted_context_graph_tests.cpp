@@ -151,5 +151,59 @@ int main() {
     assert(graph.question_memory_state("q-two-hop") == QuestionMemoryState::Dormant);
   }
   std::remove(dependency_path.c_str());
+  const std::string classification_path = "budgeted_cluster_classification_test.journal";
+  std::remove(classification_path.c_str());
+  {
+    EventJournal journal(classification_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    SemanticDelta seed;
+    seed.delta_id = "classification-seed";
+    seed.idempotency_key = "classification-seed-key";
+    seed.expected_state_version = graph.state_version();
+    seed.nodes.push_back({{"root", NodeKind::Cluster, "root", {}}});
+    seed.nodes.push_back({{"entity-a", NodeKind::Entity, "alpha", {}}});
+    seed.nodes.push_back({{"entity-b", NodeKind::Entity, "beta", {}}});
+    assert(graph.apply(seed).committed);
+
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 16384;
+    limits.transient_bytes = 16384;
+    limits.retained_events = 64;
+    limits.retained_clusters = 2;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget, 16384);
+    std::string error;
+    assert(guarded.recover(error));
+
+    SemanticDelta classification;
+    classification.delta_id = "classification-a";
+    classification.idempotency_key = "classification-a-key";
+    classification.expected_state_version = graph.state_version();
+    std::string cluster_id;
+    auto accepted = guarded.append_cluster_membership(std::move(classification),
+        "root", "LEXICAL_INTERPRETATION", "span:0:2", "entity-a",
+        "membership-a", cluster_id, error);
+    assert(accepted.committed);
+    assert(!cluster_id.empty());
+    assert(graph.nodes().count(cluster_id) == 1);
+
+    const auto before_reject = graph.state_version();
+    SemanticDelta rejected_delta;
+    rejected_delta.delta_id = "classification-b";
+    rejected_delta.idempotency_key = "classification-b-key";
+    rejected_delta.expected_state_version = before_reject;
+    std::string rejected_cluster_id;
+    auto rejected = guarded.append_cluster_membership(std::move(rejected_delta),
+        "root", "SURFACE_REALIZATION", "span:2:4", "entity-b",
+        "membership-b", rejected_cluster_id, error);
+    assert(!rejected.committed);
+    assert(error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(rejected_cluster_id.empty());
+    assert(graph.state_version() == before_reject);
+    assert(graph.nodes().count("entity-b") == 1);
+  }
+  std::remove(classification_path.c_str());
   return 0;
 }
