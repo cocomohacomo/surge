@@ -21,6 +21,9 @@ struct ClusterRetentionPlan {
   std::vector<std::string> retained_cluster_ids;
   std::vector<std::string> forget_cluster_ids;
   std::vector<std::string> protected_cluster_ids;
+  // Members shared by at least one retained and one forgotten cluster. They
+  // must remain materialized; forgetting a membership is not payload deletion.
+  std::vector<std::string> preserved_shared_member_ids;
   std::string error;
   bool accepted{false};
 };
