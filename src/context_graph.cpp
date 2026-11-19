@@ -852,14 +852,6 @@ bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<
     protected_ids.insert(ref);
   }
  }
- // Preserve immediate dependency neighbors of protected Questions so that
- // forgetting cannot strand an unresolved dependency edge.
- for (const auto& item : state_.relations) {
-  const auto& edge = item.second;
-  if (edge.kind != RelationKind::DependsOn) continue;
-  if (protected_ids.count(edge.from)) protected_ids.insert(edge.to);
-  if (protected_ids.count(edge.to)) protected_ids.insert(edge.from);
- }
  // Questions directly linked to Evidence are retained as provenance anchors.
  for (const auto& item : state_.relations) {
   const auto& edge = item.second;
@@ -871,6 +863,16 @@ bool ContextGraph::enforce_question_memory_capacity(const std::vector<std::pair<
    if (from->second.kind == NodeKind::Question) protected_ids.insert(edge.from);
    if (to->second.kind == NodeKind::Question) protected_ids.insert(edge.to);
   }
+ }
+ // Preserve exactly one dependency hop from the complete anchor set.
+ // Use a snapshot so relation iteration order cannot accidentally expand this
+ // into a transitive closure or make the result order-dependent.
+ const auto dependency_anchors = protected_ids;
+ for (const auto& item : state_.relations) {
+  const auto& edge = item.second;
+  if (edge.kind != RelationKind::DependsOn) continue;
+  if (dependency_anchors.count(edge.from)) protected_ids.insert(edge.to);
+  if (dependency_anchors.count(edge.to)) protected_ids.insert(edge.from);
  }
  std::vector<std::pair<std::string,double>> protected_active, candidates;
  for(const auto& n:state_.nodes){
