@@ -2,6 +2,7 @@
 #include "surge/cluster_retention.hpp"
 #include "surge/sha256.hpp"
 #include <limits>
+#include <set>
 #include <initializer_list>
 #include <utility>
 
