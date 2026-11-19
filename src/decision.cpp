@@ -84,7 +84,14 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
     if (policy.require_valid_evidence && item.trace.accepted_evidence == 0) {
       item.trace.score = -INFINITY;
     } else {
-      for (const auto& group : groups) item.trace.score += group.second;
+      for (const auto& group : groups) {
+        item.trace.score += group.second;
+        if (!std::isfinite(item.trace.score)) {
+          result.disposition = DecisionDisposition::Reject;
+          result.reason = std::string(stage) + "_NONFINITE_CANDIDATE_SCORE";
+          return result;
+        }
+      }
     }
     scored.push_back(std::move(item));
   }
