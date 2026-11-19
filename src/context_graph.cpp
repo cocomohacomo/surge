@@ -768,6 +768,20 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
  return true;
 }
 
+std::size_t ContextGraph::cluster_membership_reference_count(
+    const std::string& member_node_id) const {
+ std::size_t count=0;
+ for(const auto& item:state_.relations){
+  const auto& relation=item.second;
+  if(relation.kind!=RelationKind::Contains||relation.to!=member_node_id)continue;
+  const auto parent=state_.nodes.find(relation.from);
+  if(parent!=state_.nodes.end()&&
+     (parent->second.kind==NodeKind::Cluster||parent->second.kind==NodeKind::ChaosCluster))
+   ++count;
+ }
+ return count;
+}
+
 bool ContextGraph::append_cluster_unmembership(SemanticDelta& delta,
     const std::string& cluster_id,const std::string& member_node_id,
     std::string& error) const {
