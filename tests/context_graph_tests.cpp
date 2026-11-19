@@ -257,8 +257,7 @@ int main(){
     SemanticDelta unlink;unlink.delta_id="unlink-a-membership";
     unlink.idempotency_key="unlink-a-membership";unlink.expected_state_version=1;
     std::string error;
-    CHECK(graph.append_cluster_unmembership(unlink,"unlink-a","unlink-shared",
-        "unlink-a-removal",error));
+    CHECK(graph.append_cluster_unmembership(unlink,"unlink-a","unlink-shared",error));
     CHECK(graph.apply(unlink).committed);
     CHECK(graph.relations().count("unlink-a-edge")==0);
     CHECK(graph.relations().count("unlink-b-edge")==1);
@@ -273,8 +272,7 @@ int main(){
     std::string error;
     SemanticDelta last;last.delta_id="unlink-last";last.idempotency_key="unlink-last";
     last.expected_state_version=2;
-    CHECK(recovered.append_cluster_unmembership(last,"unlink-b","unlink-shared",
-        "unlink-b-removal",error));
+    CHECK(recovered.append_cluster_unmembership(last,"unlink-b","unlink-shared",error));
     CHECK(recovered.apply(last).committed);
     CHECK(recovered.nodes().count("unlink-shared")==1);
     CHECK(recovered.relations().count("unlink-b-edge")==0);
