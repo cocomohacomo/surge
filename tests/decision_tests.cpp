@@ -1,6 +1,7 @@
 #include "surge/decision.hpp"
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 int main() {
@@ -49,5 +50,11 @@ int main() {
   auto invalid_calibration = RecognitionDecision::evaluate({decoder_top}, calibrated);
   assert(invalid_calibration.disposition == DecisionDisposition::Reject);
   assert(invalid_calibration.reason == "RECOGNITION_INVALID_FAMILY_WEIGHT");
+
+  DecisionPolicy overflow_calibration;
+  overflow_calibration.family_weights["semantic"] = std::numeric_limits<double>::max();
+  auto overflow_score = RecognitionDecision::evaluate({contextual}, overflow_calibration);
+  assert(overflow_score.disposition == DecisionDisposition::Reject);
+  assert(overflow_score.reason == "RECOGNITION_NONFINITE_EVIDENCE_SCORE");
   return 0;
 }
