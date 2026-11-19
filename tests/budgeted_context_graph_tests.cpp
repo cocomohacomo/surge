@@ -16,6 +16,7 @@ int main() {
     ResourceBudgetLimits limits;
     limits.resident_bytes = 1024;
     limits.transient_bytes = 4096;
+    limits.retained_events = 8;
     limits.retained_clusters = 1;
     ResourceBudget budget(limits);
     BudgetedContextGraph guarded(graph, budget, 4096);
