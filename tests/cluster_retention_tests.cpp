@@ -23,6 +23,7 @@ int main(){
    {{"root-dependency",RelationKind::Contains,"root","dependency-child"}},{{"root-low-a",RelationKind::Contains,"root","low-a"}},
    {{"root-low-b",RelationKind::Contains,"root","low-b"}},{{"question-membership",RelationKind::Contains,"question-child","q-open"}},
    {{"focus-dependency",RelationKind::DependsOn,"focus-child","dependency-child"}},
+   {{"focus-interest-membership",RelationKind::Contains,"focus-child","focus-interest"}},
    {{"shared-a",RelationKind::Contains,"low-a","shared-evidence"}},{{"shared-b",RelationKind::Contains,"low-b","shared-evidence"}}
   };
   seed.focus=SetFocus{{"focus-child","focus-interest",false}};assert(graph.apply(seed).committed);
