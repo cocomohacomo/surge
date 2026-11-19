@@ -33,6 +33,7 @@ class BudgetedContextGraph {
   ResourceBudget& budget_;
   std::size_t max_staging_bytes_{0};
   std::size_t accounted_resident_bytes_{0};
+  bool recovered_{false};
   std::vector<ResourceLease> resident_leases_;
   std::vector<ResourceLease> cluster_leases_;
 };
