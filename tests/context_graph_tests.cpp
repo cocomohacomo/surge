@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/snapshot_domains.hpp"
 #include "surge/event_journal.hpp"
 #include "surge/snapshot_domains.hpp"
 #include <algorithm>
@@ -313,6 +314,39 @@ int main(){
     ContextGraph recovered(entity_reclaim_path);CHECK(recovered.open());
     CHECK(recovered.state_version()==2);
     CHECK(recovered.nodes().count("reclaim-entity")==0);
+  }
+  // A snapshot taken before reclamation plus the committed journal tail
+  // must restore to the same graph as full replay.
+  const auto entity_snapshot_path=(root/"entity-reclamation-snapshot.sgj").string();
+  const auto entity_snapshot_target=(root/"entity-reclamation-snapshot-target.sgj").string();
+  {
+    EventJournal journal(entity_snapshot_path);CHECK(journal.open());
+    ContextGraph graph(journal);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-snapshot-seed";
+    seed.idempotency_key="entity-snapshot-seed";seed.expected_state_version=0;
+    seed.nodes={{{"snapshot-cluster",NodeKind::Cluster,"cluster",{} }},
+                {{"snapshot-entity",NodeKind::Entity,"entity",{} }}};
+    seed.relations={{{"snapshot-membership",RelationKind::Contains,
+        "snapshot-cluster","snapshot-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    ContextGraphSnapshotDomain domain(graph);std::string snapshot,error;
+    CHECK(domain.capture(&snapshot,&error));
+    SemanticDelta reclaim;reclaim.delta_id="entity-snapshot-reclaim";
+    reclaim.idempotency_key="entity-snapshot-reclaim";reclaim.expected_state_version=1;
+    CHECK(graph.append_cluster_unmembership(reclaim,"snapshot-cluster",
+        "snapshot-entity",error));
+    CHECK(graph.append_entity_reclamation(reclaim,"snapshot-entity",error));
+    CHECK(graph.apply(reclaim).committed);
+    const auto tail=journal.committed_tail(1);
+    CHECK(tail.ok&&tail.current_state_version==2);
+    EventJournal target_journal(entity_snapshot_target);CHECK(target_journal.open());
+    ContextGraph target(target_journal);CHECK(target.open());
+    ContextGraphSnapshotDomain target_domain(target);
+    auto prepared=target_domain.prepare_restore_with_tail(snapshot,tail.events,&error);
+    CHECK(prepared!=nullptr);
+    prepared->commit();
+    CHECK(target.nodes().count("snapshot-entity")==0);
+    CHECK(target.nodes().count("snapshot-cluster")==1);
   }
   // Reclamation fails closed while any non-membership relation still points
   // to the entity, even when its cluster membership has already been removed.
