@@ -26,7 +26,10 @@ bool ResourceBudget::try_acquire(ResourceKind kind, std::size_t amount,
     error = "RESOURCE_KIND_INVALID";
     return false;
   }
-  lease.reset();
+  if (lease) {
+    error = "RESOURCE_LEASE_ALREADY_ACTIVE";
+    return false;
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   if (amount > limits_[slot] || used_[slot] > limits_[slot] - amount) {
     error = "RESOURCE_BUDGET_EXCEEDED";
