@@ -107,16 +107,45 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertEqual(recovered.state_version,1)
                 self.assertEqual(recovered.packet_count,1)
 
-    def test_contradiction_creates_question_aspect_interest_and_relation(self):
+    def test_contradiction_routes_through_core_question_router_and_selects_focus(self):
         with tempfile.TemporaryDirectory() as tmp:
+            journal=pathlib.Path(tmp)/"runtime.sgj"
             runtime=LLMSemanticRuntime(StubProvider([
                 result(), result(proposition="予算を増額",polarity="NEGATIVE")]),"ctx","source")
-            with SemanticCoreBridge(pathlib.Path(tmp)/"runtime.sgj") as core:
-                runtime.process("予算を増額します。",core)
+            with SemanticCoreBridge(journal) as core:
+                first=runtime.process("予算を増額します。",core)
                 out=runtime.process("予算を増額しません。",core)
                 self.assertTrue(out["semantic_commit"]["committed"])
-                self.assertEqual(core.state_version,2)
                 self.assertEqual(core.packet_count,2)
+                self.assertEqual(out["cluster_id"],first["cluster_id"])
+                self.assertEqual(core.state_version,3)
+                self.assertEqual(len(out["contradiction_routes"]),1)
+                route=out["contradiction_routes"][0]
+                self.assertTrue(route["committed"])
+                self.assertFalse(route["duplicate"])
+                self.assertTrue(route["focus_selected"])
+                self.assertEqual(len(route["interest_ids"]),1)
+                self.assertEqual(core.get_focus()["cluster_id"],first["cluster_id"])
+                relation_id="contradicts/claim/"+first["packet_id"]+"/claim/"+out["packet_id"]
+            with SemanticCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.get_focus()["cluster_id"],first["cluster_id"])
+                retry=recovered.route_contradiction(relation_id)
+                self.assertTrue(retry["committed"] and retry["duplicate"])
+                self.assertEqual(recovered.state_version,3)
+
+    def test_cross_topic_contradiction_creates_interest_candidates_without_guessing_focus(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime=LLMSemanticRuntime(StubProvider([
+                result(topic="予算"), result(topic="契約",proposition="予算を増額",polarity="NEGATIVE")]),"ctx","source")
+            with SemanticCoreBridge(pathlib.Path(tmp)/"multi-topic.sgj") as core:
+                runtime.process("予算を増額します。",core)
+                out=runtime.process("契約の予算を増額しません。",core)
+                self.assertEqual(len(out["contradiction_routes"]),1)
+                route=out["contradiction_routes"][0]
+                self.assertTrue(route["committed"])
+                self.assertFalse(route["focus_selected"])
+                self.assertEqual(len(route["interest_ids"]),2)
+                self.assertIsNone(core.get_focus())
 
     def test_abstention_preserves_evidence_without_claim(self):
         with tempfile.TemporaryDirectory() as tmp:
