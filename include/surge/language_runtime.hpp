@@ -29,6 +29,9 @@ struct LanguageRuntimeLimits {
   std::size_t max_total_unpacked_bytes{256U * 1024U * 1024U};
   std::size_t max_total_resident_bytes{128U * 1024U * 1024U};
   std::size_t max_scratch_bytes{32U * 1024U * 1024U};
+  std::size_t max_input_bytes{16U * 1024U * 1024U};
+  std::size_t max_candidates{4096};
+  std::size_t max_capabilities{64};
 };
 
 class LanguageRuntimeRegistry {
