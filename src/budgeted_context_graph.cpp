@@ -106,7 +106,7 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
 
 bool BudgetedContextGraph::recover(std::string& error) {
   error.clear();
-  if (!resident_leases_.empty() || !cluster_leases_.empty()) {
+  if (recovered_) {
     error = "CONTEXT_GRAPH_BUDGET_ALREADY_RECOVERED"; return false;
   }
   std::size_t bytes = 0, clusters = 0;
@@ -119,6 +119,7 @@ bool BudgetedContextGraph::recover(std::string& error) {
   if (resident) resident_leases_.push_back(std::move(resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
   accounted_resident_bytes_ = bytes;
+  recovered_ = true;
   return true;
 }
 
