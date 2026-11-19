@@ -2,9 +2,10 @@
 
 ## Purpose
 
-RecognitionDecision and NormalizationDecision remain Core-owned. Language/runtime
-adapters may supply evidence, but evidence-family calibration is an explicit
-policy input rather than a hidden application-side scoring branch.
+Recognition and surface normalization are one Core-owned UnifiedDecision. Language/runtime
+adapters may supply interpretation and rendering hypotheses, but they cannot run
+separate selectors. Evidence-family calibration is an explicit policy input rather
+than a hidden application-side scoring branch.
 
 ## Policy contract
 
@@ -24,13 +25,17 @@ policy input rather than a hidden application-side scoring branch.
 ## Ownership
 
 SURGE Core owns policy application, validation, deterministic ranking, trace,
-and disposition. A Language Set or an offline calibration procedure may
-recommend policy values. Host applications must not implement a competing
-candidate selector.
+surface selection and final disposition. UnifiedDecision first ranks the
+interpretation candidates, then evaluates the selected candidate's surface
+hypotheses under the same policy and within the same decision call. A failed
+surface decision invalidates the unified result and clears all selected surfaces.
+A Language Set or offline calibration procedure may recommend policy values.
+Host applications must not implement a competing candidate or surface selector.
 
 Normalization renderer output is a hypothesis, not an automatic command.
-Its score is passed to NormalizationDecision as evidence. The Core may select
-the source surface, select the rendered surface, or defer according to policy.
+Its score is passed to UnifiedDecision as evidence alongside the original
+source surface. The Core may select the source surface, select the rendered
+surface, or defer the entire unified decision.
 
 ## Calibration protocol
 
@@ -50,6 +55,9 @@ ceilings.
 
 ## Required conformance
 
+- Recognition and surface choices are returned by one UnifiedDecision call.
+- Every surface set is uniquely keyed by source span/reference and has at least one hypothesis.
+- A failed surface decision clears all selected surfaces and does not expose a partial selection.
 - Default multiplier is 1.0.
 - Zero multiplier changes ranking when that family was decisive.
 - Negative/non-finite multipliers are rejected.
