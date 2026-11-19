@@ -296,8 +296,7 @@ reservations; it does not claim RSS reduction or reusable resident capacity. The
 append-only journal retains the original node-add payload until a verified snapshot
 checkpoint and compaction retire that historical frame. This is logical graph
 reclamation, not secure erasure or immediate journal-byte reclamation.
-Exact per-node lease release, cross-domain reference accounting and bounded
-physical compaction remain incomplete.
+Exact per-node lease release and cross-domain reference accounting remain incomplete. Verified checkpoint-based compaction is exercised by a dedicated Entity reclamation conformance test. The journal backup generation intentionally retains pre-compaction frames for rollback until a separate backup-retention policy retires them.
 
 
 ### Entity reclamation checkpoint and compaction conformance increment
@@ -306,7 +305,8 @@ A dedicated end-to-end test now exercises the existing
 SnapshotCoordinator::compact path after an Entity has been unlinked and
 reclaimed. The test verifies snapshot watermark and context identity, durable
 primary/backup verification before journal replacement, removal of historical
-journal events from the active generation, and fresh-instance restoration in
+journal events from the active generation while retaining the pre-compaction
+journal backup for rollback, and fresh-instance restoration in
 which the reclaimed Entity stays absent. A forced snapshot-store size failure
 must leave the journal uncompacted and its events replayable.
 
