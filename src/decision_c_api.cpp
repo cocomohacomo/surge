@@ -140,14 +140,14 @@ int surge_unified_decision_evaluate(
           });
       if (selected != converted_candidates.end()) {
         for (const auto& set : selected->surface_sets) {
-          const auto chosen = result.selected_surfaces.find(set.source_ref);
-          if (chosen == result.selected_surfaces.end()) continue;
+          const auto chosen = result.selected_surface_hypothesis_ids.find(set.source_ref);
+          if (chosen == result.selected_surface_hypothesis_ids.end()) continue;
           for (size_t i = 0; i < surface_set_count; ++i) {
             if (surface_sets[i].source_ref && set.source_ref == surface_sets[i].source_ref) {
               for (size_t j = 0; j < surface_sets[i].hypothesis_count; ++j) {
                 const size_t index = surface_sets[i].hypothesis_offset + j;
-                if (hypotheses[index].surface &&
-                    chosen->second == hypotheses[index].surface) {
+                if (hypotheses[index].hypothesis_id &&
+                    chosen->second == hypotheses[index].hypothesis_id) {
                   selected_hypothesis_indices[i] = index;
                   break;
                 }
