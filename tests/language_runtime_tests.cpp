@@ -40,5 +40,10 @@ int main() {
   oversized.resident_bytes = 900;
   assert(!runtime.install_manifest(oversized, error));
   assert(error == "LANGUAGE_SET_RESOURCE_BUDGET_EXCEEDED");
+  LanguageSetManifest oversized_input = ja;
+  oversized_input.language_set_id = "oversized-input";
+  oversized_input.max_input_bytes = limits.max_input_bytes + 1;
+  assert(!runtime.install_manifest(oversized_input, error));
+  assert(error == "LANGUAGE_SET_MANIFEST_INVALID");
   return 0;
 }
