@@ -234,3 +234,8 @@ legacy records. Existing unclustered records require an explicit migration
 transaction that creates a cluster membership with source provenance. Until
 migration succeeds, they remain legacy-unclassified and MUST NOT be treated as
 fully conformant cluster-native memory.
+
+
+### ClusterLifecycle construction API
+
+The Core exposes `ContextGraph::append_cluster_lifecycle` to encode a typed `ClusterLifecycleRecord` into the journal payload and append its required `Contains` edge to a caller-owned `SemanticDelta`. The helper validates target identity, revision continuity, timestamp, digest syntax, reason bounds and allowed state transitions before changing the delta. The graph itself remains unchanged until the caller commits the delta through the normal (preferably budgeted) mutation gateway. This helper does not remove memberships, filter retrieval, reclaim payloads, or provide a hard process-memory bound.
