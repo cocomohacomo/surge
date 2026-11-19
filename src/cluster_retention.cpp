@@ -53,7 +53,12 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   const bool left_dormant=dormant_ids.count(left.cluster_id)!=0;
   const bool right_dormant=dormant_ids.count(right.cluster_id)!=0;
   if(left_dormant!=right_dormant)return !left_dormant;
-  if(left.retention_priority!=right.retention_priority)return left.retention_priority>right.retention_priority;if(left.last_access_sequence!=right.last_access_sequence)return left.last_access_sequence>right.last_access_sequence;return left.cluster_id<right.cluster_id;});
+  if (left.retention_priority != right.retention_priority)
+    return left.retention_priority > right.retention_priority;
+  if (left.last_access_sequence != right.last_access_sequence)
+    return left.last_access_sequence > right.last_access_sequence;
+  return left.cluster_id < right.cluster_id;
+ });
  std::size_t protected_count=0;for(const auto& id:protected_ids)if(by_id.count(id)){result.protected_cluster_ids.push_back(id);++protected_count;}
  if(protected_count>max_retained_clusters){result.error="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED";result.protected_cluster_ids.clear();return result;}
  const auto available=max_retained_clusters-protected_count;std::set<std::string> selected;
