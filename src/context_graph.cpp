@@ -565,6 +565,52 @@ bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEven
  return prepare_transaction(d,staged,events,error);
 }
 
+bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
+    const std::string& parent_cluster_id, const std::string& classification,
+    const std::string& partition_key, const std::string& member_node_id,
+    const std::string& relation_prefix, std::string& assigned_cluster_id,
+    std::string& error) const {
+ if(parent_cluster_id.empty()||classification.empty()||partition_key.empty()||
+    member_node_id.empty()||relation_prefix.empty()||
+    classification.size()>128||partition_key.size()>1024||member_node_id.size()>1024){
+  error="CLUSTER_CLASSIFICATION_INPUT_INVALID";return false;
+ }
+ const auto parent=state_.nodes.find(parent_cluster_id);
+ bool parent_in_delta=false;
+ for(const auto& item:delta.nodes)
+  if(item.node.id==parent_cluster_id&&item.node.kind==NodeKind::Cluster)parent_in_delta=true;
+ if((parent==state_.nodes.end()&&!parent_in_delta)||
+    (parent!=state_.nodes.end()&&parent->second.kind!=NodeKind::Cluster)){
+  error="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND";return false;
+ }
+ const std::string digest=sha256_hex(classification+"|"+partition_key);
+ assigned_cluster_id=parent_cluster_id+"/classified/"+digest.substr(0,24);
+ const auto existing=state_.nodes.find(assigned_cluster_id);
+ bool cluster_in_delta=false;
+ for(const auto& item:delta.nodes)
+  if(item.node.id==assigned_cluster_id&&item.node.kind==NodeKind::Cluster)cluster_in_delta=true;
+ if(existing==state_.nodes.end()&&!cluster_in_delta){
+  delta.nodes.push_back({{assigned_cluster_id,NodeKind::Cluster,
+      "CLASS="+classification+";PARTITION="+partition_key, {}}});
+ }
+ const std::string parent_relation=relation_prefix+"/parent/"+digest.substr(0,24);
+ bool parent_edge_exists=state_.relations.count(parent_relation)!=0;
+ for(const auto& item:delta.relations)
+  if(item.relation.id==parent_relation)parent_edge_exists=true;
+ if(!parent_edge_exists)
+  delta.relations.push_back({{parent_relation,RelationKind::Contains,
+      parent_cluster_id,assigned_cluster_id}});
+ const std::string member_digest=sha256_hex(assigned_cluster_id+"|"+member_node_id);
+ const std::string member_relation=relation_prefix+"/member/"+member_digest.substr(0,24);
+ bool member_edge_exists=state_.relations.count(member_relation)!=0;
+ for(const auto& item:delta.relations)
+  if(item.relation.id==member_relation)member_edge_exists=true;
+ if(!member_edge_exists)
+  delta.relations.push_back({{member_relation,RelationKind::Contains,
+      assigned_cluster_id,member_node_id}});
+ return true;
+}
+
 DeltaResult ContextGraph::apply(const SemanticDelta& d){
  State staged;std::vector<JournalEvent> events;std::string error;
  if(!prepare_transaction(d,staged,events,error))
