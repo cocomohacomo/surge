@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSURGE_BUILD_BENCHMARKS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -43,6 +43,8 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: C++ journal lock and durability tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
+      - name: Portable journal benchmark and identity guardrails
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_benchmark
       - name: Snapshot store atomic replacement and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
       - name: Journal identity memory budget tests
