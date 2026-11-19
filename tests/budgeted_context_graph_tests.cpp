@@ -434,5 +434,34 @@ int main() {
   }
   std::remove(unlink_path.c_str());
 
+  // Reclamation through the budgeted facade records a durable removal
+  // event. Reservations remain conservative until a future compaction/rebuild.
+  const std::string reclaim_path = "budgeted_entity_reclamation_test.journal";
+  std::remove(reclaim_path.c_str());
+  {
+    EventJournal journal(reclaim_path);assert(journal.open());
+    ContextGraph graph(journal);assert(graph.open());
+    SemanticDelta seed;seed.delta_id="budgeted-entity-seed";
+    seed.idempotency_key="budgeted-entity-seed";seed.expected_state_version=0;
+    seed.nodes={{{"budgeted-reclaim-cluster",NodeKind::Cluster,"cluster",{}}},
+                {{"budgeted-reclaim-entity",NodeKind::Entity,"entity",{}}}};
+    seed.relations.push_back({{"budgeted-reclaim-edge",RelationKind::Contains,
+        "budgeted-reclaim-cluster","budgeted-reclaim-entity"}});
+    assert(graph.apply(seed).committed);
+    ResourceBudgetLimits limits;limits.resident_bytes=65536;
+    limits.transient_bytes=65536;limits.retained_events=64;limits.retained_clusters=8;
+    ResourceBudget budget(limits);BudgetedContextGraph guarded(graph,budget);
+    std::string error;assert(guarded.recover(error));
+    SemanticDelta reclaim;reclaim.delta_id="budgeted-entity-reclaim";
+    reclaim.idempotency_key="budgeted-entity-reclaim";reclaim.expected_state_version=1;
+    assert(graph.append_cluster_unmembership(reclaim,"budgeted-reclaim-cluster",
+        "budgeted-reclaim-entity",error));
+    const auto result=guarded.append_entity_reclamation(std::move(reclaim),
+        "budgeted-reclaim-entity",error);
+    assert(result.committed);
+    assert(graph.nodes().count("budgeted-reclaim-entity")==0);
+  }
+  std::remove(reclaim_path.c_str());
+
   return 0;
 }
