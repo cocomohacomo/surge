@@ -17,6 +17,7 @@
 namespace surge {
 namespace {
 const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::ChaosCluster:return "CHAOS_CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";case NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";}return "UNKNOWN";}
+bool valid_rfc3339_timestamp(const std::string& value);
 bool decode_cluster_lifecycle_content(const std::string& content,
     ClusterLifecycleRecord& record) {
  std::istringstream in(content);
@@ -24,7 +25,7 @@ bool decode_cluster_lifecycle_content(const std::string& content,
  if (!(in >> state >> record.revision >> std::quoted(record.recorded_at) >>
        std::quoted(record.reason) >> std::quoted(record.provenance_digest)) ||
      (in >> extra) || record.revision == 0 ||
-     record.recorded_at.empty() || record.reason.empty() ||
+     !valid_rfc3339_timestamp(record.recorded_at) || record.reason.empty() ||
      record.provenance_digest.size() != 64) return false;
  for (const char ch : record.provenance_digest)
   if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
@@ -50,6 +51,10 @@ bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<c
 const char* scope_kind_name(ScopeKind k){switch(k){case ScopeKind::Negation:return "NEGATION";case ScopeKind::Condition:return "CONDITION";case ScopeKind::Modality:return "MODALITY";case ScopeKind::Concession:return "CONCESSION";case ScopeKind::Contrast:return "CONTRAST";case ScopeKind::Coreference:return "COREFERENCE";case ScopeKind::Anaphora:return "ANAPHORA";case ScopeKind::Quotation:return "QUOTATION";case ScopeKind::Temporal:return "TEMPORAL";case ScopeKind::ListContinuation:return "LIST_CONTINUATION";case ScopeKind::TableHeader:return "TABLE_HEADER";}return "UNKNOWN";}
 bool parse_scope_kind(const std::string& s,ScopeKind& k){const std::pair<const char*,ScopeKind> v[]={{"NEGATION",ScopeKind::Negation},{"CONDITION",ScopeKind::Condition},{"MODALITY",ScopeKind::Modality},{"CONCESSION",ScopeKind::Concession},{"CONTRAST",ScopeKind::Contrast},{"COREFERENCE",ScopeKind::Coreference},{"ANAPHORA",ScopeKind::Anaphora},{"QUOTATION",ScopeKind::Quotation},{"TEMPORAL",ScopeKind::Temporal},{"LIST_CONTINUATION",ScopeKind::ListContinuation},{"TABLE_HEADER",ScopeKind::TableHeader}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 struct ParsedRfc3339 { std::int64_t seconds{0}; int nanos{0}; };
+bool valid_rfc3339_timestamp(const std::string& value) {
+ ParsedRfc3339 parsed{};
+ return parse_rfc3339(value, parsed);
+}
 bool parse_rfc3339(const std::string& value, ParsedRfc3339& out) {
  auto digit=[&](std::size_t i)->int { return i<value.size()&&value[i]>='0'&&value[i]<='9'?value[i]-'0':-1; };
  auto number=[&](std::size_t i,std::size_t n,int& result) {
@@ -598,6 +603,19 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  staged=state_;
  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
+ for (const auto& added : d.nodes) {
+  if (added.node.kind != NodeKind::ClusterLifecycle) continue;
+  const auto& lifecycle = added.node;
+  if (lifecycle.references.size() != 1 ||
+      std::none_of(d.relations.begin(), d.relations.end(),
+       [&](const AddRelation& relation) {
+        return relation.relation.kind == RelationKind::Contains &&
+            relation.relation.from == lifecycle.references.front() &&
+            relation.relation.to == lifecycle.id;
+       })) {
+   error = "CLUSTER_LIFECYCLE_MEMBERSHIP_REQUIRED"; return false;
+  }
+ }
  for(const auto& scope:d.scope_spans)if(!apply_scope_span(staged,scope,error))return false;
  for(const auto& validity:d.claim_validity_updates)if(!apply_claim_validity(staged,validity,d.expected_state_version+1,error))return false;
  for(const auto& validity:d.evidence_validity_updates)if(!apply_evidence_validity(staged,validity,d.expected_state_version+1,error))return false;
