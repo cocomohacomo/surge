@@ -43,7 +43,12 @@ association, not semantic equivalence, truth, causality or agreement.
 
 ## 3. Cluster graph as the canonical memory substrate
 
-- Cluster and ChaosCluster are first-class memory containers.
+- Cluster and ChaosCluster are first-class memory containers and either
+  kind may parent a containment membership.
+- Either cluster kind may contain nested Cluster/ChaosCluster nodes and typed
+  information nodes, including Entity, Evidence, Claim, Question,
+  QuestionAspect, Dependency and Interest. Question-to-Question containment
+  remains available for question decomposition.
 - Typed nodes retain their own semantic type and provenance while being
   addressable through one or more cluster memberships.
 - Cluster-to-cluster containment establishes hierarchy; cross-cluster
