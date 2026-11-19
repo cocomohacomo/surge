@@ -161,8 +161,7 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   return true;
 }
 surge::ResourceBudgetLimits compatibility_budget_limits() {
-  // Preserve the legacy C ABI's historical unbounded behavior while routing
-  // every graph mutation through one Core-owned admission gateway.
+  // Preserve the legacy C ABI's historical unbounded behavior.
   const auto unlimited = std::numeric_limits<std::size_t>::max();
   return {unlimited, unlimited, unlimited, unlimited, unlimited, unlimited};
 }
@@ -177,9 +176,9 @@ struct Handle {
   surge::TemporalQuestionLedger temporal_questions;
   surge::EvidenceProvenanceLedger evidence_provenance;
   surge::ChaosClusterLedger chaos;
-  explicit Handle(const std::string& path)
+  explicit Handle(const std::string& path, surge::ResourceBudgetLimits limits)
       : journal(path), coordinator(journal), graph(journal),
-        graph_budget(compatibility_budget_limits()), mutations(graph, graph_budget), tickets(journal),
+        graph_budget(limits), mutations(graph, graph_budget), tickets(journal),
         temporal_ledger(journal), temporal_questions(journal),
         evidence_provenance(journal), chaos(journal) {}
 };
@@ -218,10 +217,15 @@ bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion
 }
 }
 extern "C" {
-void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+void* surge_packet_core_open_with_limits(const char* path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t cap) {
   try {
     if (!path || !*path) { copy_text(error, cap, "JOURNAL_PATH_REQUIRED"); return nullptr; }
-    auto handle = std::make_unique<Handle>(path);
+    if (!limits) { copy_text(error, cap, "RESOURCE_BUDGET_LIMITS_REQUIRED"); return nullptr; }
+    const surge::ResourceBudgetLimits budget_limits{
+      limits->resident_bytes, limits->transient_bytes, limits->retained_events,
+      limits->retained_clusters, limits->decision_candidates, limits->decision_evidence};
+    auto handle = std::make_unique<Handle>(path, budget_limits);
     if (!handle->journal.open()) { copy_text(error, cap, handle->journal.last_error()); return nullptr; }
     if (!handle->coordinator.recover()) { copy_text(error, cap, "PACKET_COORDINATOR_RECOVERY_FAILED"); return nullptr; }
     if (!handle->graph.open()) { copy_text(error, cap, "CONTEXT_GRAPH_RECOVERY_FAILED"); return nullptr; }
@@ -244,6 +248,13 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
     return handle.release();
   } catch (const std::exception& ex) { copy_text(error, cap, ex.what()); return nullptr; }
     catch (...) { copy_text(error, cap, "UNKNOWN_CORE_EXCEPTION"); return nullptr; }
+}
+void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+  const auto limits = compatibility_budget_limits();
+  const SurgeResourceBudgetLimits c_limits{
+    limits.resident_bytes, limits.transient_bytes, limits.retained_events,
+    limits.retained_clusters, limits.decision_candidates, limits.decision_evidence};
+  return surge_packet_core_open_with_limits(path, &c_limits, error, cap);
 }
 void surge_packet_core_close(void* opaque) { try { delete static_cast<Handle*>(opaque); } catch (...) {} }
 int surge_packet_core_admit(
