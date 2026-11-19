@@ -5,9 +5,6 @@
 
 int main() {
   assert(surge_decision_c_abi_version() == SURGE_DECISION_C_ABI_VERSION);
-  const SurgeDecisionEvidenceInput candidate_evidence[] = {
-    {"recognition", "lexical", "token", 1.0, 1.0, 1}
-  };
   const SurgeDecisionEvidenceInput surface_evidence[] = {
     {"kanji-evidence", "orthography", "kanji", 0.2, 1.0, 1},
     {"kana-evidence", "orthography", "kana", 1.0, 1.0, 1}
