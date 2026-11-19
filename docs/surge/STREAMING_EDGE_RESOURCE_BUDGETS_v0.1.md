@@ -68,3 +68,25 @@ indexes, allocator fragmentation, journal buffers, snapshot restore peak
 memory, or process RSS. It is a conservative per-delta estimate, not a hard RSS
 cap. Full integration must move the facade to the Core-owned mutation boundary
 and cover all graph state transitions before claiming global enforcement.
+
+
+## Guarded Question and reassessment mutations
+
+The opt-in `BudgetedContextGraph` now exposes guarded wrappers for Question
+reference/reactivation, dependent-question reactivation, Question memory-state
+changes, capacity demotion, QuestionAspect status changes, and temporal claim
+reassessment. These wrappers reserve logical resident bytes and retained-event
+slots before the underlying journal mutation; bounded cascades and batches also
+reserve transient staging bytes when a staging ceiling is configured. Failed
+reservations leave the graph state version unchanged.
+
+Recovery accounting now includes Focus history, Question state/reference
+records, Claim/Evidence validity history, dependency evaluation records and
+temporal reassessment history in addition to nodes, relations and scope spans.
+The estimator remains logical and conservative. It does not yet account for
+every STL index allocation, journal internals, all snapshot staging memory,
+allocator fragmentation, or process RSS.
+
+These wrappers do not intercept direct calls to the corresponding public
+`ContextGraph` methods. Core integration and migration of every call site
+remain required before global enforcement can be claimed.
