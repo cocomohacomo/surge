@@ -42,6 +42,12 @@ struct DecisionPolicy {
   std::size_t max_candidates{64};
   std::size_t max_evidence_per_candidate{64};
   std::size_t max_family_weights{64};
+  // Aggregate realization limits across the selected candidate.
+  std::size_t max_surface_sets{256};
+  std::size_t max_surface_hypotheses_total{4096};
+  std::size_t max_surface_trace_entries{4096};
+  std::size_t max_source_ref_bytes{1024};
+  std::size_t max_surface_bytes{4096};
   double minimum_score{-1.0e9};
   double minimum_margin{0.0};
   bool require_valid_evidence{true};
