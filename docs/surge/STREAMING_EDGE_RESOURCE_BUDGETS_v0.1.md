@@ -20,7 +20,7 @@ Logical reservations are not allocator overhead, fragmentation, native-library a
 
 ## 4. Decision packet bounds
 
-DecisionPolicy bounds candidates/evidence, family weights, surface sets, aggregate surface hypotheses and trace entries, source-ref bytes and rendered-surface bytes. Invalid numeric thresholds are rejected. Evidence with zero calibrated contribution cannot authorize selection alone. Exhaustion returns DEFER with deterministic reason codes.
+DecisionPolicy bounds candidates/evidence, family weights, surface sets, aggregate surface hypotheses and trace entries, source-ref bytes and rendered-surface bytes. Invalid numeric thresholds are rejected. Evidence with zero calibrated contribution cannot authorize selection alone. Exhaustion returns DEFER with deterministic reason codes. Aggregate evidence across all surface hypotheses is now capped by `max_surface_evidence_total` before the Core materializes the temporary candidate vector or copies evidence. This bounds a multiplication of surface-hypothesis count by per-candidate evidence count; it remains a local logical cap and is not yet charged to the shared `ResourceBudget::DecisionEvidence` counter.
 
 The C ABI in surge/decision_c_api.h accepts flat caller-owned arrays with validated offset/count ranges. This avoids requiring language bindings to construct nested native object graphs. The ABI reports the selected candidate and exact selected surface-hypothesis indices. It does not transfer ownership of caller buffers.
 
