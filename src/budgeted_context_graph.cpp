@@ -88,18 +88,89 @@ bool BudgetedContextGraph::estimate_delta(const SemanticDelta& delta,
 }
 
 bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
-    std::size_t& bytes, std::size_t& clusters, std::string& error) {
-  bytes = 0; clusters = 0; error.clear();
-  for (const auto& item : graph.nodes()) {
+    std::size_t& bytes, std::size_t& clusters, std::size_t& retained_events,
+    std::string& error) {
+  bytes = 0; clusters = 0; retained_events = 0; error.clear();
+  const auto& state = graph.state_;
+  for (const auto& item : state.nodes) {
     if (!add_node(item.second, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     if (item.second.kind == NodeKind::Cluster || item.second.kind == NodeKind::ChaosCluster)
       if (!add(1, clusters)) { error = "CONTEXT_GRAPH_CLUSTER_COUNT_OVERFLOW"; return false; }
   }
-  for (const auto& item : graph.relations())
+  for (const auto& item : state.relations)
     if (!add_relation(item.second, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
-  for (const auto& item : graph.scope_spans()) {
+  for (const auto& item : state.scope_spans) {
     AddScopeSpan span{item.second.proposal, {}};
     if (!add_scope(span, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
+  // State maps and append-only histories are persistent allocations too.
+  for (const auto& item : state.focus_history) {
+    if (!add(kEntryOverhead + item.cluster_id.size() + item.interest_id.size(), bytes) ||
+        !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
+  if (state.focus && !add(kEntryOverhead + state.focus->cluster_id.size() +
+                          state.focus->interest_id.size(), bytes)) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+  }
+  for (const auto& item : state.question_aspect_statuses)
+    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : state.question_memory_states)
+    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : state.question_reference_counts)
+    if (!add(kEntryOverhead + item.first.size() + sizeof(item.second), bytes) ||
+        !add(static_cast<std::size_t>(item.second), retained_events)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : state.claim_statuses)
+    if (!add(kEntryOverhead + item.first.size(), bytes)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : state.claim_validity_history) {
+    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    for (const auto& record : item.second)
+      if (!add(kEntryOverhead + record.validity.valid_from.size() +
+          record.validity.valid_until.size() + record.validity.basis_evidence_id.size() +
+          record.validity.review_evidence_id.size() + record.validity.reviewer_id.size(), bytes) ||
+          !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
+  for (const auto& item : state.evidence_validity_history) {
+    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    for (const auto& record : item.second)
+      if (!add(kEntryOverhead + record.validity.valid_from.size() +
+          record.validity.valid_until.size() + record.validity.basis_evidence_id.size() +
+          record.validity.review_evidence_id.size() + record.validity.reviewer_id.size(), bytes) ||
+          !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
+  for (const auto& item : state.dependency_evaluations) {
+    if (!add(kEntryOverhead + item.first.size(), bytes) || !add(1, retained_events)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+    for (const auto& id : item.second.impacted_nodes)
+      if (!add(sizeof(std::string) + id.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    for (const auto& trigger : item.second.triggered)
+      if (!add(kEntryOverhead + trigger.dependency_id.size() +
+          trigger.prerequisite_id.size() + trigger.dependent_id.size(), bytes)) {
+        error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+      }
+  }
+  for (const auto& item : state.reassessment_history) {
+    if (!add(kEntryOverhead + item.first.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+    for (const auto& record : item.second) {
+      if (!add(kEntryOverhead + record.trace_id.size() + record.claim_id.size() +
+          record.reference_at.size() + record.decision.size() + record.previous_hash.size() +
+          record.snapshot_digest.size() + record.chain_hash.size(), bytes) ||
+          !add(1, retained_events)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+      for (const auto& evidence : record.evidence)
+        if (!add(kEntryOverhead + evidence.evidence_id.size() + evidence.relation_id.size() +
+            evidence.valid_from.size() + evidence.valid_until.size() +
+            evidence.basis_evidence_id.size(), bytes)) {
+          error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+        }
+    }
   }
   return true;
 }
@@ -109,13 +180,16 @@ bool BudgetedContextGraph::recover(std::string& error) {
   if (recovered_) {
     error = "CONTEXT_GRAPH_BUDGET_ALREADY_RECOVERED"; return false;
   }
-  std::size_t bytes = 0, clusters = 0;
-  if (!estimate_graph(graph_, bytes, clusters, error)) return false;
-  ResourceLease resident, retained_clusters;
+  std::size_t bytes = 0, clusters = 0, retained_events = 0;
+  if (!estimate_graph(graph_, bytes, clusters, retained_events, error)) return false;
+  ResourceLease resident, retained_clusters, retained;
   if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
     return false;
   if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
                                         retained_clusters, error)) return false;
+  if (retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents, retained_events,
+                                               retained, error)) return false;
+  if (retained) recovery_event_leases_.push_back(std::move(retained));
   if (resident) resident_leases_.push_back(std::move(resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
   accounted_resident_bytes_ = bytes;
