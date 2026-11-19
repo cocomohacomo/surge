@@ -190,8 +190,13 @@ DecisionResult UnifiedDecision::evaluate(
       return result;
     }
     total_hypotheses += surface_set.hypotheses.size();
+    if (surface_set.source_ref.size() > policy.max_source_ref_bytes) {
+      result.disposition = DecisionDisposition::Defer;
+      result.reason = "UNIFIED_SOURCE_REF_BUDGET_EXCEEDED";
+      result.selected_surfaces.clear();
+      return result;
+    }
     if (surface_set.source_ref.empty() ||
-        surface_set.source_ref.size() > policy.max_source_ref_bytes ||
         !source_refs.insert(surface_set.source_ref).second ||
         surface_set.hypotheses.empty()) {
       result.disposition = DecisionDisposition::Reject;
@@ -202,7 +207,13 @@ DecisionResult UnifiedDecision::evaluate(
     std::vector<DecisionCandidate> hypotheses;
     hypotheses.reserve(surface_set.hypotheses.size());
     for (const auto& hypothesis : surface_set.hypotheses) {
-      if (hypothesis.surface.empty() || hypothesis.surface.size() > policy.max_surface_bytes) {
+      if (hypothesis.surface.size() > policy.max_surface_bytes) {
+        result.disposition = DecisionDisposition::Defer;
+        result.reason = "UNIFIED_SURFACE_BYTES_BUDGET_EXCEEDED";
+        result.selected_surfaces.clear();
+        return result;
+      }
+      if (hypothesis.surface.empty()) {
         result.disposition = DecisionDisposition::Reject;
         result.reason = "UNIFIED_EMPTY_SURFACE";
         result.selected_surfaces.clear();
