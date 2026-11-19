@@ -430,6 +430,20 @@ int main(){
     CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
         "source-digest:span-0-3","claim-a","classification-test",
         classified_cluster_id,error));
+    const auto stable_cluster_id=classified_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
+        "source-digest:span-0-3","claim-a","classification-test",
+        classified_cluster_id,error));
+    CHECK(classified_cluster_id==stable_cluster_id);
+    std::string second_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","SURFACE_REALIZATION",
+        "source-digest:span-0-3","claim-a","classification-test-surface",
+        second_cluster_id,error));
+    CHECK(second_cluster_id!=classified_cluster_id);
+    std::string invalid_cluster_id;
+    CHECK(!graph.append_cluster_membership(delta,"missing-parent","TOPIC",
+        "partition","claim-a","invalid-parent",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND");
     CHECK(!classified_cluster_id.empty());
     CHECK(graph.apply(delta).committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
