@@ -61,8 +61,10 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  result.retained_cluster_ids=result.protected_cluster_ids;for(const auto& candidate:ranked)if(selected.count(candidate.cluster_id))result.retained_cluster_ids.push_back(candidate.cluster_id);
  // A member with any retained membership must not be reclaimed when another
  // membership's cluster is forgotten.
- const std::set<std::string> retained(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end()),forgotten(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());
- for(const auto& item:memberships){bool in_retained=false,in_forgotten=false;for(const auto& cluster_id:item.second){in_retained=in_retained||retained.count(cluster_id)!=0;in_forgotten=in_forgotten||forgotten.count(cluster_id)!=0;}if(in_retained&&in_forgotten)result.preserved_shared_member_ids.push_back(item.first);}
+ std::set<std::string> retained_for_payload(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end());
+ retained_for_payload.insert(result.already_inactive_cluster_ids.begin(),result.already_inactive_cluster_ids.end());
+ const std::set<std::string> forgotten(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());
+ for(const auto& item:memberships){bool in_retained=false,in_forgotten=false;for(const auto& cluster_id:item.second){in_retained=in_retained||retained_for_payload.count(cluster_id)!=0;in_forgotten=in_forgotten||forgotten.count(cluster_id)!=0;}if(in_retained&&in_forgotten)result.preserved_shared_member_ids.push_back(item.first);}
  std::sort(result.protected_cluster_ids.begin(),result.protected_cluster_ids.end());std::sort(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end());std::sort(result.forget_cluster_ids.begin(),result.forget_cluster_ids.end());std::sort(result.preserved_shared_member_ids.begin(),result.preserved_shared_member_ids.end());
  std::sort(result.already_inactive_cluster_ids.begin(),result.already_inactive_cluster_ids.end());
  result.accepted=true;return result;
