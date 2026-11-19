@@ -770,9 +770,9 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
 
 bool ContextGraph::append_cluster_unmembership(SemanticDelta& delta,
     const std::string& cluster_id,const std::string& member_node_id,
-    const std::string& removal_id,std::string& error) const {
+    std::string& error) const {
  error.clear();
- if(cluster_id.empty()||member_node_id.empty()||removal_id.empty()){
+ if(cluster_id.empty()||member_node_id.empty()){
   error="CLUSTER_MEMBERSHIP_REMOVAL_INPUT_INVALID";return false;
  }
  const auto cluster=state_.nodes.find(cluster_id),member=state_.nodes.find(member_node_id);
@@ -787,9 +787,6 @@ bool ContextGraph::append_cluster_unmembership(SemanticDelta& delta,
   [&](const auto& item){const auto& r=item.second;return r.kind==RelationKind::Contains&&r.from==cluster_id&&r.to==member_node_id;});
  if(existing==state_.relations.end()){
   error="CLUSTER_MEMBERSHIP_NOT_FOUND";return false;
- }
- if(std::find(delta.remove_relation_ids.begin(),delta.remove_relation_ids.end(),existing->first)!=delta.remove_relation_ids.end()){
-  error="CLUSTER_MEMBERSHIP_REMOVAL_DUPLICATE";return false;
  }
  delta.remove_relation_ids.push_back(existing->first);
  return true;
