@@ -18,6 +18,7 @@ struct ClusterRetentionCandidate {
 };
 
 struct ClusterRetentionPlan {
+  std::uint64_t planned_state_version{0};
   std::vector<std::string> retained_cluster_ids;
   std::vector<std::string> forget_cluster_ids;
   std::vector<std::string> protected_cluster_ids;
