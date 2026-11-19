@@ -89,5 +89,34 @@ int main() {
   auto family_overflow = UnifiedDecision::evaluate({decoder_top}, family_budget);
   assert(family_overflow.disposition == DecisionDisposition::Defer);
   assert(family_overflow.reason == "RECOGNITION_FAMILY_WEIGHT_BUDGET_EXCEEDED");
+  // Valid but non-discriminating evidence must never authorize a selection.
+  DecisionPolicy zero_weight;
+  zero_weight.family_weights["lexical"] = 0.0;
+  auto zero_contribution = UnifiedDecision::evaluate({decoder_top}, zero_weight);
+  assert(zero_contribution.disposition == DecisionDisposition::Defer);
+  assert(zero_contribution.reason == "UNIFIED_INSUFFICIENT_VALID_EVIDENCE");
+
+  DecisionPolicy invalid_threshold;
+  invalid_threshold.minimum_margin = std::numeric_limits<double>::quiet_NaN();
+  auto nan_threshold = UnifiedDecision::evaluate({decoder_top}, invalid_threshold);
+  assert(nan_threshold.disposition == DecisionDisposition::Reject);
+  assert(nan_threshold.reason == "UNIFIED_INVALID_POLICY_THRESHOLD");
+  invalid_threshold.minimum_margin = -0.1;
+  auto negative_margin = UnifiedDecision::evaluate({decoder_top}, invalid_threshold);
+  assert(negative_margin.disposition == DecisionDisposition::Reject);
+
+  DecisionPolicy surface_budget;
+  surface_budget.max_surface_hypotheses_total = 1;
+  auto surface_overflow = UnifiedDecision::evaluate({joint}, surface_budget);
+  assert(surface_overflow.disposition == DecisionDisposition::Defer);
+  assert(surface_overflow.reason == "UNIFIED_SURFACE_HYPOTHESIS_BUDGET_EXCEEDED");
+  assert(surface_overflow.selected_surfaces.empty());
+
+  DecisionPolicy source_budget;
+  source_budget.max_source_ref_bytes = 4;
+  auto source_overflow = UnifiedDecision::evaluate({joint}, source_budget);
+  assert(source_overflow.disposition == DecisionDisposition::Defer);
+  assert(source_overflow.reason == "UNIFIED_INVALID_SURFACE_SET");
+
   return 0;
 }
