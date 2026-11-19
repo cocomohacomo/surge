@@ -66,5 +66,13 @@ int main() {
       {"e2", "family_b", "b", 1.0, 1.0, true}}}}, sum_overflow_policy);
   assert(sum_overflow.disposition == DecisionDisposition::Reject);
   assert(sum_overflow.reason == "RECOGNITION_NONFINITE_CANDIDATE_SCORE");
+
+  DecisionPolicy family_budget;
+  family_budget.max_family_weights = 1;
+  family_budget.family_weights["one"] = 1.0;
+  family_budget.family_weights["two"] = 1.0;
+  auto family_overflow = RecognitionDecision::evaluate({decoder_top}, family_budget);
+  assert(family_overflow.disposition == DecisionDisposition::Defer);
+  assert(family_overflow.reason == "RECOGNITION_FAMILY_WEIGHT_BUDGET_EXCEEDED");
   return 0;
 }
