@@ -780,6 +780,86 @@ ClaimTemporalState ContextGraph::evidence_validity_at(const std::string& id,cons
  ClaimValidityRecord compatible; if(latest){compatible.validity.valid_from=latest->validity.valid_from;compatible.validity.valid_until=latest->validity.valid_until;} return latest?evaluate_claim_validity(compatible,instant):ClaimTemporalState::Unknown;
 }
 
+bool ContextGraph::append_cluster_lifecycle(SemanticDelta& delta,
+    const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
+    const std::string& relation_id, std::string& error) const {
+ error.clear();
+ auto fail=[&](const char* code){error=code;return false;};
+ if(record.cluster_id.empty()||lifecycle_node_id.empty()||relation_id.empty()||
+    record.revision==0||record.reason.empty()||record.reason.size()>1024||
+    record.recorded_at.size()>64||record.provenance_digest.size()!=64)
+  return fail("CLUSTER_LIFECYCLE_INPUT_INVALID");
+ ParsedRfc3339 timestamp{};
+ if(!parse_rfc3339(record.recorded_at,timestamp))
+  return fail("CLUSTER_LIFECYCLE_RECORD_INVALID");
+ for(char ch:record.provenance_digest)
+  if(!((ch>='0'&&ch<='9')||(ch>='a'&&ch<='f')))
+   return fail("CLUSTER_LIFECYCLE_RECORD_INVALID");
+ const char* state_name=nullptr;
+ switch(record.state){
+  case ClusterLifecycleState::Active:state_name="ACTIVE";break;
+  case ClusterLifecycleState::Dormant:state_name="DORMANT";break;
+  case ClusterLifecycleState::Archived:state_name="ARCHIVED";break;
+  case ClusterLifecycleState::Tombstoned:state_name="TOMBSTONED";break;
+ }
+ if(!state_name)return fail("CLUSTER_LIFECYCLE_RECORD_INVALID");
+ auto target=state_.nodes.find(record.cluster_id);
+ bool target_in_delta=false;
+ for(const auto& add:delta.nodes)if(add.node.id==record.cluster_id&&
+    (add.node.kind==NodeKind::Cluster||add.node.kind==NodeKind::ChaosCluster))
+  target_in_delta=true;
+ if((target==state_.nodes.end()&&!target_in_delta)||
+    (target!=state_.nodes.end()&&target->second.kind!=NodeKind::Cluster&&
+     target->second.kind!=NodeKind::ChaosCluster))
+  return fail("CLUSTER_LIFECYCLE_TARGET_INVALID");
+ std::uint64_t latest_revision=0;
+ ClusterLifecycleState previous=ClusterLifecycleState::Active;
+ auto inspect=[&](const GraphNode& node)->bool{
+  if(node.kind!=NodeKind::ClusterLifecycle||node.references.size()!=1||
+     node.references.front()!=record.cluster_id)return true;
+  ClusterLifecycleRecord prior;prior.cluster_id=record.cluster_id;
+  if(!decode_cluster_lifecycle_content(node.content,prior))return false;
+  if(prior.revision>latest_revision){latest_revision=prior.revision;previous=prior.state;}
+  return true;
+ };
+ for(const auto& item:state_.nodes)if(!inspect(item.second))
+  return fail("CLUSTER_LIFECYCLE_RECORD_INVALID");
+ for(const auto& add:delta.nodes)if(!inspect(add.node))
+  return fail("CLUSTER_LIFECYCLE_RECORD_INVALID");
+ if(record.revision!=latest_revision+1)
+  return fail("CLUSTER_LIFECYCLE_REVISION_INVALID");
+ const bool allowed=
+  (previous==ClusterLifecycleState::Active&&
+    (record.state==ClusterLifecycleState::Dormant||record.state==ClusterLifecycleState::Archived))||
+  (previous==ClusterLifecycleState::Dormant&&
+    (record.state==ClusterLifecycleState::Active||record.state==ClusterLifecycleState::Archived))||
+  (previous==ClusterLifecycleState::Archived&&
+    (record.state==ClusterLifecycleState::Active||record.state==ClusterLifecycleState::Tombstoned));
+ if(!allowed)return fail("CLUSTER_LIFECYCLE_TRANSITION_INVALID");
+ if(state_.nodes.count(lifecycle_node_id))return fail("NODE_ID_OR_CONTENT_INVALID");
+ for(const auto& add:delta.nodes)if(add.node.id==lifecycle_node_id)
+  return fail("NODE_ID_OR_CONTENT_INVALID");
+ if(state_.relations.count(relation_id))return fail("RELATION_ID_INVALID_OR_DUPLICATE");
+ for(const auto& add:delta.relations)if(add.relation.id==relation_id)
+  return fail("RELATION_ID_INVALID_OR_DUPLICATE");
+ std::ostringstream payload;
+ payload<<state_name<<' '<<record.revision<<' '<<std::quoted(record.recorded_at)
+        <<' '<<std::quoted(record.reason)<<' '<<std::quoted(record.provenance_digest);
+ GraphNode node{lifecycle_node_id,NodeKind::ClusterLifecycle,payload.str(),{record.cluster_id}};
+ GraphRelation relation{relation_id,RelationKind::Contains,record.cluster_id,lifecycle_node_id};
+ try {
+  delta.nodes.reserve(delta.nodes.size()+1);
+  delta.relations.reserve(delta.relations.size()+1);
+  delta.nodes.push_back({std::move(node)});
+  delta.relations.push_back({std::move(relation)});
+ } catch (...) {
+  if(!delta.nodes.empty()&&delta.nodes.back().node.id==lifecycle_node_id)
+   delta.nodes.pop_back();
+  return fail("CLUSTER_LIFECYCLE_DELTA_ALLOCATION_FAILED");
+ }
+ return true;
+}
+
 std::optional<ClusterLifecycleRecord> ContextGraph::cluster_lifecycle(
     const std::string& cluster_id) const {
  std::optional<ClusterLifecycleRecord> latest;
