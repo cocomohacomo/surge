@@ -30,6 +30,10 @@ JournalCommitResult BudgetedEventJournal::commit(const std::string& tx,
     const std::string& idem,std::uint64_t expected,const std::vector<JournalEvent>& events) {
   JournalCommitResult failed; failed.state_version=journal_.state_version();
   if(events.empty()){failed.error="JOURNAL_EMPTY_TRANSACTION";return failed;}
+  // An older watermark cannot create a new transaction. Resolve durable
+  // idempotency before retained-ID checks so retries consume no new budget.
+  if (expected < failed.state_version)
+    return journal_.commit(tx, idem, expected, events);
   std::size_t transient_bytes=128,resident_bytes=0;
   std::set<std::string> transaction_event_ids;
   for(const auto& e:events){
