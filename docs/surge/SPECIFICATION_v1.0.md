@@ -265,3 +265,14 @@ regardless of whether other memberships remain. ClusterLifecycle audit edges
 are protected from this operation. This is an unlink-only operation, not
 payload deletion: shared-reference accounting, final-reference reclamation,
 tombstone coupling and compaction remain incomplete.
+
+
+### Canonical membership reference accounting foundation
+
+The Core exposes `cluster_membership_reference_count` as a read-only
+count of Cluster/ChaosCluster membership edges for a canonical member. Archived
+clusters remain references until their membership edge is explicitly unlinked.
+A zero membership count is not, by itself, authorization to reclaim a payload:
+all typed references, dependencies, provenance, temporal history, Focus,
+journal/snapshot and audit obligations must be evaluated by a separate
+reclamation gate. This increment does not delete payloads.
