@@ -237,6 +237,4 @@ then syncs the parent directory. The snapshot backup remains available.
 This is logical resource accounting, not allocator page release or an RSS
 reduction guarantee. A crash after unlinking the backup but before directory
 sync may leave platform-dependent recovery state; secure media erasure is not
-claimed. Snapshot capture still materializes bounded domain payload strings
-and requires a future streaming/segmented capture API for stricter peak-memory
-control.
+claimed. SnapshotCoordinator now enforces a configurable logical capture-staging ceiling across each domain payload, aggregate bundle and final envelope duplication. Each domain callback is separately bounded by max_domain_payload_bytes. The callback's own allocation occurs before its returned size can be checked, so this is not a hard allocator/RSS ceiling; a streaming/segmented domain capture API remains necessary for strict peak-memory control.
