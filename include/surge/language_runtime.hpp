@@ -1,4 +1,5 @@
 #pragma once
+#include "surge/resource_budget.hpp"
 #include <cstddef>
 #include <map>
 #include <mutex>
@@ -37,6 +38,7 @@ struct LanguageRuntimeLimits {
 class LanguageRuntimeRegistry {
  public:
   explicit LanguageRuntimeRegistry(LanguageRuntimeLimits limits = {});
+  LanguageRuntimeRegistry(ResourceBudget& budget, LanguageRuntimeLimits limits = {});
   bool install_manifest(const LanguageSetManifest& manifest, std::string& error);
   bool activate_at_boundary(const std::string& session_id,
       const std::string& language_set_id, const std::string& version,
@@ -55,6 +57,9 @@ class LanguageRuntimeRegistry {
   LanguageRuntimeLimits limits_;
   mutable std::mutex mutex_;
   std::map<std::string, LanguageSetManifest> installed_;
+  ResourceBudget* budget_{nullptr};
+  std::map<std::string, ResourceLease> resident_leases_;
+  std::map<std::string, ResourceLease> session_scratch_leases_;
   std::map<std::string, std::string> session_pins_;
 };
 
