@@ -8,6 +8,62 @@
 using namespace surge;
 int main(){
   const auto root=std::filesystem::temp_directory_path()/"surge-context-graph-tests";
+  {
+    const auto lifecycle_path=(root/"cluster-lifecycle.sgj").string();
+    {
+      ContextGraph graph(lifecycle_path);CHECK(graph.open());
+      SemanticDelta dormant;dormant.delta_id="cluster-dormant";dormant.idempotency_key="cluster-dormant";
+      dormant.expected_state_version=0;
+      dormant.nodes={{{"lifecycle-cluster",NodeKind::Cluster,"retained topic",{}}},
+        {{"lifecycle-dormant",NodeKind::ClusterLifecycle,
+          "DORMANT 1 \\"2026-11-20T00:00:00Z\\" \\"low retention priority\\" \\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\"",
+          {"lifecycle-cluster"}}}};
+      dormant.relations={{{"lifecycle-dormant-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-dormant"}}};
+      CHECK(graph.apply(dormant).committed);
+      auto state=graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Dormant && state->revision==1);
+
+      SemanticDelta archived;archived.delta_id="cluster-archive";archived.idempotency_key="cluster-archive";
+      archived.expected_state_version=1;
+      archived.nodes={{{"lifecycle-archived",NodeKind::ClusterLifecycle,
+          "ARCHIVED 2 \\"2026-11-20T00:01:00Z\\" \\"outside active focus\\" \\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\"",
+          {"lifecycle-cluster"}}}};
+      archived.relations={{{"lifecycle-archived-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-archived"}}};
+      CHECK(graph.apply(archived).committed);
+      state=graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Archived && state->revision==2);
+
+      SemanticDelta tombstoned;tombstoned.delta_id="cluster-tombstone";tombstoned.idempotency_key="cluster-tombstone";
+      tombstoned.expected_state_version=2;
+      tombstoned.nodes={{{"lifecycle-tombstone",NodeKind::ClusterLifecycle,
+          "TOMBSTONED 3 \\"2026-11-20T00:02:00Z\\" \\"retention policy approved\\" \\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\\"",
+          {"lifecycle-cluster"}}}};
+      tombstoned.relations={{{"lifecycle-tombstone-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-tombstone"}}};
+      CHECK(graph.apply(tombstoned).committed);
+      CHECK(graph.nodes().count("lifecycle-cluster")==1); // Tombstone is metadata, not physical deletion.
+      CHECK(graph.cluster_lifecycle("lifecycle-cluster")->state==ClusterLifecycleState::Tombstoned);
+
+      SemanticDelta invalid;invalid.delta_id="cluster-resurrect";invalid.idempotency_key="cluster-resurrect";
+      invalid.expected_state_version=3;
+      invalid.nodes={{{"lifecycle-invalid-reactivation",NodeKind::ClusterLifecycle,
+          "ACTIVE 4 \\"2026-11-20T00:03:00Z\\" \\"invalid resurrection\\" \\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\\"",
+          {"lifecycle-cluster"}}}};
+      invalid.relations={{{"lifecycle-invalid-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-invalid-reactivation"}}};
+      const auto rejected=graph.apply(invalid);
+      CHECK(!rejected.committed && rejected.error=="CLUSTER_LIFECYCLE_TRANSITION_INVALID");
+      CHECK(graph.state_version()==3);
+    }
+    {
+      ContextGraph recovered(lifecycle_path);CHECK(recovered.open());
+      const auto state=recovered.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Tombstoned && state->revision==3);
+      CHECK(recovered.nodes().count("lifecycle-cluster")==1);
+    }
+  }
 
   {
     const auto qpath=(root/"question-aspect-status.sgj").string();
