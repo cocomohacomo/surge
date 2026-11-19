@@ -27,6 +27,7 @@ struct DecisionCandidate {
 struct DecisionPolicy {
   std::size_t max_candidates{64};
   std::size_t max_evidence_per_candidate{64};
+  std::size_t max_family_weights{64};
   double minimum_score{-1.0e9};
   double minimum_margin{0.0};
   bool require_valid_evidence{true};
