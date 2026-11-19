@@ -11,8 +11,14 @@
 #include <string>
 #include <vector>
 
-#ifdef __linux__
-#include <unistd.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__linux__) || defined(__APPLE__)
+#include <sys/resource.h>
 #endif
 
 namespace {
@@ -39,36 +45,39 @@ double percentile(const std::vector<double>& values, double fraction) {
   return sorted[std::min(index, sorted.size() - 1)];
 }
 
-long peak_rss_kib() {
-#ifdef __linux__
-  std::ifstream status("/proc/self/status");
-  std::string key;
-  while (status >> key) {
-    if (key == "VmHWM:") {
-      long value = 0;
-      std::string unit;
-      status >> value >> unit;
-      return value;
-    }
-    std::string rest;
-    std::getline(status, rest);
-  }
+long long peak_rss_kib() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS_EX counters{};
+  if (!GetProcessMemoryInfo(GetCurrentProcess(),
+      reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+      sizeof(counters))) return -1;
+  return static_cast<long long>(counters.PeakWorkingSetSize / 1024U);
+#elif defined(__linux__) || defined(__APPLE__)
+  struct rusage usage {};
+  if (getrusage(RUSAGE_SELF, &usage) != 0) return -1;
+#if defined(__APPLE__)
+  return static_cast<long long>(usage.ru_maxrss / 1024);
+#else
+  return static_cast<long long>(usage.ru_maxrss);
 #endif
+#else
   return -1;
+#endif
 }
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc > 4) {
-    std::cerr << "usage: surge_journal_bench [transactions] [payload_bytes] [max_events]\n";
+  if (argc > 5) {
+    std::cerr << "usage: surge_journal_bench [transactions] [payload_bytes] [max_events] [max_identity_bytes]\n";
     return 1;
   }
-  std::size_t transactions = 1000, payload_bytes = 128, max_events = 0;
+  std::size_t transactions = 1000, payload_bytes = 128, max_events = 0, max_identity_bytes = 0;
   if (!parse_size(argc > 1 ? argv[1] : nullptr, 1000, 1000000, &transactions) ||
       transactions == 0 ||
       !parse_size(argc > 2 ? argv[2] : nullptr, 128, 4U * 1024U * 1024U, &payload_bytes) ||
       payload_bytes == 0 ||
-      !parse_size(argc > 3 ? argv[3] : nullptr, 0, 1000000, &max_events)) {
+      !parse_size(argc > 3 ? argv[3] : nullptr, 0, 1000000, &max_events) ||
+      !parse_size(argc > 4 ? argv[4] : nullptr, 0, 1024U * 1024U * 1024U, &max_identity_bytes)) {
     std::cerr << "invalid benchmark argument\n";
     return 1;
   }
@@ -86,6 +95,8 @@ int main(int argc, char** argv) {
   const std::string payload(payload_bytes, 'x');
   surge::EventJournalLimits limits;
   limits.max_events = max_events;
+  limits.max_identity_bytes = max_identity_bytes;
+  std::size_t identity_index_bytes = 0;
 
   {
     surge::EventJournal journal(path.string(), limits);
@@ -109,6 +120,7 @@ int main(int argc, char** argv) {
       if (i >= warmup && ((i - warmup) % sample_stride == 0))
         latency_us.push_back(std::chrono::duration<double, std::micro>(stop - start).count());
     }
+    identity_index_bytes = journal.identity_memory_bytes();
   }
 
   const auto bytes = std::filesystem::file_size(path, ec);
@@ -130,7 +142,7 @@ int main(int argc, char** argv) {
   const auto replay_stop = Clock::now();
   const auto replay_ms = std::chrono::duration<double, std::milli>(
       replay_stop - replay_start).count();
-  const long rss_kib = peak_rss_kib();
+  const long long rss_kib = peak_rss_kib();
 
   std::cout << "{\n"
             << "  \"transactions\": " << transactions << ",\n"
@@ -139,13 +151,16 @@ int main(int argc, char** argv) {
             << "  \"latency_samples\": " << latency_us.size() << ",\n"
             << "  \"payload_bytes\": " << payload_bytes << ",\n"
             << "  \"max_events\": " << max_events << ",\n"
+            << "  \"max_identity_bytes\": " << max_identity_bytes << ",\n"
+            << "  \"identity_index_bytes\": " << identity_index_bytes << ",\n"
             << "  \"append_p50_us\": " << percentile(latency_us, 0.50) << ",\n"
             << "  \"append_p95_us\": " << percentile(latency_us, 0.95) << ",\n"
             << "  \"append_p99_us\": " << percentile(latency_us, 0.99) << ",\n"
             << "  \"replay_ms\": " << replay_ms << ",\n"
             << "  \"journal_bytes\": " << bytes << ",\n"
             << "  \"replayed_events\": " << replayed << ",\n"
-            << "  \"peak_rss_kib\": " << rss_kib << "\n"
+            << "  \"peak_rss_kib\": " << rss_kib << ",\n"
+            << "  \"peak_rss_supported\": " << (rss_kib >= 0 ? "true" : "false") << "\n"
             << "}\n";
   std::filesystem::remove_all(root, ec);
   return 0;
