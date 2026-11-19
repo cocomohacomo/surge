@@ -21,6 +21,9 @@ target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 if(SURGE_BUILD_BENCHMARKS)
   add_executable(surge_journal_bench benchmarks/event_journal_bench.cpp)
   target_link_libraries(surge_journal_bench PRIVATE surge_core)
+  if(WIN32)
+    target_link_libraries(surge_journal_bench PRIVATE Psapi)
+  endif()
 endif()
 
 if(SURGE_BUILD_FUZZERS)
@@ -122,7 +125,9 @@ add_test(NAME surge_test_check_failure_is_detected COMMAND surge_check_failure_p
 set_tests_properties(surge_test_check_failure_is_detected PROPERTIES WILL_FAIL TRUE)
 
 if(SURGE_BUILD_BENCHMARKS)
-  add_test(NAME surge_journal_benchmark_smoke COMMAND surge_journal_bench 100 64 100)
+  add_test(NAME surge_journal_benchmark_smoke COMMAND surge_journal_bench 100 64 100 1048576)
+add_test(NAME surge_journal_benchmark_identity_budget COMMAND surge_journal_bench 100 64 0 1024)
+set_tests_properties(surge_journal_benchmark_identity_budget PROPERTIES WILL_FAIL TRUE)
   add_test(NAME surge_journal_benchmark_memory_limit COMMAND surge_journal_bench 101 64 100)
   set_tests_properties(surge_journal_benchmark_memory_limit PROPERTIES WILL_FAIL TRUE)
 endif()
