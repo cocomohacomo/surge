@@ -23,6 +23,10 @@ class BudgetedContextGraph {
   // Atomic Core-owned classification + budgeted persistence. Callers provide
   // hints and a base delta; cluster identity and membership are assigned by
   // ContextGraph, then committed through the same resource admission gate.
+  DeltaResult append_cluster_lifecycle(SemanticDelta delta,
+      const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
+      const std::string& relation_id, std::string& error);
+
   DeltaResult append_cluster_membership(SemanticDelta delta,
       const std::string& parent_cluster_id, const std::string& classification,
       const std::string& partition_key, const std::string& member_node_id,
