@@ -1143,6 +1143,28 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
           it->second.references.begin(), it->second.references.end(),
           [&candidate](const std::string& ref) { return candidate.nodes.count(ref) != 0; });
       if (!references_ready) { ++it; continue; }
+      if (it->second.kind == NodeKind::ClusterLifecycle) {
+        ClusterLifecycleRecord current;
+        if (it->second.references.size() != 1 ||
+            !decode_cluster_lifecycle_content(it->second.content, current))
+          return fail_restore("SNAPSHOT_CONTEXT_GRAPH_LIFECYCLE_INVALID");
+        bool earlier_revision_pending = false;
+        for (const auto& pending : pending_nodes) {
+          if (pending.first == it->first ||
+              pending.second.kind != NodeKind::ClusterLifecycle ||
+              pending.second.references.size() != 1 ||
+              pending.second.references.front() != it->second.references.front())
+            continue;
+          ClusterLifecycleRecord prior;
+          if (!decode_cluster_lifecycle_content(pending.second.content, prior))
+            return fail_restore("SNAPSHOT_CONTEXT_GRAPH_LIFECYCLE_INVALID");
+          if (prior.revision < current.revision) {
+            earlier_revision_pending = true;
+            break;
+          }
+        }
+        if (earlier_revision_pending) { ++it; continue; }
+      }
       if (!graph_.apply_node(candidate, it->second, detail))
         return fail_restore("SNAPSHOT_CONTEXT_GRAPH_NODE_INVALID");
       it = pending_nodes.erase(it);
@@ -1159,6 +1181,18 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
     if (!(in >> std::quoted(encoded)) || !decode_relation(encoded, relation) ||
         !graph_.apply_relation(candidate, relation, detail))
       return fail_restore("SNAPSHOT_CONTEXT_GRAPH_RELATION_INVALID");
+  }
+  for (const auto& item : candidate.nodes) {
+    const auto& node = item.second;
+    if (node.kind != NodeKind::ClusterLifecycle) continue;
+    if (node.references.size() != 1 ||
+        std::none_of(candidate.relations.begin(), candidate.relations.end(),
+         [&](const auto& relation) {
+          return relation.second.kind == RelationKind::Contains &&
+              relation.second.from == node.references.front() &&
+              relation.second.to == node.id;
+         }))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_LIFECYCLE_MEMBERSHIP_INVALID");
   }
   if (!(in >> count) || count > 1000000)
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_SCOPE_COUNT_INVALID");
