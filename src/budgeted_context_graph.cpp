@@ -183,6 +183,14 @@ bool BudgetedContextGraph::recover(std::string& error) {
   std::size_t bytes = 0, clusters = 0, retained_events = 0;
   if (!estimate_graph(graph_, bytes, clusters, retained_events, error)) return false;
   ResourceLease resident, retained_clusters, retained;
+  try {
+    if (bytes) resident_leases_.reserve(resident_leases_.size() + 1);
+    if (clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
+    if (retained_events) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
+  } catch (...) {
+    error = "CONTEXT_GRAPH_RECOVERY_LEASE_STAGING_FAILED";
+    return false;
+  }
   if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
     return false;
   if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
