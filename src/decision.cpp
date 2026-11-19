@@ -71,6 +71,11 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
       const auto group = std::make_pair(evidence.family,
           evidence.correlation_group.empty() ? evidence.evidence_id : evidence.correlation_group);
       const double contribution = evidence.value * evidence.weight * calibration;
+      if (!std::isfinite(contribution)) {
+        result.disposition = DecisionDisposition::Reject;
+        result.reason = std::string(stage) + "_NONFINITE_EVIDENCE_SCORE";
+        return result;
+      }
       const auto found = groups.find(group);
       if (found == groups.end() || std::abs(contribution) > std::abs(found->second))
         groups[group] = contribution;
