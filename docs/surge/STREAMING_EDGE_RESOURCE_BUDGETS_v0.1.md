@@ -90,3 +90,20 @@ allocator fragmentation, or process RSS.
 These wrappers do not intercept direct calls to the corresponding public
 `ContextGraph` methods. Core integration and migration of every call site
 remain required before global enforcement can be claimed.
+
+
+## Atomic cluster classification through the budget gate
+
+`BudgetedContextGraph::append_cluster_membership` now combines Core-owned
+cluster-ID derivation, parent/member relation construction and budgeted journal
+commit in one API. Callers provide classification hints and a base delta; the
+facade asks `ContextGraph` to construct the typed membership and then sends the
+completed delta through the same resident, transient, retained-event and
+retained-cluster admission checks as ordinary graph updates.
+
+If the budget reservation fails, the generated cluster ID is cleared and no
+graph version, node or membership relation is committed. This closes one
+important bypass for callers that previously could classify into a mutable
+`SemanticDelta` and then accidentally commit it through a direct graph path.
+Other direct `ContextGraph` mutators remain public and are still outside the
+guard; this increment is not yet end-to-end Core enforcement.
