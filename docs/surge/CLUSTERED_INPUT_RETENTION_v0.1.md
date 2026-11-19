@@ -162,3 +162,26 @@ the canonical node. A zero count is necessary but not sufficient for physical
 reclamation: non-cluster relations, typed-node references, Focus, temporal
 history, provenance and audit/snapshot obligations must also be checked by a
 future reclamation gate. No payload deletion is performed by this counter.
+
+
+## Fail-closed Entity reclamation increment
+
+`ContextGraph::append_entity_reclamation` adds an explicit `ENTITY_RECLAIMED`
+journal command. The first supported reclamation class is `Entity` only.
+The gate requires the candidate to have no remaining Cluster/ChaosCluster
+membership, graph relation endpoint, typed-node reference, Focus reference,
+scope-span reference or dependency-evaluation history reference. A caller may
+stage membership unlink and Entity reclamation in the same `SemanticDelta`;
+the transaction applies unlink events before the reclamation event. Replay and
+ContextGraph snapshot-tail restoration apply the same ordered commands.
+
+`BudgetedContextGraph::append_entity_reclamation` routes the operation
+through normal transient and retained-event admission. Resident reservations
+remain conservative and are not released by this increment, because the
+current budget facade does not maintain per-node allocation leases. Therefore
+this operation removes the graph-owned Entity object, but does not promise an
+RSS reduction or make the corresponding resident budget capacity reusable.
+Evidence, Claim, Cluster, ChaosCluster, lifecycle records and other node kinds
+are deliberately ineligible until their external provenance, temporal and
+audit references can be proven clear. Physical compaction and exact lease
+reconciliation remain future work.
