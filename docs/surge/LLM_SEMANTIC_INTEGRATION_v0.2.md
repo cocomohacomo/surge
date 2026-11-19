@@ -39,10 +39,12 @@ same relation is idempotent and does not duplicate its route.
 ## Failure and retry behavior
 
 The semantic relation transaction is committed before Question routing. If
-routing fails, the relation remains durable and the caller must retry routing
-for that relation. The deterministic relation ID allows safe retry. A future
-outbox/reconciliation worker may automate this recovery; this adapter does not
-silently claim that a failed route succeeded.
+routing fails, the relation remains durable and the runtime returns the
+deterministic `relation_id` plus an explicit failed route result. The caller
+can retry `core.route_contradiction(relation_id)` without replaying or
+re-admitting the source text. A future outbox/reconciliation worker may
+automate this recovery; this adapter does not silently claim that a failed
+route succeeded.
 
 ## Conformance
 
@@ -53,7 +55,9 @@ silently claim that a failed route succeeded.
 - Question routing survives restart and duplicate route attempts are
   idempotent;
 - cross-topic contradiction produces multiple Interest candidates without
-  guessing Focus.
+  guessing Focus;
+- route failure returns a retryable relation ID, and a later explicit retry
+  completes the route.
 
 The tests use deterministic stub recognition providers. They do not claim live
 LLM quality or model-specific recognition accuracy.
