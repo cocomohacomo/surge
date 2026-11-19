@@ -7,6 +7,10 @@ namespace surge {
 LanguageRuntimeRegistry::LanguageRuntimeRegistry(LanguageRuntimeLimits limits)
     : limits_(limits) {}
 
+LanguageRuntimeRegistry::LanguageRuntimeRegistry(ResourceBudget& budget,
+    LanguageRuntimeLimits limits)
+    : limits_(limits), budget_(&budget) {}
+
 std::string LanguageRuntimeRegistry::key(const std::string& id,
                                          const std::string& version) {
   return std::to_string(id.size()) + ":" + id +
@@ -74,7 +78,14 @@ bool LanguageRuntimeRegistry::install_manifest(
     error = "LANGUAGE_SET_RESOURCE_BUDGET_EXCEEDED";
     return false;
   }
+  ResourceLease resident_lease;
+  if (budget_ && !budget_->try_acquire(ResourceKind::ResidentBytes,
+      manifest.resident_bytes, resident_lease, error)) {
+    error = "LANGUAGE_SET_RESIDENT_" + error;
+    return false;
+  }
   installed_.emplace(id, manifest);
+  if (budget_) resident_leases_.emplace(id, std::move(resident_lease));
   return true;
 }
 
@@ -100,7 +111,16 @@ bool LanguageRuntimeRegistry::activate_at_boundary(
     error = "LANGUAGE_SESSION_BUDGET_EXCEEDED";
     return false;
   }
+  const auto current = session_pins_.find(session_id);
+  if (current != session_pins_.end() && current->second == set) return true;
+  ResourceLease scratch_lease;
+  if (budget_ && !budget_->try_acquire(ResourceKind::TransientBytes,
+      installed_.at(set).scratch_bytes, scratch_lease, error)) {
+    error = "LANGUAGE_SET_SCRATCH_" + error;
+    return false;
+  }
   session_pins_[session_id] = set;
+  if (budget_) session_scratch_leases_[session_id] = std::move(scratch_lease);
   return true;
 }
 
@@ -125,7 +145,9 @@ bool LanguageRuntimeRegistry::active_manifest(
 
 bool LanguageRuntimeRegistry::release_session(const std::string& session_id) {
   std::lock_guard<std::mutex> lock(mutex_);
-  return session_pins_.erase(session_id) != 0;
+  const auto erased = session_pins_.erase(session_id) != 0;
+  session_scratch_leases_.erase(session_id);
+  return erased;
 }
 
 bool LanguageRuntimeRegistry::uninstall(
@@ -144,6 +166,7 @@ bool LanguageRuntimeRegistry::uninstall(
     error = "LANGUAGE_SET_NOT_INSTALLED";
     return false;
   }
+  resident_leases_.erase(id);
   return true;
 }
 
