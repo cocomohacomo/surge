@@ -16,7 +16,7 @@ int main(){
       dormant.expected_state_version=0;
       dormant.nodes={{{"lifecycle-cluster",NodeKind::Cluster,"retained topic",{}}},
         {{"lifecycle-dormant",NodeKind::ClusterLifecycle,
-          "DORMANT 1 \\"2026-11-20T00:00:00Z\\" \\"low retention priority\\" \\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\"",
+          "DORMANT 1 \"2026-11-20T00:00:00Z\" \"low retention priority\" \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
           {"lifecycle-cluster"}}}};
       dormant.relations={{{"lifecycle-dormant-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-dormant"}}};
@@ -27,7 +27,7 @@ int main(){
       SemanticDelta archived;archived.delta_id="cluster-archive";archived.idempotency_key="cluster-archive";
       archived.expected_state_version=1;
       archived.nodes={{{"lifecycle-archived",NodeKind::ClusterLifecycle,
-          "ARCHIVED 2 \\"2026-11-20T00:01:00Z\\" \\"outside active focus\\" \\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\"",
+          "ARCHIVED 2 \"2026-11-20T00:01:00Z\" \"outside active focus\" \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"",
           {"lifecycle-cluster"}}}};
       archived.relations={{{"lifecycle-archived-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-archived"}}};
@@ -38,7 +38,7 @@ int main(){
       SemanticDelta tombstoned;tombstoned.delta_id="cluster-tombstone";tombstoned.idempotency_key="cluster-tombstone";
       tombstoned.expected_state_version=2;
       tombstoned.nodes={{{"lifecycle-tombstone",NodeKind::ClusterLifecycle,
-          "TOMBSTONED 3 \\"2026-11-20T00:02:00Z\\" \\"retention policy approved\\" \\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\\"",
+          "TOMBSTONED 3 \"2026-11-20T00:02:00Z\" \"retention policy approved\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"",
           {"lifecycle-cluster"}}}};
       tombstoned.relations={{{"lifecycle-tombstone-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-tombstone"}}};
@@ -49,7 +49,7 @@ int main(){
       SemanticDelta invalid;invalid.delta_id="cluster-resurrect";invalid.idempotency_key="cluster-resurrect";
       invalid.expected_state_version=3;
       invalid.nodes={{{"lifecycle-invalid-reactivation",NodeKind::ClusterLifecycle,
-          "ACTIVE 4 \\"2026-11-20T00:03:00Z\\" \\"invalid resurrection\\" \\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\\"",
+          "ACTIVE 4 \"2026-11-20T00:03:00Z\" \"invalid resurrection\" \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"",
           {"lifecycle-cluster"}}}};
       invalid.relations={{{"lifecycle-invalid-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-invalid-reactivation"}}};
