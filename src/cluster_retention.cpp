@@ -13,7 +13,7 @@ void add_ancestors(const std::string& cluster,const std::map<std::string,std::ve
 }
 }
 ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,const std::vector<ClusterRetentionCandidate>& candidates,std::size_t max_retained_clusters) {
- ClusterRetentionPlan result;std::map<std::string,ClusterRetentionCandidate> by_id;
+ ClusterRetentionPlan result;result.planned_state_version=graph.state_version();std::map<std::string,ClusterRetentionCandidate> by_id;
  for(const auto& candidate:candidates){
   if(candidate.cluster_id.empty()||!std::isfinite(candidate.retention_priority)){result.error="CLUSTER_RETENTION_CANDIDATE_INVALID";return result;}
   const auto node=graph.nodes().find(candidate.cluster_id);
