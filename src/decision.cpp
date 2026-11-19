@@ -27,6 +27,18 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
     result.reason = std::string(stage) + "_CANDIDATE_BUDGET_EXCEEDED";
     return result;
   }
+  if (policy.family_weights.size() > policy.max_family_weights) {
+    result.disposition = DecisionDisposition::Defer;
+    result.reason = std::string(stage) + "_FAMILY_WEIGHT_BUDGET_EXCEEDED";
+    return result;
+  }
+  for (const auto& item : policy.family_weights) {
+    if (item.first.empty() || !std::isfinite(item.second) || item.second < 0.0) {
+      result.disposition = DecisionDisposition::Reject;
+      result.reason = std::string(stage) + "_INVALID_FAMILY_WEIGHT";
+      return result;
+    }
+  }
   std::set<std::string> ids;
   std::vector<Scored> scored;
   scored.reserve(candidates.size());
