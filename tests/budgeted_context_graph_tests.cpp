@@ -406,5 +406,33 @@ int main() {
   }
   std::remove(cluster_lifecycle_retention_path.c_str());
 
+  // Membership unlink is exposed through the budgeted gateway and does
+  // not reclaim the canonical member, even when its final cluster edge goes.
+  const std::string unlink_path = "budgeted_cluster_membership_unlink_test.journal";
+  std::remove(unlink_path.c_str());
+  {
+    EventJournal journal(unlink_path);assert(journal.open());
+    ContextGraph graph(journal);assert(graph.open());
+    SemanticDelta seed;seed.delta_id="unlink-budget-seed";
+    seed.idempotency_key="unlink-budget-seed";seed.expected_state_version=0;
+    seed.nodes={{{"unlink-cluster",NodeKind::Cluster,"cluster",{}}},
+                {{"unlink-member",NodeKind::Evidence,"canonical payload",{}}}};
+    seed.relations.push_back({{"unlink-edge",RelationKind::Contains,
+        "unlink-cluster","unlink-member"}});
+    assert(graph.apply(seed).committed);
+    ResourceBudgetLimits limits;limits.resident_bytes=65536;
+    limits.transient_bytes=65536;limits.retained_events=64;limits.retained_clusters=8;
+    ResourceBudget budget(limits);BudgetedContextGraph guarded(graph,budget);
+    std::string error;assert(guarded.recover(error));
+    SemanticDelta unlink;unlink.delta_id="unlink-budget-op";
+    unlink.idempotency_key="unlink-budget-op";unlink.expected_state_version=1;
+    const auto removed=guarded.append_cluster_unmembership(std::move(unlink),
+        "unlink-cluster","unlink-member","unlink-budget-id",error);
+    assert(removed.committed);
+    assert(graph.relations().count("unlink-edge")==0);
+    assert(graph.nodes().count("unlink-member")==1);
+  }
+  std::remove(unlink_path.c_str());
+
   return 0;
 }
