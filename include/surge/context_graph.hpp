@@ -87,6 +87,7 @@ struct TemporalReassessmentRecord {
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraphSnapshotDomain;
 class PreparedContextGraphSnapshotRestore;
+class BudgetedContextGraph;
 class ContextGraph {
  public:
   explicit ContextGraph(std::string journal_path);
@@ -147,6 +148,7 @@ class ContextGraph {
   bool apply_question_aspect_statuses(const std::vector<std::pair<std::string, QuestionAspectStatus>>& updates,
       std::uint64_t expected_state_version, std::string& error);
  private:
+  friend class BudgetedContextGraph;
   friend class ContextGraphSnapshotDomain;
   friend class PreparedContextGraphSnapshotRestore;
   struct State {
