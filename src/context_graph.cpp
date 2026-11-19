@@ -290,6 +290,20 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  case RelationKind::Retracts:{if(a!=NodeKind::Evidence||b!=NodeKind::Claim){e="CLAIM_RETRACTION_ENDPOINT_INVALID";return false;}const auto status=s.claim_statuses.find(r.to);if(status==s.claim_statuses.end()||status->second!=ClaimStatus::Active){e="CLAIM_NOT_ACTIVE_FOR_RETRACTION";return false;}break;}}
  s.relations.emplace(r.id,r);if(r.kind==RelationKind::Supersedes)s.claim_statuses[r.to]=ClaimStatus::Superseded;else if(r.kind==RelationKind::Retracts)s.claim_statuses[r.to]=ClaimStatus::Retracted;return true;
 }
+bool ContextGraph::apply_relation_removal(State& state,const std::string& relation_id,std::string& error)const{
+ const auto found=state.relations.find(relation_id);
+ if(found==state.relations.end()||found->second.kind!=RelationKind::Contains){
+  error="CLUSTER_MEMBERSHIP_RELATION_NOT_FOUND";return false;
+ }
+ const auto from=state.nodes.find(found->second.from),to=state.nodes.find(found->second.to);
+ if(from==state.nodes.end()||to==state.nodes.end()||
+    (from->second.kind!=NodeKind::Cluster&&from->second.kind!=NodeKind::ChaosCluster)||
+    to->second.kind==NodeKind::ClusterLifecycle){
+  error="CLUSTER_MEMBERSHIP_RELATION_NOT_REMOVABLE";return false;
+ }
+ state.relations.erase(found);
+ return true;
+}
 bool ContextGraph::apply_scope_span(State& s,const AddScopeSpan& add,std::string& e)const{
  if(s.scope_spans.count(add.span.span_id)){e="SCOPE_SPAN_ID_DUPLICATE";return false;}
  const auto result=ScopeSpanValidator::validate(add.span,add.source_snapshot,s.nodes);
@@ -438,6 +452,7 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  std::ostringstream o;o<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' ';
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
  for(const auto& r:d.relations)o<<"R "<<encode_relation(r.relation)<<'\n';
+ for(const auto& id:d.remove_relation_ids)o<<"X "<<std::quoted(id)<<'\n';
  for(const auto& s:d.scope_spans)o<<"S "<<encode_scope(s)<<'\n';
  for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  for(const auto& v:d.evidence_validity_updates)o<<"EV "<<std::quoted(v.evidence_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
@@ -449,6 +464,7 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  out.push_back({d.delta_id+"/meta","DELTA_META",m.str()});std::size_t i=0;
  for(const auto& n:d.nodes)out.push_back({d.delta_id+"/node/"+std::to_string(i++),"NODE_ADD",encode_node(n.node)});
  i=0;for(const auto& r:d.relations)out.push_back({d.delta_id+"/relation/"+std::to_string(i++),"RELATION_ADD",encode_relation(r.relation)});
+ i=0;for(const auto& id:d.remove_relation_ids){std::ostringstream payload;payload<<std::quoted(id);out.push_back({d.delta_id+"/relation-remove/"+std::to_string(i++),"RELATION_REMOVE",payload.str()});}
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
  i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record)});}
@@ -458,6 +474,7 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
 bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
  if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(s,n,error);}
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
+ if(e.kind=="RELATION_REMOVE"){std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_RELATION_REMOVAL_DECODE_FAILED";return false;}return apply_relation_removal(s,id,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
@@ -570,7 +587,7 @@ bool ContextGraph::replay(){
    }
    ++version;continue;
   }
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
@@ -583,7 +600,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
     std::vector<JournalEvent>& events, std::string& error) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
-    (d.nodes.empty()&&d.relations.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus)){
+    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus)){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
@@ -596,6 +613,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  staged=state_;
  for(const auto& n:d.nodes)if(!apply_node(staged,n.node,error))return false;
  for(const auto& r:d.relations)if(!apply_relation(staged,r.relation,error))return false;
+ for(const auto& id:d.remove_relation_ids)if(!apply_relation_removal(staged,id,error))return false;
  for (const auto& added : d.nodes) {
   if (added.node.kind != NodeKind::ClusterLifecycle) continue;
   const auto& lifecycle = added.node;
@@ -747,6 +765,33 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
   delta.relations.push_back({{member_relation,RelationKind::Contains,
       cluster_id,member_node_id}});
  assigned_cluster_id=cluster_id;
+ return true;
+}
+
+bool ContextGraph::append_cluster_unmembership(SemanticDelta& delta,
+    const std::string& cluster_id,const std::string& member_node_id,
+    const std::string& removal_id,std::string& error) const {
+ error.clear();
+ if(cluster_id.empty()||member_node_id.empty()||removal_id.empty()){
+  error="CLUSTER_MEMBERSHIP_REMOVAL_INPUT_INVALID";return false;
+ }
+ const auto cluster=state_.nodes.find(cluster_id),member=state_.nodes.find(member_node_id);
+ if(cluster==state_.nodes.end()||member==state_.nodes.end()||
+    (cluster->second.kind!=NodeKind::Cluster&&cluster->second.kind!=NodeKind::ChaosCluster)){
+  error="CLUSTER_MEMBERSHIP_TARGET_NOT_FOUND";return false;
+ }
+ if(member->second.kind==NodeKind::ClusterLifecycle){
+  error="CLUSTER_LIFECYCLE_MEMBERSHIP_PROTECTED";return false;
+ }
+ const auto existing=std::find_if(state_.relations.begin(),state_.relations.end(),
+  [&](const auto& item){const auto& r=item.second;return r.kind==RelationKind::Contains&&r.from==cluster_id&&r.to==member_node_id;});
+ if(existing==state_.relations.end()){
+  error="CLUSTER_MEMBERSHIP_NOT_FOUND";return false;
+ }
+ if(std::find(delta.remove_relation_ids.begin(),delta.remove_relation_ids.end(),existing->first)!=delta.remove_relation_ids.end()){
+  error="CLUSTER_MEMBERSHIP_REMOVAL_DUPLICATE";return false;
+ }
+ delta.remove_relation_ids.push_back(existing->first);
  return true;
 }
 
