@@ -124,6 +124,8 @@ class ContextGraph {
   std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
+  // Counts active Cluster/ChaosCluster Contains references to a canonical member.
+  std::size_t cluster_membership_reference_count(const std::string& member_node_id) const;
   const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
   const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
