@@ -63,6 +63,8 @@ class BudgetedContextGraph {
                              std::size_t& cluster_count,
                              std::size_t& retained_events,
                              std::string& error);
+  bool reserve_staging(std::size_t bytes, ResourceLease& staging,
+      std::string& error);
   bool reserve_mutation(std::size_t bytes, std::size_t events,
       ResourceLease& resident, ResourceLease& retained, std::string& error);
   void publish_mutation(ResourceLease&& resident, ResourceLease&& retained);
