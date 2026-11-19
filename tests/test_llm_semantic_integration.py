@@ -133,6 +133,28 @@ class LLMSemanticIntegrationTests(unittest.TestCase):
                 self.assertTrue(retry["committed"] and retry["duplicate"])
                 self.assertEqual(recovered.state_version,3)
 
+    def test_question_route_failure_returns_relation_id_for_safe_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime=LLMSemanticRuntime(StubProvider([
+                result(), result(proposition="予算を増額",polarity="NEGATIVE")]),"ctx","source")
+            with SemanticCoreBridge(pathlib.Path(tmp)/"route-retry.sgj") as core:
+                first=runtime.process("予算を増額します。",core)
+                original_route=core.route_contradiction
+                core.route_contradiction=lambda *args, **kwargs: (_ for _ in ()).throw(
+                    RuntimeError("simulated route outage"))
+                out=runtime.process("予算を増額しません。",core)
+                failed=out["contradiction_routes"][0]
+                self.assertFalse(failed["committed"])
+                self.assertEqual(failed["error"],"simulated route outage")
+                self.assertTrue(failed["relation_id"].startswith(
+                    "contradicts/claim/"+first["packet_id"]+"/"))
+                self.assertEqual(core.state_version,2)
+                core.route_contradiction=original_route
+                retry=original_route(failed["relation_id"])
+                self.assertTrue(retry["committed"] and not retry["duplicate"])
+                self.assertTrue(retry["focus_selected"])
+                self.assertEqual(core.state_version,3)
+
     def test_cross_topic_contradiction_creates_interest_candidates_without_guessing_focus(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime=LLMSemanticRuntime(StubProvider([
