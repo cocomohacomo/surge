@@ -188,3 +188,29 @@ Evidence, Claim, Cluster, ChaosCluster, lifecycle records and other node kinds
 are deliberately ineligible until their external provenance, temporal and
 audit references can be proven clear. Physical compaction and exact lease
 reconciliation remain future work.
+
+
+## Entity reclamation checkpoint/compaction conformance increment
+
+The Entity reclamation path now has an end-to-end conformance test against the
+existing SnapshotCoordinator::compact workflow. The test:
+
+- commits an Entity and its Cluster membership, then atomically unlinks and
+  reclaims that Entity;
+- captures the post-reclamation graph at the journal's exact state watermark;
+- durably saves the snapshot, verifies the primary generation, mirrors the
+  verified generation to the backup, and only then compacts the journal;
+- verifies that the compacted journal has no active historical event frames
+  and that the snapshot no longer contains the reclaimed Entity payload;
+- opens a fresh journal/graph instance and restores from the checkpoint,
+  confirming that the Entity remains absent while the containing Cluster
+  remains present;
+- forces snapshot persistence failure and confirms that the journal is not
+  marked compacted and its replayable events remain available.
+
+This proves logical graph reclamation plus checkpoint-based retirement of the
+old journal frames for the tested Entity path. It does not prove secure erasure
+from filesystem media, allocator page release, RSS reduction, or bounded
+snapshot capture memory. The generic coordinator's staging limits and logical
+budget remain the current controls; target edge-device measurements are still
+required.
