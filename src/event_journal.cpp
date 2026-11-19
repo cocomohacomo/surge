@@ -26,6 +26,22 @@ namespace {
 constexpr char kMagic[] = "SURGEJ1\n";
 constexpr char kMagicV2[] = "SURGEJ2\n";
 constexpr std::uint32_t kMaxFrame = 16U * 1024U * 1024U;
+constexpr std::size_t kIdentityEntryOverheadBytes = 128U;
+
+bool add_identity_cost(std::size_t current, const std::string& key,
+                       const std::string& value, std::size_t& next) {
+  const auto overhead = kIdentityEntryOverheadBytes;
+  if (key.size() > std::numeric_limits<std::size_t>::max() - overhead)
+    return false;
+  const auto first = overhead + key.size();
+  if (value.size() > std::numeric_limits<std::size_t>::max() - first)
+    return false;
+  const auto cost = first + value.size();
+  if (cost > std::numeric_limits<std::size_t>::max() - current)
+    return false;
+  next = current + cost;
+  return true;
+}
 
 bool sync_file_to_stable_storage(const std::string& path) {
 #ifdef _WIN32
@@ -154,7 +170,8 @@ bool decode_checkpoint_header(
     std::string& context_id, std::string& digest,
     std::map<std::string, std::string>& idempotency,
     std::map<std::string, std::string>& transactions,
-    std::map<std::string, bool>& event_ids) {
+    std::map<std::string, bool>& event_ids,
+    std::size_t max_identity_bytes, std::size_t& identity_memory_bytes) {
   std::istringstream in(payload);
   char type = 0;
   std::size_t count = 0;
@@ -164,25 +181,38 @@ bool decode_checkpoint_header(
       digest.size() != 64 || count > kMaxFrame / 8) return false;
   for (char c : digest)
     if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  identity_memory_bytes = 0;
   for (std::size_t i = 0; i < count; ++i) {
     std::string key, fingerprint;
+    std::size_t next_bytes = 0;
     if (!(in >> std::quoted(key) >> std::quoted(fingerprint)) ||
         key.empty() || fingerprint.empty() ||
+        !add_identity_cost(identity_memory_bytes, key, fingerprint, next_bytes) ||
+        (max_identity_bytes && next_bytes > max_identity_bytes) ||
         !idempotency.emplace(key, fingerprint).second) return false;
+    identity_memory_bytes = next_bytes;
   }
   if (!(in >> count) || count > kMaxFrame / 8) return false;
   for (std::size_t i = 0; i < count; ++i) {
     std::string tx, fingerprint;
+    std::size_t next_bytes = 0;
     if (!(in >> std::quoted(tx) >> std::quoted(fingerprint)) ||
         tx.empty() || fingerprint.empty() ||
+        !add_identity_cost(identity_memory_bytes, tx, fingerprint, next_bytes) ||
+        (max_identity_bytes && next_bytes > max_identity_bytes) ||
         !transactions.emplace(tx, fingerprint).second) return false;
+    identity_memory_bytes = next_bytes;
   }
   if (idempotency.size() != transactions.size() ||
       !(in >> count) || count > kMaxFrame / 4) return false;
   for (std::size_t i = 0; i < count; ++i) {
     std::string id;
+    std::size_t next_bytes = 0;
     if (!(in >> std::quoted(id)) || id.empty() ||
+        !add_identity_cost(identity_memory_bytes, id, {}, next_bytes) ||
+        (max_identity_bytes && next_bytes > max_identity_bytes) ||
         !event_ids.emplace(id, true).second) return false;
+    identity_memory_bytes = next_bytes;
   }
   std::string extra;
   return !(in >> extra);
@@ -328,6 +358,7 @@ bool EventJournal::recover() {
   compacted_ = false;
   append_frame_count_ = 0;
   retained_payload_bytes_ = 0;
+  identity_memory_bytes_ = 0;
   events_.clear(); idempotency_.clear(); transaction_ids_.clear(); event_ids_.clear();
   std::ifstream in(path_, std::ios::binary);
   if (!in) { last_error_ = "JOURNAL_OPEN_READ_ERROR"; return false; }
@@ -390,7 +421,8 @@ bool EventJournal::recover() {
           !events_.empty() || state_version_ != 0 ||
           !decode_checkpoint_header(payload, checkpoint_base_state_version_,
               checkpoint_context_id_, checkpoint_snapshot_digest_,
-              idempotency_, transaction_ids_, event_ids_)) {
+              idempotency_, transaction_ids_, event_ids_,
+              limits_.max_identity_bytes, identity_memory_bytes_)) {
         last_error_ = "JOURNAL_CHECKPOINT_HEADER_INVALID";
         return false;
       }
@@ -433,14 +465,25 @@ bool EventJournal::recover() {
         last_error_ = "JOURNAL_COMMIT_INVARIANT_FAILED"; return false;
       }
       std::size_t added_payload_bytes = 0;
+      std::size_t next_identity_bytes = identity_memory_bytes_;
+      if (!add_identity_cost(next_identity_bytes, p.idem, p.fingerprint, next_identity_bytes) ||
+          !add_identity_cost(next_identity_bytes, tx, p.fingerprint, next_identity_bytes)) {
+        last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
+      }
       for (const auto& event : p.events) {
         if (event_ids_.count(event.event_id)) { last_error_ = "JOURNAL_EVENT_ID_DUPLICATE"; return false; }
         if (event.payload.size() > std::numeric_limits<std::size_t>::max() - added_payload_bytes) {
           last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
         }
         added_payload_bytes += event.payload.size();
+        std::size_t next_bytes = 0;
+        if (!add_identity_cost(next_identity_bytes, event.event_id, {}, next_bytes)) {
+          last_error_ = "JOURNAL_RESOURCE_LIMIT_EXCEEDED"; return false;
+        }
+        next_identity_bytes = next_bytes;
       }
-      if ((limits_.max_events && p.events.size() > limits_.max_events -
+      if ((limits_.max_identity_bytes && next_identity_bytes > limits_.max_identity_bytes) ||
+          (limits_.max_events && p.events.size() > limits_.max_events -
               std::min(limits_.max_events, events_.size())) ||
           (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
               std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
@@ -453,6 +496,7 @@ bool EventJournal::recover() {
         event_ids_[events_.back().event_id] = true;
       }
       retained_payload_bytes_ += added_payload_bytes;
+      identity_memory_bytes_ = next_identity_bytes;
       idempotency_[p.idem] = p.fingerprint;
       transaction_ids_[tx] = p.fingerprint;
       state_version_ = version;
@@ -503,15 +547,24 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     return {false, false, state_version_, "STATE_VERSION_EXHAUSTED"};
   std::map<std::string, bool> batch_ids;
   std::size_t added_payload_bytes = 0;
+  std::size_t next_identity_bytes = identity_memory_bytes_;
+  if (!add_identity_cost(next_identity_bytes, idem, fingerprint, next_identity_bytes) ||
+      !add_identity_cost(next_identity_bytes, tx, fingerprint, next_identity_bytes))
+    return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
   for (const auto& event : events) {
     if (event.event_id.empty() || event.kind.empty() || event_ids_.count(event.event_id) ||
         batch_ids.count(event.event_id)) return {false, false, state_version_, "EVENT_ID_INVALID_OR_DUPLICATE"};
     if (event.payload.size() > std::numeric_limits<std::size_t>::max() - added_payload_bytes)
       return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
     added_payload_bytes += event.payload.size();
+    std::size_t next_bytes = 0;
+    if (!add_identity_cost(next_identity_bytes, event.event_id, {}, next_bytes))
+      return {false, false, state_version_, "JOURNAL_RESOURCE_LIMIT_EXCEEDED"};
+    next_identity_bytes = next_bytes;
     batch_ids[event.event_id] = true;
   }
-  if ((limits_.max_events && events.size() > limits_.max_events -
+  if ((limits_.max_identity_bytes && next_identity_bytes > limits_.max_identity_bytes) ||
+      (limits_.max_events && events.size() > limits_.max_events -
           std::min(limits_.max_events, events_.size())) ||
       (limits_.max_payload_bytes && added_payload_bytes > limits_.max_payload_bytes -
           std::min(limits_.max_payload_bytes, retained_payload_bytes_)) ||
@@ -545,6 +598,7 @@ JournalCommitResult EventJournal::commit(const std::string& tx, const std::strin
     event_ids_[events_.back().event_id] = true;
   }
   retained_payload_bytes_ += added_payload_bytes;
+  identity_memory_bytes_ = next_identity_bytes;
   idempotency_[idem] = fingerprint;
   transaction_ids_[tx] = fingerprint;
   state_version_ = committed_version;
@@ -730,6 +784,11 @@ JournalCheckpointInfo EventJournal::checkpoint_info() const {
   info.context_id = checkpoint_context_id_;
   info.snapshot_digest = checkpoint_snapshot_digest_;
   return info;
+}
+
+std::size_t EventJournal::identity_memory_bytes() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return identity_memory_bytes_;
 }
 
 std::string EventJournal::last_error() const {
