@@ -239,3 +239,17 @@ fully conformant cluster-native memory.
 ### ClusterLifecycle construction API
 
 The Core exposes `ContextGraph::append_cluster_lifecycle` to encode a typed `ClusterLifecycleRecord` into the journal payload and append its required `Contains` edge to a caller-owned `SemanticDelta`. The helper validates target identity, revision continuity, timestamp, digest syntax, reason bounds and allowed state transitions before changing the delta. The graph itself remains unchanged until the caller commits the delta through the normal (preferably budgeted) mutation gateway. This helper does not remove memberships, filter retrieval, reclaim payloads, or provide a hard process-memory bound.
+
+
+### Lifecycle-aware retention execution increment
+
+The retention planner records the graph state version from which its complete
+candidate set was evaluated. ARCHIVED and TOMBSTONED clusters are reported as
+already inactive and do not consume active retention capacity. DORMANT clusters
+remain recoverable but rank behind ACTIVE clusters, independent of raw
+priority. If an inactive cluster is part of the protected floor, planning fails
+closed. The budgeted mutation gateway can apply all forget decisions in one
+SemanticDelta: ACTIVE targets move to DORMANT, and DORMANT targets move to
+ARCHIVED. A stale plan is rejected before mutation. This operation changes
+lifecycle metadata only; it does not remove memberships, filter retrieval,
+delete payloads or compact the graph.
