@@ -23,11 +23,16 @@ bool LanguageRuntimeRegistry::add_within(std::size_t& total,
 bool LanguageRuntimeRegistry::install_manifest(
     const LanguageSetManifest& manifest, std::string& error) {
   error.clear();
-  if (manifest.language_set_id.empty() || manifest.version.empty() ||
-      manifest.digest.empty() || manifest.locale.empty() || manifest.script.empty() ||
+  if (manifest.language_set_id.empty() || manifest.language_set_id.size() > 128 ||
+      manifest.version.empty() || manifest.version.size() > 64 ||
+      manifest.digest.empty() || manifest.digest.size() > 128 ||
+      manifest.locale.empty() || manifest.locale.size() > 64 ||
+      manifest.script.empty() || manifest.script.size() > 64 ||
       manifest.package_bytes == 0 || manifest.unpacked_bytes == 0 ||
       manifest.resident_bytes == 0 || manifest.max_input_bytes == 0 ||
-      manifest.max_candidates == 0) {
+      manifest.max_input_bytes > limits_.max_input_bytes ||
+      manifest.max_candidates == 0 || manifest.max_candidates > limits_.max_candidates ||
+      manifest.capabilities.size() > limits_.max_capabilities) {
     error = "LANGUAGE_SET_MANIFEST_INVALID";
     return false;
   }
