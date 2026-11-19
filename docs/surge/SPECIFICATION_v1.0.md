@@ -292,6 +292,9 @@ This is not a general payload garbage collector. Evidence, Claim, cluster and
 lifecycle nodes remain protected because their provenance, temporal and audit
 obligations require broader reference accounting. The budgeted gateway charges
 the retained reclamation event but conservatively retains prior resident
-reservations; it does not claim RSS reduction or reusable resident capacity.
+reservations; it does not claim RSS reduction or reusable resident capacity. The
+append-only journal retains the original node-add payload until a verified snapshot
+checkpoint and compaction retire that historical frame. This is logical graph
+reclamation, not secure erasure or immediate journal-byte reclamation.
 Exact per-node lease release, cross-domain reference accounting and bounded
 physical compaction remain incomplete.
