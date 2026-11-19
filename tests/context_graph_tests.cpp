@@ -22,6 +22,17 @@ int main(){
       dormant.relations={{{"lifecycle-dormant-membership",RelationKind::Contains,
           "lifecycle-cluster","lifecycle-dormant"}}};
       CHECK(graph.apply(dormant).committed);
+      ClusterLifecycleRecord invalid_builder_record;
+      invalid_builder_record.cluster_id="lifecycle-cluster";
+      invalid_builder_record.state=ClusterLifecycleState::Active;
+      invalid_builder_record.revision=1;
+      invalid_builder_record.recorded_at="2026-11-20T00:00:00Z";
+      invalid_builder_record.reason="invalid same-state transition";
+      invalid_builder_record.provenance_digest=std::string(64,'a');
+      SemanticDelta invalid_builder_delta;
+      CHECK(!graph.append_cluster_lifecycle(invalid_builder_delta,invalid_builder_record,
+          "invalid-builder-node","invalid-builder-edge",lifecycle_error));
+      CHECK(invalid_builder_delta.nodes.empty()&&invalid_builder_delta.relations.empty());
       auto state=graph.cluster_lifecycle("lifecycle-cluster");
       CHECK(state && state->state==ClusterLifecycleState::Dormant && state->revision==1);
 
