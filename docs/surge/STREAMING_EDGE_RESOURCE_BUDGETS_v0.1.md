@@ -182,3 +182,12 @@ The production C ABI Handle now owns the ResourceBudget and BudgetedContextGraph
 The legacy surge_packet_core_open ABI currently constructs a compatibility budget whose dimensions are SIZE_MAX. This is deliberate to preserve existing callers and avoid imposing an undocumented host memory profile. Consequently this migration centralizes and exercises the admission boundary, but it does not yet impose a finite resident/transient cap on legacy C ABI clients. A budget-configured open/profile API and host-selected finite limits remain required for enforceable deployment budgets.
 
 Read-only graph access remains on ContextGraph. This change covers the C ABI runtime entry points; standalone C++ users that instantiate ContextGraph directly can still bypass the gateway. The public direct mutators must be restricted or migrated in the next Core API pass. Logical byte estimates remain distinct from allocator usage and RSS.
+
+
+## Host-configurable Core budget profile (2026-11-19)
+
+The C ABI now exposes surge_packet_core_open_with_limits with six explicit limits: resident bytes, transient bytes, retained events, retained clusters, decision candidates and decision evidence. Zero is zero capacity. The legacy surge_packet_core_open remains source/binary compatible and uses SIZE_MAX compatibility limits; it must not be treated as a bounded edge profile.
+
+CppCoreBridge and SemanticCoreBridge accept a resource_limits mapping with exactly those six non-negative integer fields. The mapping is validated against size_t before crossing ctypes. With a finite profile, ContextGraph recovery must fit the configured resident/event/cluster budgets, and each graph mutation must acquire its transient and retained reservations before commit. The new Python integration test checks that a deliberately undersized transient budget rejects a graph write without advancing the state version, and that incomplete profiles are rejected before opening the Core.
+
+The limits currently govern the graph mutation gateway's logical accounting dimensions. They do not yet automatically constrain packet admission, journal buffers, ONNX allocations, language-pack scratch, all decision candidate/evidence arrays or process RSS. Hosts should therefore configure each subsystem's supported budgets separately until the shared runtime-wide lease is completed.
