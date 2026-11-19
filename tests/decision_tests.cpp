@@ -36,5 +36,17 @@ int main() {
     {"kanji", 0, {{"k","orthography","surface",0.5,1.0,true}}},
     {"kana", 1, {{"h","orthography","surface",1.0,1.0,true}}}});
   assert(normalized.selected_candidate_id == "kana");
+
+  DecisionPolicy calibrated;
+  calibrated.family_weights["semantic"] = 0.0;
+  auto calibration_changes_choice = RecognitionDecision::evaluate(
+      {decoder_top, contextual}, calibrated);
+  assert(calibration_changes_choice.disposition == DecisionDisposition::Select);
+  assert(calibration_changes_choice.selected_candidate_id == "top1");
+
+  calibrated.family_weights["lexical"] = -1.0;
+  auto invalid_calibration = RecognitionDecision::evaluate({decoder_top}, calibrated);
+  assert(invalid_calibration.disposition == DecisionDisposition::Reject);
+  assert(invalid_calibration.reason == "RECOGNITION_INVALID_FAMILY_WEIGHT");
   return 0;
 }
