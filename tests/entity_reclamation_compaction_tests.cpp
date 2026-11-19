@@ -2,6 +2,7 @@
 #include "surge/event_journal.hpp"
 #include "surge/snapshot_coordinator.hpp"
 #include "surge/snapshot_domains.hpp"
+#include "surge/journal_backup_retention.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -92,6 +93,9 @@ int main() {
     CHECK(recovered_graph.state_version() == 2);
     CHECK(recovered_graph.nodes().count("reclaimable-entity") == 0);
     CHECK(recovered_graph.nodes().count("retained-cluster") == 1);
+    CHECK(prune_verified_journal_backup(journal_path, recovered_journal, store, &error));
+    CHECK(!std::filesystem::exists(journal_path + ".bak"));
+    CHECK(std::filesystem::exists(snapshot_path + ".bak"));
   }
 
   // Snapshot persistence failure must leave the original journal generation
