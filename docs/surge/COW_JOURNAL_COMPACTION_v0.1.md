@@ -31,6 +31,7 @@ The old journal generation remains at `.bak` as an independent full replay sourc
 - `max_events` and `max_payload_bytes` apply to the active tail after compaction. `max_transactions` continues to count retained transaction identities across the journal lifetime.
 - `EventJournalLimits::max_identity_bytes` optionally caps the retained identity-index budget across idempotency keys, transaction IDs, and event IDs. The accounting includes original key bytes, fingerprint bytes where applicable, and a conservative 128-byte per-entry structural allowance. Zero preserves the historical unlimited behavior.
 - `identity_memory_bytes()` exposes the current logical budget usage. This is a conservative accounting metric, not a process-RSS measurement or allocator-exact byte count. The limit is checked while decoding compacted manifests and before accepting a new commit, so configured limits fail closed before the index grows beyond its budget.
+- Event-ID membership uses a `std::set` rather than a key-to-boolean map, avoiding a redundant mapped value and reducing per-entry node overhead without changing exact membership semantics.
 - The snapshot envelope and backup journal are copied/written using bounded or streaming file operations; compaction does not require loading the old journal into memory.
 - Compaction does not claim to bound total process RSS. The identity maps remain proportional to historical transaction/event identities.
 - One writer lock and application-level quiescence are required.
