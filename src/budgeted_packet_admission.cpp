@@ -18,8 +18,9 @@ bool BudgetedPacketAdmissionCoordinator::checked_add(
 
 bool BudgetedPacketAdmissionCoordinator::packet_resident_cost(
     const ValidatedRecognitionPacket& p, std::size_t& bytes) noexcept {
-  bytes = 256;  // conservative map/node/object overhead allowance
+  bytes = 512;  // map/node/object and encoded-envelope overhead allowance
   return checked_add(bytes, p.packet_id.size()) &&
+      checked_add(bytes, std::string("recognition-packet:").size()) &&
       checked_add(bytes, p.idempotency_key.size()) &&
       checked_add(bytes, p.context_id.size()) &&
       checked_add(bytes, p.source_id.size()) &&
