@@ -13,7 +13,7 @@ int main() {
   {
     EventJournal journal(path);
     CHECK(journal.open());
-    ResourceBudget budget({4096, 4096, 4, 4, 16, 64});
+    ResourceBudget budget({422, 4096, 1, 4, 16, 64});
     BudgetedPacketAdmissionCoordinator admission(journal, budget);
     std::string error;
     CHECK(admission.recover(error));
