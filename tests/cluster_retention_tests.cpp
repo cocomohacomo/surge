@@ -16,7 +16,7 @@ int main(){
    {{"low-a",NodeKind::Cluster,"low importance",{}}},{{"low-b",NodeKind::ChaosCluster,"low importance chaos",{}}},{{"archived",NodeKind::Cluster,"old archived topic",{}}},
    {{"q-open",NodeKind::Question,"unresolved question",{}}},{{"aspect-open",NodeKind::QuestionAspect,"open aspect",{"q-open"}}},
    {{"focus-interest",NodeKind::Interest,"active focus interest",{"aspect-open","focus-child"}}},
-   {{"shared-evidence",NodeKind::Evidence,"shared provenance",{}}}
+   {{"shared-evidence",NodeKind::Evidence,"shared provenance",{}}},{{"archived-shared-evidence",NodeKind::Evidence,"archived shared provenance",{}}}
   };
   seed.relations={
    {{"root-focus",RelationKind::Contains,"root","focus-child"}},{{"root-question",RelationKind::Contains,"root","question-child"}},
@@ -24,7 +24,7 @@ int main(){
    {{"root-low-b",RelationKind::Contains,"root","low-b"}},{{"root-archived",RelationKind::Contains,"root","archived"}},{{"question-membership",RelationKind::Contains,"question-child","q-open"}},
    {{"focus-dependency",RelationKind::DependsOn,"focus-child","dependency-child"}},
    {{"focus-interest-membership",RelationKind::Contains,"focus-child","focus-interest"}},
-   {{"shared-a",RelationKind::Contains,"low-a","shared-evidence"}},{{"shared-b",RelationKind::Contains,"low-b","shared-evidence"}}
+   {{"shared-a",RelationKind::Contains,"low-a","shared-evidence"}},{{"shared-b",RelationKind::Contains,"low-b","shared-evidence"}},{{"archived-shared",RelationKind::Contains,"archived","archived-shared-evidence"}},{{"low-b-archived-shared",RelationKind::Contains,"low-b","archived-shared-evidence"}}
   };
   seed.focus=SetFocus{{"focus-child","focus-interest",false}};assert(graph.apply(seed).committed);
   SemanticDelta archive;archive.delta_id="archive-existing";archive.idempotency_key="archive-existing";archive.expected_state_version=graph.state_version();
@@ -37,7 +37,12 @@ int main(){
   const auto plan=ClusterRetentionPlanner::plan(graph,candidates,5);assert(plan.accepted);
   assert(plan.retained_cluster_ids.size()==5);assert(plan.forget_cluster_ids.size()==1);assert(plan.already_inactive_cluster_ids.size()==1&&plan.already_inactive_cluster_ids.front()=="archived");
   assert(plan.forget_cluster_ids.front()=="low-a");assert(plan.protected_cluster_ids.size()==4);
-  assert(plan.preserved_shared_member_ids.size()==1);assert(plan.preserved_shared_member_ids.front()=="shared-evidence");
+  assert(plan.preserved_shared_member_ids.size()==2);
+  assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"shared-evidence")!=plan.preserved_shared_member_ids.end());
+  assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"archived-shared-evidence")!=plan.preserved_shared_member_ids.end());
+  auto pinned_archived=candidates;for(auto& candidate:pinned_archived)if(candidate.cluster_id=="archived")candidate.pinned=true;
+  const auto protected_inactive=ClusterRetentionPlanner::plan(graph,pinned_archived,10);
+  assert(!protected_inactive.accepted&&protected_inactive.error=="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER");
   assert(graph.nodes().count("low-a")==1);
   const auto floor=ClusterRetentionPlanner::plan(graph,candidates,3);assert(!floor.accepted);
   assert(floor.error=="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED");
