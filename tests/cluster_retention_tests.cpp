@@ -1,4 +1,5 @@
 #include "surge/cluster_retention.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <limits>
@@ -24,7 +25,7 @@ int main(){
    {{"root-low-b",RelationKind::Contains,"root","low-b"}},{{"root-archived",RelationKind::Contains,"root","archived"}},{{"question-membership",RelationKind::Contains,"question-child","q-open"}},
    {{"focus-dependency",RelationKind::DependsOn,"focus-child","dependency-child"}},
    {{"focus-interest-membership",RelationKind::Contains,"focus-child","focus-interest"}},
-   {{"shared-a",RelationKind::Contains,"low-a","shared-evidence"}},{{"shared-b",RelationKind::Contains,"low-b","shared-evidence"}},{{"archived-shared",RelationKind::Contains,"archived","archived-shared-evidence"}},{{"low-b-archived-shared",RelationKind::Contains,"low-b","archived-shared-evidence"}}
+   {{"shared-a",RelationKind::Contains,"low-a","shared-evidence"}},{{"shared-b",RelationKind::Contains,"low-b","shared-evidence"}},{{"archived-shared",RelationKind::Contains,"archived","archived-shared-evidence"}},{{"low-b-archived-shared",RelationKind::Contains,"low-b","archived-shared-evidence"}},{{"low-a-archived-shared",RelationKind::Contains,"low-a","archived-shared-evidence"}}
   };
   seed.focus=SetFocus{{"focus-child","focus-interest",false}};assert(graph.apply(seed).committed);
   SemanticDelta archive;archive.delta_id="archive-existing";archive.idempotency_key="archive-existing";archive.expected_state_version=graph.state_version();
