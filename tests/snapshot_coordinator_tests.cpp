@@ -71,6 +71,8 @@ int main() {
   CHECK(!coordinator.restore(bytes, "ctx-a", 8, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
 
+  const std::string valid_snapshot_bytes = bytes;
+
   // Capture refuses a bundle whose payload + bundle + encoded envelope peak
   // would exceed the configured logical staging ceiling.
   SnapshotCoordinatorLimits capture_limits;
@@ -93,7 +95,7 @@ int main() {
   MemoryDomain guarded_chaos("chaos", "preserve-chaos");
   CHECK(guarded.register_domain(&guarded_graph, &error));
   CHECK(guarded.register_domain(&guarded_chaos, &error));
-  CHECK(!guarded.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(!guarded.restore(valid_snapshot_bytes, "ctx-a", 7, 19, &error));
   CHECK(error == "RESOURCE_BUDGET_EXCEEDED");
   CHECK(guarded_graph.value() == "preserve-graph");
   CHECK(guarded_chaos.value() == "preserve-chaos");
@@ -101,14 +103,14 @@ int main() {
       ResourceKind::TransientBytes)] == 0);
 
   ResourceBudgetLimits sufficient_limits;
-  sufficient_limits.transient_bytes = bytes.size() * 3;
+  sufficient_limits.transient_bytes = valid_snapshot_bytes.size() * 3;
   ResourceBudget sufficient_budget(sufficient_limits);
   SnapshotCoordinator budgeted({}, &sufficient_budget);
   MemoryDomain budgeted_graph("graph", "old-graph");
   MemoryDomain budgeted_chaos("chaos", "old-chaos");
   CHECK(budgeted.register_domain(&budgeted_graph, &error));
   CHECK(budgeted.register_domain(&budgeted_chaos, &error));
-  CHECK(budgeted.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(budgeted.restore(valid_snapshot_bytes, "ctx-a", 7, 19, &error));
   CHECK(budgeted_graph.value() == "graph-state");
   CHECK(budgeted_chaos.value() == "chaos-state");
   CHECK(sufficient_budget.snapshot().used[static_cast<std::size_t>(
