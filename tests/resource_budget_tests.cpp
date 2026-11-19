@@ -11,6 +11,9 @@ int main() {
   ResourceLease resident;
   assert(budget.try_acquire(ResourceKind::ResidentBytes, 768, resident, error));
   assert(budget.snapshot().used[0] == 768);
+  assert(!budget.try_acquire(ResourceKind::ResidentBytes, 1, resident, error));
+  assert(error == "RESOURCE_LEASE_ALREADY_ACTIVE");
+  assert(budget.snapshot().used[0] == 768);
   ResourceLease too_large;
   assert(!budget.try_acquire(ResourceKind::ResidentBytes, 257, too_large, error));
   assert(error == "RESOURCE_BUDGET_EXCEEDED");
