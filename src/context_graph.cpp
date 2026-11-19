@@ -845,13 +845,63 @@ bool ContextGraph::append_entity_reclamation(SemanticDelta& delta,
     const std::string& entity_node_id,std::string& error) const {
  error.clear();
  if(entity_node_id.empty()){error="ENTITY_RECLAMATION_INPUT_INVALID";return false;}
- State candidate=state_;
- for(const auto& relation_id:delta.remove_relation_ids)
-  if(!apply_relation_removal(candidate,relation_id,error))return false;
- if(!apply_entity_reclamation(candidate,entity_node_id,error))return false;
  if(std::find(delta.reclaim_entity_node_ids.begin(),
       delta.reclaim_entity_node_ids.end(),entity_node_id)!=delta.reclaim_entity_node_ids.end()){
   error="ENTITY_RECLAMATION_DUPLICATE";return false;
+ }
+ const auto target=state_.nodes.find(entity_node_id);
+ if(target==state_.nodes.end()||target->second.kind!=NodeKind::Entity){
+  error="ENTITY_RECLAMATION_TARGET_NOT_ELIGIBLE";return false;
+ }
+ std::set<std::string> removed_relations;
+ for(const auto& id:delta.remove_relation_ids){
+  const auto edge=state_.relations.find(id);
+  if(edge==state_.relations.end()||edge->second.kind!=RelationKind::Contains||
+     !removed_relations.insert(id).second){
+   error="CLUSTER_MEMBERSHIP_RELATION_NOT_REMOVABLE";return false;
+  }
+  const auto parent=state_.nodes.find(edge->second.from);
+  if(parent==state_.nodes.end()||
+     (parent->second.kind!=NodeKind::Cluster&&parent->second.kind!=NodeKind::ChaosCluster)||
+     edge->second.to==entity_node_id&&target->second.kind==NodeKind::ClusterLifecycle){
+   error="CLUSTER_MEMBERSHIP_RELATION_NOT_REMOVABLE";return false;
+  }
+ }
+ for(const auto& edge:state_.relations){
+  if(removed_relations.count(edge.first))continue;
+  if(edge.second.from==entity_node_id||edge.second.to==entity_node_id){
+   error="ENTITY_RECLAMATION_RELATION_REFERENCES_REMAIN";return false;
+  }
+ }
+ for(const auto& item:state_.nodes){
+  if(item.first==entity_node_id)continue;
+  if(std::find(item.second.references.begin(),item.second.references.end(),
+      entity_node_id)!=item.second.references.end()){
+   error="ENTITY_RECLAMATION_TYPED_REFERENCES_REMAIN";return false;
+  }
+ }
+ if((state_.focus&&(state_.focus->cluster_id==entity_node_id||
+      state_.focus->interest_id==entity_node_id))||
+    std::any_of(state_.focus_history.begin(),state_.focus_history.end(),
+      [&](const FocusRecord& focus){return focus.cluster_id==entity_node_id||
+        focus.interest_id==entity_node_id;})){
+  error="ENTITY_RECLAMATION_FOCUS_REFERENCE_REMAINS";return false;
+ }
+ for(const auto& item:state_.scope_spans){
+  const auto& span=item.second.proposal;
+  if(std::find(span.target_refs.begin(),span.target_refs.end(),entity_node_id)!=span.target_refs.end()||
+     std::find(span.antecedent_refs.begin(),span.antecedent_refs.end(),entity_node_id)!=span.antecedent_refs.end()){
+   error="ENTITY_RECLAMATION_SCOPE_REFERENCE_REMAINS";return false;
+  }
+ }
+ for(const auto& item:state_.dependency_evaluations){
+  const auto& record=item.second;
+  if(std::find(record.impacted_nodes.begin(),record.impacted_nodes.end(),entity_node_id)!=record.impacted_nodes.end()||
+     std::any_of(record.triggered.begin(),record.triggered.end(),[&](const DependencyTrigger& t){
+       return t.dependency_id==entity_node_id||t.prerequisite_id==entity_node_id||t.dependent_id==entity_node_id;})||
+     std::find(record.rejected_dependencies.begin(),record.rejected_dependencies.end(),entity_node_id)!=record.rejected_dependencies.end()){
+   error="ENTITY_RECLAMATION_DEPENDENCY_HISTORY_REMAINS";return false;
+  }
  }
  delta.reclaim_entity_node_ids.push_back(entity_node_id);
  return true;
