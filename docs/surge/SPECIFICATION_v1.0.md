@@ -253,3 +253,15 @@ SemanticDelta: ACTIVE targets move to DORMANT, and DORMANT targets move to
 ARCHIVED. A stale plan is rejected before mutation. This operation changes
 lifecycle metadata only; it does not remove memberships, filter retrieval,
 delete payloads or compact the graph.
+
+
+### Journaled cluster membership unlink implementation increment
+
+`ContextGraph::append_cluster_unmembership` and its budgeted gateway
+counterpart now stage an explicit removal of an existing Cluster/ChaosCluster
+`Contains` edge. The journal records `RELATION_REMOVE` so replay
+reconstructs the same active membership graph. The member node is preserved
+regardless of whether other memberships remain. ClusterLifecycle audit edges
+are protected from this operation. This is an unlink-only operation, not
+payload deletion: shared-reference accounting, final-reference reclamation,
+tombstone coupling and compaction remain incomplete.
