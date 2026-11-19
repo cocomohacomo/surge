@@ -46,6 +46,8 @@ struct DecisionPolicy {
   std::size_t max_surface_sets{256};
   std::size_t max_surface_hypotheses_total{4096};
   std::size_t max_surface_trace_entries{4096};
+  // Aggregate evidence bound across all surface hypotheses, before materialization.
+  std::size_t max_surface_evidence_total{16384};
   std::size_t max_source_ref_bytes{1024};
   std::size_t max_surface_bytes{4096};
   double minimum_score{-1.0e9};
