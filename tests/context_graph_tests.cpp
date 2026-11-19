@@ -241,6 +241,49 @@ int main(){
       CHECK(recovered.evidence_validity_at("ev-validity-subject","2026-03-01T00:00:00Z")==ClaimTemporalState::Valid);
     }
   }
+  // Membership unlink is an append-only journal operation. It removes
+  // only the selected Contains edge; shared canonical payload survives.
+  const auto unlink_path=(root/"cluster-membership-unlink.sgj").string();
+  {
+    ContextGraph graph(unlink_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="unlink-seed";seed.idempotency_key="unlink-seed";
+    seed.expected_state_version=0;
+    seed.nodes={{{"unlink-a",NodeKind::Cluster,"a",{} }},
+                {{"unlink-b",NodeKind::Cluster,"b",{} }},
+                {{"unlink-shared",NodeKind::Evidence,"shared evidence",{} }}};
+    seed.relations={{{"unlink-a-edge",RelationKind::Contains,"unlink-a","unlink-shared"}},
+                    {{"unlink-b-edge",RelationKind::Contains,"unlink-b","unlink-shared"}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta unlink;unlink.delta_id="unlink-a-membership";
+    unlink.idempotency_key="unlink-a-membership";unlink.expected_state_version=1;
+    std::string error;
+    CHECK(graph.append_cluster_unmembership(unlink,"unlink-a","unlink-shared",
+        "unlink-a-removal",error));
+    CHECK(graph.apply(unlink).committed);
+    CHECK(graph.relations().count("unlink-a-edge")==0);
+    CHECK(graph.relations().count("unlink-b-edge")==1);
+    CHECK(graph.nodes().count("unlink-shared")==1);
+  }
+  {
+    ContextGraph recovered(unlink_path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==2);
+    CHECK(recovered.relations().count("unlink-a-edge")==0);
+    CHECK(recovered.relations().count("unlink-b-edge")==1);
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    std::string error;
+    SemanticDelta last;last.delta_id="unlink-last";last.idempotency_key="unlink-last";
+    last.expected_state_version=2;
+    CHECK(recovered.append_cluster_unmembership(last,"unlink-b","unlink-shared",
+        "unlink-b-removal",error));
+    CHECK(recovered.apply(last).committed);
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.relations().count("unlink-b-edge")==0);
+  }
+  {
+    ContextGraph recovered(unlink_path);CHECK(recovered.open());
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.relations().empty());
+  }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);CHECK(graph.open());
