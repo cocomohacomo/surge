@@ -130,5 +130,13 @@ int main() {
   assert(source_overflow.disposition == DecisionDisposition::Defer);
   assert(source_overflow.reason == "UNIFIED_SOURCE_REF_BUDGET_EXCEEDED");
 
+  DecisionPolicy surface_evidence_budget;
+  surface_evidence_budget.max_surface_evidence_total = 1;
+  auto surface_evidence_overflow = UnifiedDecision::evaluate({joint}, surface_evidence_budget);
+  assert(surface_evidence_overflow.disposition == DecisionDisposition::Defer);
+  assert(surface_evidence_overflow.reason == "UNIFIED_SURFACE_EVIDENCE_BUDGET_EXCEEDED");
+  assert(surface_evidence_overflow.selected_surfaces.empty());
+  assert(surface_evidence_overflow.surface_trace.empty());
+
   return 0;
 }
