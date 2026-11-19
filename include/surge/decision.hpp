@@ -18,10 +18,24 @@ struct DecisionEvidence {
   bool valid{true};
 };
 
+struct DecisionSurfaceHypothesis {
+  std::string hypothesis_id;
+  std::size_t stable_order{0};
+  std::string surface;
+  std::vector<DecisionEvidence> evidence;
+};
+
+struct DecisionSurfaceSet {
+  std::string source_ref;
+  std::vector<DecisionSurfaceHypothesis> hypotheses;
+};
+
 struct DecisionCandidate {
   std::string candidate_id;
   std::size_t stable_order{0};
   std::vector<DecisionEvidence> evidence;
+  // Surface realization is evaluated in the same Core decision transaction.
+  std::vector<DecisionSurfaceSet> surface_sets;
 };
 
 struct DecisionPolicy {
@@ -49,17 +63,15 @@ struct DecisionResult {
   double selected_score{0.0};
   double margin{0.0};
   std::vector<CandidateDecisionTrace> trace;
+  std::map<std::string, std::string> selected_surfaces;
+  std::vector<CandidateDecisionTrace> surface_trace;
 };
 
-class RecognitionDecision {
+// One atomic Core decision: interpretation ranking and surface realization are
+// evaluated together under one policy, trace and disposition.
+class UnifiedDecision {
  public:
   static DecisionResult evaluate(const std::vector<DecisionCandidate>& candidates,
-                                 const DecisionPolicy& policy = {});
-};
-
-class NormalizationDecision {
- public:
-  static DecisionResult evaluate(const std::vector<DecisionCandidate>& hypotheses,
                                  const DecisionPolicy& policy = {});
 };
 
