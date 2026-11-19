@@ -456,6 +456,19 @@ int main(){
     CHECK(!graph.append_cluster_membership(delta,"input-root","TOPIC",
         "partition","claim-a",std::string(257,'x'),invalid_cluster_id,error));
     CHECK(error=="CLUSTER_CLASSIFICATION_INPUT_INVALID");
+    SemanticDelta conflict_delta;
+    conflict_delta.nodes={{{"input-root",NodeKind::Cluster,"stream context",{}}},
+                          {{"claim-a",NodeKind::Claim,"candidate claim",{}}}};
+    conflict_delta.relations.push_back({{delta.relations.front().relation.id,
+        RelationKind::Contains,"wrong-parent","wrong-child"}});
+    const auto node_count_before=conflict_delta.nodes.size();
+    const auto relation_count_before=conflict_delta.relations.size();
+    CHECK(!graph.append_cluster_membership(conflict_delta,"input-root",
+        "LEXICAL_INTERPRETATION","source-digest:span-0-3","claim-a",
+        "classification-test",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT");
+    CHECK(conflict_delta.nodes.size()==node_count_before);
+    CHECK(conflict_delta.relations.size()==relation_count_before);
     CHECK(!classified_cluster_id.empty());
     CHECK(graph.apply(delta).committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
