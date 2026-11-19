@@ -462,7 +462,12 @@ int main() {
     assert(result.committed);
     assert(graph.nodes().count("budgeted-reclaim-entity")==0);
     const auto resident_after = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
-    assert(resident_after < resident_before);
+    // The two durable removal commands remain reserved; the reclaimed Entity's
+    // own node reservation (including its content bytes) must be subtracted.
+    const auto expected_net = static_cast<std::size_t>(256 + std::string("budgeted-reclaim-edge").size() -
+        std::string("entity").size());
+    assert(resident_after == resident_before + expected_net);
+    assert(guarded.accounted_resident_bytes() == resident_after);
   }
   std::remove(reclaim_path.c_str());
 
