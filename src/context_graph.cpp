@@ -862,8 +862,7 @@ bool ContextGraph::append_entity_reclamation(SemanticDelta& delta,
   }
   const auto parent=state_.nodes.find(edge->second.from);
   if(parent==state_.nodes.end()||
-     (parent->second.kind!=NodeKind::Cluster&&parent->second.kind!=NodeKind::ChaosCluster)||
-     edge->second.to==entity_node_id&&target->second.kind==NodeKind::ClusterLifecycle){
+     (parent->second.kind!=NodeKind::Cluster&&parent->second.kind!=NodeKind::ChaosCluster)){
    error="CLUSTER_MEMBERSHIP_RELATION_NOT_REMOVABLE";return false;
   }
  }
