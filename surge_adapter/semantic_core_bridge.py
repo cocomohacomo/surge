@@ -99,8 +99,8 @@ class _JournalEvent(ctypes.Structure):
 class SemanticCoreBridge(CppCoreBridge):
     """Packet admission + typed SemanticDelta commit over one shared journal."""
 
-    def __init__(self, journal_path, library_path=None):
-        super().__init__(journal_path, library_path)
+    def __init__(self, journal_path, library_path=None, resource_limits=None):
+        super().__init__(journal_path, library_path, resource_limits=resource_limits)
         lib = self._lib
         lib.surge_retention_journal_commit.argtypes = [
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint64,
