@@ -15,6 +15,17 @@ class MemoryDomain final : public surge::SnapshotDomain {
   bool capture(std::string* payload, std::string*) const override {
     *payload = value_; return true;
   }
+  bool capture_chunks(const surge::SnapshotChunkWriter& writer,
+                      std::string* error) const override {
+    for (std::size_t offset = 0; offset < value_.size();) {
+      const std::size_t amount = value_.size() - offset < 3
+          ? value_.size() - offset : 3;
+      if (!writer(value_.data() + offset, amount, error)) return false;
+      offset += amount;
+    }
+    if (error) error->clear();
+    return true;
+  }
   class Prepared final : public surge::PreparedSnapshotRestore {
    public:
     Prepared(MemoryDomain* owner, std::string value) : owner_(owner), value_(std::move(value)) {}
