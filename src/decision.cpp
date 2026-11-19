@@ -22,6 +22,12 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
     result.reason = std::string(stage) + "_NO_CANDIDATES";
     return result;
   }
+  if (!std::isfinite(policy.minimum_score) ||
+      !std::isfinite(policy.minimum_margin) || policy.minimum_margin < 0.0) {
+    result.disposition = DecisionDisposition::Reject;
+    result.reason = std::string(stage) + "_INVALID_POLICY_THRESHOLD";
+    return result;
+  }
   if (policy.max_candidates == 0 || candidates.size() > policy.max_candidates) {
     result.disposition = DecisionDisposition::Defer;
     result.reason = std::string(stage) + "_CANDIDATE_BUDGET_EXCEEDED";
@@ -39,6 +45,12 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
       return result;
     }
   }
+  if (policy.max_evidence_per_candidate == 0 || policy.max_family_weights == 0 ||
+      policy.max_source_ref_bytes == 0 || policy.max_surface_bytes == 0) {
+    result.disposition = DecisionDisposition::Reject;
+    result.reason = std::string(stage) + "_INVALID_RESOURCE_POLICY";
+    return result;
+  }
   std::set<std::string> ids;
   std::vector<Scored> scored;
   scored.reserve(candidates.size());
@@ -55,13 +67,21 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
     }
     // Correlated evidence is grouped by (family, correlation_group). Only the
     // strongest positive/negative observation in each group contributes.
+    if (candidate.candidate_id.size() > 1024) {
+      result.disposition = DecisionDisposition::Defer;
+      result.reason = std::string(stage) + "_IDENTIFIER_BUDGET_EXCEEDED";
+      return result;
+    }
     std::map<std::pair<std::string, std::string>, double> groups;
     std::set<std::string> evidence_ids;
+    bool effective_evidence = false;
     Scored item;
     item.trace.candidate_id = candidate.candidate_id;
     item.stable_order = candidate.stable_order;
     for (const auto& evidence : candidate.evidence) {
-      if (evidence.evidence_id.empty() || !evidence_ids.insert(evidence.evidence_id).second ||
+      if (evidence.evidence_id.empty() || evidence.evidence_id.size() > 1024 ||
+          evidence.family.size() > 128 || evidence.correlation_group.size() > 1024 ||
+          !evidence_ids.insert(evidence.evidence_id).second ||
           evidence.family.empty() || !std::isfinite(evidence.value) ||
           !std::isfinite(evidence.weight) || evidence.weight < 0.0) {
         result.disposition = DecisionDisposition::Reject;
@@ -91,9 +111,11 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
       const auto found = groups.find(group);
       if (found == groups.end() || std::abs(contribution) > std::abs(found->second))
         groups[group] = contribution;
+      if (contribution != 0.0) effective_evidence = true;
       ++item.trace.accepted_evidence;
     }
-    if (policy.require_valid_evidence && item.trace.accepted_evidence == 0) {
+    if ((policy.require_valid_evidence && item.trace.accepted_evidence == 0) ||
+        !effective_evidence) {
       item.trace.score = -INFINITY;
     } else {
       for (const auto& group : groups) {
@@ -150,9 +172,26 @@ DecisionResult UnifiedDecision::evaluate(
     return result;
   }
 
+  if (selected->surface_sets.size() > policy.max_surface_sets) {
+    result.disposition = DecisionDisposition::Defer;
+    result.reason = "UNIFIED_SURFACE_SET_BUDGET_EXCEEDED";
+    result.selected_surfaces.clear();
+    return result;
+  }
+  std::size_t total_hypotheses = 0;
+  std::size_t total_trace_entries = 0;
   std::set<std::string> source_refs;
   for (const auto& surface_set : selected->surface_sets) {
+    if (surface_set.hypotheses.size() > policy.max_surface_hypotheses_total -
+        std::min(total_hypotheses, policy.max_surface_hypotheses_total)) {
+      result.disposition = DecisionDisposition::Defer;
+      result.reason = "UNIFIED_SURFACE_HYPOTHESIS_BUDGET_EXCEEDED";
+      result.selected_surfaces.clear();
+      return result;
+    }
+    total_hypotheses += surface_set.hypotheses.size();
     if (surface_set.source_ref.empty() ||
+        surface_set.source_ref.size() > policy.max_source_ref_bytes ||
         !source_refs.insert(surface_set.source_ref).second ||
         surface_set.hypotheses.empty()) {
       result.disposition = DecisionDisposition::Reject;
@@ -163,7 +202,7 @@ DecisionResult UnifiedDecision::evaluate(
     std::vector<DecisionCandidate> hypotheses;
     hypotheses.reserve(surface_set.hypotheses.size());
     for (const auto& hypothesis : surface_set.hypotheses) {
-      if (hypothesis.surface.empty()) {
+      if (hypothesis.surface.empty() || hypothesis.surface.size() > policy.max_surface_bytes) {
         result.disposition = DecisionDisposition::Reject;
         result.reason = "UNIFIED_EMPTY_SURFACE";
         result.selected_surfaces.clear();
@@ -176,6 +215,15 @@ DecisionResult UnifiedDecision::evaluate(
       hypotheses.push_back(std::move(candidate));
     }
     const auto surface = evaluate_impl(hypotheses, policy, "UNIFIED_SURFACE");
+    if (surface.trace.size() > policy.max_surface_trace_entries -
+        std::min(total_trace_entries, policy.max_surface_trace_entries)) {
+      result.disposition = DecisionDisposition::Defer;
+      result.reason = "UNIFIED_SURFACE_TRACE_BUDGET_EXCEEDED";
+      result.selected_surfaces.clear();
+      result.surface_trace.clear();
+      return result;
+    }
+    total_trace_entries += surface.trace.size();
     result.surface_trace.insert(result.surface_trace.end(),
         surface.trace.begin(), surface.trace.end());
     if (surface.disposition != DecisionDisposition::Select) {
