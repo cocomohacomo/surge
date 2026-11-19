@@ -21,6 +21,8 @@ struct EventJournalLimits {
   std::size_t max_events{0};
   std::size_t max_payload_bytes{0};
   std::size_t max_transactions{0};
+  // Conservative logical budget for retained identity indexes. Zero is unlimited.
+  std::size_t max_identity_bytes{0};
 };
 struct JournalCommitResult {
   bool committed{false};
@@ -76,6 +78,7 @@ class EventJournal {
   std::string last_error() const;
   const std::string& path() const { return path_; }
   JournalCheckpointInfo checkpoint_info() const;
+  std::size_t identity_memory_bytes() const;
  private:
   friend class SnapshotCoordinator;
   bool compact_after_checkpoint(const std::string& snapshot_bytes,
@@ -88,6 +91,7 @@ class EventJournal {
   std::string path_;
   EventJournalLimits limits_{};
   std::size_t retained_payload_bytes_{0};
+  std::size_t identity_memory_bytes_{0};
   std::intptr_t lock_handle_{-1};
   AppendFrameGate append_frame_gate_;
   SyncFrameGate sync_frame_gate_;
