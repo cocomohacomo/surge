@@ -190,6 +190,10 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim&&a!=NodeKind::Question)){e="GRAPH_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Duplicates:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Contains:
+  if ((a == NodeKind::Question || b == NodeKind::Question) &&
+      !(a == NodeKind::Question && b == NodeKind::Question)) {
+   e = "QUESTION_RELATION_TYPE_INVALID"; return false;
+  }
   if(!((a==NodeKind::Question&&b==NodeKind::Question)||
        (a==NodeKind::Cluster&&(b==NodeKind::Cluster||b==NodeKind::Claim||
                                b==NodeKind::Entity||b==NodeKind::Evidence)))){
