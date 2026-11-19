@@ -56,10 +56,19 @@ int main() {
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 400);
     assert(bounded.activate_at_boundary("bounded-session", "ja-budget", "1.0.0", true, error));
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 64);
-    assert(!bounded.activate_at_boundary("bounded-session", "ja-budget", "1.0.0", true, error) == false);
+    LanguageSetManifest second = pack;
+    second.language_set_id = "en-budget";
+    second.resident_bytes = 100;
+    assert(bounded.install_manifest(second, error));
+    assert(!bounded.activate_at_boundary("bounded-session", "en-budget", "1.0.0", true, error));
+    LanguageSetManifest still_active;
+    assert(bounded.active_manifest("bounded-session", still_active, error));
+    assert(still_active.language_set_id == "ja-budget");
     assert(bounded.release_session("bounded-session"));
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
     assert(bounded.uninstall("ja-budget", "1.0.0", error));
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 100);
+    assert(bounded.uninstall("en-budget", "1.0.0", error));
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 0);
   }
   return 0;
