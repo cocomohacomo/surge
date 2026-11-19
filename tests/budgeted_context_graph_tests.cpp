@@ -458,8 +458,11 @@ int main() {
         "budgeted-reclaim-entity",error));
     const auto result=guarded.append_entity_reclamation(std::move(reclaim),
         "budgeted-reclaim-entity",error);
+    const auto resident_before = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
     assert(result.committed);
     assert(graph.nodes().count("budgeted-reclaim-entity")==0);
+    const auto resident_after = budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)];
+    assert(resident_after < resident_before);
   }
   std::remove(reclaim_path.c_str());
 
