@@ -176,6 +176,7 @@ DecisionResult UnifiedDecision::evaluate(
     result.disposition = DecisionDisposition::Defer;
     result.reason = "UNIFIED_SURFACE_SET_BUDGET_EXCEEDED";
     result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
     return result;
   }
   std::size_t total_hypotheses = 0;
@@ -187,6 +188,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = DecisionDisposition::Defer;
       result.reason = "UNIFIED_SURFACE_HYPOTHESIS_BUDGET_EXCEEDED";
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       return result;
     }
     total_hypotheses += surface_set.hypotheses.size();
@@ -194,6 +196,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = DecisionDisposition::Defer;
       result.reason = "UNIFIED_SOURCE_REF_BUDGET_EXCEEDED";
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       return result;
     }
     if (surface_set.source_ref.empty() ||
@@ -202,6 +205,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = DecisionDisposition::Reject;
       result.reason = "UNIFIED_INVALID_SURFACE_SET";
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       return result;
     }
     std::vector<DecisionCandidate> hypotheses;
@@ -211,12 +215,14 @@ DecisionResult UnifiedDecision::evaluate(
         result.disposition = DecisionDisposition::Defer;
         result.reason = "UNIFIED_SURFACE_BYTES_BUDGET_EXCEEDED";
         result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
         return result;
       }
       if (hypothesis.surface.empty()) {
         result.disposition = DecisionDisposition::Reject;
         result.reason = "UNIFIED_EMPTY_SURFACE";
         result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
         return result;
       }
       DecisionCandidate candidate;
@@ -231,6 +237,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = DecisionDisposition::Defer;
       result.reason = "UNIFIED_SURFACE_TRACE_BUDGET_EXCEEDED";
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       result.surface_trace.clear();
       return result;
     }
@@ -241,6 +248,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = surface.disposition;
       result.reason = surface.reason;
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       return result;
     }
     const auto chosen = std::find_if(surface_set.hypotheses.begin(),
@@ -251,6 +259,7 @@ DecisionResult UnifiedDecision::evaluate(
       result.disposition = DecisionDisposition::Reject;
       result.reason = "UNIFIED_SELECTED_SURFACE_NOT_FOUND";
       result.selected_surfaces.clear();
+      result.selected_surface_hypothesis_ids.clear();
       return result;
     }
     result.selected_surfaces.emplace(surface_set.source_ref, chosen->surface);
