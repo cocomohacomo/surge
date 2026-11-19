@@ -45,6 +45,8 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
       - name: Snapshot store atomic replacement and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
+      - name: Journal identity memory budget tests
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_identity_budget_conformance
       - name: Copy-on-write journal compaction and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_compaction_conformance
       - name: Verified journal backup retention tests
