@@ -1,6 +1,6 @@
 # Streaming Edge Resource Budgets v0.1
 
-Status: implementation foundation added; end-to-end enforcement is incomplete.
+Status: packet admission, journal write facade and language resident/scratch reservations are implemented on the feature branch; ContextGraph-wide accounting and target RSS enforcement remain incomplete.
 
 ## 1. Priority and invariants
 
@@ -14,7 +14,7 @@ Host profiles supply independent limits for resident bytes, transient bytes, ret
 
 ## 3. Reservation lifecycle
 
-The ResourceBudget / ResourceLease primitive provides mutex-protected, overflow-safe logical reservations. Leases are move-only and release reservations on destruction or reset. The budget must outlive its leases. ResourceKind currently covers resident bytes, transient bytes, retained events, retained clusters, decision candidates and decision evidence. This is accounting only: allocations are protected only after the owning subsystem acquires and holds the corresponding lease.
+The ResourceBudget / ResourceLease primitive provides mutex-protected, overflow-safe logical reservations. BudgetedPacketAdmissionCoordinator reserves packet staging, retained packet bytes and event slots before durable packet commit. BudgetedEventJournal provides the corresponding guarded journal write path and must be used by runtime mutation paths rather than calling EventJournal::commit directly. LanguageRuntimeRegistry can share the same ResourceBudget to reserve installed-set resident bytes and session-pinned scratch capacity. Leases are move-only and release reservations on destruction or reset. The budget must outlive its leases. ResourceKind currently covers resident bytes, transient bytes, retained events, retained clusters, decision candidates and decision evidence. This is accounting only: allocations are protected only after the owning subsystem acquires and holds the corresponding lease.
 
 Logical reservations are not allocator overhead, fragmentation, native-library allocations or process RSS. Host benchmarks MUST still measure peak RSS on target hardware.
 
@@ -26,7 +26,7 @@ The C ABI in surge/decision_c_api.h accepts flat caller-owned arrays with valida
 
 ## 5. Streaming admission and retention
 
-An event is admitted only after validating encoded size and reserving transient and resident budget. A committed event consumes resident budget until retention policy releases or compacts its in-memory representation. Journal durability and in-memory residency are separate concerns.
+An event is admitted only after validating encoded size and reserving transient and resident budget. BudgetedEventJournal reserves the complete transaction before EventJournal::commit; budget failure leaves the journal watermark unchanged. The transaction resident reservation is retained until the facade is destroyed. Recovery rebuilds reservations from the committed journal and fails closed if the configured budget cannot represent it. A committed event consumes resident budget until retention policy releases or compacts its in-memory representation. Journal durability and in-memory residency are separate concerns.
 
 When resident budget is exhausted, the Core evaluates eligible forgetting candidates by relevance, active Focus, Question status, temporal validity, dependency impact, evidence provenance and recovery cost. It must not evict the only current representation of an active decision, unresolved contradiction or required provenance chain. If no safe victim exists, defer the new operation rather than exceeding the cap.
 
@@ -43,3 +43,8 @@ Automated tests must cover exact-capacity success and over-capacity failure; ari
 Target measurements must include peak RSS and resident high-water, transient peak, p50/p95/p99 per-event latency and queue delay, sustainable throughput, package load/switch latency and cache hit ratio, and sustained overload when the consumer is slower than the producer.
 
 No edge-PC memory or latency claim is valid until measured on specified hardware with the complete recognition + normalization + Core pipeline.
+
+
+## 8. Current implementation boundary
+
+The current BudgetedEventJournal and BudgetedPacketAdmissionCoordinator are opt-in facades. Existing code paths that call EventJournal::commit directly are not automatically protected. Runtime integration must route every mutation through the budgeted facade before claiming end-to-end enforcement. ContextGraph node/relation/evidence memory, dependency indexes, question ledgers, snapshot restore peak memory and allocator overhead still require dedicated accounting and tests. LanguageRuntimeRegistry reservations cover manifest-declared resident bytes and one session scratch reservation per pinned session; they do not themselves load, hash or verify package files.
