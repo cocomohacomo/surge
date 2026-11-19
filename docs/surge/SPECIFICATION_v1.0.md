@@ -1,192 +1,219 @@
 # SURGE 基礎設計 v1.0
 ## Universal Context Cognition Framework
-### Open-World Recognition and Chaos Cluster Cognition
+### Open-World Recognition and Cluster-Native Memory
 
-Version: 1.0.0
-Status: Normative additive specification
-Parent: SPECIFICATION_v0.9.md
+Version: 1.0.1 (normative clarification)
+Parent: SPECIFICATION_v1.0.md
 Detailed Chaos Cluster model: CHAOS_CLUSTER_MODEL_v1.0.md
+Cluster retention contract: CLUSTERED_INPUT_RETENTION_v0.1.md
 Schema: schemas/surge-chaos-cluster-v1.0.schema.json
 Conformance: tests/conformance/SURGE_CHAOS_CLUSTER_v1.0.json
 
-## 1. Version scope
+## 1. Version scope and status
 
-v1.0 retains the v0.9 streaming, source-integrity, immutable Evidence, Claim lifecycle, temporal validity, Question/Interest/Focus, ContextGraph, transaction, replay and quality-gate contracts. It adds a normative open-world recognition model and first-class semantics for Chaos Clusters.
+This document clarifies the v1.0 normative memory model. It retains all v1.0
+open-world recognition, Chaos Cluster, source-integrity, immutable Evidence,
+Claim lifecycle, temporal validity, Question/Interest/Focus, transaction,
+replay and quality-gate contracts.
 
-v1.0 does not imply that all new Chaos Cluster operations are already implemented in the C++ Core. The schema and conformance inventory define the target contract; implementation status must be reported separately.
+This clarification is additive. It does not claim that all cluster lifecycle,
+forgetting, compaction or runtime integrations are implemented. Normative
+specification, executable conformance and measured performance are separate
+claims.
 
-## 2. Normative principle: recognition before organization
+## 2. Fundamental memory invariant: all information is cluster-resident
 
-SURGE recognizes information; it does not require every recognized event to be immediately organized into one coherent topic. An input may be:
-- recognized but not yet classified;
-- associated with several candidate topics;
-- apparently unrelated to current context;
-- contradictory under competing interpretations;
-- useful as a creative association without being evidence;
-- important despite low topical coherence.
+SURGE is a cluster-native cognition framework. The canonical memory is a
+persistent, typed, many-to-many Cluster Graph. Information is not stored in
+independent parallel memory silos and later optionally grouped. Every admitted
+information item MUST be represented as a graph node or immutable source/event
+reference and MUST have at least one explicit Cluster or ChaosCluster
+membership in the same atomic admission transaction.
 
-The absence of an established explanation is a valid cognitive state, not a recognition failure. SURGE MUST preserve the distinction between "not organized", "not understood", "false", "irrelevant" and "discarded".
+This rule applies regardless of input granularity or type, including a single
+acknowledgement, a short utterance, a document span, an Evidence item, a Claim,
+an Entity, a Question, an Interest observation, a recognition candidate or a
+temporal observation. Small inputs are not presumed unimportant. Importance
+and meaning are contextual and may be revised as later events arrive.
 
-## 3. First-class Chaos Cluster
+A node may belong to multiple clusters. Membership edges reference the same
+canonical node; implementations MUST NOT duplicate the underlying payload to
+simulate multi-membership. Cluster membership means retention and contextual
+association, not semantic equivalence, truth, causality or agreement.
 
-A Chaos Cluster is a persistent, revisable, open-world context container for events whose semantic organization is unresolved, plural, exploratory or intentionally unconstrained. It is not a conventional topic cluster with a low score, a trash bin, a temporary error buffer or a synonym for noise.
+## 3. Cluster graph as the canonical memory substrate
 
-A Chaos Cluster:
-1. retains immutable source/event references and provenance;
-2. permits many-to-many membership with ordinary topic clusters and other Chaos Clusters;
-3. permits members with no asserted semantic relation to one another;
-4. retains multiple competing interpretations and recognizer disagreement;
-5. supports provisional associations and exploratory patterns;
-6. supports partial promotion, fork and split without deleting the parent history;
-7. remains retrievable while dormant or archived.
+- Cluster and ChaosCluster are first-class memory containers.
+- Typed nodes retain their own semantic type and provenance while being
+  addressable through one or more cluster memberships.
+- Cluster-to-cluster containment establishes hierarchy; cross-cluster
+  membership and typed relations express overlapping contexts.
+- ChaosCluster preserves unresolved, plural, weakly-associated and exploratory
+  information. It is not a garbage bin or a low-value tier.
+- Question, Interest and Focus influence attention and retrieval over the
+  graph. They are not separate stores that can bypass cluster membership.
+- Journals, snapshots, indexes and caches are projections/recovery mechanisms;
+  they do not replace the canonical cluster graph.
 
-Membership means "retained in this exploration space", not "these items share one topic", "these items are true", or "these items are causally related".
+Every accepted event is assigned to an existing or newly classified cluster.
+If classification is uncertain, it MUST be retained in a suitable
+ChaosCluster or explicitly unresolved cluster. It MUST NOT be silently dropped
+or kept only in a transient scoring buffer.
 
-## 4. Separate semantic dimensions
+## 4. Recognition, classification and membership transaction
 
-Implementations MUST NOT collapse the following dimensions into a single quality/chaos scalar:
+Admission MUST atomically persist:
+1. source/event identity and provenance;
+2. the typed information node or immutable source reference;
+3. at least one parented cluster membership;
+4. any classification, temporal and decision trace needed to reproduce the
+   admission.
 
-| Dimension | Meaning | Must not be inferred from |
-|---|---|---|
-| Organization | Degree of stable topical/structural arrangement | Truth or utility |
-| Epistemic status | Supported, contradicted, unverified, hypothetical, retracted | Model confidence alone |
-| Salience | Potential importance, surprise, relevance, urgency | Coherence alone |
-| Recognition confidence | Confidence of a named model/policy on a specific task | Epistemic truth |
-| Novelty | Difference from currently represented patterns | Importance |
-| Diversity | Breadth of distinct patterns represented | Disorder or error |
-| Utility | Potential future retrieval, reasoning or synthesis value | Current topic assignment |
-| Temporal status | Valid-time and observation-time relationship | Stream adjacency |
+The parent cluster, child cluster, member and membership edges are committed
+in one SemanticDelta or equivalent Core-owned transaction. Retry is
+idempotent. Replay reconstructs identical cluster IDs and memberships.
 
-Each score is optional and provenance-bound to model, model version, policy version and observation time. Missing is UNKNOWN, not zero. Scores are observations, not facts or authorization.
+Adapters may provide language-specific classification hints, but they MUST NOT
+maintain a parallel context/memory graph or bypass the Core membership gateway.
+A failed admission leaves graph version, journal watermark, membership and
+idempotency state unchanged. A resource-budget rejection applies backpressure
+or returns a retryable failure; it never silently loses input.
 
-## 5. Membership, associations and pattern hypotheses
+## 5. Importance and attention are contextual observations
 
-### 5.1 Membership
-A member record references an immutable Event/SourceRange and records membership status, admission reason, provenance and optional salience observation. Duplicate membership requests are idempotent by canonical member identity. Membership does not mutate the source event.
+Importance is not identical to recency, frequency, confidence, coherence or
+cluster size. Retention policy may consider:
+- current and historical Focus relevance;
+- explicit and inferred Interest with provenance;
+- unresolved Questions and contradiction pressure;
+- Claim/Evidence support, conflict and temporal validity;
+- dependency and shared-reference structure;
+- recurrence, novelty, surprise and diversity;
+- last access and elapsed time;
+- source reliability, provenance value and audit obligations;
+- storage cost and configured resource ceilings.
 
-An event may simultaneously belong to multiple normal clusters and one or more Chaos Clusters. Removing a membership edge does not delete the event or its history.
+These dimensions MUST remain inspectable and provenance-bound. Missing values
+are UNKNOWN, not zero. A single scalar may be used for bounded ranking only
+after policy evaluation; it MUST NOT independently authorize truth assignment
+or eviction of protected context. Policy version and contributing factors
+must be available for audit and deterministic replay.
 
-### 5.2 Association vocabulary
-Allowed association types:
-- CO_OCCURS: shared episode/window; no causal assertion.
-- ANALOGY: proposed resemblance; not identity or evidence.
-- HYPOTHESIS: candidate explanatory relationship.
-- QUESTION: association retained because it raises an unresolved question.
-- CONTRADICTION: incompatible interpretations or claims.
-- TEMPORAL_NEARNESS: temporal proximity only.
-- UNCLASSIFIED: no semantic relation asserted.
-- CREATIVE_SYNTHESIS: exploratory combination intended to generate a new candidate idea.
+## 6. Forgetting is cluster-prioritized, reference-safe and reversible where required
 
-Every association has status PROVISIONAL, REVIEWED or REJECTED, confidence (if available), provenance and optional valid-time. Rejection is append-only and does not erase the proposal.
+Forgetting is a normal memory lifecycle operation. Under bounded capacity,
+SURGE prioritizes the lowest-retention-value eligible clusters first. It does
+not independently evict arbitrary nodes or discard individual events merely
+because they are old, incoherent or temporarily out of focus.
 
-No association above may be silently converted into SUPPORTS, CAUSES or DEPENDS_ON. Such a typed relation requires an independent, validated SemanticDelta with Evidence and normal Core validation.
+The lifecycle distinguishes:
+- ACTIVE: available to current focus and default retrieval.
+- DORMANT: deprioritized but directly reactivatable.
+- ARCHIVED: excluded from default retrieval, recoverable by explicit action
+  while retained payload policy permits.
+- TOMBSTONED: payload or membership has been removed under an explicit,
+  journaled policy; the tombstone preserves permitted identity, reason,
+  provenance digest and lineage metadata.
 
-### 5.3 Pattern hypotheses
-A PatternHypothesis is a candidate regularity across members, not a Claim. It records member refs, inclusion/exclusion rationale, counterexamples, alternative hypotheses, confidence observations and review status. It may be promoted to Claims only through ordinary Evidence-backed Claim creation. A pattern hypothesis MUST remain explicitly hypothetical until then.
+A cluster may be archived only after evaluating its protection floor,
+dependencies, active questions, Focus, valid evidence, audit constraints and
+shared members. A member referenced by any retained cluster MUST survive
+forgetting of another cluster. A shared node is eligible for payload deletion
+only when no retained membership, protected dependency, journal/snapshot
+recovery obligation or legal retention requirement remains.
 
-## 6. Lifecycle and transitions
+Removing a cluster membership MUST NOT delete the member node. Deleting a
+payload MUST be a separate explicit operation with a tombstone and policy
+reason. Parent/child lineage and cross-cluster relations must be updated or
+preserved according to the tombstone contract. No silent cascade deletion is
+permitted.
 
-Lifecycle:
-- OPEN: created, may be empty.
-- ACCUMULATING: events are admitted without requiring a stable organizing pattern.
-- EMERGING: one or more candidate patterns are detectable but remain provisional.
-- REVIEWABLE: a bounded subset or pattern is ready for explicit review.
-- PROMOTED: at least one subset has been promoted; residual membership may remain unresolved.
-- FORKED: a child exploration space has been created with explicit parent lineage.
-- DORMANT: not currently focused; fully recoverable.
-- ARCHIVED: excluded from default active retrieval but retained under retention policy.
+The retention planner MUST evaluate a complete candidate set. Omitted clusters
+cannot become immortal by escaping the planner, and malformed/non-finite
+priorities fail closed. Active Focus, unresolved Questions, valid protected
+Evidence dependencies, explicitly pinned clusters and configured audit roots
+form a protected floor. If that floor exceeds capacity, SURGE rejects or
+defers reclamation rather than deleting protected memory.
 
-Permitted high-level transitions:
-- OPEN -> ACCUMULATING
-- ACCUMULATING -> EMERGING | REVIEWABLE | DORMANT
-- EMERGING -> ACCUMULATING | REVIEWABLE | DORMANT
-- REVIEWABLE -> ACCUMULATING | PROMOTED | FORKED | DORMANT
-- PROMOTED -> ACCUMULATING | DORMANT | ARCHIVED
-- FORKED -> ACCUMULATING | DORMANT | ARCHIVED
-- DORMANT -> ACCUMULATING | EMERGING | REVIEWABLE | ARCHIVED
-- ARCHIVED -> DORMANT only by explicit audited reactivation
+## 7. Temporal validity and reassessment
 
-A transition outside this table is rejected. Reassessment may move EMERGING back to ACCUMULATING when a candidate pattern loses support. Promotion is never mandatory.
+Evidence and Claims retain valid-time and observation-time history. Expiry
+changes current applicability, not historical existence. Retention priority
+may fall when evidence expires, a claim is retracted or dependencies resolve,
+but history and provenance remain queryable according to policy.
 
-## 7. Promotion, fork and split
+Reassessment is append-only and version-pinned. A later event may revive an
+older cluster, alter its importance, create a new relation or change Focus
+without rewriting prior recognition decisions. Forgetting a cluster does not
+assert that its contents were false.
 
-Promotion is subset-first. The operation MUST identify exact member refs, target cluster kind/identity, policy version, decision provenance and source state version. Unselected members remain in the original Chaos Cluster. Promotion creates lineage edges and does not rewrite source membership history.
+## 8. Bounded streaming memory and resource safety
 
-Fork creates a child Chaos Cluster with a snapshot of selected members and explicit parent/child lineage. Split partitions selected membership into child clusters; the parent remains queryable and its historical membership snapshot remains immutable. Merge of Chaos Clusters is a new journaled operation with explicit source refs and conflict policy, never destructive identity replacement.
+The memory model is streaming-first and edge-constrained. Every allocation-
+heavy admission, classification, decision, mutation, snapshot restore and
+retention operation MUST reserve bounded transient and resident resources
+before materializing unbounded data.
 
-A promotion/fork/split operation MUST be atomic with its journal event and projection update. Stale state versions fail with a conflict and require re-evaluation.
+Resource admission failure MUST be atomic and observable. The system MUST
+preserve input ordering, apply backpressure or explicit retry semantics, and
+avoid silent input loss. Protected memory cannot be reclaimed merely to satisfy
+a configured numeric cap. If the protected floor exceeds capacity, fail
+closed and report the required capacity.
 
-## 8. Question, Interest and Focus integration
+Logical byte reservations, allocator usage and process RSS are distinct
+measurements. A logical ResourceBudget is not a hard RSS limiter. Performance
+claims require target-device peak RSS, transient high-water, queue depth and
+p50/p95/p99 latency measurements under sustained streaming load.
 
-A contradiction or unresolved pattern may create or update a Question. The Question points to the exact conflicting members/associations and keeps competing interpretations. Interest may target a Question, a member, a PatternHypothesis or an entire Chaos Cluster. Focus may target a Chaos Cluster as an exploration region without asserting that all members share one subject.
+## 9. Chaos Cluster relationship
 
-Focus changes retrieval priority, not truth status. A Focus on a Chaos Cluster MUST allow diversity-aware retrieval and MUST NOT automatically collapse the cluster into one topic. Resolving a Question does not automatically promote or delete its parent Chaos Cluster.
+ChaosCluster is a first-class cluster type for unresolved, plural, exploratory
+or weakly organized information. Its members remain fully eligible for future
+retrieval and reclassification. Low coherence MUST NOT be treated as low
+importance. A ChaosCluster may contain valuable novel observations and must
+participate in the same explicit retention policy, with diversity and novelty
+considered as independent factors.
 
-## 9. Retrieval and exploration
+## 10. Conformance requirements
 
-Retrieval supports at least:
-- exact member/source lookup;
-- provenance and temporal filtering;
-- association-type/status filtering;
-- competing-interpretation retrieval;
-- novelty/diversity-oriented sampling;
-- salience-oriented retrieval;
-- pattern hypothesis and counterexample retrieval;
-- parent/child lineage traversal.
+The following are separate test obligations:
+- admission coverage: every public input route creates/uses cluster membership;
+- multi-membership: shared nodes survive archival of one containing cluster;
+- protected floor: Focus, unresolved Question, valid Evidence and pinned roots;
+- retention ranking: deterministic priority, recency and stable-ID tie-breaks;
+- temporal reassessment: expiry changes ranking without erasing history;
+- tombstone lifecycle: journal replay, snapshot restore and idempotent retries;
+- compaction: bounded staging, atomic commit and crash-safe recovery;
+- streaming: backpressure and no silent loss under memory pressure;
+- edge performance: target hardware peak RSS, transient high-water, queue depth,
+  p50/p95/p99 latency and sustained throughput.
 
-Default retrieval MUST distinguish direct membership from inferred association. Provisional and rejected associations are returned with their status, never as established facts. Ranking may combine task-specific factors, but no single score may hide uncertainty or suppress all low-coherence members.
+A planner-only test does not prove actual forgetting. A journal unit test does
+not prove end-to-end input admission. CI does not substitute for target-device
+measurement.
 
-An exploration result records query, state version, policy/model versions, included and omitted refs, ranking rationale and completeness. Stale snapshots are re-evaluated or marked stale.
+## 11. Implementation status
 
-## 10. Memory, forgetting and retention
+The repository currently contains a typed ContextGraph, deterministic cluster
+membership helper, budgeted C ABI mutation gateway, Question/Focus retention
+guards, a pure ClusterRetentionPlanner and snapshot restore reservations.
+These are implementation increments.
 
-Memory pressure may compact projections and indexes, but source identity, provenance, membership lineage and a recoverable manifest MUST remain according to retention policy. Low organization/coherence alone MUST NOT be a deletion or eviction criterion.
+The following remain incomplete and MUST NOT be represented as finished:
+- all public C++, Python, ONNX and adapter ingress paths mandatorily routed
+  through the cluster membership gateway;
+- durable cluster archive/tombstone transactions and membership removal;
+- shared-member reference accounting and safe payload reclamation;
+- expiry-aware cluster retention scoring and automatic lifecycle invocation;
+- bounded cluster compaction with crash/replay and snapshot integration;
+- shared finite budget across all native, morphology, n-gram, ONNX and
+  serialization allocations;
+- actual target edge-PC RSS/RTF and latency measurements.
 
-Retention may consider salience, unresolved Question linkage, Focus relevance, recurrence, recency, novelty, diversity, retrieval history, provenance importance and storage cost. Factors and policy version must be inspectable. A dormant/archived object is not forgotten semantically; it is merely deprioritized.
+## 12. Compatibility
 
-If source payload deletion is required by an external retention/privacy policy, SURGE records a tombstone and the permitted non-content audit metadata. It must not pretend the deleted payload remains retrievable.
-
-## 11. Streaming and temporal behavior
-
-Chaos Cluster admission is incremental and input-granularity independent. Event arrival order is preserved by the v0.9 source sequencer. A late event may join an existing cluster or reopen exploration, but cannot rewrite prior decisions. Every association and score is timestamped; temporal proximity is not causality.
-
-Time-sensitive patterns may have valid-time windows and expiry. Expiry changes the current applicability of an association, not its historical existence. Reassessment is append-only and version-pinned.
-
-## 12. Safety and integrity invariants
-
-- CC-I01: Membership never asserts semantic equivalence.
-- CC-I02: Low coherence never implies low value, falsehood or deletion.
-- CC-I03: Source/Event/Evidence records are immutable.
-- CC-I04: Membership is many-to-many and may be removed only as an append-only edge revision.
-- CC-I05: Association proposals are untrusted and provenance-bound.
-- CC-I06: CO_OCCURS, ANALOGY, TEMPORAL_NEARNESS and CREATIVE_SYNTHESIS never auto-create factual relations.
-- CC-I07: PatternHypothesis is not a Claim.
-- CC-I08: Competing interpretations and model disagreement remain retrievable.
-- CC-I09: Promotion/fork/split is subset-explicit, atomic and lineage-preserving.
-- CC-I10: Stale state versions cannot be committed.
-- CC-I11: Missing score is UNKNOWN, never zero.
-- CC-I12: No scalar score alone authorizes promotion, truth assignment or eviction.
-- CC-I13: Dormant/archived clusters remain recoverable subject to retention policy.
-- CC-I14: Retrieval distinguishes direct membership, provisional association and validated relation.
-- CC-I15: Rejection and expiry preserve history.
-- CC-I16: Question resolution does not implicitly resolve cluster organization.
-
-## 13. Conformance
-
-The v1.0 suite defines 20 semantic cases CC01-CC20. These are design/conformance expectations, not proof of executable Core behavior. Schema validation, fixture structural validation, Core unit/integration tests, restart replay, concurrency tests and model-quality evaluation are separate evidence classes.
-
-A v1.0 implementation may claim:
-- schema conformance only after Draft 2020-12 validation;
-- fixture inventory conformance only after all case assertions execute;
-- Core conformance only after transaction, replay and failure-path tests;
-- performance conformance only after measured benchmark results.
-
-## 14. Migration and compatibility
-
-v0.1 Chaos descriptors may be imported through an explicit adapter. Missing fields are UNKNOWN or LEGACY_UNSPECIFIED; they are not inferred as false, zero, reviewed or supported. Existing normal Cluster records are not automatically converted to Chaos Clusters. Migration preserves source refs and records the migration policy/version.
-
-## 15. Implementation boundary
-
-As of the 2026-11-18 implementation audit, the repository has a typed persistent ChaosCluster ledger, journal replay, C++/C ABI/Python operations, Focus routing, bounded JSON projection, scorer-bound cluster/member/association/hypothesis observations, membership revisions, association valid-time/expiry, PatternHypothesis review history, lifecycle history, fork/split and atomic merge. These are implementation increments, not a declaration of full v1.0 conformance.
-
-Remaining conformance work includes exhaustive executable CC01-CC20 assertions and adversarial migration/replay cases; complete query filters and multi-hop lineage retrieval; full retrieval ranking across all task-specific score dimensions; memory compaction/manifests/tombstones; multi-process and crash/power-loss testing; fuzz/sanitizer coverage; and measured performance on the target 30 MiB model and hardware. Schema conformance, Core behavior, security hardening and performance evidence remain separate claims.
+This is a normative clarification to v1.0 and does not silently reinterpret
+legacy records. Existing unclustered records require an explicit migration
+transaction that creates a cluster membership with source provenance. Until
+migration succeeds, they remain legacy-unclassified and MUST NOT be treated as
+fully conformant cluster-native memory.
