@@ -194,14 +194,20 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
   const bool to_cluster = b == NodeKind::Cluster || b == NodeKind::ChaosCluster;
   const bool question_decomposition =
       a == NodeKind::Question && b == NodeKind::Question;
-  // Every typed information node, including Questions and Interests, may be
-  // retained directly by either canonical cluster kind. Cluster nesting and
-  // Question decomposition remain explicit containment relations.
+  const bool cluster_question_membership = from_cluster && b == NodeKind::Question;
+  // Preserve the question-specific diagnostic for invalid Question edges,
+  // while permitting a canonical cluster to retain a Question as a member.
+  if ((a == NodeKind::Question || b == NodeKind::Question) &&
+      !question_decomposition && !cluster_question_membership) {
+   e = "QUESTION_RELATION_TYPE_INVALID"; return false;
+  }
+  // Both Cluster kinds can contain typed memory nodes. Question-to-Question
+  // containment is reserved for decomposition, not cluster membership.
   if (!question_decomposition &&
       !(from_cluster && (to_cluster || b == NodeKind::Entity ||
           b == NodeKind::Evidence || b == NodeKind::Claim ||
-          b == NodeKind::Question || b == NodeKind::QuestionAspect ||
-          b == NodeKind::Dependency || b == NodeKind::Interest))) {
+          b == NodeKind::QuestionAspect || b == NodeKind::Dependency ||
+          b == NodeKind::Interest || cluster_question_membership))) {
    e = "CLUSTER_CONTAINMENT_TYPE_INVALID"; return false;
   }
   break;
