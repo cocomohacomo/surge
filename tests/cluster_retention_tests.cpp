@@ -1,7 +1,6 @@
 #include "surge/cluster_retention.hpp"
 
 #include <cassert>
-#include <cmath>
 #include <cstdio>
 #include <limits>
 #include <string>
@@ -30,7 +29,8 @@ int main() {
       {{"low-a", NodeKind::Cluster, "low importance", {}}},
       {{"low-b", NodeKind::ChaosCluster, "low importance chaos", {}}},
       {{"q-open", NodeKind::Question, "unresolved question", {}}},
-      {{"aspect-open", NodeKind::QuestionAspect, "open aspect", {"q-open"}}}
+      {{"aspect-open", NodeKind::QuestionAspect, "open aspect", {"q-open"}}},
+      {{"focus-interest", NodeKind::Interest, "active focus interest", {"focus-child"}}}
     };
     seed.relations = {
       {{"root-focus", RelationKind::Contains, "root", "focus-child"}},
@@ -41,11 +41,9 @@ int main() {
       {{"question-membership", RelationKind::Contains, "question-child", "q-open"}},
       {{"focus-dependency", RelationKind::DependsOn, "focus-child", "dependency-child"}}
     };
-    seed.focus = SetFocus{{"focus-child", "", false}};
+    seed.focus = SetFocus{{"focus-child", "focus-interest", false}};
     assert(graph.apply(seed).committed);
 
-    // Active Focus and its one-hop cluster dependency are protected. An active
-    // unresolved Question protects its containing cluster and root ancestor.
     const std::vector<ClusterRetentionCandidate> candidates = {
       {"root", 0.0, 1, false},
       {"focus-child", 0.0, 1, false},
@@ -60,7 +58,7 @@ int main() {
     assert(plan.forget_cluster_ids.size() == 1);
     assert(plan.forget_cluster_ids.front() == "low-a");
     assert(plan.protected_cluster_ids.size() == 4);
-    assert(graph.nodes().count("low-a") == 1);  // planning is non-mutating
+    assert(graph.nodes().count("low-a") == 1);
 
     const auto floor = ClusterRetentionPlanner::plan(graph, candidates, 3);
     assert(!floor.accepted);
@@ -77,6 +75,12 @@ int main() {
     const auto non_finite = ClusterRetentionPlanner::plan(graph, invalid, 10);
     assert(!non_finite.accepted);
     assert(non_finite.error == "CLUSTER_RETENTION_CANDIDATE_INVALID");
+
+    auto incomplete = candidates;
+    incomplete.pop_back();
+    const auto missing = ClusterRetentionPlanner::plan(graph, incomplete, 10);
+    assert(!missing.accepted);
+    assert(missing.error == "CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE");
   }
   std::remove(path.c_str());
   return 0;
