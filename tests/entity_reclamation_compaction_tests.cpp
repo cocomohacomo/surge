@@ -66,6 +66,7 @@ int main() {
     CHECK(journal.checkpoint_info().compacted);
     CHECK(journal.checkpoint_info().base_state_version == 2);
     CHECK(journal.committed_events().empty());
+    CHECK(std::filesystem::exists(journal_path + ".bak")); // rollback generation retains pre-compaction frames
 
     const auto stored = store.load();
     CHECK(stored.ok && !stored.used_backup);
