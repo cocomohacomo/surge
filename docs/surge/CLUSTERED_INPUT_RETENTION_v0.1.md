@@ -178,9 +178,12 @@ ContextGraph snapshot-tail restoration apply the same ordered commands.
 `BudgetedContextGraph::append_entity_reclamation` routes the operation
 through normal transient and retained-event admission. Resident reservations
 remain conservative and are not released by this increment, because the
-current budget facade does not maintain per-node allocation leases. Therefore
-this operation removes the graph-owned Entity object, but does not promise an
-RSS reduction or make the corresponding resident budget capacity reusable.
+current budget facade does not maintain per-node allocation leases. The append-only
+journal retains the original NODE_ADD payload until a verified snapshot checkpoint
+and compaction retire that historical frame. This is logical graph reclamation,
+not secure erasure or immediate journal-byte reclamation. Therefore this operation
+removes the graph-owned Entity object, but does not promise an RSS reduction or
+make the corresponding resident budget capacity reusable.
 Evidence, Claim, Cluster, ChaosCluster, lifecycle records and other node kinds
 are deliberately ineligible until their external provenance, temporal and
 audit references can be proven clear. Physical compaction and exact lease
