@@ -5,11 +5,10 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
 
-#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\\n"; std::exit(1); } } while (0)
+#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\n"; std::exit(1); } } while (0)
 
 int main() {
   using namespace surge;
@@ -138,6 +137,6 @@ int main() {
                            failed_snapshot_path + ".bak.tmp"})
     std::filesystem::remove(path, ignored);
   std::filesystem::remove_all(root, ignored);
-  std::cout << "SURGE Entity reclamation checkpoint compaction tests passed\\n";
+  std::cout << "SURGE Entity reclamation checkpoint compaction tests passed\n";
   return 0;
 }
