@@ -164,3 +164,12 @@ The branch currently has budget primitives and opt-in facades for packet admissi
 `BudgetedContextGraph::apply` now reserves its estimated transient staging footprint from the shared `ResourceBudget` before calling `ContextGraph::prepare_events`. A zero per-operation `max_staging_bytes` disables only the additional local ceiling; it no longer disables the shared transient-memory budget. If the shared reservation fails, event serialization/materialization is not entered and the graph watermark/state remain unchanged.
 
 The reservation uses a conservative logical estimate of twice the delta's resident estimate. This is an admission guard, not an allocator-level or RSS guarantee. The transient lease is scoped to the operation and is released on success or any early return. A conformance regression test covers the zero-local-ceiling case with an intentionally insufficient shared transient budget.
+
+
+## Guarded graph mutation preconditions (2026-11-19)
+
+`BudgetedContextGraph` now fails closed until `recover()` has successfully reconstructed and reserved the existing graph footprint. Both ordinary delta commits and the guarded Question/QuestionAspect/temporal mutation wrappers reject pre-recovery use with `CONTEXT_GRAPH_BUDGET_NOT_RECOVERED`. This prevents a newly constructed facade from admitting writes while silently omitting pre-existing graph state from resident/event accounting.
+
+A shared staging-reservation helper now applies the same transient-budget admission to the bounded Question dependency traversal, Question capacity demotion, QuestionAspect batch updates and temporal claim reassessment. The optional per-operation staging ceiling is an additional cap, not a switch that disables the shared transient budget. Regression tests cover un-recovered writes, ordinary delta staging rejection and Question mutation staging rejection.
+
+These changes strengthen the opt-in facade only. They do not yet prevent production code from bypassing the facade through public `ContextGraph` mutators, and do not make logical reservations equivalent to process RSS.
