@@ -113,3 +113,8 @@ The recovery estimator now performs each size addition as a separately checked
 operation. This avoids overflow in intermediate expressions before the final
 budget accumulator is checked, including on 32-bit `size_t` targets. This is
 still a logical estimate and does not replace process RSS measurement.
+
+
+## Language manifest digest validation increment
+
+`LanguageRuntimeRegistry::install_manifest` now rejects a manifest digest unless it is exactly 64 hexadecimal characters, matching the SHA-256 field contract in the package schema. The registry validates digest syntax only; it does not read package files or recompute resource hashes. Package loading, path containment, decompression limits, per-resource hash verification and transactional activation remain unimplemented and are still required before a package can be trusted or executed.
