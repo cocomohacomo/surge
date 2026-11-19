@@ -170,6 +170,19 @@ int surge_retention_journal_get_events(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+typedef struct SurgeResourceBudgetLimits {
+  size_t resident_bytes;
+  size_t transient_bytes;
+  size_t retained_events;
+  size_t retained_clusters;
+  size_t decision_candidates;
+  size_t decision_evidence;
+} SurgeResourceBudgetLimits;
+
+// Opens the Core with explicit finite logical resource limits. Zero capacity
+// means no resources of that kind may be admitted.
+void* surge_packet_core_open_with_limits(const char* journal_path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t error_capacity);
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
 int surge_packet_core_admit(
