@@ -172,3 +172,46 @@ Schema validation alone is not full runtime conformance. Quality, memory and lat
 - L7 Performance gates: compare CER, exact sentence, RTF, peak RSS, package size, load time and switch/reassessment cost.
 
 No stage is complete merely because its specification or schema exists. Each stage requires implementation and executable conformance tests.
+
+
+## 13. Normalization Runtime (normative)
+
+Normalization is part of the SURGE language runtime, not an application-side postprocessor. The term covers both linguistic normalization and final surface realization.
+
+The SURGE normalization path is:
+1. ingest the raw input and preserve its immutable source span;
+2. produce language-specific reading, morphology, semantic and syntactic hypotheses;
+3. create typed normalization hypotheses (kanji/kana/katakana/Latin/digits/symbols/punctuation, spacing, inflection and orthographic variants);
+4. attach evidence and constraints to each hypothesis, including source span, language-set provenance, style/locale policy and temporal validity;
+5. let SURGE Core compare, defer, revise or select hypotheses using context, dependencies, Questions/Interest/Focus and retained alternatives;
+6. pass the selected semantic/lexical decision to the Language Set renderer for deterministic surface realization;
+7. validate the realized output against Core decision spans and commit the normalized result through the SURGE EventJournal.
+
+The Language Set owns language-specific normalization resources and algorithms: script conversion, orthographic variants, okurigana, inflection realization, punctuation, spacing, numeral/date/time/unit/currency formatting, transliteration, locale rules and rendering templates. It may return multiple surface hypotheses with typed constraints and calibrated evidence.
+
+SURGE Core owns the generic NormalizationHypothesis/NormalizationDecision lifecycle, provenance, candidate comparison, ambiguity handling, revision, span alignment, budget enforcement and commit authority. The renderer MUST NOT silently change semantic identity or choose a different lexical claim. If realization exposes a conflict, it returns a typed rendering conflict to Core for reassessment.
+
+Host applications MUST NOT contain a second normalization adapter, postprocessor, Japanese conversion table, punctuation engine, numeral formatter or final surface selector. Host code may perform transport encoding and buffer copying only.
+
+Normalization MUST preserve:
+- immutable source-to-output span alignment;
+- semantic/lexical identity separate from surface form;
+- reversible provenance from output token to selected Claim and Evidence;
+- explicit ambiguity and unresolved alternatives;
+- deterministic locale/style policy;
+- bounded output expansion and memory;
+- idempotent repeated normalization under the same input, pack digest and policy.
+
+A normalization result is not considered committed until the SURGE Core journal records the selected decision and output revision. Streaming provisional output may be revised; committed spans are immutable unless a new explicit revision event is recorded.
+
+## 14. Normalization conformance additions
+
+A conforming implementation additionally tests:
+1. semantic candidate selection and orthographic realization are separate, traceable stages;
+2. competing kanji/kana/katakana/Latin/digit/punctuation hypotheses are represented without premature collapse;
+3. context can change the selected surface form without corrupting semantic identity;
+4. renderer conflicts return to Core rather than being silently resolved inside the adapter;
+5. source/output span alignment survives streaming revisions and journal replay;
+6. locale/style changes are explicit policy changes and produce auditable revisions;
+7. identical input + Language Set digest + policy produces deterministic output;
+8. no application-side normalization path is invoked in production.
