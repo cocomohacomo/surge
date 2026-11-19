@@ -54,18 +54,25 @@ BudgetedContextGraph::BudgetedContextGraph(ContextGraph& graph,
     : graph_(graph), budget_(budget), max_staging_bytes_(max_staging_bytes) {}
 
 bool BudgetedContextGraph::estimate_delta(const SemanticDelta& delta,
-    std::size_t& bytes, std::size_t& clusters, std::string& error) {
-  bytes = 0; clusters = 0; error.clear();
+    std::size_t& bytes, std::size_t& clusters, std::size_t& retained_events,
+    std::string& error) {
+  bytes = 0; clusters = 0; retained_events = 0; error.clear();
   for (const auto& item : delta.nodes) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_node(item.node, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
     if (item.node.kind == NodeKind::Cluster || item.node.kind == NodeKind::ChaosCluster)
       if (!add(1, clusters)) { error = "CONTEXT_GRAPH_CLUSTER_COUNT_OVERFLOW"; return false; }
   }
-  for (const auto& item : delta.relations)
+  for (const auto& item : delta.relations) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_relation(item.relation, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
-  for (const auto& item : delta.scope_spans)
+  }
+  for (const auto& item : delta.scope_spans) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_scope(item, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
+  }
   for (const auto& item : delta.claim_validity_updates) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     const auto& v = item;
     if (!add(kEntryOverhead, bytes) || !add(v.claim_id.size(), bytes) ||
         !add(v.valid_from.size(), bytes) || !add(v.valid_until.size(), bytes) ||
@@ -73,13 +80,14 @@ bool BudgetedContextGraph::estimate_delta(const SemanticDelta& delta,
         !add(v.reviewer_id.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
   for (const auto& item : delta.evidence_validity_updates) {
+    if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     const auto& v = item;
     if (!add(kEntryOverhead, bytes) || !add(v.evidence_id.size(), bytes) ||
         !add(v.valid_from.size(), bytes) || !add(v.valid_until.size(), bytes) ||
         !add(v.basis_evidence_id.size(), bytes) || !add(v.review_evidence_id.size(), bytes) ||
         !add(v.reviewer_id.size(), bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
   }
-  if (delta.focus && (!add(kEntryOverhead, bytes) ||
+  if (delta.focus && (!add(1, retained_events) || !add(kEntryOverhead, bytes) ||
       !add(delta.focus->focus.cluster_id.size(), bytes) ||
       !add(delta.focus->focus.interest_id.size(), bytes))) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
@@ -206,13 +214,13 @@ bool BudgetedContextGraph::recover(std::string& error) {
 }
 
 DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
-  std::size_t bytes = 0, clusters = 0;
+  std::size_t bytes = 0, clusters = 0, retained_events = 0;
   std::string error;
-  if (!estimate_delta(delta, bytes, clusters, error))
+  if (!estimate_delta(delta, bytes, clusters, retained_events, error))
     return {false, false, graph_.state_version(), error};
 
   std::vector<JournalEvent> prepared;
-  ResourceLease staging, resident, retained_clusters;
+  ResourceLease staging, resident, retained_clusters, retained;
   if (max_staging_bytes_ != 0) {
     const auto estimate = bytes > std::numeric_limits<std::size_t>::max() / 2
         ? std::numeric_limits<std::size_t>::max() : bytes * 2;
@@ -231,12 +239,16 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
                                         retained_clusters, error))
     return {false, false, graph_.state_version(), error};
+  if (retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
+                                               retained_events, retained, error))
+    return {false, false, graph_.state_version(), error};
 
   // Reserve lease-vector capacity before the durable journal commit. Publishing
   // leases after commit then consists only of noexcept moves into existing slots.
   try {
     if (resident) resident_leases_.reserve(resident_leases_.size() + 1);
     if (retained_clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
+    if (retained) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
   } catch (...) {
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_LEASE_STAGING_FAILED"};
   }
@@ -245,6 +257,7 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   if (!result.committed || result.duplicate) return result;
   if (resident) resident_leases_.push_back(std::move(resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
+  if (retained) recovery_event_leases_.push_back(std::move(retained));
   accounted_resident_bytes_ += bytes;
   return result;
 }
