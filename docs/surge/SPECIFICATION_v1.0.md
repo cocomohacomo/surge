@@ -350,3 +350,22 @@ This is a logical bound over known serialized buffers, not a hard allocator or
 RSS ceiling: a domain's capture callback may allocate its bounded payload
 before the coordinator can inspect its returned size. Strict peak-memory
 control still requires a streaming/segmented SnapshotDomain capture contract.
+
+
+### Chunked SnapshotDomain capture contract
+
+SnapshotDomain now exposes capture_chunks with a bounded chunk writer. The
+coordinator frames each domain's payload length before streaming chunks directly
+into the aggregate bundle, validates cumulative per-domain and aggregate limits
+for every chunk, and patches the final length only after successful completion.
+This removes the coordinator-owned full per-domain payload copy for domains
+that implement the streaming override.
+
+The compatibility default adapts the legacy capture(string*) method and
+therefore still materializes one full domain payload. Built-in snapshot domains
+have not yet migrated their serializers to the streaming override, and the
+coordinator still materializes the aggregate bundle and final envelope.
+Consequently this is an API and coordinator staging increment, not yet
+end-to-end bounded-memory snapshot persistence or a hard RSS guarantee.
+The next step is native domain serializer migration followed by a streaming
+SnapshotStore writer with incremental checksum and atomic replacement.
