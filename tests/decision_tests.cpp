@@ -52,6 +52,7 @@ int main() {
   auto deferred_joint = UnifiedDecision::evaluate({unresolved_surface});
   assert(deferred_joint.disposition == DecisionDisposition::Defer);
   assert(deferred_joint.selected_surfaces.empty());
+  assert(deferred_joint.selected_surface_hypothesis_ids.empty());
 
   DecisionPolicy calibrated;
   calibrated.family_weights["semantic"] = 0.0;
