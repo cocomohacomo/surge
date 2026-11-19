@@ -254,6 +254,7 @@ DecisionResult UnifiedDecision::evaluate(
       return result;
     }
     result.selected_surfaces.emplace(surface_set.source_ref, chosen->surface);
+    result.selected_surface_hypothesis_ids.emplace(surface_set.source_ref, chosen->hypothesis_id);
   }
   result.reason = "UNIFIED_CORE_SELECTED";
   return result;
