@@ -30,7 +30,7 @@ int main() {
       {{"low-b", NodeKind::ChaosCluster, "low importance chaos", {}}},
       {{"q-open", NodeKind::Question, "unresolved question", {}}},
       {{"aspect-open", NodeKind::QuestionAspect, "open aspect", {"q-open"}}},
-      {{"focus-interest", NodeKind::Interest, "active focus interest", {"focus-child"}}}
+      {{"focus-interest", NodeKind::Interest, "active focus interest", {"aspect-open", "focus-child"}}}
     };
     seed.relations = {
       {{"root-focus", RelationKind::Contains, "root", "focus-child"}},
