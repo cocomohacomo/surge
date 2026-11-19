@@ -166,4 +166,151 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   accounted_resident_bytes_ += bytes;
   return result;
 }
+
+bool BudgetedContextGraph::reserve_mutation(std::size_t bytes, std::size_t events,
+    ResourceLease& resident, ResourceLease& retained, std::string& error) {
+  if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
+    return false;
+  if (events && !budget_.try_acquire(ResourceKind::RetainedEvents, events, retained, error)) {
+    resident.reset(); return false;
+  }
+  try {
+    if (resident) mutation_resident_leases_.reserve(mutation_resident_leases_.size()+1);
+    if (retained) mutation_event_leases_.reserve(mutation_event_leases_.size()+1);
+  } catch (...) {
+    resident.reset(); retained.reset();
+    error = "CONTEXT_GRAPH_MUTATION_LEASE_STAGING_FAILED";
+    return false;
+  }
+  return true;
+}
+
+void BudgetedContextGraph::publish_mutation(ResourceLease&& resident,
+                                            ResourceLease&& retained) {
+  if (resident) mutation_resident_leases_.push_back(std::move(resident));
+  if (retained) mutation_event_leases_.push_back(std::move(retained));
+}
+
+bool BudgetedContextGraph::record_question_reference(const std::string& id,
+    std::uint64_t expected, bool& reactivated, std::string& error) {
+  ResourceLease resident, retained;
+  if (!reserve_mutation(512 + id.size(), 1, resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.record_question_reference(id, expected, reactivated, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::record_question_reference_with_dependents(
+    const std::string& id, std::uint64_t expected, std::size_t max_depth,
+    std::size_t max_nodes, bool& reactivated, std::size_t& reactivated_dependents,
+    std::string& error) {
+  // The traversal is bounded by max_nodes; reserve its maximum temporary and
+  // durable footprint before allowing the underlying journal commit.
+  if (max_nodes > (std::numeric_limits<std::size_t>::max()-512)/512) {
+    error = "CONTEXT_GRAPH_MUTATION_SIZE_OVERFLOW"; return false;
+  }
+  ResourceLease staging, resident, retained;
+  const auto bytes = 512 + id.size() + max_nodes * 512;
+  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
+    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
+  }
+  if (max_staging_bytes_ &&
+      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_mutation(512 + id.size() + max_nodes * 64, 1, resident, retained, error))
+    return false;
+  const auto before = graph_.state_version();
+  if (!graph_.record_question_reference_with_dependents(id, expected, max_depth,
+      max_nodes, reactivated, reactivated_dependents, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::set_question_memory_state(const std::string& id,
+    QuestionMemoryState state, std::uint64_t expected, std::string& error) {
+  ResourceLease resident, retained;
+  if (!reserve_mutation(512 + id.size(), 1, resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.set_question_memory_state(id, state, expected, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::enforce_question_memory_capacity(
+    const std::vector<std::pair<std::string,double>>& scores, std::size_t max_active,
+    std::uint64_t expected, std::vector<std::string>& demoted, std::string& error) {
+  if (scores.size() > std::numeric_limits<std::size_t>::max()/512) {
+    error = "CONTEXT_GRAPH_MUTATION_SIZE_OVERFLOW"; return false;
+  }
+  const auto bytes = 512 + scores.size()*512;
+  ResourceLease staging, resident, retained;
+  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
+    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
+  }
+  if (max_staging_bytes_ &&
+      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_mutation(bytes, scores.size(), resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.enforce_question_memory_capacity(scores, max_active, expected, demoted, error))
+    return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::set_question_aspect_status(const std::string& id,
+    QuestionAspectStatus status, std::uint64_t expected, std::string& error) {
+  ResourceLease resident, retained;
+  if (!reserve_mutation(512 + id.size(), 1, resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.set_question_aspect_status(id, status, expected, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::apply_question_aspect_statuses(
+    const std::vector<std::pair<std::string,QuestionAspectStatus>>& updates,
+    std::uint64_t expected, std::string& error) {
+  if (updates.size() > std::numeric_limits<std::size_t>::max()/1024) {
+    error = "CONTEXT_GRAPH_MUTATION_SIZE_OVERFLOW"; return false;
+  }
+  std::size_t bytes = 512;
+  for (const auto& update : updates) {
+    if (update.first.size() > std::numeric_limits<std::size_t>::max()-bytes-512) {
+      error = "CONTEXT_GRAPH_MUTATION_SIZE_OVERFLOW"; return false;
+    }
+    bytes += 512 + update.first.size();
+  }
+  ResourceLease staging, resident, retained;
+  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
+    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
+  }
+  if (max_staging_bytes_ &&
+      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_mutation(bytes, updates.size(), resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.apply_question_aspect_statuses(updates, expected, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
+bool BudgetedContextGraph::reassess_claim(const std::string& claim_id,
+    const std::string& reference_at, std::uint64_t expected,
+    TemporalReassessmentRecord& result, std::string& error) {
+  if (claim_id.size() > std::numeric_limits<std::size_t>::max()-reference_at.size()-2048) {
+    error = "CONTEXT_GRAPH_MUTATION_SIZE_OVERFLOW"; return false;
+  }
+  const auto bytes = 2048 + claim_id.size() + reference_at.size();
+  ResourceLease staging, resident, retained;
+  if (max_staging_bytes_ && bytes > max_staging_bytes_) {
+    error = "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"; return false;
+  }
+  if (max_staging_bytes_ &&
+      !budget_.try_acquire(ResourceKind::TransientBytes, bytes, staging, error)) return false;
+  if (!reserve_mutation(bytes, 1, resident, retained, error)) return false;
+  const auto before = graph_.state_version();
+  if (!graph_.reassess_claim(claim_id, reference_at, expected, result, error)) return false;
+  if (graph_.state_version() != before) publish_mutation(std::move(resident), std::move(retained));
+  return true;
+}
+
 }  // namespace surge
