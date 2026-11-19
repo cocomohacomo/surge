@@ -425,7 +425,8 @@ int main(){
     delta.idempotency_key="cluster-classification-idem";
     delta.expected_state_version=0;
     delta.nodes={{{"input-root",NodeKind::Cluster,"stream context",{}}},
-                 {{"claim-a",NodeKind::Claim,"candidate claim",{}}}};
+                 {{"evidence-a",NodeKind::Evidence,"classification evidence",{}}},
+                 {{"claim-a",NodeKind::Claim,"candidate claim",{"evidence-a"}}}};
     std::string error;
     CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
         "source-digest:span-0-3","claim-a","classification-test",
