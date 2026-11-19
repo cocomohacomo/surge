@@ -134,13 +134,14 @@ PacketAdmissionResult BudgetedPacketAdmissionCoordinator::admit(
     return rejected;
   }
 
+  // Allocate the retention map node before the underlying durable commit.
+  std::map<std::string, std::pair<ResourceLease, ResourceLease>> staged;
+  staged.emplace(event_id, std::make_pair(std::move(resident),
+                                          std::move(retained_event)));
   auto result = coordinator_.admit(packet, normalized_source_snapshot, semantic_events);
   if (!result.admitted || result.duplicate) return result;
-
-  if (!retain(event_id, resident_cost, std::move(resident),
-              std::move(retained_event), error)) {
-    // The reservation and identifier are prepared before commit, so this path
-    // indicates an internal invariant violation rather than ordinary pressure.
+  retained_.merge(staged);
+  if (!staged.empty()) {
     result.admitted = false;
     result.error = "PACKET_RESOURCE_RETENTION_INVARIANT_FAILED";
   }
