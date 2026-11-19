@@ -276,3 +276,22 @@ A zero membership count is not, by itself, authorization to reclaim a payload:
 all typed references, dependencies, provenance, temporal history, Focus,
 journal/snapshot and audit obligations must be evaluated by a separate
 reclamation gate. This increment does not delete payloads.
+
+
+### Fail-closed Entity reclamation implementation increment
+
+The Core now supports `ENTITY_RECLAIMED` as an append-only journal command
+for `Entity` nodes only. Reclamation is rejected while any cluster
+membership, graph relation, typed-node reference, Focus, scope-span or
+dependency-evaluation history reference remains. Membership unlink and
+reclamation can be staged in one `SemanticDelta`, with unlink events
+applied first. Journal replay and ContextGraph snapshot-tail restore apply the
+same ordered transition.
+
+This is not a general payload garbage collector. Evidence, Claim, cluster and
+lifecycle nodes remain protected because their provenance, temporal and audit
+obligations require broader reference accounting. The budgeted gateway charges
+the retained reclamation event but conservatively retains prior resident
+reservations; it does not claim RSS reduction or reusable resident capacity.
+Exact per-node lease release, cross-domain reference accounting and bounded
+physical compaction remain incomplete.
