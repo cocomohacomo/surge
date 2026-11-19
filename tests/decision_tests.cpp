@@ -56,5 +56,15 @@ int main() {
   auto overflow_score = RecognitionDecision::evaluate({contextual}, overflow_calibration);
   assert(overflow_score.disposition == DecisionDisposition::Reject);
   assert(overflow_score.reason == "RECOGNITION_NONFINITE_EVIDENCE_SCORE");
+
+  DecisionPolicy sum_overflow_policy;
+  sum_overflow_policy.family_weights["family_a"] = std::numeric_limits<double>::max();
+  sum_overflow_policy.family_weights["family_b"] = std::numeric_limits<double>::max();
+  auto sum_overflow = RecognitionDecision::evaluate({
+    {"sum-overflow", 0, {
+      {"e1", "family_a", "a", 1.0, 1.0, true},
+      {"e2", "family_b", "b", 1.0, 1.0, true}}}}, sum_overflow_policy);
+  assert(sum_overflow.disposition == DecisionDisposition::Reject);
+  assert(sum_overflow.reason == "RECOGNITION_NONFINITE_CANDIDATE_SCORE");
   return 0;
 }
