@@ -444,6 +444,18 @@ int main(){
     CHECK(!graph.append_cluster_membership(delta,"missing-parent","TOPIC",
         "partition","claim-a","invalid-parent",invalid_cluster_id,error));
     CHECK(error=="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND");
+    CHECK(!graph.append_cluster_membership(delta,"input-root","A|B","C",
+        "claim-a","invalid-parent",invalid_cluster_id,error));
+    const auto delimiter_a=invalid_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","A","B|C",
+        "claim-a","delimiter-test",invalid_cluster_id,error));
+    CHECK(invalid_cluster_id!=delimiter_a);
+    CHECK(!graph.append_cluster_membership(delta,"input-root","TOPIC",
+        "partition","missing-member","invalid-member",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_MEMBER_NOT_FOUND");
+    CHECK(!graph.append_cluster_membership(delta,"input-root","TOPIC",
+        "partition","claim-a",std::string(257,'x'),invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_INPUT_INVALID");
     CHECK(!classified_cluster_id.empty());
     CHECK(graph.apply(delta).committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
