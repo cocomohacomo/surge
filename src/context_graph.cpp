@@ -590,7 +590,7 @@ bool ContextGraph::replay(){
    }
    ++version;continue;
   }
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="ENTITY_RECLAIMED"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
@@ -792,8 +792,7 @@ bool ContextGraph::apply_entity_reclamation(State& state,
  if(target==state.nodes.end()||target->second.kind!=NodeKind::Entity){
   error="ENTITY_RECLAMATION_TARGET_NOT_ELIGIBLE";return false;
  }
- if(cluster_membership_reference_count(entity_node_id)!=0){
-  // Count against the staged state, not the owning graph.
+ {
   std::size_t memberships=0;
   for(const auto& edge:state.relations){
    const auto& relation=edge.second;
