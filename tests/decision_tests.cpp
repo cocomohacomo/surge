@@ -116,7 +116,7 @@ int main() {
   source_budget.max_source_ref_bytes = 4;
   auto source_overflow = UnifiedDecision::evaluate({joint}, source_budget);
   assert(source_overflow.disposition == DecisionDisposition::Defer);
-  assert(source_overflow.reason == "UNIFIED_INVALID_SURFACE_SET");
+  assert(source_overflow.reason == "UNIFIED_SOURCE_REF_BUDGET_EXCEEDED");
 
   return 0;
 }
