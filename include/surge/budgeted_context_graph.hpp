@@ -34,6 +34,9 @@ class BudgetedContextGraph {
       const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
       const std::string& relation_id, std::string& error);
 
+  DeltaResult append_entity_reclamation(SemanticDelta delta,
+      const std::string& entity_node_id, std::string& error);
+
   DeltaResult append_cluster_unmembership(SemanticDelta delta,
       const std::string& cluster_id, const std::string& member_node_id,
       std::string& error);
