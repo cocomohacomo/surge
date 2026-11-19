@@ -29,6 +29,19 @@ int main() {
   assert(!budget.try_acquire(ResourceKind::RetainedEvents,
       std::numeric_limits<std::size_t>::max(), overflow, error));
   assert(budget.snapshot().used[2] == 0);
+  ResourceLease partial;
+  assert(budget.try_acquire(ResourceKind::ResidentBytes, 400, partial, error));
+  assert(partial.amount() == 400);
+  assert(!partial.shrink(401));
+  assert(budget.snapshot().used[0] == 400);
+  assert(partial.shrink(150));
+  assert(partial.amount() == 250);
+  assert(budget.snapshot().used[0] == 250);
+  assert(partial.shrink(250));
+  assert(!partial);
+  assert(budget.snapshot().used[0] == 0);
+  assert(partial.shrink(0));
+
   resident.reset();
   assert(budget.snapshot().used[0] == 0);
   return 0;
