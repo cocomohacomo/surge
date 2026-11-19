@@ -1674,7 +1674,7 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
 
     const bool graph_delta_event =
         event.kind == "NODE_ADD" || event.kind == "RELATION_ADD" ||
-        event.kind == "ENTITY_RECLAIMED" ||
+        event.kind == "RELATION_REMOVE" || event.kind == "ENTITY_RECLAIMED" ||
         event.kind == "SCOPE_SPAN_ADD" || event.kind == "FOCUS_SET" ||
         event.kind == "CLAIM_VALIDITY_SET" ||
         event.kind == "EVIDENCE_VALIDITY_SET" ||
