@@ -13,34 +13,46 @@ int main() {
     {"kana-evidence", "orthography", "kana", 1.0, 1.0, 1}
   };
   const SurgeDecisionHypothesisInput hypotheses[] = {
+    {"old-kanji", 0, "旧字", 0, 1},
+    {"old-kana", 1, "きゅうじ", 1, 1},
     {"kanji", 0, "漢字", 0, 1},
     {"kana", 1, "かな", 1, 1}
   };
-  const SurgeDecisionSurfaceSetInput sets[] = {{"span:0:2", 0, 2}};
-  const SurgeDecisionCandidateInput candidates[] = {
-    {"candidate-1", 0, 0, 1, 0, 1}
+  const SurgeDecisionSurfaceSetInput sets[] = {
+    {"span:0:2", 0, 2}, {"span:0:2", 2, 2}
   };
-  size_t selected_indices[] = {std::numeric_limits<size_t>::max()};
+  const SurgeDecisionEvidenceInput two_candidate_evidence[] = {
+    {"weak", "lexical", "weak", 0.5, 1.0, 1},
+    {"strong", "lexical", "strong", 1.0, 1.0, 1}
+  };
+  const SurgeDecisionCandidateInput candidates[] = {
+    {"candidate-0", 0, 0, 1, 0, 1},
+    {"candidate-1", 1, 1, 1, 1, 1}
+  };
+  size_t selected_indices[] = {
+    std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()
+  };
   int disposition = -1;
   char selected_id[64] = {};
   char reason[128] = {};
   double score = 0.0, margin = 0.0;
   assert(surge_unified_decision_evaluate(
-      candidates, 1, candidate_evidence, 1, sets, 1, hypotheses, 2,
+      candidates, 2, two_candidate_evidence, 2, sets, 2, hypotheses, 4,
       surface_evidence, 2, nullptr, 0, nullptr, &disposition,
       selected_id, sizeof(selected_id), reason, sizeof(reason), &score, &margin,
-      selected_indices, 1) == 1);
+      selected_indices, 2) == 1);
   assert(disposition == 0);
   assert(selected_id[0] != '\0');
-  assert(selected_indices[0] == 1);
+  assert(selected_indices[0] == std::numeric_limits<size_t>::max());
+  assert(selected_indices[1] == 3);
 
   SurgeDecisionPolicyInput invalid_policy{};
   invalid_policy.minimum_margin = -1.0;
   assert(surge_unified_decision_evaluate(
-      candidates, 1, candidate_evidence, 1, sets, 1, hypotheses, 2,
+      candidates, 2, two_candidate_evidence, 2, sets, 2, hypotheses, 4,
       surface_evidence, 2, nullptr, 0, &invalid_policy, &disposition,
       selected_id, sizeof(selected_id), reason, sizeof(reason), &score, &margin,
-      selected_indices, 1) == 1);
+      selected_indices, 2) == 1);
   assert(disposition == 2);
   return 0;
 }
