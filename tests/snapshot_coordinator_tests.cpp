@@ -59,6 +59,38 @@ int main() {
   CHECK(!coordinator.restore(bytes, "wrong-context", 7, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 8, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
+
+  // Shared transient budget rejects restore before domain publication and
+  // releases every reservation on both rejection and successful completion.
+  ResourceBudgetLimits tiny_limits;
+  tiny_limits.transient_bytes = 1;
+  ResourceBudget tiny_budget(tiny_limits);
+  SnapshotCoordinator guarded({}, &tiny_budget);
+  MemoryDomain guarded_graph("graph", "preserve-graph");
+  MemoryDomain guarded_chaos("chaos", "preserve-chaos");
+  CHECK(guarded.register_domain(&guarded_graph, &error));
+  CHECK(guarded.register_domain(&guarded_chaos, &error));
+  CHECK(!guarded.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(error == "RESOURCE_BUDGET_EXCEEDED");
+  CHECK(guarded_graph.value() == "preserve-graph");
+  CHECK(guarded_chaos.value() == "preserve-chaos");
+  CHECK(tiny_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
+  ResourceBudgetLimits sufficient_limits;
+  sufficient_limits.transient_bytes = bytes.size() * 3;
+  ResourceBudget sufficient_budget(sufficient_limits);
+  SnapshotCoordinator budgeted({}, &sufficient_budget);
+  MemoryDomain budgeted_graph("graph", "old-graph");
+  MemoryDomain budgeted_chaos("chaos", "old-chaos");
+  CHECK(budgeted.register_domain(&budgeted_graph, &error));
+  CHECK(budgeted.register_domain(&budgeted_chaos, &error));
+  CHECK(budgeted.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(budgeted_graph.value() == "graph-state");
+  CHECK(budgeted_chaos.value() == "chaos-state");
+  CHECK(sufficient_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
   std::cout << "SURGE snapshot coordinator tests passed\n";
   return 0;
 }
