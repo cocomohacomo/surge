@@ -157,3 +157,10 @@ P0 is **not complete** until every gate below is satisfied. Existing opt-in faca
 ### Current status
 
 The branch currently has budget primitives and opt-in facades for packet admission, event journal, ContextGraph deltas and selected Question/temporal mutations. It also has protected Question demotion and checked recovery estimates. The following P0 gates remain open: production call-site migration and bypass prevention; reservations around all recognition/morphology/n-gram/ONNX allocations; full expiry-aware forgetting and cluster compaction; aggregate snapshot restore staging reservations; full-pipeline integration tests; and target edge-PC measurements. Therefore this document and PR must not describe P0 as complete until every gate above has evidence attached.
+
+
+## Mandatory transient admission for ContextGraph staging (2026-11-19)
+
+`BudgetedContextGraph::apply` now reserves its estimated transient staging footprint from the shared `ResourceBudget` before calling `ContextGraph::prepare_events`. A zero per-operation `max_staging_bytes` disables only the additional local ceiling; it no longer disables the shared transient-memory budget. If the shared reservation fails, event serialization/materialization is not entered and the graph watermark/state remain unchanged.
+
+The reservation uses a conservative logical estimate of twice the delta's resident estimate. This is an admission guard, not an allocator-level or RSS guarantee. The transient lease is scoped to the operation and is released on success or any early return. A conformance regression test covers the zero-local-ceiling case with an intentionally insufficient shared transient budget.
