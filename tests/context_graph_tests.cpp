@@ -286,6 +286,52 @@ int main(){
     CHECK(recovered.nodes().count("unlink-shared")==1);
     CHECK(recovered.relations().empty());
   }
+  // Entity reclamation is permitted only after all cluster memberships and
+  // every graph-owned reference are removed in the same durable transaction.
+  const auto entity_reclaim_path=(root/"entity-reclamation.sgj").string();
+  {
+    ContextGraph graph(entity_reclaim_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-reclaim-seed";
+    seed.idempotency_key="entity-reclaim-seed";seed.expected_state_version=0;
+    seed.nodes={{{"reclaim-cluster",NodeKind::Cluster,"cluster",{} }},
+                {{"reclaim-entity",NodeKind::Entity,"orphan entity",{} }}};
+    seed.relations={{{"reclaim-membership",RelationKind::Contains,
+        "reclaim-cluster","reclaim-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta reclaim;reclaim.delta_id="entity-reclaim-commit";
+    reclaim.idempotency_key="entity-reclaim-commit";reclaim.expected_state_version=1;
+    std::string error;
+    CHECK(graph.append_cluster_unmembership(reclaim,"reclaim-cluster",
+        "reclaim-entity",error));
+    CHECK(graph.append_entity_reclamation(reclaim,"reclaim-entity",error));
+    const auto committed=graph.apply(reclaim);
+    CHECK(committed.committed&&committed.state_version==2);
+    CHECK(graph.nodes().count("reclaim-entity")==0);
+    CHECK(graph.nodes().count("reclaim-cluster")==1);
+  }
+  {
+    ContextGraph recovered(entity_reclaim_path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==2);
+    CHECK(recovered.nodes().count("reclaim-entity")==0);
+  }
+  // Reclamation fails closed while any non-membership relation still points
+  // to the entity, even when its cluster membership has already been removed.
+  const auto entity_guard_path=(root/"entity-reclamation-guard.sgj").string();
+  {
+    ContextGraph graph(entity_guard_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-guard-seed";
+    seed.idempotency_key="entity-guard-seed";seed.expected_state_version=0;
+    seed.nodes={{{"guard-entity",NodeKind::Entity,"referenced entity",{} }},
+                {{"guard-question",NodeKind::Question,"question",{} }}};
+    seed.relations={{{"guard-about",RelationKind::About,"guard-question","guard-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta reclaim;reclaim.delta_id="entity-guard-reclaim";
+    reclaim.idempotency_key="entity-guard-reclaim";reclaim.expected_state_version=1;
+    std::string error;
+    CHECK(!graph.append_entity_reclamation(reclaim,"guard-entity",error));
+    CHECK(error=="ENTITY_RECLAMATION_RELATION_REFERENCES_REMAIN");
+    CHECK(graph.nodes().count("guard-entity")==1);
+  }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);CHECK(graph.open());
