@@ -188,7 +188,14 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  auto a=from->second.kind,b=to->second.kind;
  switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim&&a!=NodeKind::Question)){e="GRAPH_RELATION_TYPE_INVALID";return false;}break;
- case RelationKind::Duplicates:case RelationKind::Contains:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::Duplicates:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::Contains:
+  if(!((a==NodeKind::Question&&b==NodeKind::Question)||
+       (a==NodeKind::Cluster&&(b==NodeKind::Cluster||b==NodeKind::Claim||
+                               b==NodeKind::Entity||b==NodeKind::Evidence)))){
+   e="CLUSTER_CONTAINMENT_TYPE_INVALID";return false;
+  }
+  break;
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::DependsOn:if(a==NodeKind::Question&&b==NodeKind::Question){
    std::vector<std::string> pending{r.to};std::set<std::string> visited;
