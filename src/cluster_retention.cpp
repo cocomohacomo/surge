@@ -38,13 +38,13 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.nodes()){const auto& node=item.second;if(node.kind==NodeKind::Question&&graph.question_memory_state(node.id)==QuestionMemoryState::Active)unresolved_questions.insert(node.id);}
  for(const auto& item:graph.nodes()){const auto& node=item.second;if(node.kind!=NodeKind::QuestionAspect||node.references.size()!=1)continue;const auto status=graph.question_aspect_status(node.id);if(status==QuestionAspectStatus::Open||status==QuestionAspectStatus::Deferred)unresolved_questions.insert(node.references.front());}
  for(const auto& question_id:unresolved_questions){const auto found=memberships.find(question_id);if(found!=memberships.end())for(const auto& cluster_id:found->second)add_ancestors(cluster_id,parents,protected_ids);}
- for(const auto& id:protected_ids)if(inactive_ids.count(id)){
-  result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;
- }
  const auto anchors=protected_ids;std::set<std::string> dependency_neighbors;
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned)add_ancestors(item.first,parents,protected_ids);
+ for(const auto& id:protected_ids)if(inactive_ids.count(id)){
+  result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;
+ }
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
   if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
