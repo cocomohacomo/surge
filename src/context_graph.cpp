@@ -36,15 +36,6 @@ bool decode_cluster_lifecycle_content(const std::string& content,
  else return false;
  return true;
 }
-const char* lifecycle_state_name(ClusterLifecycleState state) {
- switch (state) {
-  case ClusterLifecycleState::Active: return "ACTIVE";
-  case ClusterLifecycleState::Dormant: return "DORMANT";
-  case ClusterLifecycleState::Archived: return "ARCHIVED";
-  case ClusterLifecycleState::Tombstoned: return "TOMBSTONED";
- }
- return "UNKNOWN";
-}
 bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"CHAOS_CLUSTER",NodeKind::ChaosCluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest},{"CLUSTER_LIFECYCLE",NodeKind::ClusterLifecycle}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";case RelationKind::Supersedes:return "SUPERSEDES";case RelationKind::Retracts:return "RETRACTS";case RelationKind::Duplicates:return "DUPLICATES";case RelationKind::Contains:return "CONTAINS";}return "UNKNOWN";}
 bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts},{"DUPLICATES",RelationKind::Duplicates},{"CONTAINS",RelationKind::Contains}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
