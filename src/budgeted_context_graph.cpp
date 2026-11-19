@@ -237,15 +237,18 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
 
   std::vector<JournalEvent> prepared;
   ResourceLease staging, resident, retained_clusters, retained;
-  if (max_staging_bytes_ != 0) {
-    const auto estimate = bytes > std::numeric_limits<std::size_t>::max() / 2
-        ? std::numeric_limits<std::size_t>::max() : bytes * 2;
-    if (estimate > max_staging_bytes_)
-      return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
-    if (estimate && !budget_.try_acquire(ResourceKind::TransientBytes, estimate,
-                                          staging, error))
-      return {false, false, graph_.state_version(), error};
-  }
+  // Staging is always accounted, even when no per-operation ceiling was
+  // configured. A zero max_staging_bytes_ disables only that secondary ceiling;
+  // it must never disable the shared transient budget.
+  const auto staging_estimate = bytes > std::numeric_limits<std::size_t>::max() / 2
+      ? std::numeric_limits<std::size_t>::max() : bytes * 2;
+  if (max_staging_bytes_ != 0 && staging_estimate > max_staging_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
+  if (staging_estimate && !budget_.try_acquire(ResourceKind::TransientBytes,
+                                                staging_estimate, staging, error))
+    return {false, false, graph_.state_version(), error};
+
+  // The reservation precedes event serialization/materialization below.
   if (!graph_.prepare_events(delta, prepared, error))
     return {false, false, graph_.state_version(), error};
   if (prepared.empty()) return graph_.apply(delta);
