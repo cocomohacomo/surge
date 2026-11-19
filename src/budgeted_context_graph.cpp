@@ -377,7 +377,8 @@ bool BudgetedContextGraph::record_question_reference_with_dependents(
 
 bool BudgetedContextGraph::set_question_memory_state(const std::string& id,
     QuestionMemoryState state, std::uint64_t expected, std::string& error) {
-  ResourceLease resident, retained;
+  ResourceLease staging, resident, retained;
+  if (!reserve_staging(512 + id.size(), staging, error)) return false;
   if (!reserve_mutation(512 + id.size(), 1, resident, retained, error)) return false;
   const auto before = graph_.state_version();
   if (!graph_.set_question_memory_state(id, state, expected, error)) return false;
