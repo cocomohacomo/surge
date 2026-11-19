@@ -64,13 +64,13 @@ int main() {
   calibrated.family_weights["lexical"] = -1.0;
   auto invalid_calibration = UnifiedDecision::evaluate({decoder_top}, calibrated);
   assert(invalid_calibration.disposition == DecisionDisposition::Reject);
-  assert(invalid_calibration.reason == "RECOGNITION_INVALID_FAMILY_WEIGHT");
+  assert(invalid_calibration.reason == "UNIFIED_INVALID_FAMILY_WEIGHT");
 
   DecisionPolicy overflow_calibration;
   overflow_calibration.family_weights["semantic"] = std::numeric_limits<double>::max();
   auto overflow_score = UnifiedDecision::evaluate({contextual}, overflow_calibration);
   assert(overflow_score.disposition == DecisionDisposition::Reject);
-  assert(overflow_score.reason == "RECOGNITION_NONFINITE_EVIDENCE_SCORE");
+  assert(overflow_score.reason == "UNIFIED_NONFINITE_EVIDENCE_SCORE");
 
   DecisionPolicy sum_overflow_policy;
   sum_overflow_policy.family_weights["family_a"] = std::numeric_limits<double>::max();
@@ -80,7 +80,7 @@ int main() {
       {"e1", "family_a", "a", 1.0, 1.0, true},
       {"e2", "family_b", "b", 1.0, 1.0, true}}}}, sum_overflow_policy);
   assert(sum_overflow.disposition == DecisionDisposition::Reject);
-  assert(sum_overflow.reason == "RECOGNITION_NONFINITE_CANDIDATE_SCORE");
+  assert(sum_overflow.reason == "UNIFIED_NONFINITE_CANDIDATE_SCORE");
 
   DecisionPolicy family_budget;
   family_budget.max_family_weights = 1;
