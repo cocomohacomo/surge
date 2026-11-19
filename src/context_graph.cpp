@@ -194,10 +194,15 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
       !(a == NodeKind::Question && b == NodeKind::Question)) {
    e = "QUESTION_RELATION_TYPE_INVALID"; return false;
   }
-  if(!((a==NodeKind::Question&&b==NodeKind::Question)||
-       (a==NodeKind::Cluster&&(b==NodeKind::Cluster||b==NodeKind::Claim||
-                               b==NodeKind::Entity||b==NodeKind::Evidence)))){
-   e="CLUSTER_CONTAINMENT_TYPE_INVALID";return false;
+  {
+   const bool from_cluster = a == NodeKind::Cluster || a == NodeKind::ChaosCluster;
+   const bool to_cluster = b == NodeKind::Cluster || b == NodeKind::ChaosCluster;
+   const bool cluster_member = to_cluster || b == NodeKind::Claim ||
+       b == NodeKind::Entity || b == NodeKind::Evidence;
+   if (!((a == NodeKind::Question && b == NodeKind::Question) ||
+         (from_cluster && cluster_member))) {
+    e = "CLUSTER_CONTAINMENT_TYPE_INVALID"; return false;
+   }
   }
   break;
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
