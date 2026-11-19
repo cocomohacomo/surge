@@ -45,6 +45,16 @@ double percentile(const std::vector<double>& values, double fraction) {
   return sorted[std::min(index, sorted.size() - 1)];
 }
 
+const char* peak_rss_metric() {
+#ifdef _WIN32
+  return "peak_working_set";
+#elif defined(__linux__) || defined(__APPLE__)
+  return "getrusage_ru_maxrss";
+#else
+  return "unsupported";
+#endif
+}
+
 long long peak_rss_kib() {
 #ifdef _WIN32
   PROCESS_MEMORY_COUNTERS_EX counters{};
@@ -160,7 +170,8 @@ int main(int argc, char** argv) {
             << "  \"journal_bytes\": " << bytes << ",\n"
             << "  \"replayed_events\": " << replayed << ",\n"
             << "  \"peak_rss_kib\": " << rss_kib << ",\n"
-            << "  \"peak_rss_supported\": " << (rss_kib >= 0 ? "true" : "false") << "\n"
+            << "  \"peak_rss_supported\": " << (rss_kib >= 0 ? "true" : "false") << ",\n"
+            << "  \"peak_rss_metric\": \"" << peak_rss_metric() << "\"\n"
             << "}\n";
   std::filesystem::remove_all(root, ec);
   return 0;
