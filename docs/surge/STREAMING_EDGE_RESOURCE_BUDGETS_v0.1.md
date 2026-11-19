@@ -107,3 +107,9 @@ important bypass for callers that previously could classify into a mutable
 `SemanticDelta` and then accidentally commit it through a direct graph path.
 Other direct `ContextGraph` mutators remain public and are still outside the
 guard; this increment is not yet end-to-end Core enforcement.
+
+
+The recovery estimator now performs each size addition as a separately checked
+operation. This avoids overflow in intermediate expressions before the final
+budget accumulator is checked, including on 32-bit `size_t` targets. This is
+still a logical estimate and does not replace process RSS measurement.
