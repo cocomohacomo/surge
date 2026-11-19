@@ -579,7 +579,8 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
     std::string& error) const {
  if(parent_cluster_id.empty()||classification.empty()||partition_key.empty()||
     member_node_id.empty()||relation_prefix.empty()||
-    classification.size()>128||partition_key.size()>1024||member_node_id.size()>1024){
+    parent_cluster_id.size()>1024||classification.size()>128||
+    partition_key.size()>1024||member_node_id.size()>1024||relation_prefix.size()>256){
   error="CLUSTER_CLASSIFICATION_INPUT_INVALID";return false;
  }
  const auto parent=state_.nodes.find(parent_cluster_id);
@@ -590,28 +591,61 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
     (parent!=state_.nodes.end()&&parent->second.kind!=NodeKind::Cluster)){
   error="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND";return false;
  }
- const std::string digest=sha256_hex(classification+"|"+partition_key);
+ const auto member=state_.nodes.find(member_node_id);
+ bool member_in_delta=false;
+ for(const auto& item:delta.nodes)if(item.node.id==member_node_id)member_in_delta=true;
+ if(member==state_.nodes.end()&&!member_in_delta){
+  error="CLUSTER_CLASSIFICATION_MEMBER_NOT_FOUND";return false;
+ }
+ // Length-prefix every field before hashing. Delimiter concatenation is
+ // ambiguous when a field itself contains the delimiter.
+ const auto field=[](const std::string& value){return std::to_string(value.size())+":"+value;};
+ const std::string digest=sha256_hex(field(classification)+field(partition_key));
  assigned_cluster_id=parent_cluster_id+"/classified/"+digest.substr(0,24);
  const auto existing=state_.nodes.find(assigned_cluster_id);
  bool cluster_in_delta=false;
  for(const auto& item:delta.nodes)
-  if(item.node.id==assigned_cluster_id&&item.node.kind==NodeKind::Cluster)cluster_in_delta=true;
+  if(item.node.id==assigned_cluster_id){
+   if(item.node.kind!=NodeKind::Cluster){error="CLUSTER_CLASSIFICATION_ID_KIND_CONFLICT";return false;}
+   cluster_in_delta=true;
+  }
+ if(existing!=state_.nodes.end()&&existing->second.kind!=NodeKind::Cluster){
+  error="CLUSTER_CLASSIFICATION_ID_KIND_CONFLICT";return false;
+ }
  if(existing==state_.nodes.end()&&!cluster_in_delta){
   delta.nodes.push_back({{assigned_cluster_id,NodeKind::Cluster,
       "CLASS="+classification+";PARTITION="+partition_key, {}}});
  }
  const std::string parent_relation=relation_prefix+"/parent/"+digest.substr(0,24);
- bool parent_edge_exists=state_.relations.count(parent_relation)!=0;
- for(const auto& item:delta.relations)
-  if(item.relation.id==parent_relation)parent_edge_exists=true;
+ bool parent_edge_exists=false;
+ const auto parent_edge=state_.relations.find(parent_relation);
+ if(parent_edge!=state_.relations.end()){
+  if(parent_edge->second.kind!=RelationKind::Contains||parent_edge->second.from!=parent_cluster_id||
+     parent_edge->second.to!=assigned_cluster_id){error="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT";return false;}
+  parent_edge_exists=true;
+ }
+ for(const auto& item:delta.relations)if(item.relation.id==parent_relation){
+  if(item.relation.kind!=RelationKind::Contains||item.relation.from!=parent_cluster_id||
+     item.relation.to!=assigned_cluster_id){error="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT";return false;}
+  parent_edge_exists=true;
+ }
  if(!parent_edge_exists)
   delta.relations.push_back({{parent_relation,RelationKind::Contains,
       parent_cluster_id,assigned_cluster_id}});
- const std::string member_digest=sha256_hex(assigned_cluster_id+"|"+member_node_id);
+ const std::string member_digest=sha256_hex(field(assigned_cluster_id)+field(member_node_id));
  const std::string member_relation=relation_prefix+"/member/"+member_digest.substr(0,24);
- bool member_edge_exists=state_.relations.count(member_relation)!=0;
- for(const auto& item:delta.relations)
-  if(item.relation.id==member_relation)member_edge_exists=true;
+ bool member_edge_exists=false;
+ const auto member_edge=state_.relations.find(member_relation);
+ if(member_edge!=state_.relations.end()){
+  if(member_edge->second.kind!=RelationKind::Contains||member_edge->second.from!=assigned_cluster_id||
+     member_edge->second.to!=member_node_id){error="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT";return false;}
+  member_edge_exists=true;
+ }
+ for(const auto& item:delta.relations)if(item.relation.id==member_relation){
+  if(item.relation.kind!=RelationKind::Contains||item.relation.from!=assigned_cluster_id||
+     item.relation.to!=member_node_id){error="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT";return false;}
+  member_edge_exists=true;
+ }
  if(!member_edge_exists)
   delta.relations.push_back({{member_relation,RelationKind::Contains,
       assigned_cluster_id,member_node_id}});
