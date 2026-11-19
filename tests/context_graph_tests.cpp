@@ -1,6 +1,7 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/snapshot_domains.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -56,6 +57,17 @@ int main(){
       const auto rejected=graph.apply(invalid);
       CHECK(!rejected.committed && rejected.error=="CLUSTER_LIFECYCLE_TRANSITION_INVALID");
       CHECK(graph.state_version()==3);
+
+      std::string snapshot_payload, snapshot_error;
+      ContextGraphSnapshotDomain source_domain(graph);
+      CHECK(source_domain.capture(&snapshot_payload, &snapshot_error));
+      ContextGraph restored_graph((root/"cluster-lifecycle-restored.sgj").string());
+      ContextGraphSnapshotDomain restored_domain(restored_graph);
+      auto prepared_restore=restored_domain.prepare_restore(snapshot_payload,&snapshot_error);
+      CHECK(prepared_restore!=nullptr);
+      prepared_restore->commit();
+      const auto snapshot_state=restored_graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(snapshot_state && snapshot_state->state==ClusterLifecycleState::Tombstoned && snapshot_state->revision==3);
 
       SemanticDelta bad_timestamp;bad_timestamp.delta_id="cluster-bad-time";bad_timestamp.idempotency_key="cluster-bad-time";
       bad_timestamp.expected_state_version=3;
