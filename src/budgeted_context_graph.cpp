@@ -83,6 +83,12 @@ bool BudgetedContextGraph::estimate_delta(const SemanticDelta& delta,
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   }
+  for (const auto& id : delta.reclaim_entity_node_ids) {
+    if (!add(1, retained_events) || !add(kEntryOverhead, bytes) ||
+        !add(id.size(), bytes)) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  }
   for (const auto& item : delta.scope_spans) {
     if (!add(1, retained_events)) { error = "CONTEXT_GRAPH_EVENT_COUNT_OVERFLOW"; return false; }
     if (!add_scope(item, bytes)) { error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false; }
@@ -353,6 +359,16 @@ DeltaResult BudgetedContextGraph::append_cluster_lifecycle(SemanticDelta delta,
   error.clear();
   if (!graph_.append_cluster_lifecycle(delta, record, lifecycle_node_id,
                                        relation_id, error))
+    return {false, false, graph_.state_version(), error};
+  auto result = apply(delta);
+  if (!result.committed && !result.duplicate) error = result.error;
+  return result;
+}
+
+DeltaResult BudgetedContextGraph::append_entity_reclamation(
+    SemanticDelta delta,const std::string& entity_node_id,std::string& error) {
+  error.clear();
+  if (!graph_.append_entity_reclamation(delta, entity_node_id, error))
     return {false, false, graph_.state_version(), error};
   auto result = apply(delta);
   if (!result.committed && !result.duplicate) error = result.error;
