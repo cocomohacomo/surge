@@ -20,7 +20,7 @@ int main() {
   const auto failed_journal_path = (root / "reclaim-failed.sgj").string();
   const auto failed_snapshot_path = (root / "reclaim-failed.snapshot").string();
   std::error_code ignored;
-  for (const auto& path : {journal_path, snapshot_path, snapshot_path + ".bak",
+  for (const auto& path : {journal_path, journal_path + ".bak", journal_path + ".compact.tmp", snapshot_path, snapshot_path + ".bak",
                            snapshot_path + ".tmp", snapshot_path + ".bak.tmp",
                            failed_journal_path, failed_snapshot_path,
                            failed_snapshot_path + ".bak", failed_snapshot_path + ".tmp",
@@ -135,7 +135,7 @@ int main() {
     CHECK(journal.committed_events().size() > 0);
   }
 
-  for (const auto& path : {journal_path, snapshot_path, snapshot_path + ".bak",
+  for (const auto& path : {journal_path, journal_path + ".bak", journal_path + ".compact.tmp", snapshot_path, snapshot_path + ".bak",
                            snapshot_path + ".tmp", snapshot_path + ".bak.tmp",
                            failed_journal_path, failed_snapshot_path,
                            failed_snapshot_path + ".bak", failed_snapshot_path + ".tmp",
