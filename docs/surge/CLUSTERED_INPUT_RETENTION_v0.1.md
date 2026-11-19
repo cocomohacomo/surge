@@ -66,14 +66,6 @@ without changing the Core membership contract.
 7. Resource limits and retention policy are enforced by Core.
 8. Any forgotten/archived content follows explicit retention/tombstone policy.
 
-## Conformance
-
-Tests must cover deterministic IDs, invalid parents, allowed member kinds,
-multiple memberships, duplicate/replayed transactions, and recovery after
-restart. Runtime tests must prove that interpretation and surface records are
-clustered without an adapter-owned shadow store.
-
-
 ## Protected Question retention under capacity pressure
 
 Question capacity demotion now protects:
@@ -92,3 +84,29 @@ configured active capacity, the operation fails with
 protected context to satisfy a numeric quota. This is a conservative first
 retention policy. Expiry-based evidence pruning, full dependency-closure
 analysis, cluster compaction and tombstone-aware deletion remain future work.
+
+## Cluster-level retention planning increment
+
+`ClusterRetentionPlanner` now plans capacity pressure over Cluster and
+ChaosCluster records rather than treating each Question or Evidence record as
+an independent memory item. Core supplies one calibrated retention priority
+per candidate; that value is expected to combine importance, interest,
+recency, and temporal validity without embedding language-specific weights in
+the graph layer.
+
+The planner protects:
+- The active Focus cluster and its containing ancestors.
+- Clusters containing Active Questions or Questions referenced by Open or
+  Deferred QuestionAspects, plus their containing ancestors.
+- One-hop cluster-to-cluster dependency neighbors of the protected anchor set.
+- Explicitly pinned clusters and their containing ancestors.
+
+Remaining clusters are ranked by priority descending, then last-access sequence
+descending, then stable cluster ID. Lowest-priority clusters become forgetting
+candidates first. If the protected floor exceeds capacity, planning fails
+closed with `CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED`.
+
+This increment is a pure planner: it does not mutate the graph or journal and
+does not itself delete/compact data. Journaled cluster archival, shared-member
+survival across multiple memberships, tombstones, replay-safe compaction, and
+automatic invocation from the Core memory lifecycle remain required next steps.
