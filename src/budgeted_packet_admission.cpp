@@ -84,8 +84,17 @@ PacketAdmissionResult BudgetedPacketAdmissionCoordinator::admit(
   PacketAdmissionResult rejected;
   rejected.state_version = journal_.state_version();
 
+  const auto event_id = "recognition-packet:" + packet.packet_id;
+  // Idempotent retries consume no new retention capacity. The coordinator
+  // still verifies that the complete packet envelope matches the durable one.
+  if (retained_.find(event_id) != retained_.end())
+    return coordinator_.admit(packet, normalized_source_snapshot, semantic_events);
+
   std::size_t transient_cost = 128;
-  if (!checked_add(transient_cost, normalized_source_snapshot.size())) {
+  std::size_t packet_cost = 0;
+  if (!packet_resident_cost(packet, packet_cost) ||
+      !checked_add(transient_cost, packet_cost) ||
+      !checked_add(transient_cost, normalized_source_snapshot.size())) {
     rejected.error = "PACKET_RESOURCE_ACCOUNTING_OVERFLOW";
     return rejected;
   }
@@ -127,7 +136,6 @@ PacketAdmissionResult BudgetedPacketAdmissionCoordinator::admit(
   auto result = coordinator_.admit(packet, normalized_source_snapshot, semantic_events);
   if (!result.admitted || result.duplicate) return result;
 
-  const auto event_id = "recognition-packet:" + packet.packet_id;
   if (!retain(event_id, resident_cost, std::move(resident),
               std::move(retained_event), error)) {
     // The reservation and identifier are prepared before commit, so this path
