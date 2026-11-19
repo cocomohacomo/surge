@@ -79,7 +79,9 @@ clustered without an adapter-owned shadow store.
 Question capacity demotion now protects:
 - Questions explicitly associated with the currently active Focus cluster.
 - Questions referenced by Open or Deferred QuestionAspects.
-- Immediate Question dependency neighbors of those protected Questions.
+- Exactly one dependency hop from the complete protected anchor set. The
+  neighbor set is computed from a snapshot, so relation iteration order cannot
+  expand protection transitively or change which Questions remain active.
 - Questions directly linked to Evidence through an About relation, preserving a
   provenance anchor.
 
