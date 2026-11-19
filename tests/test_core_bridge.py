@@ -43,6 +43,36 @@ def make_packet(source, packet_id="bridge-p1", sequence=1, idem="bridge-i1"):
 
 
 class PythonCppRuntimeBridgeTests(unittest.TestCase):
+    def test_explicit_resource_budget_profile_rejects_graph_write_before_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            limits = {
+                "resident_bytes": 1024 * 1024,
+                "transient_bytes": 1,
+                "retained_events": 1000,
+                "retained_clusters": 100,
+                "decision_candidates": 1000,
+                "decision_evidence": 1000,
+            }
+            with SemanticCoreBridge(pathlib.Path(tmp) / "budget-profile.sgj",
+                                    resource_limits=limits) as core:
+                before = core.state_version
+                with self.assertRaisesRegex(PacketRejected, "RESOURCE_BUDGET_EXCEEDED"):
+                    core.apply_semantic_delta({
+                        "delta_id": "budget-reject",
+                        "idempotency_key": "budget-reject",
+                        "expected_state_version": before,
+                        "nodes": [{"id": "must-not-commit", "kind": "ENTITY",
+                                   "content": "budget guarded"}],
+                        "relations": [],
+                    })
+                self.assertEqual(core.state_version, before)
+
+    def test_resource_budget_profile_requires_all_nonnegative_limits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "resource_limits must define exactly"):
+                SemanticCoreBridge(pathlib.Path(tmp) / "invalid-budget.sgj",
+                                   resource_limits={"transient_bytes": 10})
+
     def test_chaos_cluster_python_bridge_roundtrip_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "chaos-bridge.sgj"
