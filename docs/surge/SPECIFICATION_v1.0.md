@@ -298,3 +298,20 @@ checkpoint and compaction retire that historical frame. This is logical graph
 reclamation, not secure erasure or immediate journal-byte reclamation.
 Exact per-node lease release, cross-domain reference accounting and bounded
 physical compaction remain incomplete.
+
+
+### Entity reclamation checkpoint and compaction conformance increment
+
+A dedicated end-to-end test now exercises the existing
+SnapshotCoordinator::compact path after an Entity has been unlinked and
+reclaimed. The test verifies snapshot watermark and context identity, durable
+primary/backup verification before journal replacement, removal of historical
+journal events from the active generation, and fresh-instance restoration in
+which the reclaimed Entity stays absent. A forced snapshot-store size failure
+must leave the journal uncompacted and its events replayable.
+
+This is logical reclamation and journal-history retirement, not secure media
+erasure or an RSS guarantee. Snapshot capture still constructs bounded
+serialized payloads, and the current logical staging budget is not a hard
+allocator/RSS ceiling. Edge-PC peak-memory and latency measurements remain
+outstanding.
