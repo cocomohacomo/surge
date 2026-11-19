@@ -52,6 +52,7 @@ class BudgetedContextGraph {
   static bool estimate_graph(const ContextGraph& graph,
                              std::size_t& resident_bytes,
                              std::size_t& cluster_count,
+                             std::size_t& retained_events,
                              std::string& error);
   bool reserve_mutation(std::size_t bytes, std::size_t events,
       ResourceLease& resident, ResourceLease& retained, std::string& error);
