@@ -11,6 +11,25 @@ int main() {
   std::filesystem::remove_all(root);
   const auto path = (root / "events.sgj").string();
   {
+    EventJournal journal((root / "over-limit.sgj").string());
+    CHECK(journal.open());
+    ResourceBudget budget({699, 4096, 1, 4, 16, 64});
+    BudgetedPacketAdmissionCoordinator admission(journal, budget);
+    std::string error;
+    CHECK(admission.recover(error));
+    ValidatedRecognitionPacket p;
+    p.packet_id = "p1"; p.idempotency_key = "i1"; p.context_id = "ctx";
+    p.source_id = "doc"; p.source_generation = "g1"; p.block_ref = "b1";
+    p.offset_basis = "UTF8_BYTE_NFC"; p.start_offset = 0; p.end_offset = 3;
+    p.source_sequence = 1; p.source_snapshot_digest = sha256_hex("abc");
+    p.source_range_digest = sha256_hex("abc"); p.canonical_request_digest = "canonical-p1";
+    const auto rejected = admission.admit(p, "abc");
+    CHECK(!rejected.admitted && rejected.error == "PACKET_RESIDENT_RESOURCE_BUDGET_EXCEEDED");
+    CHECK(journal.state_version() == 0);
+    CHECK(admission.retained_packet_count() == 0);
+    CHECK(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 0);
+  }
+  {
     EventJournal journal(path);
     CHECK(journal.open());
     ResourceBudget budget({700, 4096, 1, 4, 16, 64});
