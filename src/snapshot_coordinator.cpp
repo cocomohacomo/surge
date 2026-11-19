@@ -142,9 +142,6 @@ bool SnapshotCoordinator::restore(const std::string& bytes,
     return fail(error, "SNAPSHOT_WATERMARK_REGRESSION");
 
   const std::string& bundle = document.payload;
-  std::size_t staged_total = 0;
-  if (!checked_add(bytes.size(), bundle.size(), &staged_total))
-    return fail(error, "SNAPSHOT_RESTORE_STAGING_SIZE_OVERFLOW");
   ResourceLease domain_staging;
   if (!reserve_restore_staging(budget_, bundle.size(),
       limits_.max_restore_staging_bytes >= bytes.size()
