@@ -189,22 +189,23 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim&&a!=NodeKind::Question)){e="GRAPH_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Duplicates:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
- case RelationKind::Contains:
-  if ((a == NodeKind::Question || b == NodeKind::Question) &&
-      !(a == NodeKind::Question && b == NodeKind::Question)) {
-   e = "QUESTION_RELATION_TYPE_INVALID"; return false;
-  }
-  {
-   const bool from_cluster = a == NodeKind::Cluster || a == NodeKind::ChaosCluster;
-   const bool to_cluster = b == NodeKind::Cluster || b == NodeKind::ChaosCluster;
-   const bool cluster_member = to_cluster || b == NodeKind::Claim ||
-       b == NodeKind::Entity || b == NodeKind::Evidence;
-   if (!((a == NodeKind::Question && b == NodeKind::Question) ||
-         (from_cluster && cluster_member))) {
-    e = "CLUSTER_CONTAINMENT_TYPE_INVALID"; return false;
-   }
+ case RelationKind::Contains: {
+  const bool from_cluster = a == NodeKind::Cluster || a == NodeKind::ChaosCluster;
+  const bool to_cluster = b == NodeKind::Cluster || b == NodeKind::ChaosCluster;
+  const bool question_decomposition =
+      a == NodeKind::Question && b == NodeKind::Question;
+  // Every typed information node, including Questions and Interests, may be
+  // retained directly by either canonical cluster kind. Cluster nesting and
+  // Question decomposition remain explicit containment relations.
+  if (!question_decomposition &&
+      !(from_cluster && (to_cluster || b == NodeKind::Entity ||
+          b == NodeKind::Evidence || b == NodeKind::Claim ||
+          b == NodeKind::Question || b == NodeKind::QuestionAspect ||
+          b == NodeKind::Dependency || b == NodeKind::Interest))) {
+   e = "CLUSTER_CONTAINMENT_TYPE_INVALID"; return false;
   }
   break;
+ }
  case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::DependsOn:if(a==NodeKind::Question&&b==NodeKind::Question){
    std::vector<std::string> pending{r.to};std::set<std::string> visited;
