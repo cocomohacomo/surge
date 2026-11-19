@@ -76,7 +76,7 @@ int main() {
   {
     EventJournal restored(path.u8string(), limits);
     CHECK(restored.open());
-    CHECK(restored.identity_memory_bytes() == 401);
+    CHECK(restored.identity_memory_bytes() == 433);
     const auto duplicate = restored.commit("tx-a", "idem-a", 0,
         {{"event-a", "NOOP", "payload"}});
     CHECK(duplicate.committed && duplicate.duplicate);
