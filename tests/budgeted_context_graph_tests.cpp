@@ -1,4 +1,5 @@
 #include "surge/budgeted_context_graph.hpp"
+#include "surge/cluster_retention.hpp"
 #include <cassert>
 #include <cstdio>
 #include <string>
