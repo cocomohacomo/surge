@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -106,7 +107,7 @@ class EventJournal {
   std::vector<JournalEvent> events_;
   std::map<std::string, std::string> idempotency_;
   std::map<std::string, std::string> transaction_ids_;
-  std::map<std::string, bool> event_ids_;
+  std::set<std::string> event_ids_;
   std::string last_error_;
 };
 }  // namespace surge
