@@ -252,6 +252,29 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   if (!estimate_delta(delta, bytes, clusters, retained_events, error))
     return {false, false, graph_.state_version(), error};
 
+  // Preflight exact Entity reservations before the durable commit. Entity is
+  // the only currently reclaimable kind and has no typed references of its own.
+  std::size_t reclaimable_resident_bytes = 0;
+  for (const auto& id : delta.reclaim_entity_node_ids) {
+    const auto found = graph_.nodes().find(id);
+    if (found == graph_.nodes().end() || found->second.kind != NodeKind::Entity)
+      return {false, false, graph_.state_version(), "CONTEXT_GRAPH_RECLAMATION_LEASE_TARGET_INVALID"};
+    if (!add(kEntryOverhead, reclaimable_resident_bytes) ||
+        !add(found->second.id.size(), reclaimable_resident_bytes) ||
+        !add(found->second.content.size(), reclaimable_resident_bytes))
+      return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  }
+  std::size_t available_reclaim_lease_bytes = 0;
+  auto sum_leases = [&](const std::vector<ResourceLease>& leases) {
+    for (const auto& lease : leases)
+      if (!add(lease.amount(), available_reclaim_lease_bytes)) return false;
+    return true;
+  };
+  if (!sum_leases(resident_leases_) || !sum_leases(mutation_resident_leases_))
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  if (reclaimable_resident_bytes > available_reclaim_lease_bytes)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_RECLAMATION_LEASE_MISSING"};
+
   std::vector<JournalEvent> prepared;
   ResourceLease staging, resident, retained_clusters, retained;
   // Staging is always accounted, even when no per-operation ceiling was
@@ -295,6 +318,25 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
   if (retained) recovery_event_leases_.push_back(std::move(retained));
   accounted_resident_bytes_ += bytes;
+  // Releasing an Entity drops only its own reservation. Shared payloads are
+  // never reclaimed here; the graph-level gate has already proved zero refs.
+  std::size_t remaining = reclaimable_resident_bytes;
+  auto release_from = [&](std::vector<ResourceLease>& leases) {
+    for (auto it = leases.rbegin(); it != leases.rend() && remaining != 0; ++it) {
+      const auto take = std::min(it->amount(), remaining);
+      if (take && it->shrink(take)) remaining -= take;
+    }
+    leases.erase(std::remove_if(leases.begin(), leases.end(),
+        [](const ResourceLease& lease) { return !lease; }), leases.end());
+  };
+  release_from(mutation_resident_leases_);
+  release_from(resident_leases_);
+  if (remaining != 0) {
+    // Preflight guarantees this cannot occur absent an internal accounting bug.
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_RECLAMATION_LEASE_RELEASE_INVARIANT"};
+  }
+  accounted_resident_bytes_ = reclaimable_resident_bytes > accounted_resident_bytes_
+      ? 0 : accounted_resident_bytes_ - reclaimable_resident_bytes;
   return result;
 }
 
