@@ -225,3 +225,9 @@ The first streaming resource reservation primitive is implemented in `include/su
 UnifiedDecision now defers when all valid evidence has zero effective contribution, rejects non-finite/invalid thresholds, and bounds aggregate surface sets, hypotheses, traces and surface string sizes. Cluster membership IDs use length-prefixed hash preimages; membership validation checks parent/member node existence and relation identity before mutating the caller's delta.
 
 Not yet implemented: the full Language Runtime ABI and package loader, data-only package parser/signature/digest validation, session-pinned activation, generic morphology/lexicon/n-gram runtime, Japanese resource migration, second-language pack, end-to-end Python adapter replacement, and complete resident/transient budget enforcement across EventJournal/ContextGraph/recognition backends. These remain explicit L1-L7 work; the new C ABI is a bridge, not proof of end-to-end integration.
+
+### 15.1 Bounded Language Set registry foundation
+
+`include/surge/language_runtime.hpp` / `src/language_runtime.cpp` now provide a bounded manifest registry with per-set package/unpacked/resident/scratch declarations, aggregate installed package/unpacked/resident accounting, capability-name validation, session count limits, explicit session-boundary activation, session pinning, active-manifest lookup, and protection against uninstalling a pinned set. Switching a session pin is transactional at the registry level: the previous pin remains until the requested installed set and boundary have been validated.
+
+This is a metadata registry and session-pinning foundation only. It does not yet read package files, verify cryptographic digests, load morphology/lexicon/n-gram resources, execute language modules, or guarantee that declared memory equals actual RSS. Those are still loader/runtime implementation tasks.
