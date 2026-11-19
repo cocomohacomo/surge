@@ -1,8 +1,15 @@
 #include "surge/language_runtime.hpp"
 #include <algorithm>
+#include <cctype>
 #include <set>
 
 namespace surge {
+namespace {
+bool is_sha256_hex(const std::string& value) {
+  return value.size() == 64 && std::all_of(value.begin(), value.end(),
+      [](unsigned char ch) { return std::isxdigit(ch) != 0; });
+}
+}  // namespace
 
 LanguageRuntimeRegistry::LanguageRuntimeRegistry(LanguageRuntimeLimits limits)
     : limits_(limits) {}
@@ -29,7 +36,7 @@ bool LanguageRuntimeRegistry::install_manifest(
   error.clear();
   if (manifest.language_set_id.empty() || manifest.language_set_id.size() > 128 ||
       manifest.version.empty() || manifest.version.size() > 64 ||
-      manifest.digest.empty() || manifest.digest.size() > 128 ||
+      !is_sha256_hex(manifest.digest) ||
       manifest.locale.empty() || manifest.locale.size() > 64 ||
       manifest.script.empty() || manifest.script.size() > 64 ||
       manifest.package_bytes == 0 || manifest.unpacked_bytes == 0 ||
