@@ -36,7 +36,7 @@ class BudgetedContextGraph {
 
   DeltaResult append_cluster_unmembership(SemanticDelta delta,
       const std::string& cluster_id, const std::string& member_node_id,
-      const std::string& removal_id, std::string& error);
+      std::string& error);
 
   DeltaResult append_cluster_membership(SemanticDelta delta,
       const std::string& parent_cluster_id, const std::string& classification,
