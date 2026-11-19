@@ -238,3 +238,16 @@ This is logical resource accounting, not allocator page release or an RSS
 reduction guarantee. A crash after unlinking the backup but before directory
 sync may leave platform-dependent recovery state; secure media erasure is not
 claimed. SnapshotCoordinator now enforces a configurable logical capture-staging ceiling across each domain payload, aggregate bundle and final envelope duplication. Each domain callback is separately bounded by max_domain_payload_bytes. The callback's own allocation occurs before its returned size can be checked, so this is not a hard allocator/RSS ceiling; a streaming/segmented domain capture API remains necessary for strict peak-memory control.
+
+
+## Chunked snapshot domain capture API increment
+
+SnapshotDomain now supports a chunk-writer capture contract. SnapshotCoordinator
+streams each domain's chunks directly into its aggregate framed bundle while
+enforcing cumulative domain and aggregate limits. Domains that override this
+method avoid a second full-sized per-domain payload string in the coordinator.
+The compatibility implementation still adapts the legacy string capture
+method, so existing domains retain behavior but do not yet gain the full
+memory benefit. Built-in domain serializers and SnapshotStore direct streaming
+remain follow-up work; current aggregate bundle/envelope materialization means
+this is not a hard RSS bound.
