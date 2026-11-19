@@ -361,10 +361,10 @@ DeltaResult BudgetedContextGraph::append_cluster_lifecycle(SemanticDelta delta,
 
 DeltaResult BudgetedContextGraph::append_cluster_unmembership(SemanticDelta delta,
     const std::string& cluster_id,const std::string& member_node_id,
-    const std::string& removal_id,std::string& error) {
+    std::string& error) {
   error.clear();
   if (!graph_.append_cluster_unmembership(delta, cluster_id, member_node_id,
-                                           removal_id, error))
+                                           error))
     return {false, false, graph_.state_version(), error};
   auto result = apply(delta);
   if (!result.committed && !result.duplicate) error = result.error;
