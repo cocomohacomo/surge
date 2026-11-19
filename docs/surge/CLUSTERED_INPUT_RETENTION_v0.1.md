@@ -214,3 +214,29 @@ from filesystem media, allocator page release, RSS reduction, or bounded
 snapshot capture memory. The generic coordinator's staging limits and logical
 budget remain the current controls; target edge-device measurements are still
 required.
+
+
+## Entity resident reservation release and verified journal-backup pruning
+
+The budgeted Entity reclamation path now releases the corresponding logical
+ResidentBytes reservation after the graph transaction commits. Before commit,
+the gateway verifies that the candidate is an Entity and that active resident
+leases cover the exact node reservation; if the accounting lease is missing,
+the operation fails closed. The lease supports partial release so a shared
+aggregate recovery or mutation reservation can be reduced without releasing
+unrelated nodes. The graph reclamation gate still independently proves that
+the Entity has no remaining graph or cluster references.
+
+The existing explicit journal-backup pruning operation is now included in the
+Entity checkpoint integration test. It requires the active compacted journal,
+the primary snapshot, and the separately readable snapshot backup to agree on
+the checkpoint watermark and context. It verifies the retained pre-compaction
+journal reaches the expected watermark before removing that journal backup,
+then syncs the parent directory. The snapshot backup remains available.
+
+This is logical resource accounting, not allocator page release or an RSS
+reduction guarantee. A crash after unlinking the backup but before directory
+sync may leave platform-dependent recovery state; secure media erasure is not
+claimed. Snapshot capture still materializes bounded domain payload strings
+and requires a future streaming/segmented capture API for stricter peak-memory
+control.
