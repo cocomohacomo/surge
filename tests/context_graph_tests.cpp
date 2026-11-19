@@ -70,9 +70,10 @@ int main(){
 
       SemanticDelta missing_membership;missing_membership.delta_id="cluster-missing-membership";
       missing_membership.idempotency_key="cluster-missing-membership";missing_membership.expected_state_version=3;
-      missing_membership.nodes={{{"lifecycle-orphan",NodeKind::ClusterLifecycle,
-          "ACTIVE 4 \\"2026-11-20T00:03:00Z\\" \\"orphan metadata\\" \\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\\"",
-          {"lifecycle-cluster"}}}};
+      missing_membership.nodes={{{"lifecycle-orphan-cluster",NodeKind::Cluster,"orphan parent",{}}},
+        {{"lifecycle-orphan",NodeKind::ClusterLifecycle,
+          "ACTIVE 1 \\"2026-11-20T00:03:00Z\\" \\"orphan metadata\\" \\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\\"",
+          {"lifecycle-orphan-cluster"}}}};
       const auto orphan_result=graph.apply(missing_membership);
       CHECK(!orphan_result.committed && orphan_result.error=="CLUSTER_LIFECYCLE_MEMBERSHIP_REQUIRED");
       CHECK(graph.state_version()==3);
