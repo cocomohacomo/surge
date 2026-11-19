@@ -165,7 +165,7 @@ class LLMSemanticRuntime:
             producer_id="surge-llm-recognizer",
             producer_version="0.1",
             model_descriptor=str(getattr(self.recognizer.provider, "model", "provider-neutral")),
-            runtime_descriptor="surge-llm-semantic-runtime/0.2",
+            runtime_descriptor="surge-llm-semantic-runtime/0.3",
             base_state_version=core.state_version,
             candidate_labels=labels,
             candidate_spans=temporal_spans or [],
@@ -212,12 +212,18 @@ class LLMSemanticRuntime:
         topic = candidate["topic"]
         cluster_id = None
         if topic:
-            cluster_id = "cluster/" + packet["packet_id"]
-            nodes.append({"id": cluster_id, "kind": "CLUSTER", "content": topic, "references": []})
+            existing_cluster = next((old.get("cluster_id") for old in reversed(self.claim_history)
+                                     if old.get("topic") == topic and old.get("cluster_id")), None)
+            if existing_cluster:
+                cluster_id = existing_cluster
+            else:
+                cluster_id = "cluster/" + packet["packet_id"]
+                nodes.append({"id": cluster_id, "kind": "CLUSTER", "content": topic, "references": []})
         # REVIEW and ABSTAIN remain non-committing for resolved Claims.
         accepted_claim = self._accepts_claim(candidate, score)
         claim_id = "claim/" + packet["packet_id"]
         staged_claim = None
+        contradiction_relation_ids = []
         if accepted_claim:
             content = json.dumps({"proposition": candidate["proposition"],
                 "polarity": candidate["polarity"], "conditional": candidate["conditional"],
@@ -230,19 +236,13 @@ class LLMSemanticRuntime:
             for old in self.claim_history:
                 if (old["proposition"] == candidate["proposition"] and
                     old["polarity"] != candidate["polarity"]):
-                    relations.append({"id": "contradicts/" + old["id"] + "/" + claim_id,
-                                      "kind": "CONTRADICTS", "from": old["id"], "to": claim_id})
-                    qid = "question/" + packet["packet_id"] + "/" + old["id"]
-                    aid = "aspect/" + packet["packet_id"] + "/" + old["id"]
-                    nodes.extend([
-                        {"id": qid, "kind": "QUESTION", "content": "矛盾する主張の条件・時点・根拠を確認する", "references": []},
-                        {"id": aid, "kind": "QUESTION_ASPECT", "content": "矛盾の整理", "references": [qid]}])
-                    for target in sorted({v for v in (old.get("cluster_id"), cluster_id) if v}):
-                        iid = "interest/" + packet["packet_id"] + "/" + target
-                        nodes.append({"id": iid, "kind": "INTEREST", "content": "矛盾の確認対象",
-                                      "references": [aid, target]})
+                    relation_id = "contradicts/" + old["id"] + "/" + claim_id
+                    relations.append({"id": relation_id, "kind": "CONTRADICTS",
+                                      "from": old["id"], "to": claim_id})
+                    contradiction_relation_ids.append(relation_id)
             staged_claim = {"id": claim_id, "proposition": candidate["proposition"],
-                            "polarity": candidate["polarity"], "cluster_id": cluster_id or ""}
+                            "polarity": candidate["polarity"], "topic": topic or "",
+                            "cluster_id": cluster_id or ""}
         elif candidate["kind"] == "QUESTION" and score.decision != "ABSTAIN":
             qid = "question/" + packet["packet_id"]
             aid = "aspect/" + packet["packet_id"]
@@ -271,6 +271,22 @@ class LLMSemanticRuntime:
                    if evidence_provenance.get(key) is not None},
             }
         admission, committed = self.packet_adapter.admit_and_apply_to_core(packet, text, core, delta)
+        # Accepted contradiction relations are routed by the authoritative
+        # Core QuestionRouter after the source/semantic transaction commits.
+        contradiction_routes = []
+        for relation_id in contradiction_relation_ids:
+            try:
+                route = core.route_contradiction(
+                    relation_id, policy_version="llm-semantic-runtime-v0.3")
+                contradiction_routes.append({"relation_id": relation_id, **route})
+            except Exception as exc:
+                # The relation is already durable. Preserve its deterministic
+                # ID so the caller can retry Core routing without replaying text.
+                contradiction_routes.append({
+                    "relation_id": relation_id, "committed": False,
+                    "duplicate": False, "focus_selected": False,
+                    "interest_ids": [], "error": str(exc),
+                })
         self.sequence = next_sequence
         if staged_claim is not None:
             self.claim_history.append(staged_claim)
@@ -290,6 +306,7 @@ class LLMSemanticRuntime:
                 "kind": candidate["kind"], "decision": score.decision,
                 "semantic_commit": committed, "claim_created": accepted_claim,
                 "cluster_id": cluster_id, "evidence_id": evidence_id,
+                "contradiction_routes": contradiction_routes,
                 "proposal": proposal, "temporal_candidates": [s["candidate"] for s in temporal_spans],
                 "temporal_bindings": temporal_bindings,
                 "temporal_ledger": temporal_ledger_results,

@@ -1,5 +1,7 @@
 # LLM Interface and Semantic Core Integration v0.1
 
+> Superseded for contradiction routing and topic-cluster continuity by [LLM Semantic Integration v0.2](LLM_SEMANTIC_INTEGRATION_v0.2.md). This file records the original implementation boundary.
+
 ## Boundary
 
 The LLM is an untrusted Recognition Candidate producer. It has no Core handle,
