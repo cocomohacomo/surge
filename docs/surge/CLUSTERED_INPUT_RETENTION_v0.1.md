@@ -127,3 +127,26 @@ to ARCHIVED. This is a lifecycle-only transition. It does not unlink
 memberships, remove payloads, alter default retrieval filters, or compact the
 graph. Archived clusters continue to protect shared member payloads during
 retention planning.
+
+
+## Journaled membership unlink increment
+
+`ContextGraph::append_cluster_unmembership` stages removal of one existing
+Cluster/ChaosCluster `Contains` edge in a caller-owned `SemanticDelta`.
+The operation is journaled as `RELATION_REMOVE` and replayed in transaction
+order. The membership edge is removed from the active graph view, but the
+member node and its payload are never deleted by this operation. A shared
+member therefore remains available through its other memberships; even when
+the final membership is removed, payload reclamation is deliberately deferred
+to a separate reference-accounted operation.
+
+`BudgetedContextGraph::append_cluster_unmembership` routes the operation
+through the existing transient/resident/event admission gateway. Lifecycle
+audit membership edges cannot be removed through this API. The journal remains
+append-only: removal is represented by a durable command, not by rewriting old
+journal frames. Snapshot serialization sees the post-removal active relation
+set, while replay applies the same removal command.
+
+This increment does not yet implement shared-reference indexes, automatic
+last-reference tombstoning, physical payload reclamation, or compaction. Those
+remain separate guarded stages.
