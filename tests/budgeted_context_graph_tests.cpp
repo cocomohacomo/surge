@@ -205,5 +205,40 @@ int main() {
     assert(graph.nodes().count("entity-b") == 1);
   }
   std::remove(classification_path.c_str());
+
+  // A zero per-operation staging ceiling must not disable the shared
+  // transient-memory budget. Rejection happens before event materialization
+  // and leaves the graph watermark and contents unchanged.
+  const std::string transient_path = "budgeted_context_graph_transient_test.journal";
+  std::remove(transient_path.c_str());
+  {
+    EventJournal journal(transient_path);
+    assert(journal.open());
+    ContextGraph graph(journal);
+    assert(graph.open());
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 8192;
+    limits.transient_bytes = 1;
+    limits.retained_events = 16;
+    limits.retained_clusters = 4;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(graph, budget);  // no local staging ceiling
+    std::string error;
+    assert(guarded.recover(error));
+
+    SemanticDelta delta;
+    delta.delta_id = "transient-rejected";
+    delta.idempotency_key = "transient-rejected-key";
+    delta.expected_state_version = graph.state_version();
+    delta.nodes.push_back({{"not-committed", NodeKind::Entity, "payload", {}}});
+    const auto before = graph.state_version();
+    const auto rejected = guarded.apply(delta);
+    assert(!rejected.committed);
+    assert(rejected.error == "RESOURCE_BUDGET_EXCEEDED");
+    assert(graph.state_version() == before);
+    assert(graph.nodes().count("not-committed") == 0);
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+  }
+  std::remove(transient_path.c_str());
   return 0;
 }
