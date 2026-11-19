@@ -11,6 +11,10 @@ void put_u32(std::string* out, std::uint32_t v) {
   for (int shift = 24; shift >= 0; shift -= 8)
     out->push_back(static_cast<char>((v >> shift) & 0xffU));
 }
+void patch_u32(std::string* out, std::size_t pos, std::uint32_t v) {
+  for (int shift = 24; shift >= 0; shift -= 8)
+    (*out)[pos++] = static_cast<char>((v >> shift) & 0xffU);
+}
 bool get_u32(const std::string& in, std::size_t* pos, std::uint32_t* v) {
   if (*pos > in.size() || in.size() - *pos < 4) return false;
   *v = 0;
@@ -63,6 +67,21 @@ struct PreparedEntry {
 };
 }  // namespace
 
+bool SnapshotDomain::capture_chunks(const SnapshotChunkWriter& writer,
+                                     std::string* error) const {
+  if (!writer) return fail(error, "SNAPSHOT_CHUNK_WRITER_REQUIRED");
+  std::string payload;
+  if (!capture(&payload, error)) return false;
+  constexpr std::size_t kChunkBytes = 16U * 1024U;
+  for (std::size_t offset = 0; offset < payload.size();) {
+    const std::size_t amount = std::min(kChunkBytes, payload.size() - offset);
+    if (!writer(payload.data() + offset, amount, error)) return false;
+    offset += amount;
+  }
+  if (error) error->clear();
+  return true;
+}
+
 SnapshotCoordinator::SnapshotCoordinator(SnapshotCoordinatorLimits limits,
     ResourceBudget* budget)
     : limits_(limits), budget_(budget) {}
@@ -96,30 +115,44 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
     return fail(error, "SNAPSHOT_DOMAIN_COUNT_INVALID");
   std::string bundle;
   put_u32(&bundle, static_cast<std::uint32_t>(domains_.size()));
+  const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
+      ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
+  const std::size_t aggregate_limit = limits_.envelope.max_payload_bytes == 0
+      ? 60U * 1024U * 1024U : limits_.envelope.max_payload_bytes;
   for (const auto* domain : domains_) {
-    std::string payload, domain_error;
-    if (!domain->capture(&payload, &domain_error))
-      return fail(error, domain_error.empty() ? "SNAPSHOT_DOMAIN_CAPTURE_FAILED" : domain_error.c_str());
-    if (payload.size() > limits_.max_domain_payload_bytes)
-      return fail(error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
-    const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
-        ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
-    std::size_t domain_peak = bundle.size();
-    if (!checked_add(domain_peak, payload.size(), &domain_peak) ||
-        !checked_add(domain_peak, domain->domain_id().size(), &domain_peak) ||
-        !checked_add(domain_peak, domain->schema_id().size(), &domain_peak) ||
-        !checked_add(domain_peak, 12, &domain_peak) ||
-        domain_peak > capture_limit)
-      return fail(error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
-    if (!is_valid_utf8(domain->domain_id()) || !is_valid_utf8(domain->schema_id()) ||
-        !put_field(&bundle, domain->domain_id(), 4096) ||
-        !put_field(&bundle, domain->schema_id(), 4096) ||
-        !put_field(&bundle, payload, limits_.max_domain_payload_bytes))
+    const std::string id = domain->domain_id();
+    const std::string schema = domain->schema_id();
+    if (!is_valid_utf8(id) || !is_valid_utf8(schema) ||
+        id.size() > 4096 || schema.size() > 4096)
       return fail(error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
-    const std::size_t aggregate_limit = limits_.envelope.max_payload_bytes == 0
-        ? 60U * 1024U * 1024U : limits_.envelope.max_payload_bytes;
-    if (bundle.size() > aggregate_limit)
-      return fail(error, "SNAPSHOT_BUNDLE_LIMIT_EXCEEDED");
+    if (!put_field(&bundle, id, 4096) || !put_field(&bundle, schema, 4096))
+      return fail(error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
+    const std::size_t length_offset = bundle.size();
+    put_u32(&bundle, 0);
+    std::size_t payload_size = 0;
+    std::string domain_error;
+    const SnapshotChunkWriter writer = [&](const char* data, std::size_t size,
+                                            std::string* chunk_error) {
+      if (size != 0 && data == nullptr)
+        return fail(chunk_error, "SNAPSHOT_DOMAIN_CHUNK_INVALID");
+      if (size > limits_.max_domain_payload_bytes -
+                     std::min(payload_size, limits_.max_domain_payload_bytes))
+        return fail(chunk_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
+      if (size > std::numeric_limits<std::uint32_t>::max() - payload_size)
+        return fail(chunk_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
+      std::size_t next_bundle = 0;
+      if (!checked_add(bundle.size(), size, &next_bundle) ||
+          next_bundle > aggregate_limit || next_bundle > capture_limit)
+        return fail(chunk_error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+      if (size != 0) bundle.append(data, size);
+      payload_size += size;
+      if (chunk_error) chunk_error->clear();
+      return true;
+    };
+    if (!domain->capture_chunks(writer, &domain_error))
+      return fail(error, domain_error.empty()
+          ? "SNAPSHOT_DOMAIN_CAPTURE_FAILED" : domain_error.c_str());
+    patch_u32(&bundle, length_offset, static_cast<std::uint32_t>(payload_size));
   }
   SnapshotDocument document;
   document.schema_id = "surge.snapshot.bundle.v1";
@@ -127,8 +160,6 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
   document.state_version = state_version;
   document.journal_sequence = journal_sequence;
   std::size_t encode_peak = bundle.size();
-  const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
-      ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
   if (!checked_add(encode_peak, bundle.size(), &encode_peak) ||
       !checked_add(encode_peak, context_id.size(), &encode_peak) ||
       !checked_add(encode_peak, 128, &encode_peak) ||
