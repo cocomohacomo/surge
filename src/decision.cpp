@@ -134,12 +134,69 @@ DecisionResult evaluate_impl(const std::vector<DecisionCandidate>& candidates,
 }
 }  // namespace
 
-DecisionResult RecognitionDecision::evaluate(const std::vector<DecisionCandidate>& candidates,
-                                               const DecisionPolicy& policy) {
-  return evaluate_impl(candidates, policy, "RECOGNITION");
-}
-DecisionResult NormalizationDecision::evaluate(const std::vector<DecisionCandidate>& hypotheses,
-                                                 const DecisionPolicy& policy) {
-  return evaluate_impl(hypotheses, policy, "NORMALIZATION");
+DecisionResult UnifiedDecision::evaluate(
+    const std::vector<DecisionCandidate>& candidates, const DecisionPolicy& policy) {
+  DecisionResult result = evaluate_impl(candidates, policy, "UNIFIED");
+  if (result.disposition != DecisionDisposition::Select) return result;
+
+  const auto selected = std::find_if(candidates.begin(), candidates.end(),
+      [&](const DecisionCandidate& candidate) {
+        return candidate.candidate_id == result.selected_candidate_id;
+      });
+  if (selected == candidates.end()) {
+    result.disposition = DecisionDisposition::Reject;
+    result.reason = "UNIFIED_SELECTED_CANDIDATE_NOT_FOUND";
+    result.selected_candidate_id.clear();
+    return result;
+  }
+
+  std::set<std::string> source_refs;
+  for (const auto& surface_set : selected->surface_sets) {
+    if (surface_set.source_ref.empty() ||
+        !source_refs.insert(surface_set.source_ref).second ||
+        surface_set.hypotheses.empty()) {
+      result.disposition = DecisionDisposition::Reject;
+      result.reason = "UNIFIED_INVALID_SURFACE_SET";
+      result.selected_surfaces.clear();
+      return result;
+    }
+    std::vector<DecisionCandidate> hypotheses;
+    hypotheses.reserve(surface_set.hypotheses.size());
+    for (const auto& hypothesis : surface_set.hypotheses) {
+      if (hypothesis.surface.empty()) {
+        result.disposition = DecisionDisposition::Reject;
+        result.reason = "UNIFIED_EMPTY_SURFACE";
+        result.selected_surfaces.clear();
+        return result;
+      }
+      DecisionCandidate candidate;
+      candidate.candidate_id = hypothesis.hypothesis_id;
+      candidate.stable_order = hypothesis.stable_order;
+      candidate.evidence = hypothesis.evidence;
+      hypotheses.push_back(std::move(candidate));
+    }
+    const auto surface = evaluate_impl(hypotheses, policy, "UNIFIED_SURFACE");
+    result.surface_trace.insert(result.surface_trace.end(),
+        surface.trace.begin(), surface.trace.end());
+    if (surface.disposition != DecisionDisposition::Select) {
+      result.disposition = surface.disposition;
+      result.reason = surface.reason;
+      result.selected_surfaces.clear();
+      return result;
+    }
+    const auto chosen = std::find_if(surface_set.hypotheses.begin(),
+        surface_set.hypotheses.end(), [&](const DecisionSurfaceHypothesis& item) {
+          return item.hypothesis_id == surface.selected_candidate_id;
+        });
+    if (chosen == surface_set.hypotheses.end()) {
+      result.disposition = DecisionDisposition::Reject;
+      result.reason = "UNIFIED_SELECTED_SURFACE_NOT_FOUND";
+      result.selected_surfaces.clear();
+      return result;
+    }
+    result.selected_surfaces.emplace(surface_set.source_ref, chosen->surface);
+  }
+  result.reason = "UNIFIED_CORE_SELECTED";
+  return result;
 }
 }  // namespace surge
