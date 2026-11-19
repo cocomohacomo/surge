@@ -80,7 +80,7 @@ typedef struct SurgeRecognitionPacketInput {
 
 typedef struct SurgeGraphNodeInput {
   const char* id;
-  const char* kind;       // CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST
+  const char* kind;       // CLUSTER, CHAOS_CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST, CLUSTER_LIFECYCLE
   const char* content;
   const char* const* references;
   size_t reference_count;
