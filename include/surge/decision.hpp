@@ -70,6 +70,7 @@ struct DecisionResult {
   double margin{0.0};
   std::vector<CandidateDecisionTrace> trace;
   std::map<std::string, std::string> selected_surfaces;
+  std::map<std::string, std::string> selected_surface_hypothesis_ids;
   std::vector<CandidateDecisionTrace> surface_trace;
 };
 
