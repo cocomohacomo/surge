@@ -1,5 +1,6 @@
 #include "surge/budgeted_event_journal.hpp"
 #include <limits>
+#include <set>
 namespace surge {
 BudgetedEventJournal::BudgetedEventJournal(EventJournal& journal, ResourceBudget& budget)
     : journal_(journal), budget_(budget) {}
@@ -30,8 +31,10 @@ JournalCommitResult BudgetedEventJournal::commit(const std::string& tx,
   JournalCommitResult failed; failed.state_version=journal_.state_version();
   if(events.empty()){failed.error="JOURNAL_EMPTY_TRANSACTION";return failed;}
   std::size_t transient_bytes=128,resident_bytes=256;
+  std::set<std::string> transaction_event_ids;
   for(const auto& e:events){
-    if(e.event_id.empty() || retained_.count(e.event_id)){failed.error="JOURNAL_EVENT_ID_ALREADY_RETAINED";return failed;}
+    if(e.event_id.empty() || retained_.count(e.event_id) ||
+       !transaction_event_ids.insert(e.event_id).second){failed.error="JOURNAL_EVENT_ID_ALREADY_RETAINED";return failed;}
     if(!add(transient_bytes,e.event_id.size())||!add(transient_bytes,e.kind.size())||
        !add(transient_bytes,e.payload.size())||!add(resident_bytes,e.event_id.size())||
        !add(resident_bytes,e.kind.size())||!add(resident_bytes,e.payload.size())){
