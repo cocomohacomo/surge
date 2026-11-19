@@ -24,6 +24,8 @@ struct ClusterRetentionPlan {
   // Members shared by at least one retained and one forgotten cluster. They
   // must remain materialized; forgetting a membership is not payload deletion.
   std::vector<std::string> preserved_shared_member_ids;
+  // ARCHIVED/TOMBSTONED clusters do not consume active retention capacity.
+  std::vector<std::string> already_inactive_cluster_ids;
   std::string error;
   bool accepted{false};
 };
