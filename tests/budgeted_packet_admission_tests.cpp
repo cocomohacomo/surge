@@ -13,7 +13,7 @@ int main() {
   {
     EventJournal journal((root / "over-limit.sgj").string());
     CHECK(journal.open());
-    ResourceBudget budget({699, 4096, 1, 4, 16, 64});
+    ResourceBudget budget({696, 4096, 1, 4, 16, 64});
     BudgetedPacketAdmissionCoordinator admission(journal, budget);
     std::string error;
     CHECK(admission.recover(error));
@@ -32,7 +32,7 @@ int main() {
   {
     EventJournal journal(path);
     CHECK(journal.open());
-    ResourceBudget budget({700, 4096, 1, 4, 16, 64});
+    ResourceBudget budget({697, 4096, 1, 4, 16, 64});
     BudgetedPacketAdmissionCoordinator admission(journal, budget);
     std::string error;
     CHECK(admission.recover(error));
