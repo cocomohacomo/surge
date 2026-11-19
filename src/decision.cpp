@@ -181,6 +181,7 @@ DecisionResult UnifiedDecision::evaluate(
   }
   std::size_t total_hypotheses = 0;
   std::size_t total_trace_entries = 0;
+  std::size_t total_surface_evidence = 0;
   std::set<std::string> source_refs;
   for (const auto& surface_set : selected->surface_sets) {
     if (surface_set.hypotheses.size() > policy.max_surface_hypotheses_total -
@@ -207,6 +208,18 @@ DecisionResult UnifiedDecision::evaluate(
       result.selected_surfaces.clear();
       result.selected_surface_hypothesis_ids.clear();
       return result;
+    }
+    for (const auto& hypothesis : surface_set.hypotheses) {
+      if (hypothesis.evidence.size() > policy.max_surface_evidence_total -
+          std::min(total_surface_evidence, policy.max_surface_evidence_total)) {
+        result.disposition = DecisionDisposition::Defer;
+        result.reason = "UNIFIED_SURFACE_EVIDENCE_BUDGET_EXCEEDED";
+        result.selected_surfaces.clear();
+        result.selected_surface_hypothesis_ids.clear();
+        result.surface_trace.clear();
+        return result;
+      }
+      total_surface_evidence += hypothesis.evidence.size();
     }
     std::vector<DecisionCandidate> hypotheses;
     hypotheses.reserve(surface_set.hypotheses.size());
