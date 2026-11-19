@@ -283,6 +283,18 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   return result;
 }
 
+DeltaResult BudgetedContextGraph::append_cluster_lifecycle(SemanticDelta delta,
+    const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
+    const std::string& relation_id, std::string& error) {
+  error.clear();
+  if (!graph_.append_cluster_lifecycle(delta, record, lifecycle_node_id,
+                                       relation_id, error))
+    return {false, false, graph_.state_version(), error};
+  auto result = apply(delta);
+  if (!result.committed && !result.duplicate) error = result.error;
+  return result;
+}
+
 DeltaResult BudgetedContextGraph::append_cluster_membership(SemanticDelta delta,
     const std::string& parent_cluster_id, const std::string& classification,
     const std::string& partition_key, const std::string& member_node_id,
