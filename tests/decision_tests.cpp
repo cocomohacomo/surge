@@ -54,6 +54,17 @@ int main() {
   assert(deferred_joint.selected_surfaces.empty());
   assert(deferred_joint.selected_surface_hypothesis_ids.empty());
 
+  auto partial_surface = joint;
+  partial_surface.surface_sets.push_back({"span:2:4", {
+    {"left", 0, "左", {{"l","orthography","left",1.0,1.0,true}}},
+    {"right", 1, "右", {{"r","orthography","right",1.0,1.0,true}}}}});
+  DecisionPolicy require_surface_margin;
+  require_surface_margin.minimum_margin = 0.1;
+  auto no_partial_surface = UnifiedDecision::evaluate({partial_surface}, require_surface_margin);
+  assert(no_partial_surface.disposition == DecisionDisposition::Defer);
+  assert(no_partial_surface.selected_surfaces.empty());
+  assert(no_partial_surface.selected_surface_hypothesis_ids.empty());
+
   DecisionPolicy calibrated;
   calibrated.family_weights["semantic"] = 0.0;
   calibrated.family_weights["morphology"] = 0.0;
