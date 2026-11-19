@@ -118,3 +118,42 @@ still a logical estimate and does not replace process RSS measurement.
 ## Language manifest digest validation increment
 
 `LanguageRuntimeRegistry::install_manifest` now rejects a manifest digest unless it is exactly 64 hexadecimal characters, matching the SHA-256 field contract in the package schema. The registry validates digest syntax only; it does not read package files or recompute resource hashes. Package loading, path containment, decompression limits, per-resource hash verification and transactional activation remain unimplemented and are still required before a package can be trusted or executed.
+
+
+## P0 completion gate (2026-11-19)
+
+P0 is **not complete** until every gate below is satisfied. Existing opt-in facades are useful admission primitives but do not constitute global enforcement.
+
+### P0-A: Core mutation boundary
+- [ ] Make the Core-owned mutation gateway the only supported production write path for ContextGraph, Question, QuestionAspect, Focus, Claim/Evidence temporal state and cluster membership.
+- [ ] Migrate every runtime, adapter, recovery and maintenance call site to the gateway.
+- [ ] Prevent accidental bypass: production-facing graph mutators must be private/internal or require an explicit unbudgeted test-only construction mode. A documentation convention is insufficient.
+- [ ] Verify failure atomicity: budget exhaustion must leave journal watermark, graph state version, graph maps, indexes and idempotency state unchanged.
+
+### P0-B: Runtime working-set reservations
+- [ ] Reserve transient memory before input decoding/materialization, candidate generation, morphology, lattice expansion, n-gram lookup, normalization and serialization.
+- [ ] Propagate one shared budget and lease through C++ and Python/ONNX boundaries; release leases on every success, error, cancellation and exception path.
+- [ ] Bound candidate/lattice/ngram/cache/output work independently. Reject or defer before allocation when the reservation cannot be acquired.
+- [ ] Exercise overload with producer faster than consumer and prove bounded queueing/backpressure without silent input loss.
+
+### P0-C: Memory lifecycle
+- [ ] Implement expiry-aware pruning and relevance-ranked forgetting for eligible history, with deterministic tie-breaking.
+- [ ] Protect active Focus, unresolved Questions, current claims, required temporal dependencies and the last provenance path.
+- [ ] Add bounded cluster compaction, tombstones and replay-safe deletion semantics. Never mutate immutable journal provenance in place.
+- [ ] If the protected floor itself exceeds capacity, return a stable fail-closed result and preserve state rather than evicting protected records.
+
+### P0-D: Snapshot and recovery peak control
+- [ ] Validate snapshot byte/count limits before materializing decoded collections.
+- [ ] Reserve transient staging for the complete restore candidate plus replay tail before constructing it.
+- [ ] Keep old live state intact until all domains validate and the aggregate restore reservation succeeds; commit atomically.
+- [ ] Release old-state reservations only after successful swap; test failed restore rollback and peak reservation accounting.
+
+### P0-E: Integration and evidence
+- [ ] Replace opt-in construction with Core-owned wiring so production code cannot instantiate an unguarded mutation path accidentally.
+- [ ] Add integration tests proving every write path is budgeted, including all question/status/temporal/snapshot flows.
+- [ ] Run C++ conformance, ASan/UBSan, fuzz smoke and Windows/Linux/macOS CI on the latest head.
+- [ ] Measure complete-pipeline peak RSS, transient high-water, p50/p95/p99 latency, queue depth and sustained overload on the specified edge PC. Logical byte estimates alone do not satisfy this gate.
+
+### Current status
+
+The branch currently has budget primitives and opt-in facades for packet admission, event journal, ContextGraph deltas and selected Question/temporal mutations. It also has protected Question demotion and checked recovery estimates. The following P0 gates remain open: production call-site migration and bypass prevention; reservations around all recognition/morphology/n-gram/ONNX allocations; full expiry-aware forgetting and cluster compaction; aggregate snapshot restore staging reservations; full-pipeline integration tests; and target edge-PC measurements. Therefore this document and PR must not describe P0 as complete until every gate above has evidence attached.
