@@ -254,6 +254,7 @@ int main(){
     seed.relations={{{"unlink-a-edge",RelationKind::Contains,"unlink-a","unlink-shared"}},
                     {{"unlink-b-edge",RelationKind::Contains,"unlink-b","unlink-shared"}}};
     CHECK(graph.apply(seed).committed);
+    CHECK(graph.cluster_membership_reference_count("unlink-shared")==2);
     SemanticDelta unlink;unlink.delta_id="unlink-a-membership";
     unlink.idempotency_key="unlink-a-membership";unlink.expected_state_version=1;
     std::string error;
@@ -262,6 +263,7 @@ int main(){
     CHECK(graph.relations().count("unlink-a-edge")==0);
     CHECK(graph.relations().count("unlink-b-edge")==1);
     CHECK(graph.nodes().count("unlink-shared")==1);
+    CHECK(graph.cluster_membership_reference_count("unlink-shared")==1);
   }
   {
     ContextGraph recovered(unlink_path);CHECK(recovered.open());
@@ -269,6 +271,7 @@ int main(){
     CHECK(recovered.relations().count("unlink-a-edge")==0);
     CHECK(recovered.relations().count("unlink-b-edge")==1);
     CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.cluster_membership_reference_count("unlink-shared")==1);
     std::string error;
     SemanticDelta last;last.delta_id="unlink-last";last.idempotency_key="unlink-last";
     last.expected_state_version=2;
@@ -276,6 +279,7 @@ int main(){
     CHECK(recovered.apply(last).committed);
     CHECK(recovered.nodes().count("unlink-shared")==1);
     CHECK(recovered.relations().count("unlink-b-edge")==0);
+    CHECK(recovered.cluster_membership_reference_count("unlink-shared")==0);
   }
   {
     ContextGraph recovered(unlink_path);CHECK(recovered.open());
