@@ -138,5 +138,34 @@ int main() {
   assert(surface_evidence_overflow.selected_surfaces.empty());
   assert(surface_evidence_overflow.surface_trace.empty());
 
+  // Budgeted evaluation reserves candidates, evidence and transient working
+  // memory before constructing ranking/trace intermediates, then releases all
+  // reservations on return.
+  ResourceBudgetLimits decision_limits;
+  decision_limits.decision_candidates = 16;
+  decision_limits.decision_evidence = 32;
+  decision_limits.transient_bytes = 65536;
+  ResourceBudget decision_budget(decision_limits);
+  auto budgeted = UnifiedDecision::evaluate_budgeted({joint}, decision_budget);
+  assert(budgeted.disposition == DecisionDisposition::Select);
+  auto released = decision_budget.snapshot();
+  assert(released.used[static_cast<std::size_t>(ResourceKind::DecisionCandidates)] == 0);
+  assert(released.used[static_cast<std::size_t>(ResourceKind::DecisionEvidence)] == 0);
+  assert(released.used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+
+  ResourceBudgetLimits exhausted_limits;
+  exhausted_limits.decision_candidates = 1;
+  exhausted_limits.decision_evidence = 32;
+  exhausted_limits.transient_bytes = 65536;
+  ResourceBudget exhausted_budget(exhausted_limits);
+  auto budget_rejected = UnifiedDecision::evaluate_budgeted(
+      {decoder_top, contextual}, exhausted_budget);
+  assert(budget_rejected.disposition == DecisionDisposition::Defer);
+  assert(budget_rejected.reason == "UNIFIED_RESOURCE_BUDGET_EXCEEDED");
+  const auto exhausted_snapshot = exhausted_budget.snapshot();
+  assert(exhausted_snapshot.used[static_cast<std::size_t>(ResourceKind::DecisionCandidates)] == 0);
+  assert(exhausted_snapshot.used[static_cast<std::size_t>(ResourceKind::DecisionEvidence)] == 0);
+  assert(exhausted_snapshot.used[static_cast<std::size_t>(ResourceKind::TransientBytes)] == 0);
+
   return 0;
 }
