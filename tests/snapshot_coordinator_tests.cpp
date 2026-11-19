@@ -60,7 +60,17 @@ int main() {
   CHECK(!coordinator.restore(bytes, "ctx-a", 8, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
 
-  // Capture refuses a bundle whose payload + bundle + encoded envelope peak\n  // would exceed the configured logical staging ceiling.\n  SnapshotCoordinatorLimits capture_limits;\n  capture_limits.max_capture_staging_bytes = 32;\n  SnapshotCoordinator capture_guard(capture_limits);\n  MemoryDomain capture_graph("graph", "graph-state");\n  MemoryDomain capture_chaos("chaos", "chaos-state");\n  CHECK(capture_guard.register_domain(&capture_graph, &error));\n  CHECK(capture_guard.register_domain(&capture_chaos, &error));\n  CHECK(!capture_guard.capture("ctx-a", 7, 19, &bytes, &error));\n  CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");\n\n  // Shared transient budget rejects restore before domain publication and
+  // Capture refuses a bundle whose payload + bundle + encoded envelope peak
+  // would exceed the configured logical staging ceiling.
+  SnapshotCoordinatorLimits capture_limits;
+  capture_limits.max_capture_staging_bytes = 32;
+  SnapshotCoordinator capture_guard(capture_limits);
+  MemoryDomain capture_graph("graph", "graph-state");
+  MemoryDomain capture_chaos("chaos", "chaos-state");
+  CHECK(capture_guard.register_domain(&capture_graph, &error));
+  CHECK(capture_guard.register_domain(&capture_chaos, &error));
+  CHECK(!capture_guard.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");\n\n  // Shared transient budget rejects restore before domain publication and
   // releases every reservation on both rejection and successful completion.
   ResourceBudgetLimits tiny_limits;
   tiny_limits.transient_bytes = 1;
