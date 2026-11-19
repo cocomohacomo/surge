@@ -110,3 +110,20 @@ This increment is a pure planner: it does not mutate the graph or journal and
 does not itself delete/compact data. Journaled cluster archival, shared-member
 survival across multiple memberships, tombstones, replay-safe compaction, and
 automatic invocation from the Core memory lifecycle remain required next steps.
+
+
+## Lifecycle-aware planner and atomic application
+
+The retention plan is bound to the ContextGraph state version from which the
+complete candidate set was evaluated. A stale plan is rejected before any
+mutation. ACTIVE clusters rank ahead of DORMANT clusters; DORMANT remains
+recoverable but is deprioritized. ARCHIVED and TOMBSTONED clusters are reported
+as already inactive and do not consume active retention capacity. If an
+inactive cluster is part of the protected floor, planning fails closed.
+
+The budgeted Core gateway applies all eligible forget decisions in one
+SemanticDelta. ACTIVE becomes DORMANT; a later retention pass may move DORMANT
+to ARCHIVED. This is a lifecycle-only transition. It does not unlink
+memberships, remove payloads, alter default retrieval filters, or compact the
+graph. Archived clusters continue to protect shared member payloads during
+retention planning.
