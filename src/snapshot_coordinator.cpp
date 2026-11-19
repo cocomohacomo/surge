@@ -102,6 +102,15 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
       return fail(error, domain_error.empty() ? "SNAPSHOT_DOMAIN_CAPTURE_FAILED" : domain_error.c_str());
     if (payload.size() > limits_.max_domain_payload_bytes)
       return fail(error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
+    const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
+        ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
+    std::size_t domain_peak = bundle.size();
+    if (!checked_add(domain_peak, payload.size(), &domain_peak) ||
+        !checked_add(domain_peak, domain->domain_id().size(), &domain_peak) ||
+        !checked_add(domain_peak, domain->schema_id().size(), &domain_peak) ||
+        !checked_add(domain_peak, 12, &domain_peak) ||
+        domain_peak > capture_limit)
+      return fail(error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
     if (!is_valid_utf8(domain->domain_id()) || !is_valid_utf8(domain->schema_id()) ||
         !put_field(&bundle, domain->domain_id(), 4096) ||
         !put_field(&bundle, domain->schema_id(), 4096) ||
@@ -117,6 +126,14 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
   document.context_id = context_id;
   document.state_version = state_version;
   document.journal_sequence = journal_sequence;
+  std::size_t encode_peak = bundle.size();
+  const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
+      ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
+  if (!checked_add(encode_peak, bundle.size(), &encode_peak) ||
+      !checked_add(encode_peak, context_id.size(), &encode_peak) ||
+      !checked_add(encode_peak, 128, &encode_peak) ||
+      encode_peak > capture_limit)
+    return fail(error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
   document.payload = std::move(bundle);
   return SnapshotCodec::encode(document, limits_.envelope, bytes, error);
 }
