@@ -137,7 +137,7 @@ bool encode_checkpoint_header(
     const std::string& digest,
     const std::map<std::string, std::string>& idempotency,
     const std::map<std::string, std::string>& transactions,
-    const std::map<std::string, bool>& event_ids,
+    const std::set<std::string>& event_ids,
     std::string& output) {
   output = "H ";
   auto number = [&](std::uint64_t value) {
@@ -162,7 +162,7 @@ bool encode_checkpoint_header(
         !append_header_quoted(output, item.second)) return false;
   if (!space() || !count(event_ids.size())) return false;
   for (const auto& item : event_ids)
-    if (!space() || !append_header_quoted(output, item.first)) return false;
+    if (!space() || !append_header_quoted(output, item)) return false;
   return output.size() <= kMaxFrame;
 }
 bool decode_checkpoint_header(
@@ -170,7 +170,7 @@ bool decode_checkpoint_header(
     std::string& context_id, std::string& digest,
     std::map<std::string, std::string>& idempotency,
     std::map<std::string, std::string>& transactions,
-    std::map<std::string, bool>& event_ids,
+    std::set<std::string>& event_ids,
     std::size_t max_identity_bytes, std::size_t& identity_memory_bytes) {
   std::istringstream in(payload);
   char type = 0;
@@ -211,7 +211,7 @@ bool decode_checkpoint_header(
     if (!(in >> std::quoted(id)) || id.empty() ||
         !add_identity_cost(identity_memory_bytes, id, {}, next_bytes) ||
         (max_identity_bytes && next_bytes > max_identity_bytes) ||
-        !event_ids.emplace(id, true).second) return false;
+        !event_ids.emplace(id).second) return false;
     identity_memory_bytes = next_bytes;
   }
   std::string extra;
@@ -493,7 +493,7 @@ bool EventJournal::recover() {
       for (auto event : p.events) {
         event.state_version = version;
         events_.push_back(std::move(event));
-        event_ids_[events_.back().event_id] = true;
+        event_ids_.insert(events_.back().event_id);
       }
       retained_payload_bytes_ += added_payload_bytes;
       identity_memory_bytes_ = next_identity_bytes;
