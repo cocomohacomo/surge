@@ -140,20 +140,24 @@ int surge_unified_decision_evaluate(
             return item.candidate_id == result.selected_candidate_id;
           });
       if (selected != converted_candidates.end()) {
-        for (const auto& set : selected->surface_sets) {
-          const auto chosen = result.selected_surface_hypothesis_ids.find(set.source_ref);
-          if (chosen == result.selected_surface_hypothesis_ids.end()) continue;
-          for (size_t i = 0; i < surface_set_count; ++i) {
-            if (surface_sets[i].source_ref && set.source_ref == surface_sets[i].source_ref) {
-              for (size_t j = 0; j < surface_sets[i].hypothesis_count; ++j) {
-                const size_t index = surface_sets[i].hypothesis_offset + j;
-                if (hypotheses[index].hypothesis_id &&
-                    chosen->second == hypotheses[index].hypothesis_id) {
-                  selected_hypothesis_indices[i] = index;
-                  break;
-                }
+        const auto selected_input = std::find_if(candidates, candidates + candidate_count,
+            [&](const SurgeDecisionCandidateInput& item) {
+              return item.candidate_id &&
+                     result.selected_candidate_id == item.candidate_id;
+            });
+        if (selected_input != candidates + candidate_count) {
+          for (size_t j = 0; j < selected_input->surface_set_count; ++j) {
+            const size_t set_index = selected_input->surface_set_offset + j;
+            const auto& set = surface_sets[set_index];
+            const auto chosen = result.selected_surface_hypothesis_ids.find(set.source_ref);
+            if (chosen == result.selected_surface_hypothesis_ids.end()) continue;
+            for (size_t k = 0; k < set.hypothesis_count; ++k) {
+              const size_t hypothesis_index = set.hypothesis_offset + k;
+              if (hypotheses[hypothesis_index].hypothesis_id &&
+                  chosen->second == hypotheses[hypothesis_index].hypothesis_id) {
+                selected_hypothesis_indices[set_index] = hypothesis_index;
+                break;
               }
-              break;
             }
           }
         }
