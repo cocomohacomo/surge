@@ -16,6 +16,33 @@
 namespace surge {
 namespace {
 const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::ChaosCluster:return "CHAOS_CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";case NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";}return "UNKNOWN";}
+bool decode_cluster_lifecycle_content(const std::string& content,
+    ClusterLifecycleRecord& record) {
+ std::istringstream in(content);
+ std::string state, extra;
+ if (!(in >> state >> record.revision >> std::quoted(record.recorded_at) >>
+       std::quoted(record.reason) >> std::quoted(record.provenance_digest)) ||
+     (in >> extra) || record.revision == 0 ||
+     record.recorded_at.empty() || record.reason.empty() ||
+     record.provenance_digest.size() != 64) return false;
+ for (const char ch : record.provenance_digest)
+  if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
+ if (state == "ACTIVE") record.state = ClusterLifecycleState::Active;
+ else if (state == "DORMANT") record.state = ClusterLifecycleState::Dormant;
+ else if (state == "ARCHIVED") record.state = ClusterLifecycleState::Archived;
+ else if (state == "TOMBSTONED") record.state = ClusterLifecycleState::Tombstoned;
+ else return false;
+ return true;
+}
+const char* lifecycle_state_name(ClusterLifecycleState state) {
+ switch (state) {
+  case ClusterLifecycleState::Active: return "ACTIVE";
+  case ClusterLifecycleState::Dormant: return "DORMANT";
+  case ClusterLifecycleState::Archived: return "ARCHIVED";
+  case ClusterLifecycleState::Tombstoned: return "TOMBSTONED";
+ }
+ return "UNKNOWN";
+}
 bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"CHAOS_CLUSTER",NodeKind::ChaosCluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest},{"CLUSTER_LIFECYCLE",NodeKind::ClusterLifecycle}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";case RelationKind::Supersedes:return "SUPERSEDES";case RelationKind::Retracts:return "RETRACTS";case RelationKind::Duplicates:return "DUPLICATES";case RelationKind::Contains:return "CONTAINS";}return "UNKNOWN";}
 bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts},{"DUPLICATES",RelationKind::Duplicates},{"CONTAINS",RelationKind::Contains}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
@@ -176,6 +203,48 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
    if(found==s.nodes.end()||found->second.kind!=NodeKind::Evidence){e="CLAIM_EVIDENCE_REF_INVALID";return false;}}
   break;
  case NodeKind::QuestionAspect:if(n.references.size()!=1||!ref_kind(0,NodeKind::Question)){e="QUESTION_ASPECT_PARENT_INVALID";return false;}break;
+ case NodeKind::ClusterLifecycle: {
+  if (n.references.size() != 1 ||
+      !(ref_kind(0, NodeKind::Cluster) || ref_kind(0, NodeKind::ChaosCluster))) {
+   e = "CLUSTER_LIFECYCLE_TARGET_INVALID"; return false;
+  }
+  ClusterLifecycleRecord next;
+  next.cluster_id = n.references.front();
+  if (!decode_cluster_lifecycle_content(n.content, next)) {
+   e = "CLUSTER_LIFECYCLE_RECORD_INVALID"; return false;
+  }
+  std::uint64_t latest_revision = 0;
+  ClusterLifecycleState previous = ClusterLifecycleState::Active;
+  for (const auto& item : s.nodes) {
+   if (item.second.kind != NodeKind::ClusterLifecycle ||
+       item.second.references.size() != 1 ||
+       item.second.references.front() != next.cluster_id) continue;
+   ClusterLifecycleRecord prior;
+   if (!decode_cluster_lifecycle_content(item.second.content, prior)) {
+    e = "CLUSTER_LIFECYCLE_HISTORY_CORRUPT"; return false;
+   }
+   if (prior.revision > latest_revision) {
+    latest_revision = prior.revision;
+    previous = prior.state;
+   }
+  }
+  if (latest_revision == std::numeric_limits<std::uint64_t>::max() ||
+      next.revision != latest_revision + 1 ||
+      previous == ClusterLifecycleState::Tombstoned ||
+      (next.state == ClusterLifecycleState::Active &&
+       previous != ClusterLifecycleState::Dormant &&
+       previous != ClusterLifecycleState::Archived) ||
+      (next.state == ClusterLifecycleState::Dormant &&
+       previous != ClusterLifecycleState::Active) ||
+      (next.state == ClusterLifecycleState::Archived &&
+       previous != ClusterLifecycleState::Active &&
+       previous != ClusterLifecycleState::Dormant) ||
+      (next.state == ClusterLifecycleState::Tombstoned &&
+       previous != ClusterLifecycleState::Archived)) {
+   e = "CLUSTER_LIFECYCLE_TRANSITION_INVALID"; return false;
+  }
+  break;
+ }
  case NodeKind::Dependency:if(n.references.size()!=2||n.references[0]==n.references[1]){e="DEPENDENCY_ENDPOINTS_INVALID";return false;}break;
  case NodeKind::Interest:if(n.references.size()!=2||!ref_kind(0,NodeKind::QuestionAspect)||!(ref_kind(1,NodeKind::Cluster)||ref_kind(1,NodeKind::ChaosCluster))){e="INTEREST_TARGET_INVALID";return false;}break;
  }s.nodes.emplace(n.id,n);if(n.kind==NodeKind::Claim)s.claim_statuses.emplace(n.id,ClaimStatus::Active);return true;
@@ -207,7 +276,8 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
       !(from_cluster && (to_cluster || b == NodeKind::Entity ||
           b == NodeKind::Evidence || b == NodeKind::Claim ||
           b == NodeKind::QuestionAspect || b == NodeKind::Dependency ||
-          b == NodeKind::Interest || cluster_question_membership))) {
+          b == NodeKind::Interest || b == NodeKind::ClusterLifecycle ||
+          cluster_question_membership))) {
    e = "CLUSTER_CONTAINMENT_TYPE_INVALID"; return false;
   }
   break;
