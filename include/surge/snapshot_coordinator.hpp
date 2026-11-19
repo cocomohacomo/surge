@@ -5,6 +5,7 @@
 #include "surge/resource_budget.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,12 +20,20 @@ class PreparedSnapshotRestore {
   virtual void commit() noexcept = 0;
 };
 
+using SnapshotChunkWriter = std::function<bool(
+    const char* data, std::size_t size, std::string* error)>;
+
 class SnapshotDomain {
  public:
   virtual ~SnapshotDomain() = default;
   virtual std::string domain_id() const = 0;
   virtual std::string schema_id() const = 0;
   virtual bool capture(std::string* payload, std::string* error) const = 0;
+  // Stream serialized payload chunks to the coordinator. The compatibility
+  // default adapts capture(); domains should override this to avoid building
+  // a full intermediate payload string.
+  virtual bool capture_chunks(const SnapshotChunkWriter& writer,
+                              std::string* error) const;
   virtual std::unique_ptr<PreparedSnapshotRestore> prepare_restore(
       const std::string& payload, std::string* error) = 0;
   // Build a detached state from the checkpoint and apply every later event
