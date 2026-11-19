@@ -48,3 +48,23 @@ No edge-PC memory or latency claim is valid until measured on specified hardware
 ## 8. Current implementation boundary
 
 The current BudgetedEventJournal and BudgetedPacketAdmissionCoordinator are opt-in facades. Existing code paths that call EventJournal::commit directly are not automatically protected. Runtime integration must route every mutation through the budgeted facade before claiming end-to-end enforcement. ContextGraph node/relation/evidence memory, dependency indexes, question ledgers, snapshot restore peak memory and allocator overhead still require dedicated accounting and tests. LanguageRuntimeRegistry reservations cover manifest-declared resident bytes and one session scratch reservation per pinned session; they do not themselves load, hash or verify package files.
+
+
+## ContextGraph admission increment (feature branch)
+
+An opt-in `BudgetedContextGraph` facade now reserves logical resident bytes and
+retained-cluster slots before applying a `SemanticDelta`. It estimates bounded
+costs for nodes, relations, scope spans, validity records and focus references.
+When configured with a staging limit, it also reserves transient bytes before
+preparing the transaction. Budget exhaustion rejects the delta before the
+journal state version advances. Recovery can rebuild the facade's baseline
+reservation from the already-restored graph.
+
+This remains an opt-in admission boundary: callers must route every semantic
+delta through `BudgetedContextGraph::apply`. Direct calls to
+`ContextGraph::apply` and the separate question-memory/status mutators bypass
+this guard. The current logical estimator does not yet include all historical
+indexes, allocator fragmentation, journal buffers, snapshot restore peak
+memory, or process RSS. It is a conservative per-delta estimate, not a hard RSS
+cap. Full integration must move the facade to the Core-owned mutation boundary
+and cover all graph state transitions before claiming global enforcement.
