@@ -72,3 +72,21 @@ Tests must cover deterministic IDs, invalid parents, allowed member kinds,
 multiple memberships, duplicate/replayed transactions, and recovery after
 restart. Runtime tests must prove that interpretation and surface records are
 clustered without an adapter-owned shadow store.
+
+
+## Protected Question retention under capacity pressure
+
+Question capacity demotion now protects:
+- Questions explicitly associated with the currently active Focus cluster.
+- Questions referenced by Open or Deferred QuestionAspects.
+- Immediate Question dependency neighbors of those protected Questions.
+- Questions directly linked to Evidence through an About relation, preserving a
+  provenance anchor.
+
+Capacity is applied to the remaining candidates by descending interest score
+with deterministic ID tie-breaking. If protected Questions alone exceed the
+configured active capacity, the operation fails with
+`QUESTION_MEMORY_PROTECTED_FLOOR_EXCEEDED`; it does not archive or demote
+protected context to satisfy a numeric quota. This is a conservative first
+retention policy. Expiry-based evidence pruning, full dependency-closure
+analysis, cluster compaction and tombstone-aware deletion remain future work.
