@@ -261,3 +261,10 @@ this is not a hard RSS bound.
 - Low-priority active clusters are transitioned to DORMANT first; subsequent eligible passes can archive them. This is lifecycle compression, not payload deletion or physical memory reclamation. The current graph remains canonical and full restore is available while its payload and journal/snapshot obligations remain intact.
 - Pinned inactive clusters remain fail-closed. Knowledge clusters can be restored from DORMANT/ARCHIVED states, but tombstoned clusters are not automatically restored.
 - Focus, active/open questions, dependencies, pinned clusters and knowledge clusters remain protected. Capacity cannot override the protected floor.
+
+
+### Ranking and dormant restoration clarification
+
+Retention priority is the primary ranking key across active and inactive non-knowledge clusters. An inactive cluster wins a tie at equal priority, so restoration is preferred when it does not displace a more important active cluster. Last-access sequence and stable cluster ID break subsequent ties. Both DORMANT and ARCHIVED selected clusters are transitioned back to ACTIVE in the same atomic lifecycle delta. Tombstoned clusters remain excluded from automatic restoration.
+
+The lifecycle planner does not claim physical memory reclamation. DORMANT/ARCHIVED currently changes retention state while canonical graph payload remains available for deterministic recovery. Physical payload offload/compression and measured RSS reduction require a separate storage-backed implementation and benchmark.
