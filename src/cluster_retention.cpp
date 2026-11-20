@@ -25,7 +25,8 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   const auto lifecycle=graph.cluster_lifecycle(candidate.cluster_id);
   if(!lifecycle)continue;
   if(lifecycle->state==ClusterLifecycleState::Dormant)dormant_ids.insert(candidate.cluster_id);
-  else if(lifecycle->state==ClusterLifecycleState::Archived)inactive_ids.insert(candidate.cluster_id);\n  else if(lifecycle->state==ClusterLifecycleState::Tombstoned)tombstoned_ids.insert(candidate.cluster_id);
+  else if(lifecycle->state==ClusterLifecycleState::Archived)inactive_ids.insert(candidate.cluster_id);
+  else if(lifecycle->state==ClusterLifecycleState::Tombstoned)tombstoned_ids.insert(candidate.cluster_id);
  }
  std::size_t graph_cluster_count=0;
  for(const auto& item:graph.nodes())if(is_cluster(item.second.kind)){++graph_cluster_count;if(!by_id.count(item.first)){result.error="CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";return result;}}
