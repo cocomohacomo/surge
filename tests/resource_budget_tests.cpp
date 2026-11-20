@@ -42,7 +42,10 @@ int main() {
   assert(partial.shrink(150));
   assert(partial.amount() == 250);
   assert(budget.snapshot().used[0] == 250);
-  assert(partial.shrink(250));
+  assert(partial.grow(100, error));
+  assert(partial.amount() == 350);
+  assert(budget.snapshot().used[0] == 350);
+  assert(partial.shrink(350));
   assert(!partial);
   assert(budget.snapshot().used[0] == 0);
   assert(partial.shrink(0));
