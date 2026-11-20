@@ -44,5 +44,27 @@ int main() {
   assert(budget.snapshot().used[0] == 0);
   assert(partial.shrink(0));
 
+  // The temporary edge profile caps ResidentBytes + TransientBytes
+  // together at 200 MiB, rather than allowing each category 200 MiB.
+  constexpr std::size_t kMiB = 1024U * 1024U;
+  ResourceBudget edge_budget(ResourceBudgetLimits::edge_200mb());
+  ResourceLease edge_resident;
+  ResourceLease edge_transient;
+  assert(edge_budget.try_acquire(ResourceKind::ResidentBytes,
+      150U * kMiB, edge_resident, error));
+  assert(edge_budget.try_acquire(ResourceKind::TransientBytes,
+      50U * kMiB, edge_transient, error));
+  const auto edge_snapshot = edge_budget.snapshot();
+  assert(edge_snapshot.total_byte_used == 200U * kMiB);
+  assert(edge_snapshot.total_byte_limit == 200U * kMiB);
+  ResourceLease over_edge;
+  assert(!edge_budget.try_acquire(ResourceKind::TransientBytes,
+      1, over_edge, error));
+  assert(error == "RESOURCE_TOTAL_BYTE_BUDGET_EXCEEDED");
+  edge_transient.reset();
+  assert(edge_budget.try_acquire(ResourceKind::TransientBytes,
+      1U * kMiB, over_edge, error));
+  assert(edge_budget.snapshot().total_byte_used == 151U * kMiB);
+
   return 0;
 }
