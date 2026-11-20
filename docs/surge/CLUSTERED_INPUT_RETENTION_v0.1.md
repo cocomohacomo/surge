@@ -251,3 +251,13 @@ method, so existing domains retain behavior but do not yet gain the full
 memory benefit. Built-in domain serializers and SnapshotStore direct streaming
 remain follow-up work; current aggregate bundle/envelope materialization means
 this is not a hard RSS bound.
+
+
+## Importance-driven forgetting and restoration priority
+
+- `ClusterRetentionCandidate::knowledge_cluster` marks knowledge-bearing clusters. Knowledge clusters and their ancestor chains are protected from capacity forgetting, independent of importance or access recency.
+- For non-knowledge clusters, inactive clusters (DORMANT/ARCHIVED) are considered for restoration before active clusters compete for remaining retention capacity. Within the same lifecycle tier, retention priority descends, then last-access sequence descends, then cluster ID provides stable tie-breaking.
+- Selected inactive clusters are emitted as `restore_cluster_ids` and restored to ACTIVE by the budgeted lifecycle gateway. This restoration is staged atomically with forget transitions in the same journal transaction.
+- Low-priority active clusters are transitioned to DORMANT first; subsequent eligible passes can archive them. This is lifecycle compression, not payload deletion or physical memory reclamation. The current graph remains canonical and full restore is available while its payload and journal/snapshot obligations remain intact.
+- Pinned inactive clusters remain fail-closed. Knowledge clusters can be restored from DORMANT/ARCHIVED states, but tombstoned clusters are not automatically restored.
+- Focus, active/open questions, dependencies, pinned clusters and knowledge clusters remain protected. Capacity cannot override the protected floor.
