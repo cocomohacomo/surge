@@ -696,4 +696,56 @@ SnapshotStoreResult SnapshotStore::load() const {
   return failure;
 }
 
+
+bool SnapshotStore::load_stream(SnapshotDocument* metadata,
+                                const SnapshotPayloadSink& sink,
+                                bool* used_backup,
+                                std::string* error) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (used_backup) *used_backup = false;
+  if (!metadata || !sink) return fail(error, "SNAPSHOT_STREAM_ARGUMENT_REQUIRED");
+  if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
+  if (limits_.max_file_bytes == 0)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_INVALID");
+
+  const auto primary = native_path(path_);
+  std::string primary_error;
+  bool sink_started = false;
+  SnapshotDocument candidate;
+  const SnapshotPayloadSink tracked_sink =
+      [&](const char* data, std::size_t size, std::string* sink_error) {
+        sink_started = true;
+        return sink(data, size, sink_error);
+      };
+  if (stream_verified_generation(primary, limits_.max_file_bytes,
+                                 &candidate, tracked_sink, &primary_error)) {
+    *metadata = std::move(candidate);
+    if (error) error->clear();
+    return true;
+  }
+  // Once delivery starts, never replay a backup into the same sink: the
+  // caller may already have staged a prefix and must abort that transaction.
+  if (sink_started) {
+    if (error) *error = primary_error;
+    return false;
+  }
+
+  const auto backup = native_path(path_ + ".bak");
+  SnapshotDocument backup_candidate;
+  std::string backup_error;
+  if (stream_verified_generation(backup, limits_.max_file_bytes,
+                                 &backup_candidate, sink, &backup_error)) {
+    *metadata = std::move(backup_candidate);
+    if (used_backup) *used_backup = true;
+    if (error) error->clear();
+    return true;
+  }
+  if (primary_error == "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR" &&
+      backup_error == "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR")
+    return fail(error, "SNAPSHOT_STORE_NOT_FOUND");
+  if (error) *error = "SNAPSHOT_STORE_NO_VALID_GENERATION:primary=" +
+      primary_error + ";backup=" + backup_error;
+  return false;
+}
+
 }  // namespace surge
