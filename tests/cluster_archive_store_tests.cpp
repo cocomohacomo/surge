@@ -48,10 +48,15 @@ int main() {
     std::filesystem::remove(detach_path, ec);
     std::filesystem::remove(detach_path.string()+".bak", ec);
     ClusterArchiveStore detach_store(detach_path.u8string());
+    std::string canonical_payload;
+    CHECK(serialize_cluster_archive_payload(graph, "archive-a", &canonical_payload, &detach_error));
+    CHECK(canonical_payload.find("SURGE_CLUSTER_ARCHIVE_PAYLOAD 1") == 0);
+    std::string canonical_payload_again;
+    CHECK(serialize_cluster_archive_payload(graph, "archive-a", &canonical_payload_again, &detach_error));
+    CHECK(canonical_payload == canonical_payload_again);
     const auto before_detach = graph.state_version();
     const auto detached = archive_and_detach_cluster(graph, budgeted, detach_store,
-        "archive-a", {"exclusive", "shared", "question", "missing", "exclusive"},
-        "complete-cluster-snapshot", before_detach,
+        "archive-a", {"exclusive", "shared", "question", "missing", "exclusive"}, before_detach,
         "archive-detach-commit", "archive-detach-key");
     CHECK(detached.archive_verified);
     CHECK(detached.graph_detached);
