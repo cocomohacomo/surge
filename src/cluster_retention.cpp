@@ -1,4 +1,5 @@
 #include "surge/cluster_retention.hpp"
+// Retention planning is deterministic and leaves canonical payloads recoverable.
 #include <algorithm>
 #include <cmath>
 #include <map>
