@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <sstream>
 namespace surge {
 class BudgetedContextGraph;
 struct ClusterArchiveRecord {
@@ -22,6 +23,12 @@ struct ClusterArchiveDetachPlan {
 // The payload includes graph nodes, typed references, internal relations and Focus metadata.
 bool serialize_cluster_archive_payload(const ContextGraph& graph,
     const std::string& cluster_id, std::string* payload, std::string* error);
+
+// Validates the v2 payload identity preamble before it can authorize graph detachment.
+// This is deliberately a preflight guard, not a complete payload decoder.
+bool validate_cluster_archive_payload_identity(const std::string& payload,
+    const std::string& expected_cluster_id, std::uint64_t expected_state_version,
+    std::string* error) noexcept;
 
 // Computes a conservative detach plan. It never mutates the graph.
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
