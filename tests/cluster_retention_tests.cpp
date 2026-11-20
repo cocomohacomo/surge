@@ -44,6 +44,12 @@ int main(){
   auto pinned_archived=candidates;for(auto& candidate:pinned_archived)if(candidate.cluster_id=="archived")candidate.pinned=true;
   const auto protected_inactive=ClusterRetentionPlanner::plan(graph,pinned_archived,10);
   assert(!protected_inactive.accepted&&protected_inactive.error=="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER");
+  auto knowledge_candidates=candidates;for(auto& candidate:knowledge_candidates)if(candidate.cluster_id=="low-a")candidate.knowledge_cluster=true;
+  const auto knowledge_plan=ClusterRetentionPlanner::plan(graph,knowledge_candidates,6);
+  assert(knowledge_plan.accepted);
+  assert(std::find(knowledge_plan.protected_cluster_ids.begin(),knowledge_plan.protected_cluster_ids.end(),"low-a")!=knowledge_plan.protected_cluster_ids.end());
+  assert(std::find(knowledge_plan.restore_cluster_ids.begin(),knowledge_plan.restore_cluster_ids.end(),"archived")!=knowledge_plan.restore_cluster_ids.end());
+  assert(std::find(knowledge_plan.forget_cluster_ids.begin(),knowledge_plan.forget_cluster_ids.end(),"low-b")!=knowledge_plan.forget_cluster_ids.end());
   assert(graph.nodes().count("low-a")==1);
   const auto floor=ClusterRetentionPlanner::plan(graph,candidates,3);assert(!floor.accepted);
   assert(floor.error=="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED");
