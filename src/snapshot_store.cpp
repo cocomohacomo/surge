@@ -1,6 +1,7 @@
 #include "surge/snapshot_store.hpp"
 #include "surge/sha256.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <filesystem>
