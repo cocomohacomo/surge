@@ -25,7 +25,7 @@ struct ResourceBudgetLimits {
   std::size_t decision_evidence{0};
   // Combined logical ceiling for ResidentBytes + TransientBytes; zero is unlimited.
   std::size_t total_byte_limit{0};
-  static ResourceBudgetLimits edge_200mb();
+  static ResourceBudgetLimits temporary_edge_200mb();
 };
 
 struct ResourceBudgetSnapshot {
