@@ -298,18 +298,32 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
   };
   if (payload.empty() || expected_cluster_id.empty() || expected_state_version == 0)
     return fail("CLUSTER_ARCHIVE_PAYLOAD_IDENTITY_ARGUMENT_INVALID");
-  std::istringstream input(payload);
-  std::string marker, key, cluster_id, trailing;
-  unsigned format_version = 0;
-  std::uint64_t watermark = 0;
-  if (!(input >> marker >> format_version) || marker != "SURGE_CLUSTER_ARCHIVE_PAYLOAD" || format_version != 2)
-    return fail("CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
-  if (!(input >> key >> watermark) || key != "watermark" || watermark != expected_state_version)
-    return fail("CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
-  if (!(input >> key >> std::quoted(cluster_id)) || key != "cluster" || cluster_id != expected_cluster_id)
-    return fail("CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
-  if (input >> trailing)
-    return fail("CLUSTER_ARCHIVE_PAYLOAD_PREAMBLE_INVALID");
+  std::istringstream lines(payload);
+  std::string line;
+  if (!std::getline(lines, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  {
+    std::istringstream row(line);
+    std::string marker, extra; unsigned version = 0;
+    if (!(row >> marker >> version) || (row >> extra) ||
+        marker != "SURGE_CLUSTER_ARCHIVE_PAYLOAD" || version != 2)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  }
+  if (!std::getline(lines, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
+  {
+    std::istringstream row(line);
+    std::string key, extra; std::uint64_t watermark = 0;
+    if (!(row >> key >> watermark) || (row >> extra) || key != "watermark" ||
+        watermark != expected_state_version)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
+  }
+  if (!std::getline(lines, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
+  {
+    std::istringstream row(line);
+    std::string key, cluster_id, extra;
+    if (!(row >> key >> std::quoted(cluster_id)) || (row >> extra) ||
+        key != "cluster" || cluster_id != expected_cluster_id)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
+  }
   if (error) error->clear();
   return true;
 }
