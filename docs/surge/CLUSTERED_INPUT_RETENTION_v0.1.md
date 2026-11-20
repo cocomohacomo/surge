@@ -328,3 +328,23 @@ remove journal relations, or claim resident-memory reduction. The archive must
 be durably written and verified before a caller can use a later transactional
 detach operation. The existing graph reclamation command remains the final
 guard and must reject any references that survive unmembership.
+
+## Exact-readback archive verification increment
+
+`ClusterArchiveStore::archive_verified` now provides a fail-closed write/readback
+contract. It writes the snapshot envelope, restores it through the normal
+integrity and backup-recovery path, and requires exact cluster identity,
+state-version equality, journal-sequence equality, and byte-for-byte payload
+equality before returning a verified record. A missing output target is
+rejected before storage mutation.
+
+This closes the gap between "archive save returned success" and "the exact
+archive generation can be read back with the expected watermarks and bytes."
+It is still only the durable precondition for detach: it does not construct a
+complete cluster payload, coordinate graph mutation, or release graph memory.
+A future detach coordinator must capture a complete consistent payload at one
+graph watermark, call this verification first, then submit all unmembership
+and eligible Entity reclamation commands in one version-checked SemanticDelta.
+If that transaction fails, the verified archive is an inert orphan and the
+graph remains authoritative. Shared members must only be unlinked from the
+target cluster, never reclaimed while another membership remains.
