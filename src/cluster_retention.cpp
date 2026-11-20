@@ -41,6 +41,7 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
+ for(const auto& item:by_id)if(item.second.pinned&&inactive_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
   if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
