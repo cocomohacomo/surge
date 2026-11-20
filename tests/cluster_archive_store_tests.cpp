@@ -85,6 +85,10 @@ int main() {
   CHECK(store.archive_verified("cluster-a", 7, 12, "large-ish payload", &record, &error));
   CHECK(record.cluster_id == "cluster-a" && record.state_version == 7);
   CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
+  const std::string expanded_payload(3U * 1024U * 1024U + 37U, 'x');
+  CHECK(store.archive_verified("cluster-a", 7, 12, expanded_payload, &record, &error));
+  CHECK(record.payload == expanded_payload);
+  CHECK(record.state_version == 7 && record.journal_sequence == 12);
   CHECK(!store.archive_verified("cluster-a", 7, 12, "payload", nullptr, &error));
   CHECK(error == "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID");
   CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
