@@ -20,7 +20,7 @@ class ClusterArchiveStore {
       std::string* error);
   bool restore(const std::string& expected_cluster_id,
       std::uint64_t minimum_state_version, ClusterArchiveRecord* output,
-      std::string* error) const;
+      std::string* error, std::uint64_t minimum_journal_sequence = 0) const;
   const std::string& path() const noexcept { return store_.path(); }
  private:
   SnapshotStore store_;
