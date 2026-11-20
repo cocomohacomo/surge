@@ -47,16 +47,16 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   if(inactive_ids.count(item.first)||tombstoned_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
  }
- // Restoration candidates outrank active candidates, then importance, recency and stable ID.
+ // Importance is primary. Inactive state breaks equal-priority ties so restoration wins without displacing a more important active cluster.
  std::sort(ranked.begin(),ranked.end(),[&](const auto& left,const auto& right){
+  if (left.retention_priority != right.retention_priority)
+    return left.retention_priority > right.retention_priority;
   const bool left_inactive=inactive_ids.count(left.cluster_id)!=0;
   const bool right_inactive=inactive_ids.count(right.cluster_id)!=0;
   if(left_inactive!=right_inactive)return left_inactive;
   const bool left_dormant=dormant_ids.count(left.cluster_id)!=0;
   const bool right_dormant=dormant_ids.count(right.cluster_id)!=0;
   if(left_dormant!=right_dormant)return !left_dormant;
-  if (left.retention_priority != right.retention_priority)
-    return left.retention_priority > right.retention_priority;
   if (left.last_access_sequence != right.last_access_sequence)
     return left.last_access_sequence > right.last_access_sequence;
   return left.cluster_id < right.cluster_id;
