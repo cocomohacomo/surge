@@ -41,7 +41,8 @@ int main() {
     CHECK(graph.nodes().count("shared") == 1);
     ResourceBudget budget(ResourceBudgetLimits::temporary_edge_200mb());
     BudgetedContextGraph budgeted(graph, budget);
-    CHECK(budgeted.recover(error));
+    std::string detach_error;
+    CHECK(budgeted.recover(detach_error));
     const auto detach_path = std::filesystem::temp_directory_path() /
         "surge_cluster_archive_detach_test.bin";
     std::filesystem::remove(detach_path, ec);
