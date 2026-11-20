@@ -44,7 +44,7 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
  for(const auto& item:by_id)if((item.second.pinned||item.second.knowledge_cluster)&&tombstoned_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
-  if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
+  if(inactive_ids.count(item.first)||tombstoned_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
  }
  // Restoration candidates outrank active candidates, then importance, recency and stable ID.
