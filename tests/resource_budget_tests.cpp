@@ -62,6 +62,9 @@ int main() {
   const auto edge_snapshot = edge_budget.snapshot();
   assert(edge_snapshot.total_byte_used == 200U * kMiB);
   assert(edge_snapshot.total_byte_limit == 200U * kMiB);
+  assert(!edge_resident.grow(1, error));
+  assert(error == "RESOURCE_TOTAL_BYTE_BUDGET_EXCEEDED");
+  assert(edge_resident.amount() == 150U * kMiB);
   ResourceLease over_edge;
   assert(!edge_budget.try_acquire(ResourceKind::TransientBytes,
       1, over_edge, error));
