@@ -64,9 +64,9 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  std::size_t protected_count=0;for(const auto& id:protected_ids)if(by_id.count(id)){result.protected_cluster_ids.push_back(id);++protected_count;}
  if(protected_count>max_retained_clusters){result.error="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED";result.protected_cluster_ids.clear();return result;}
  const auto available=max_retained_clusters-protected_count;std::set<std::string> selected;
- for(const auto& id:protected_ids)if(inactive_ids.count(id))result.restore_cluster_ids.push_back(id);
+ for(const auto& id:protected_ids)if(inactive_ids.count(id)||dormant_ids.count(id))result.restore_cluster_ids.push_back(id);
  for(std::size_t i=0;i<ranked.size();++i){if(i<available)selected.insert(ranked[i].cluster_id);else result.forget_cluster_ids.push_back(ranked[i].cluster_id);}
- result.retained_cluster_ids=result.protected_cluster_ids;for(const auto& candidate:ranked)if(selected.count(candidate.cluster_id)){result.retained_cluster_ids.push_back(candidate.cluster_id);if(inactive_ids.count(candidate.cluster_id))result.restore_cluster_ids.push_back(candidate.cluster_id);}
+ result.retained_cluster_ids=result.protected_cluster_ids;for(const auto& candidate:ranked)if(selected.count(candidate.cluster_id)){result.retained_cluster_ids.push_back(candidate.cluster_id);if(inactive_ids.count(candidate.cluster_id)||dormant_ids.count(candidate.cluster_id))result.restore_cluster_ids.push_back(candidate.cluster_id);}
  // Preserve members that still have retained or archived memberships.
  std::set<std::string> retained_for_payload(result.retained_cluster_ids.begin(),result.retained_cluster_ids.end());
  retained_for_payload.insert(result.already_inactive_cluster_ids.begin(),result.already_inactive_cluster_ids.end());
