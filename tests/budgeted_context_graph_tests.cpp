@@ -403,6 +403,14 @@ int main() {
         "retention-pass-2", "retention-pass-2-key", error);
     assert(second.committed && graph.cluster_lifecycle("ret-low")->state ==
         ClusterLifecycleState::Archived);
+    const auto restore_plan = ClusterRetentionPlanner::plan(graph, candidates, 2);
+    assert(restore_plan.accepted);
+    assert(restore_plan.restore_cluster_ids.size() == 1 && restore_plan.restore_cluster_ids.front() == "ret-low");
+    const auto restored = guarded.apply_retention_plan(restore_plan,
+        "2026-11-20T00:02:00Z", "importance restoration", std::string(64, 'c'),
+        "retention-restore", "retention-restore-key", error);
+    assert(restored.committed && graph.cluster_lifecycle("ret-low")->state ==
+        ClusterLifecycleState::Active);
   }
   std::remove(cluster_lifecycle_retention_path.c_str());
 
