@@ -82,6 +82,33 @@ int main() {
   CHECK(!store.save_stream(streamed_meta, 9, short_reader, &error));
   CHECK(store.load().bytes == generation_one);
 
+  // Streamed restore authenticates the complete file before invoking its sink.
+  std::string restored_payload;
+  SnapshotDocument restored_metadata;
+  bool restored_from_backup = true;
+  CHECK(store.load_stream(&restored_metadata,
+      [&](const char* data, std::size_t size, std::string*) {
+        restored_payload.append(data, size);
+        return true;
+      }, &restored_from_backup, &error));
+  CHECK(!restored_from_backup);
+  CHECK(restored_metadata.context_id == "ctx");
+  CHECK(restored_metadata.state_version == 1);
+  CHECK(restored_payload == streamed_payload);
+
+  // A corrupt primary is not exposed to the sink; a valid backup is selected.
+  CHECK(store.save(generation_two, &error));
+  write_text(path, "corrupt-primary");
+  restored_payload.clear();
+  CHECK(store.load_stream(&restored_metadata,
+      [&](const char* data, std::size_t size, std::string*) {
+        restored_payload.append(data, size);
+        return true;
+      }, &restored_from_backup, &error));
+  CHECK(restored_from_backup);
+  CHECK(restored_metadata.state_version == 1);
+  CHECK(restored_payload == "state-one");
+
   // Continue with the legacy API to exercise backup rotation compatibility.
   CHECK(store.save(generation_one, &error));
   loaded = store.load();
