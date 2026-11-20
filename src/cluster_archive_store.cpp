@@ -6,7 +6,7 @@
 #include <sstream>
 #include <iomanip>
 namespace surge {
-namespace { constexpr const char* kSchema = "surge.cluster.archive.v1"; }
+namespace { constexpr const char* kSchema = "surge.cluster.archive.v2"; }
 bool serialize_cluster_archive_payload(const ContextGraph& graph,
     const std::string& cluster_id, std::string* payload, std::string* error) {
   if (!payload || cluster_id.empty()) {
@@ -50,7 +50,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   }
 
   std::ostringstream out;
-  out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 1\n";
+  out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\n";
   out << "watermark " << graph.state_version() << "\n";
   out << "cluster " << std::quoted(cluster_id) << "\n";
   std::size_t node_count = 0;
@@ -98,7 +98,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   auto write_string_vector = [&out](const std::vector<std::string>& values) {
     out << values.size();
     for (const auto& value : values) out << ' ' << std::quoted(value);
-    out << "\\n";
+    out << "\n";
   };
   std::size_t scope_count = 0;
   for (const auto& item : graph.scope_spans()) {
@@ -112,7 +112,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
             [&](const std::string& id) { return included.count(id) != 0; });
     if (attached) ++scope_count;
   }
-  out << "scope_spans " << scope_count << "\\n";
+  out << "scope_spans " << scope_count << "\n";
   for (const auto& item : graph.scope_spans()) {
     const auto& r = item.second;
     const auto& p = r.proposal;
@@ -145,55 +145,55 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     write_string_vector(p.packet_refs);
     out << "scope_result " << static_cast<unsigned>(r.status) << ' '
         << static_cast<unsigned>(r.effect) << ' '
-        << (r.may_emit_unconditional_claim ? 1 : 0) << "\\n";
+        << (r.may_emit_unconditional_claim ? 1 : 0) << "\n";
   }
 
   std::size_t claim_history_count = 0;
   for (const auto& item : graph.claim_validity_history())
     if (included.count(item.first)) ++claim_history_count;
-  out << "claim_validity_histories " << claim_history_count << "\\n";
+  out << "claim_validity_histories " << claim_history_count << "\n";
   for (const auto& item : graph.claim_validity_history()) {
     if (!included.count(item.first)) continue;
-    out << "claim_history " << std::quoted(item.first) << ' ' << item.second.size() << "\\n";
+    out << "claim_history " << std::quoted(item.first) << ' ' << item.second.size() << "\n";
     for (const auto& record : item.second) {
       const auto& v = record.validity;
       out << "claim_validity " << std::quoted(v.claim_id) << ' '
           << std::quoted(v.valid_from) << ' ' << std::quoted(v.valid_until) << ' '
           << std::quoted(v.basis_evidence_id) << ' ' << v.revision << ' '
           << std::quoted(v.review_evidence_id) << ' ' << std::quoted(v.reviewer_id)
-          << ' ' << record.recorded_state_version << "\\n";
+          << ' ' << record.recorded_state_version << "\n";
     }
   }
   std::size_t evidence_history_count = 0;
   for (const auto& item : graph.evidence_validity_history())
     if (included.count(item.first)) ++evidence_history_count;
-  out << "evidence_validity_histories " << evidence_history_count << "\\n";
+  out << "evidence_validity_histories " << evidence_history_count << "\n";
   for (const auto& item : graph.evidence_validity_history()) {
     if (!included.count(item.first)) continue;
-    out << "evidence_history " << std::quoted(item.first) << ' ' << item.second.size() << "\\n";
+    out << "evidence_history " << std::quoted(item.first) << ' ' << item.second.size() << "\n";
     for (const auto& record : item.second) {
       const auto& v = record.validity;
       out << "evidence_validity " << std::quoted(v.evidence_id) << ' '
           << std::quoted(v.valid_from) << ' ' << std::quoted(v.valid_until) << ' '
           << std::quoted(v.basis_evidence_id) << ' ' << v.revision << ' '
           << std::quoted(v.review_evidence_id) << ' ' << std::quoted(v.reviewer_id)
-          << ' ' << record.recorded_state_version << "\\n";
+          << ' ' << record.recorded_state_version << "\n";
     }
   }
 
   std::size_t dependency_count = 0;
   for (const auto& item : graph.dependency_evaluations())
     if (included.count(item.first)) ++dependency_count;
-  out << "dependency_evaluations " << dependency_count << "\\n";
+  out << "dependency_evaluations " << dependency_count << "\n";
   for (const auto& item : graph.dependency_evaluations()) {
     if (!included.count(item.first)) continue;
     const auto& d = item.second;
     out << "dependency " << std::quoted(item.first) << ' '
-        << std::quoted(d.delta_id) << ' ' << d.triggered.size() << "\\n";
+        << std::quoted(d.delta_id) << ' ' << d.triggered.size() << "\n";
     for (const auto& trigger : d.triggered)
       out << "trigger " << std::quoted(trigger.dependency_id) << ' '
           << std::quoted(trigger.prerequisite_id) << ' '
-          << std::quoted(trigger.dependent_id) << "\\n";
+          << std::quoted(trigger.dependent_id) << "\n";
     out << "impacted "; write_string_vector(d.impacted_nodes);
     out << "rejected "; write_string_vector(d.rejected_dependencies);
   }
@@ -201,11 +201,11 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   std::size_t reassessment_count = 0;
   for (const auto& item : graph.reassessment_history())
     if (included.count(item.first)) ++reassessment_count;
-  out << "reassessment_histories " << reassessment_count << "\\n";
+  out << "reassessment_histories " << reassessment_count << "\n";
   for (const auto& item : graph.reassessment_history()) {
     if (!included.count(item.first)) continue;
     out << "reassessment " << std::quoted(item.first) << ' '
-        << item.second.size() << "\\n";
+        << item.second.size() << "\n";
     for (const auto& r : item.second) {
       out << "reassessment_record " << std::quoted(r.trace_id) << ' '
           << std::quoted(r.claim_id) << ' ' << std::quoted(r.reference_at) << ' '
@@ -218,7 +218,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
           << r.sequence << ' ' << static_cast<unsigned>(r.lifecycle) << ' '
           << static_cast<unsigned>(r.claim_temporal_state) << ' '
           << std::quoted(r.previous_hash) << ' ' << std::quoted(r.snapshot_digest)
-          << ' ' << std::quoted(r.chain_hash) << ' ' << r.evidence.size() << "\\n";
+          << ' ' << std::quoted(r.chain_hash) << ' ' << r.evidence.size() << "\n";
       for (const auto& e : r.evidence)
         out << "reassessment_evidence " << std::quoted(e.evidence_id) << ' '
             << std::quoted(e.relation_id) << ' ' << static_cast<unsigned>(e.relation)
@@ -226,7 +226,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
             << ' ' << std::quoted(e.valid_from) << ' ' << std::quoted(e.valid_until)
             << ' ' << std::quoted(e.basis_evidence_id) << ' '
             << static_cast<unsigned>(e.temporal_state) << ' '
-            << (e.eligible ? 1 : 0) << "\\n";
+            << (e.eligible ? 1 : 0) << "\n";
       out << "active_supports "; write_string_vector(r.active_support_ids);
       out << "active_contradictions "; write_string_vector(r.active_contradiction_ids);
     }
@@ -236,32 +236,32 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   std::size_t question_state_count = 0;
   for (const auto& item : graph.nodes())
     if (item.second.kind == NodeKind::Question && included.count(item.first)) ++question_state_count;
-  out << ' ' << question_state_count << "\\n";
+  out << ' ' << question_state_count << "\n";
   for (const auto& item : graph.nodes()) {
     if (item.second.kind != NodeKind::Question || !included.count(item.first)) continue;
     out << "question_state " << std::quoted(item.first) << ' '
         << static_cast<unsigned>(graph.question_memory_state(item.first)) << ' '
-        << graph.question_reference_count(item.first) << "\\n";
+        << graph.question_reference_count(item.first) << "\n";
   }
   out << "question_aspect_states";
   std::size_t aspect_count = 0;
   for (const auto& item : graph.nodes())
     if (item.second.kind == NodeKind::QuestionAspect && included.count(item.first)) ++aspect_count;
-  out << ' ' << aspect_count << "\\n";
+  out << ' ' << aspect_count << "\n";
   for (const auto& item : graph.nodes()) {
     if (item.second.kind != NodeKind::QuestionAspect || !included.count(item.first)) continue;
     out << "question_aspect_state " << std::quoted(item.first) << ' '
-        << static_cast<unsigned>(graph.question_aspect_status(item.first)) << "\\n";
+        << static_cast<unsigned>(graph.question_aspect_status(item.first)) << "\n";
   }
   out << "claim_lifecycle_states";
   std::size_t claim_count = 0;
   for (const auto& item : graph.nodes())
     if (item.second.kind == NodeKind::Claim && included.count(item.first)) ++claim_count;
-  out << ' ' << claim_count << "\\n";
+  out << ' ' << claim_count << "\n";
   for (const auto& item : graph.nodes()) {
     if (item.second.kind != NodeKind::Claim || !included.count(item.first)) continue;
     out << "claim_status " << std::quoted(item.first) << ' '
-        << static_cast<unsigned>(graph.claim_status(item.first)) << "\\n";
+        << static_cast<unsigned>(graph.claim_status(item.first)) << "\n";
   }
 
   if (!out) {
