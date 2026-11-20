@@ -1,7 +1,48 @@
 #include "surge/cluster_archive_store.hpp"
 #include <utility>
+#include <set>
 namespace surge {
 namespace { constexpr const char* kSchema = "surge.cluster.archive.v1"; }
+ClusterArchiveDetachPlan plan_cluster_archive_detach(
+    const ContextGraph& graph, const std::string& cluster_id,
+    const std::vector<std::string>& member_node_ids) {
+  ClusterArchiveDetachPlan plan;
+  plan.cluster_id = cluster_id;
+  const auto cluster = graph.nodes().find(cluster_id);
+  if (cluster == graph.nodes().end() ||
+      (cluster->second.kind != NodeKind::Cluster &&
+       cluster->second.kind != NodeKind::ChaosCluster)) {
+    plan.ineligible_member_ids = member_node_ids;
+    return plan;
+  }
+  std::set<std::string> seen;
+  for (const auto& id : member_node_ids) {
+    if (!seen.insert(id).second) continue;
+    const auto node = graph.nodes().find(id);
+    if (node == graph.nodes().end() || node->second.kind != NodeKind::Entity) {
+      plan.ineligible_member_ids.push_back(id);
+      continue;
+    }
+    bool member_of_target = false;
+    for (const auto& edge : graph.relations()) {
+      const auto& relation = edge.second;
+      if (relation.kind == RelationKind::Contains &&
+          relation.from == cluster_id && relation.to == id) {
+        member_of_target = true;
+        break;
+      }
+    }
+    if (!member_of_target) {
+      plan.ineligible_member_ids.push_back(id);
+      continue;
+    }
+    if (graph.cluster_membership_reference_count(id) == 1)
+      plan.exclusively_owned_entity_ids.push_back(id);
+    else
+      plan.shared_member_ids.push_back(id);
+  }
+  return plan;
+}
 ClusterArchiveStore::ClusterArchiveStore(std::string path, SnapshotStoreLimits limits)
     : store_(std::move(path), limits) {}
 bool ClusterArchiveStore::archive(const std::string& cluster_id,
