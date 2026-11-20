@@ -1,4 +1,5 @@
 #include "surge/snapshot_store.hpp"
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -51,8 +52,39 @@ int main() {
   std::string error;
 
   SnapshotStore store(path.u8string());
-  CHECK(store.save(generation_one, &error));
+  SnapshotDocument streamed_meta;
+  streamed_meta.schema_id = "surge.test.snapshot.v1";
+  streamed_meta.context_id = "ctx";
+  streamed_meta.state_version = 1;
+  streamed_meta.journal_sequence = 1;
+  const std::string streamed_payload = "state-one";
+  std::size_t stream_offset = 0;
+  SnapshotChunkReader reader = [&](std::string* chunk, bool* done) {
+    if (stream_offset == streamed_payload.size()) {
+      chunk->clear(); *done = true; return true;
+    }
+    const auto count = std::min<std::size_t>(3, streamed_payload.size() - stream_offset);
+    chunk->assign(streamed_payload.data() + stream_offset, count);
+    stream_offset += count; *done = false; return true;
+  };
+  CHECK(store.save_stream(streamed_meta, streamed_payload.size(), reader, &error));
   auto loaded = store.load();
+  CHECK(loaded.ok && !loaded.used_backup);
+  CHECK(loaded.bytes == generation_one);
+  CHECK(loaded.document.state_version == 1);
+
+  // A stream that ends before its declared length must not replace the file.
+  stream_offset = 0;
+  SnapshotChunkReader short_reader = [&](std::string* chunk, bool* done) {
+    if (stream_offset == 0) { *chunk = "x"; stream_offset = 1; *done = false; return true; }
+    chunk->clear(); *done = true; return true;
+  };
+  CHECK(!store.save_stream(streamed_meta, 9, short_reader, &error));
+  CHECK(store.load().bytes == generation_one);
+
+  // Continue with the legacy API to exercise backup rotation compatibility.
+  CHECK(store.save(generation_one, &error));
+  loaded = store.load();
   CHECK(loaded.ok && !loaded.used_backup);
   CHECK(loaded.bytes == generation_one);
   CHECK(loaded.document.state_version == 1);
