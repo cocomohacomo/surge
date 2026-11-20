@@ -92,11 +92,11 @@ std::string Sha256Hasher::finalize_hex() {
   const auto bit_count = total_bytes_ * 8U;
   buffer_[buffered_++] = 0x80;
   if (buffered_ > 56) {
-    std::fill(buffer_.begin() + buffered_, buffer_.end(), 0);
+    std::fill(buffer_.begin() + buffered_, buffer_.end(), std::uint8_t{0});
     transform(buffer_.data());
     buffered_ = 0;
   }
-  std::fill(buffer_.begin() + buffered_, buffer_.begin() + 56, 0);
+  std::fill(buffer_.begin() + buffered_, buffer_.begin() + 56, std::uint8_t{0});
   for (int i = 7; i >= 0; --i)
     buffer_[56 + static_cast<std::size_t>(7 - i)] =
         static_cast<std::uint8_t>(bit_count >> (i * 8));
