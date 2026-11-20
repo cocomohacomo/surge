@@ -59,6 +59,7 @@ void Sha256Hasher::transform(const std::uint8_t* block) noexcept {
 
 bool Sha256Hasher::update(const void* data, std::size_t size) noexcept {
   if (finalized_ || (size != 0 && data == nullptr)) return false;
+  if (size == 0) return true;
   if (size > std::numeric_limits<std::uint64_t>::max() / 8U - total_bytes_)
     return false;
   const auto* input = static_cast<const std::uint8_t*>(data);
