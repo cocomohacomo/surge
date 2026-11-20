@@ -136,7 +136,7 @@ bool ResourceLease::shrink(std::size_t amount) noexcept {
 }
 
 bool ResourceLease::grow(std::size_t amount,
-                         std::string& error) noexcept {
+                         std::string& error) {
   error.clear();
   if (!owner_) {
     error = "RESOURCE_LEASE_NOT_ACTIVE";
