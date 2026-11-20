@@ -438,3 +438,8 @@ region, excluding the digest footer. Decode still allocates the requested
 payload in its output document, and SnapshotStore still loads a complete file
 into memory. This is a validation peak reduction, not yet streaming file I/O
 or an end-to-end RSS guarantee.
+
+
+### SnapshotStore chunked save API
+
+SnapshotStore exposes save_stream(metadata, payload_bytes, reader, error). The reader yields non-empty chunks of at most 64 KiB with done=false, then must return one final empty chunk with done=true. The writer emits the existing version-1 envelope header, streams payload bytes to a same-directory temporary file while incrementally hashing the exact header+payload bytes, appends the 64-character SHA-256 footer, syncs the file, and uses the existing atomic replacement and backup-generation path. It rejects early EOF, extra bytes, oversized chunks, and payload lengths that do not match the declared length. The streamed path conservatively rejects equal state-version/journal-sequence watermarks because it cannot compare payload equality without materializing the new generation. Existing save/load APIs remain unchanged. The old generation is still loaded into memory for watermark validation, and load() still materializes the file; end-to-end streaming restore is not implemented yet.
