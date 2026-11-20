@@ -123,6 +123,12 @@ int main() {
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
   CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  CHECK(!store.archive("cluster-a", 7, 12,
+      "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark 7\\ncluster \\"cluster-a\\"\\n", &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
+  CHECK(!store.archive("cluster-a", 7, 12,
+      make_payload("cluster-a", 7, "nodes invalid\\n"), &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
   CHECK(!store.archive("cluster-a", 7, 12, make_payload("other-cluster", 7), &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
   CHECK(!store.archive("cluster-a", 7, 12, make_payload("cluster-a", 8), &error));
