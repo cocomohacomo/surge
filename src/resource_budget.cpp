@@ -15,8 +15,17 @@ ResourceBudget::to_array(const ResourceBudgetLimits& limits) {
           limits.decision_evidence};
 }
 
+ResourceBudgetLimits ResourceBudgetLimits::edge_200mb() {
+  constexpr std::size_t kMiB = 1024U * 1024U;
+  ResourceBudgetLimits limits;
+  limits.resident_bytes = 200U * kMiB;
+  limits.transient_bytes = 200U * kMiB;
+  limits.total_byte_limit = 200U * kMiB;
+  return limits;
+}
+
 ResourceBudget::ResourceBudget(ResourceBudgetLimits limits)
-    : limits_(to_array(limits)) {}
+    : limits_(to_array(limits)), total_byte_limit_(limits.total_byte_limit) {}
 
 bool ResourceBudget::try_acquire(ResourceKind kind, std::size_t amount,
                                  ResourceLease& lease, std::string& error) {
@@ -35,6 +44,18 @@ bool ResourceBudget::try_acquire(ResourceKind kind, std::size_t amount,
     error = "RESOURCE_BUDGET_EXCEEDED";
     return false;
   }
+  if (kind == ResourceKind::ResidentBytes ||
+      kind == ResourceKind::TransientBytes) {
+    const std::size_t resident = used_[index(ResourceKind::ResidentBytes)];
+    const std::size_t transient = used_[index(ResourceKind::TransientBytes)];
+    if (total_byte_limit_ != 0 &&
+        (resident > total_byte_limit_ ||
+         transient > total_byte_limit_ - resident ||
+         amount > total_byte_limit_ - resident - transient)) {
+      error = "RESOURCE_TOTAL_BYTE_BUDGET_EXCEEDED";
+      return false;
+    }
+  }
   used_[slot] += amount;
   lease = ResourceLease(this, kind, amount);
   return true;
@@ -42,7 +63,9 @@ bool ResourceBudget::try_acquire(ResourceKind kind, std::size_t amount,
 
 ResourceBudgetSnapshot ResourceBudget::snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return {used_, limits_};
+  return {used_, limits_,
+      used_[index(ResourceKind::ResidentBytes)] +
+          used_[index(ResourceKind::TransientBytes)], total_byte_limit_};
 }
 
 void ResourceBudget::release(ResourceKind kind, std::size_t amount) noexcept {
