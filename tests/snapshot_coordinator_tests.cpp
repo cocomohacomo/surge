@@ -73,6 +73,15 @@ int main() {
 
   const std::string valid_snapshot_bytes = bytes;
 
+  // Reject a domain callback that exceeds the configured chunk bound.
+  SnapshotCoordinatorLimits chunk_limits;
+  chunk_limits.max_capture_chunk_bytes = 2;
+  SnapshotCoordinator chunk_guard(chunk_limits);
+  MemoryDomain chunk_graph("graph", "graph-state");
+  CHECK(chunk_guard.register_domain(&chunk_graph, &error));
+  CHECK(!chunk_guard.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "SNAPSHOT_CAPTURE_CHUNK_LIMIT_EXCEEDED");
+
   // Capture refuses a bundle whose payload + bundle + encoded envelope peak
   // would exceed the configured logical staging ceiling.
   SnapshotCoordinatorLimits capture_limits;
