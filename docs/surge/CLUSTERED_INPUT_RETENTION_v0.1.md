@@ -283,3 +283,26 @@ clusters that lose the ranking remain inactive without generating redundant
 forget transitions. Shared members are preserved whenever any retained or
 still-inactive cluster continues to reference them. This is still a logical
 lifecycle policy: it does not by itself offload payload bytes or reduce RSS.
+
+
+## 8. Durable cluster payload archive foundation
+
+`ClusterArchiveStore` is the first storage primitive for reversible payload
+offload. Each cluster uses its own archive path. The record binds the payload
+to the cluster ID, graph state version, and journal sequence, and is encoded
+with the existing snapshot envelope. Atomic generation replacement, SHA-256
+integrity validation, and last-known-good backup recovery are inherited from
+`SnapshotStore`.
+
+The archive API rejects empty identities/payloads and zero state versions.
+Restore validates the expected cluster identity and a caller-supplied minimum
+state version before returning payload bytes. A corrupt primary may recover
+from the authenticated backup generation.
+
+This stage intentionally does not detach or erase `ContextGraph` nodes,
+change lifecycle state, or claim RSS reduction. The caller must first produce a
+complete cluster payload snapshot and prove that every referenced member is
+safe to offload. Graph detachment is deferred until the graph has an explicit
+archive-handle/reference-count representation and a journaled atomic commit
+protocol. Until then, the archive is a durable copy, not a memory-reclamation
+operation.
