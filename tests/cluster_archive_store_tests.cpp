@@ -1,4 +1,5 @@
 #include "surge/cluster_archive_store.hpp"
+#include "surge/budgeted_context_graph.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -38,6 +39,32 @@ int main() {
     CHECK(plan.ineligible_member_ids.size() == 2);
     CHECK(graph.nodes().count("exclusive") == 1);
     CHECK(graph.nodes().count("shared") == 1);
+    ResourceBudget budget(ResourceBudgetLimits::temporary_edge_200mb());
+    BudgetedContextGraph budgeted(graph, budget);
+    CHECK(budgeted.recover(error));
+    const auto detach_path = std::filesystem::temp_directory_path() /
+        "surge_cluster_archive_detach_test.bin";
+    std::filesystem::remove(detach_path, ec);
+    std::filesystem::remove(detach_path.string()+".bak", ec);
+    ClusterArchiveStore detach_store(detach_path.u8string());
+    const auto before_detach = graph.state_version();
+    const auto detached = archive_and_detach_cluster(graph, budgeted, detach_store,
+        "archive-a", {"exclusive", "shared", "question", "missing", "exclusive"},
+        "complete-cluster-snapshot", before_detach,
+        "archive-detach-commit", "archive-detach-key");
+    CHECK(detached.archive_verified);
+    CHECK(detached.graph_detached);
+    CHECK(detached.reclaimed_entity_ids.size() == 1);
+    CHECK(detached.reclaimed_entity_ids.front() == "exclusive");
+    CHECK(detached.preserved_shared_member_ids.size() == 1);
+    CHECK(detached.preserved_shared_member_ids.front() == "shared");
+    CHECK(graph.nodes().count("exclusive") == 0);
+    CHECK(graph.nodes().count("shared") == 1);
+    CHECK(graph.nodes().count("question") == 1);
+    CHECK(graph.cluster_membership_reference_count("shared") == 1);
+    std::filesystem::remove(detach_path, ec);
+    std::filesystem::remove(detach_path.string()+".bak", ec);
+    std::filesystem::remove(detach_path.string()+".tmp", ec);
   }
   std::remove(graph_path.c_str());
   std::filesystem::remove(path, ec); std::filesystem::remove(path.string()+".bak", ec);
