@@ -94,6 +94,19 @@ int main() {
   CHECK(!capture_guard.capture("ctx-a", 7, 19, &bytes, &error));
   CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
 
+  // Capture staging is charged incrementally to the shared transient
+  // budget and all reservations are released after rejection.
+  ResourceBudgetLimits capture_budget_limits;
+  capture_budget_limits.transient_bytes = 1;
+  ResourceBudget capture_budget(capture_budget_limits);
+  SnapshotCoordinator capture_budgeted({}, &capture_budget);
+  MemoryDomain capture_budget_graph("graph", "capture-state");
+  CHECK(capture_budgeted.register_domain(&capture_budget_graph, &error));
+  CHECK(!capture_budgeted.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "RESOURCE_BUDGET_EXCEEDED");
+  CHECK(capture_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
   // Shared transient budget rejects restore before domain publication and
   // releases every reservation on both rejection and successful completion.
   ResourceBudgetLimits tiny_limits;
