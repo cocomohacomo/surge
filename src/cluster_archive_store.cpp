@@ -101,14 +101,29 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     out << "\\n";
   };
   std::size_t scope_count = 0;
-  for (const auto& item : graph.scope_spans())
-    if (included.count(item.second.proposal.span_id) ||
-        included.count(item.second.proposal.opener.packet_ref)) ++scope_count;
+  for (const auto& item : graph.scope_spans()) {
+    const auto& p = item.second.proposal;
+    const bool attached = included.count(p.span_id) ||
+        included.count(p.opener.packet_ref) ||
+        included.count(p.attribution_ref) || included.count(p.parent_ref) ||
+        std::any_of(p.target_refs.begin(), p.target_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; }) ||
+        std::any_of(p.antecedent_refs.begin(), p.antecedent_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; });
+    if (attached) ++scope_count;
+  }
   out << "scope_spans " << scope_count << "\\n";
   for (const auto& item : graph.scope_spans()) {
     const auto& r = item.second;
     const auto& p = r.proposal;
-    if (!included.count(p.span_id) && !included.count(p.opener.packet_ref)) continue;
+    const bool attached = included.count(p.span_id) ||
+        included.count(p.opener.packet_ref) ||
+        included.count(p.attribution_ref) || included.count(p.parent_ref) ||
+        std::any_of(p.target_refs.begin(), p.target_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; }) ||
+        std::any_of(p.antecedent_refs.begin(), p.antecedent_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; });
+    if (!attached) continue;
     auto write_anchor = [&out](const ScopeAnchor& a) {
       out << ' ' << std::quoted(a.anchor_id) << ' ' << std::quoted(a.source_digest)
           << ' ' << std::quoted(a.offset_basis) << ' ' << a.start_offset << ' '
