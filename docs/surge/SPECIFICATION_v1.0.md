@@ -384,9 +384,9 @@ pending.
 
 ### Provisional 200 MiB edge memory budget
 
-ResourceBudgetLimits::temporary_edge_200mb() provides a provisional edge-device
-profile with a combined logical byte ceiling of 200 MiB across ResidentBytes
-and TransientBytes. The per-category ceilings are also 200 MiB, while the
+ResourceBudgetLimits defaults to a provisional edge-device profile, also
+available explicitly as temporary_edge_200mb(), with a combined logical byte
+ceiling of 200 MiB across ResidentBytes and TransientBytes. The per-category ceilings are also 200 MiB, while the
 combined check prevents the two categories from independently consuming that
 amount. Other count-based resource limits remain caller-configured.
 
