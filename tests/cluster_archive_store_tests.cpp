@@ -3,7 +3,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\\n"; std::exit(1); } } while (0)
+#define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "
+"; std::exit(1); } } while (0)
 int main() {
   using namespace surge;
   const auto path = std::filesystem::temp_directory_path() / "surge_cluster_archive_test.bin";
@@ -33,6 +34,7 @@ int main() {
   CHECK(record.state_version == 7 && record.payload == "large-ish payload");
   std::filesystem::remove(path, ec); std::filesystem::remove(path.string()+".bak", ec);
   std::filesystem::remove(path.string()+".tmp", ec);
-  std::cout << "SURGE cluster archive store tests passed\\n";
+  std::cout << "SURGE cluster archive store tests passed
+";
   return 0;
 }
