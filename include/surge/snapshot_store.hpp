@@ -13,6 +13,7 @@ struct SnapshotStoreLimits {
 };
 
 using SnapshotChunkReader = std::function<bool(std::string*, bool*)>;
+using SnapshotPayloadSink = std::function<bool(const char*, std::size_t, std::string*)>;
 
 struct SnapshotStoreResult {
   // document contains envelope metadata only; the payload remains in bytes.
@@ -40,6 +41,11 @@ class SnapshotStore {
   // before journal replacement so both recovery generations share a watermark.
   bool mirror_current_to_backup(std::string* error);
   SnapshotStoreResult load() const;
+  // Verify the complete generation in a bounded first pass, then deliver the
+  // authenticated payload in <=64 KiB chunks. The sink is never called for an
+  // invalid checksum. Primary corruption falls back to the verified backup.
+  bool load_stream(SnapshotDocument* metadata, const SnapshotPayloadSink& sink,
+                   bool* used_backup, std::string* error) const;
 
   const std::string& path() const { return path_; }
   std::size_t max_file_bytes() const { return limits_.max_file_bytes; }
