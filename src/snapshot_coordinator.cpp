@@ -135,6 +135,10 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
                                             std::string* chunk_error) {
       if (size != 0 && data == nullptr)
         return fail(chunk_error, "SNAPSHOT_DOMAIN_CHUNK_INVALID");
+      const std::size_t chunk_limit = limits_.max_capture_chunk_bytes == 0
+          ? 64U * 1024U : limits_.max_capture_chunk_bytes;
+      if (size > chunk_limit)
+        return fail(chunk_error, "SNAPSHOT_CAPTURE_CHUNK_LIMIT_EXCEEDED");
       if (size > limits_.max_domain_payload_bytes -
                      std::min(payload_size, limits_.max_domain_payload_bytes))
         return fail(chunk_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
