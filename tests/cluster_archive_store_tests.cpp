@@ -20,6 +20,9 @@ int main() {
   CHECK(store.restore("cluster-a", 7, &record, &error));
   CHECK(record.cluster_id == "cluster-a" && record.state_version == 7);
   CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
+  CHECK(!store.restore("cluster-a", 7, &record, &error, 13));
+  CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
+  CHECK(store.restore("cluster-a", 7, &record, &error, 12));
   CHECK(!store.restore("cluster-b", 1, &record, &error));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
   CHECK(!store.restore("cluster-a", 8, &record, &error));
