@@ -291,7 +291,7 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
 
 bool validate_cluster_archive_payload_identity(const std::string& payload,
     const std::string& expected_cluster_id, std::uint64_t expected_state_version,
-    std::string* error) noexcept {
+    std::string* error) {
   auto fail = [&](const char* code) {
     if (error) *error = code;
     return false;
