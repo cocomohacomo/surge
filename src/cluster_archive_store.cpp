@@ -324,6 +324,13 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
         key != "cluster" || cluster_id != expected_cluster_id)
       return fail("CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
   }
+  if (!std::getline(lines, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
+  {
+    std::istringstream row(line);
+    std::string key, extra; std::size_t node_count = 0;
+    if (!(row >> key >> node_count) || (row >> extra) || key != "nodes")
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
+  }
   if (error) error->clear();
   return true;
 }
