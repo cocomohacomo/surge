@@ -374,3 +374,22 @@ itself: callers must provide a complete, internally consistent payload captured
 at the supplied watermark. It also does not yet provide transactional lazy
 rehydration or claim an OS RSS reduction; the budget release is logical
 accounting for reclaimed Entity content.
+
+
+## Canonical cluster archive payload v1
+
+The preferred archive-to-detach overload now serializes the graph rather than
+accepting arbitrary caller bytes. The deterministic payload is versioned and
+captures the target cluster's recursive containment closure, node content and
+typed references, internal typed relations, and matching current/history Focus
+records at the graph state-version watermark. The serializer uses ordered graph
+containers and quoted strings, so identical graph state produces identical
+bytes. The lower-level payload overload remains available for callers that
+already own a canonical serializer.
+
+This first payload version is deliberately conservative: it does not yet encode
+the full Question/Claim/Evidence temporal histories, ScopeSpan records, or
+dependency evaluation traces. Those domains must be added before treating this
+format as a complete lossless cluster checkpoint or enabling automatic restore.
+The archive therefore remains a verified retention copy, not yet a complete
+standalone replacement for every graph-domain record.
