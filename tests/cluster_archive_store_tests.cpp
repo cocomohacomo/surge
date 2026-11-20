@@ -50,7 +50,7 @@ int main() {
     ClusterArchiveStore detach_store(detach_path.u8string());
     std::string canonical_payload;
     CHECK(serialize_cluster_archive_payload(graph, "archive-a", &canonical_payload, &detach_error));
-    CHECK(canonical_payload.find("SURGE_CLUSTER_ARCHIVE_PAYLOAD 1") == 0);
+    CHECK(canonical_payload.find("SURGE_CLUSTER_ARCHIVE_PAYLOAD 2") == 0);
     CHECK(canonical_payload.find("scope_spans ") != std::string::npos);
     CHECK(canonical_payload.find("claim_validity_histories ") != std::string::npos);
     CHECK(canonical_payload.find("evidence_validity_histories ") != std::string::npos);
@@ -59,6 +59,8 @@ int main() {
     CHECK(canonical_payload.find("question_states ") != std::string::npos);
     CHECK(canonical_payload.find("question_aspect_states ") != std::string::npos);
     CHECK(canonical_payload.find("claim_lifecycle_states ") != std::string::npos);
+    CHECK(canonical_payload.find("\\\\n") == std::string::npos);
+    CHECK(!canonical_payload.empty() && canonical_payload.back() == '\n');
     std::string canonical_payload_again;
     CHECK(serialize_cluster_archive_payload(graph, "archive-a", &canonical_payload_again, &detach_error));
     CHECK(canonical_payload == canonical_payload_again);
