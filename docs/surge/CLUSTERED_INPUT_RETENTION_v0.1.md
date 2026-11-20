@@ -462,3 +462,12 @@ decoder for the complete v2 record grammar, does not validate every internal
 reference or enum, and does not reconstruct ContextGraph state. Full decode,
 reference validation, independent-ledger bundling, and selective transactional
 rehydration remain the next stages.
+
+
+The identity preflight now reads exactly the three-line v2 identity preamble
+and permits the serialized record body that follows it. Both archive writes
+and archive reads enforce the payload cluster ID and exact state watermark,
+so a payload cannot be stored under a different cluster/version envelope.
+This remains a preamble-level validator, not a full grammar decoder: record
+counts, enum ranges, duplicate IDs, cross-record references, and ledger bundle
+integrity still require the strict decoder stage.
