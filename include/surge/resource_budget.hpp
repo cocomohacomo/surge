@@ -48,6 +48,7 @@ class ResourceLease {
   ResourceLease& operator=(ResourceLease&& other) noexcept;
   void reset() noexcept;
   bool shrink(std::size_t amount) noexcept;
+  bool grow(std::size_t amount, std::string& error) noexcept;
   std::size_t amount() const noexcept { return amount_; }
   explicit operator bool() const noexcept { return owner_ != nullptr; }
 
@@ -70,6 +71,7 @@ class ResourceBudget {
  private:
   friend class ResourceLease;
   void release(ResourceKind kind, std::size_t amount) noexcept;
+  bool grow(ResourceKind kind, std::size_t amount, std::string& error) noexcept;
   static std::array<std::size_t, static_cast<std::size_t>(ResourceKind::Count)>
       to_array(const ResourceBudgetLimits& limits);
   mutable std::mutex mutex_;
