@@ -51,6 +51,9 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   const bool left_inactive=inactive_ids.count(left.cluster_id)!=0;
   const bool right_inactive=inactive_ids.count(right.cluster_id)!=0;
   if(left_inactive!=right_inactive)return left_inactive;
+  const bool left_dormant=dormant_ids.count(left.cluster_id)!=0;
+  const bool right_dormant=dormant_ids.count(right.cluster_id)!=0;
+  if(left_dormant!=right_dormant)return !left_dormant;
   if (left.retention_priority != right.retention_priority)
     return left.retention_priority > right.retention_priority;
   if (left.last_access_sequence != right.last_access_sequence)
