@@ -21,7 +21,7 @@ bool ClusterArchiveStore::archive(const std::string& cluster_id,
 }
 bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
     std::uint64_t minimum_state_version, ClusterArchiveRecord* output,
-    std::string* error) const {
+    std::string* error, std::uint64_t minimum_journal_sequence) const {
   if (!output || expected_cluster_id.empty()) {
     if (error) *error = "CLUSTER_ARCHIVE_RESTORE_ARGUMENT_INVALID";
     return false;
@@ -33,14 +33,16 @@ bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
   }
   if (loaded.document.schema_id != kSchema ||
       loaded.document.context_id != expected_cluster_id ||
-      loaded.document.state_version < minimum_state_version) {
+      loaded.document.state_version < minimum_state_version ||
+      loaded.document.journal_sequence < minimum_journal_sequence) {
     if (error) *error = "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH";
     return false;
   }
   SnapshotDocument decoded;
   if (!SnapshotCodec::decode(loaded.bytes, {}, &decoded, error)) return false;
   if (decoded.schema_id != kSchema || decoded.context_id != expected_cluster_id ||
-      decoded.state_version < minimum_state_version) {
+      decoded.state_version < minimum_state_version ||
+      decoded.journal_sequence < minimum_journal_sequence) {
     if (error) *error = "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH";
     return false;
   }
