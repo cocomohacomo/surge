@@ -20,12 +20,12 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
   if(node==graph.nodes().end()||!is_cluster(node->second.kind)){result.error="CLUSTER_RETENTION_TARGET_NOT_FOUND";return result;}
   if(!by_id.emplace(candidate.cluster_id,candidate).second){result.error="CLUSTER_RETENTION_DUPLICATE_CANDIDATE";return result;}
  }
- std::set<std::string> dormant_ids, inactive_ids;
+ std::set<std::string> dormant_ids, inactive_ids, tombstoned_ids;
  for(const auto& candidate:candidates){
   const auto lifecycle=graph.cluster_lifecycle(candidate.cluster_id);
   if(!lifecycle)continue;
   if(lifecycle->state==ClusterLifecycleState::Dormant)dormant_ids.insert(candidate.cluster_id);
-  else if(lifecycle->state==ClusterLifecycleState::Archived||lifecycle->state==ClusterLifecycleState::Tombstoned)inactive_ids.insert(candidate.cluster_id);
+  else if(lifecycle->state==ClusterLifecycleState::Archived)inactive_ids.insert(candidate.cluster_id);\n  else if(lifecycle->state==ClusterLifecycleState::Tombstoned)tombstoned_ids.insert(candidate.cluster_id);
  }
  std::size_t graph_cluster_count=0;
  for(const auto& item:graph.nodes())if(is_cluster(item.second.kind)){++graph_cluster_count;if(!by_id.count(item.first)){result.error="CLUSTER_RETENTION_CANDIDATE_SET_INCOMPLETE";return result;}}
@@ -41,7 +41,7 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
- for(const auto& item:by_id)if(item.second.pinned&&inactive_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
+ for(const auto& item:by_id)if((item.second.pinned||item.second.knowledge_cluster)&&tombstoned_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
   if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
