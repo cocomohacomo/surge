@@ -23,11 +23,16 @@ struct ResourceBudgetLimits {
   std::size_t retained_clusters{0};
   std::size_t decision_candidates{0};
   std::size_t decision_evidence{0};
+  // Combined logical ceiling for ResidentBytes + TransientBytes; zero is unlimited.
+  std::size_t total_byte_limit{0};
+  static ResourceBudgetLimits edge_200mb();
 };
 
 struct ResourceBudgetSnapshot {
   std::array<std::size_t, static_cast<std::size_t>(ResourceKind::Count)> used{};
   std::array<std::size_t, static_cast<std::size_t>(ResourceKind::Count)> limits{};
+  std::size_t total_byte_used{0};
+  std::size_t total_byte_limit{0};
 };
 
 // A lease accounts for a bounded resource reservation. The budget must outlive
@@ -70,6 +75,7 @@ class ResourceBudget {
   mutable std::mutex mutex_;
   std::array<std::size_t, static_cast<std::size_t>(ResourceKind::Count)> limits_{};
   std::array<std::size_t, static_cast<std::size_t>(ResourceKind::Count)> used_{};
+  std::size_t total_byte_limit_{0};
 };
 
 }  // namespace surge
