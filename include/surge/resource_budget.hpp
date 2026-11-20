@@ -17,14 +17,14 @@ enum class ResourceKind : std::size_t {
 };
 
 struct ResourceBudgetLimits {
-  std::size_t resident_bytes{0};
-  std::size_t transient_bytes{0};
+  std::size_t resident_bytes{200U * 1024U * 1024U};
+  std::size_t transient_bytes{200U * 1024U * 1024U};
   std::size_t retained_events{0};
   std::size_t retained_clusters{0};
   std::size_t decision_candidates{0};
   std::size_t decision_evidence{0};
   // Combined logical ceiling for ResidentBytes + TransientBytes; zero is unlimited.
-  std::size_t total_byte_limit{0};
+  std::size_t total_byte_limit{200U * 1024U * 1024U};
   static ResourceBudgetLimits temporary_edge_200mb();
 };
 
