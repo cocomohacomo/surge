@@ -41,7 +41,6 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
- for(const auto& id:protected_ids)if(inactive_ids.count(id)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
   if(inactive_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   else if(!protected_ids.count(item.first))ranked.push_back(item.second);
@@ -60,6 +59,7 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  std::size_t protected_count=0;for(const auto& id:protected_ids)if(by_id.count(id)){result.protected_cluster_ids.push_back(id);++protected_count;}
  if(protected_count>max_retained_clusters){result.error="CLUSTER_RETENTION_PROTECTED_FLOOR_EXCEEDED";result.protected_cluster_ids.clear();return result;}
  const auto available=max_retained_clusters-protected_count;std::set<std::string> selected;
+ for(const auto& id:protected_ids)if(inactive_ids.count(id))result.restore_cluster_ids.push_back(id);
  for(std::size_t i=0;i<ranked.size();++i){if(i<available)selected.insert(ranked[i].cluster_id);else result.forget_cluster_ids.push_back(ranked[i].cluster_id);}
  result.retained_cluster_ids=result.protected_cluster_ids;for(const auto& candidate:ranked)if(selected.count(candidate.cluster_id)){result.retained_cluster_ids.push_back(candidate.cluster_id);if(inactive_ids.count(candidate.cluster_id))result.restore_cluster_ids.push_back(candidate.cluster_id);}
  // Preserve members that still have retained or archived memberships.
