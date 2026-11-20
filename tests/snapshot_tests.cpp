@@ -1,4 +1,5 @@
-#include "surge/snapshot.hpp"\n#include "surge/sha256.hpp"
+#include "surge/snapshot.hpp"
+#include "surge/sha256.hpp"
 
 #include <cstdlib>
 #include <iostream>
