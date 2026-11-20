@@ -118,4 +118,28 @@ bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
   if (error) error->clear();
   return true;
 }
+
+bool ClusterArchiveStore::archive_verified(const std::string& cluster_id,
+    std::uint64_t state_version, std::uint64_t journal_sequence,
+    const std::string& payload, ClusterArchiveRecord* verified,
+    std::string* error) {
+  if (!verified) {
+    if (error) *error = "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID";
+    return false;
+  }
+  if (!archive(cluster_id, state_version, journal_sequence, payload, error))
+    return false;
+  ClusterArchiveRecord candidate;
+  if (!restore(cluster_id, state_version, &candidate, error, journal_sequence))
+    return false;
+  if (candidate.state_version != state_version ||
+      candidate.journal_sequence != journal_sequence ||
+      candidate.payload != payload) {
+    if (error) *error = "CLUSTER_ARCHIVE_VERIFY_MISMATCH";
+    return false;
+  }
+  *verified = std::move(candidate);
+  if (error) error->clear();
+  return true;
+}
 }  // namespace surge
