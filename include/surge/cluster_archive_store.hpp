@@ -18,6 +18,11 @@ struct ClusterArchiveDetachPlan {
   std::vector<std::string> shared_member_ids;
   std::vector<std::string> ineligible_member_ids;
 };
+// Produces a deterministic, versioned snapshot of the cluster's containment closure.
+// The payload includes graph nodes, typed references, internal relations and Focus metadata.
+bool serialize_cluster_archive_payload(const ContextGraph& graph,
+    const std::string& cluster_id, std::string* payload, std::string* error);
+
 // Computes a conservative detach plan. It never mutates the graph.
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
     const ContextGraph& graph, const std::string& cluster_id,
@@ -34,8 +39,16 @@ struct ClusterArchiveDetachResult {
   std::string error;
 };
 
-// Archives caller-supplied complete cluster bytes at an exact graph watermark,
+// Serializes the graph itself, archives the resulting bytes at the exact graph watermark,
 // verifies readback, then detaches eligible memberships in one journal delta.
+ClusterArchiveDetachResult archive_and_detach_cluster(
+    const ContextGraph& graph, BudgetedContextGraph& budgeted_graph,
+    class ClusterArchiveStore& archive_store, const std::string& cluster_id,
+    const std::vector<std::string>& member_node_ids,
+    std::uint64_t expected_state_version, const std::string& delta_id,
+    const std::string& idempotency_key);
+
+// Lower-level overload for callers that already hold a canonical payload.
 ClusterArchiveDetachResult archive_and_detach_cluster(
     const ContextGraph& graph, BudgetedContextGraph& budgeted_graph,
     class ClusterArchiveStore& archive_store, const std::string& cluster_id,
