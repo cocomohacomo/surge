@@ -311,3 +311,20 @@ operation.
 ## Archive restore freshness guard
 
 `ClusterArchiveStore::restore` now accepts a minimum journal sequence in addition to the minimum cluster state version. The archive is rejected unless both version floors are met, preventing a valid but stale archive generation from being used as a restoration source. The default sequence floor is zero for API compatibility. This is a preflight freshness guard only: callers must still validate graph state and commit restoration transactionally before mutating `ContextGraph`.
+
+
+## Shared-member-safe archive detach planning
+
+A conservative, read-only `plan_cluster_archive_detach` API now evaluates proposed
+cluster members before any future physical reclamation. It only marks an Entity
+as exclusively owned when it has exactly one active Cluster/ChaosCluster
+membership, that membership belongs to the target cluster, and no other graph
+relation or typed node reference points to the Entity. Shared membership,
+non-Entity nodes, missing nodes, and nodes with additional references are
+classified separately as ineligible or shared.
+
+The planner is deliberately non-mutating. It does not detach graph nodes,
+remove journal relations, or claim resident-memory reduction. The archive must
+be durably written and verified before a caller can use a later transactional
+detach operation. The existing graph reclamation command remains the final
+guard and must reject any references that survive unmembership.
