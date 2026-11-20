@@ -7,13 +7,6 @@
 #include <iomanip>
 namespace surge {
 namespace { constexpr const char* kSchema = "surge.cluster.archive.v1"; }
-namespace {
-bool append_archive_string(std::ostringstream& out, const std::string& value) {
-  out << std::quoted(value);
-  return static_cast<bool>(out);
-}
-}
-
 bool serialize_cluster_archive_payload(const ContextGraph& graph,
     const std::string& cluster_id, std::string* payload, std::string* error) {
   if (!payload || cluster_id.empty()) {
