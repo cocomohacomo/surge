@@ -72,7 +72,7 @@ int main() {
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
     const auto before_invalid_detach = graph.state_version();
     const auto invalid_detach = archive_and_detach_cluster(graph, budgeted, detach_store,
-        "archive-a", {"exclusive"}, "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark 999\\ncluster \\\"archive-a\\\"\\n",
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark 999\ncluster \"archive-a\"\n",
         before_invalid_detach, "invalid-archive-detach", "invalid-archive-detach-key");
     CHECK(!invalid_detach.archive_verified && !invalid_detach.graph_detached);
     CHECK(invalid_detach.error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
