@@ -47,7 +47,7 @@ int main() {
   // The temporary edge profile caps ResidentBytes + TransientBytes
   // together at 200 MiB, rather than allowing each category 200 MiB.
   constexpr std::size_t kMiB = 1024U * 1024U;
-  ResourceBudget edge_budget(ResourceBudgetLimits::edge_200mb());
+  ResourceBudget edge_budget(ResourceBudgetLimits::temporary_edge_200mb());
   ResourceLease edge_resident;
   ResourceLease edge_transient;
   assert(edge_budget.try_acquire(ResourceKind::ResidentBytes,
