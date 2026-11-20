@@ -306,3 +306,8 @@ safe to offload. Graph detachment is deferred until the graph has an explicit
 archive-handle/reference-count representation and a journaled atomic commit
 protocol. Until then, the archive is a durable copy, not a memory-reclamation
 operation.
+
+
+## Archive restore freshness guard
+
+`ClusterArchiveStore::restore` now accepts a minimum journal sequence in addition to the minimum cluster state version. The archive is rejected unless both version floors are met, preventing a valid but stale archive generation from being used as a restoration source. The default sequence floor is zero for API compatibility. This is a preflight freshness guard only: callers must still validate graph state and commit restoration transactionally before mutating `ContextGraph`.
