@@ -362,6 +362,7 @@ bool SnapshotCoordinator::restore_from_store(
   ResourceLease tail_staging;
   ResourceLease payload_staging;
   std::size_t tail_state_version = 0;
+  std::size_t tail_bytes_reserved = 0;
   std::string pending;
   std::size_t consumed = 0;
   std::size_t domain_index = 0;
@@ -419,6 +420,7 @@ bool SnapshotCoordinator::restore_from_store(
         return fail(sink_error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
       tail = staged_tail.events;
       tail_state_version = staged_tail.current_state_version;
+      tail_bytes_reserved = staged_tail.total_bytes;
       if (staged_tail.total_bytes > limits_.max_restore_staging_bytes)
         return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
       if (budget_ && staged_tail.total_bytes != 0) {
@@ -473,10 +475,13 @@ bool SnapshotCoordinator::restore_from_store(
         if (payload_size > limits_.max_domain_payload_bytes)
           return fail(sink_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
         std::size_t payload_reservation = 0;
+        std::size_t combined_reservation = 0;
         if (!checked_add(static_cast<std::size_t>(payload_size),
                          static_cast<std::size_t>(payload_size),
                          &payload_reservation) ||
-            payload_reservation > limits_.max_restore_staging_bytes)
+            !checked_add(tail_bytes_reserved, payload_reservation,
+                         &combined_reservation) ||
+            combined_reservation > limits_.max_restore_staging_bytes)
           return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
         if (budget_ && payload_reservation != 0) {
           std::string budget_error;
