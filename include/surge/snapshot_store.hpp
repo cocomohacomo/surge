@@ -31,8 +31,9 @@ class SnapshotStore {
  public:
   explicit SnapshotStore(std::string path, SnapshotStoreLimits limits = {});
   bool save(const std::string& bytes, std::string* error);
-  // Reads payload chunks (at most 64 KiB each) and writes a complete
-  // version-1 envelope without materializing the payload or envelope.
+  // Reads payload chunks (1..64 KiB, done=false), followed by one final
+  // empty chunk (done=true). Writes a version-1 envelope without buffering
+  // the full payload or envelope. The reader must not throw.
   bool save_stream(const SnapshotDocument& metadata, std::size_t payload_bytes,
                    const SnapshotChunkReader& reader, std::string* error);
   // Makes the backup an exact durable copy of the current generation. Used
