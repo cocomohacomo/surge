@@ -411,6 +411,22 @@ int main() {
         "retention-restore", "retention-restore-key", error);
     assert(restored.committed && graph.cluster_lifecycle("ret-low")->state ==
         ClusterLifecycleState::Active);
+    const auto dormant_again_plan = ClusterRetentionPlanner::plan(graph, candidates, 1);
+    assert(dormant_again_plan.accepted && dormant_again_plan.forget_cluster_ids.size() == 1);
+    const auto dormant_again = guarded.apply_retention_plan(dormant_again_plan,
+        "2026-11-20T00:03:00Z", "capacity pressure", std::string(64, 'd'),
+        "retention-dormant-again", "retention-dormant-again-key", error);
+    assert(dormant_again.committed && graph.cluster_lifecycle("ret-low")->state ==
+        ClusterLifecycleState::Dormant);
+    const auto dormant_restore_plan = ClusterRetentionPlanner::plan(graph, candidates, 2);
+    assert(dormant_restore_plan.accepted);
+    assert(dormant_restore_plan.restore_cluster_ids.size() == 1 &&
+        dormant_restore_plan.restore_cluster_ids.front() == "ret-low");
+    const auto dormant_restored = guarded.apply_retention_plan(dormant_restore_plan,
+        "2026-11-20T00:04:00Z", "importance restoration", std::string(64, 'e'),
+        "retention-dormant-restore", "retention-dormant-restore-key", error);
+    assert(dormant_restored.committed && graph.cluster_lifecycle("ret-low")->state ==
+        ClusterLifecycleState::Active);
   }
   std::remove(cluster_lifecycle_retention_path.c_str());
 
