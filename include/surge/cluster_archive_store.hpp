@@ -4,7 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <string>
-namespace surge {\nclass BudgetedContextGraph;
+namespace surge {
+class BudgetedContextGraph;
 struct ClusterArchiveRecord {
   std::string cluster_id;
   std::uint64_t state_version{0};
