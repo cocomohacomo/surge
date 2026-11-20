@@ -369,3 +369,14 @@ Consequently this is an API and coordinator staging increment, not yet
 end-to-end bounded-memory snapshot persistence or a hard RSS guarantee.
 The next step is native domain serializer migration followed by a streaming
 SnapshotStore writer with incremental checksum and atomic replacement.
+
+
+### Capture chunk ceiling
+
+SnapshotCoordinatorLimits now provides max_capture_chunk_bytes (default
+64 KiB). Every callback chunk is rejected when it exceeds this ceiling,
+before aggregate append. A zero setting uses the default. The conformance test
+uses a smaller configured limit to verify oversized chunk rejection. This is a
+per-callback chunk size guard and does not imply the domain serializer itself
+uses bounded allocations; end-to-end streaming and RSS measurement remain
+pending.
