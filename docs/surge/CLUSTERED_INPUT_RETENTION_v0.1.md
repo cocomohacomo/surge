@@ -393,3 +393,19 @@ dependency evaluation traces. Those domains must be added before treating this
 format as a complete lossless cluster checkpoint or enabling automatic restore.
 The archive therefore remains a verified retention copy, not yet a complete
 standalone replacement for every graph-domain record.
+
+
+## Relaxed archive capacity and streaming verification
+
+The cluster archive default file ceiling is now 256 MiB (callers may override
+it), relaxing the earlier generic 64 MiB snapshot-store default for this
+subsystem only. Archive writes use `SnapshotStore::save_stream` with 64 KiB
+chunks. Exact readback verification uses the authenticated `load_stream`
+callback and compares bytes incrementally, avoiding a second full payload
+allocation during verification. The verified result still retains the caller's
+payload for API compatibility, and the explicit restore API materializes the
+requested payload in memory. This is a subsystem-specific capacity relaxation,
+not a global increase to SURGE's resident-memory budget and not an RSS cap.
+
+The 3 MiB-plus conformance fixture exercises chunk-boundary crossing. Larger
+production payloads, peak RSS, and restore latency still require measurement.
