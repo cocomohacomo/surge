@@ -106,6 +106,9 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     const bool attached = included.count(p.span_id) ||
         included.count(p.opener.packet_ref) ||
         included.count(p.attribution_ref) || included.count(p.parent_ref) ||
+        (p.closer && included.count(p.closer->packet_ref)) ||
+        std::any_of(p.packet_refs.begin(), p.packet_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; }) ||
         std::any_of(p.target_refs.begin(), p.target_refs.end(),
             [&](const std::string& id) { return included.count(id) != 0; }) ||
         std::any_of(p.antecedent_refs.begin(), p.antecedent_refs.end(),
@@ -119,6 +122,9 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     const bool attached = included.count(p.span_id) ||
         included.count(p.opener.packet_ref) ||
         included.count(p.attribution_ref) || included.count(p.parent_ref) ||
+        (p.closer && included.count(p.closer->packet_ref)) ||
+        std::any_of(p.packet_refs.begin(), p.packet_refs.end(),
+            [&](const std::string& id) { return included.count(id) != 0; }) ||
         std::any_of(p.target_refs.begin(), p.target_refs.end(),
             [&](const std::string& id) { return included.count(id) != 0; }) ||
         std::any_of(p.antecedent_refs.begin(), p.antecedent_refs.end(),
@@ -181,12 +187,22 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     }
   }
 
+  auto dependency_attached = [&](const DependencyEvaluationRecord& d) {
+    if (std::any_of(d.impacted_nodes.begin(), d.impacted_nodes.end(),
+        [&](const std::string& id) { return included.count(id) != 0; })) return true;
+    return std::any_of(d.triggered.begin(), d.triggered.end(),
+        [&](const DependencyTrigger& trigger) {
+          return included.count(trigger.dependency_id) ||
+                 included.count(trigger.prerequisite_id) ||
+                 included.count(trigger.dependent_id);
+        });
+  };
   std::size_t dependency_count = 0;
   for (const auto& item : graph.dependency_evaluations())
-    if (included.count(item.first)) ++dependency_count;
+    if (dependency_attached(item.second)) ++dependency_count;
   out << "dependency_evaluations " << dependency_count << "\n";
   for (const auto& item : graph.dependency_evaluations()) {
-    if (!included.count(item.first)) continue;
+    if (!dependency_attached(item.second)) continue;
     const auto& d = item.second;
     out << "dependency " << std::quoted(item.first) << ' '
         << std::quoted(d.delta_id) << ' ' << d.triggered.size() << "\n";
