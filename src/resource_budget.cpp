@@ -71,7 +71,7 @@ ResourceBudgetSnapshot ResourceBudget::snapshot() const {
 }
 
 bool ResourceBudget::grow(ResourceKind kind, std::size_t amount,
-                          std::string& error) noexcept {
+                          std::string& error) {
   error.clear();
   const auto slot = index(kind);
   if (slot >= limits_.size()) {
