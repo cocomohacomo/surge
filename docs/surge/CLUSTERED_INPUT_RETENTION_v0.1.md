@@ -477,3 +477,21 @@ so a payload truncated immediately after its identity preamble is rejected.
 The store enforces this check on both save and restore. The declared node count
 is not yet reconciled against decoded node records; full section/count and
 cross-reference validation remain explicitly incomplete.
+
+
+## Core graph-record structural validation increment
+
+Archive save and restore now validate the core graph prefix after the v2 identity
+preamble. The validator consumes exactly the declared node and relation records,
+checks section counts against available input, rejects duplicate node/relation
+IDs, validates NodeKind and RelationKind numeric ranges, checks typed relation
+endpoints against the archived node set, and validates the following
+`has_focus` flag. This prevents malformed core graph records from being
+persisted or returned as a verified archive.
+
+This is not yet a complete v2 decoder. Typed node references and history-domain
+records (ScopeSpan, validity histories, dependency evaluations, reassessments,
+Question states, and lifecycle states) are not fully decoded or cross-validated.
+Focus record payload and the remaining section grammar also remain outside this
+validator. No live graph reconstruction or transactional rehydration is
+implemented by this increment.
