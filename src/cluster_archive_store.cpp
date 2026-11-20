@@ -289,6 +289,31 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   return true;
 }
 
+bool validate_cluster_archive_payload_identity(const std::string& payload,
+    const std::string& expected_cluster_id, std::uint64_t expected_state_version,
+    std::string* error) noexcept {
+  auto fail = [&](const char* code) {
+    if (error) *error = code;
+    return false;
+  };
+  if (payload.empty() || expected_cluster_id.empty() || expected_state_version == 0)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_IDENTITY_ARGUMENT_INVALID");
+  std::istringstream input(payload);
+  std::string marker, key, cluster_id, trailing;
+  unsigned format_version = 0;
+  std::uint64_t watermark = 0;
+  if (!(input >> marker >> format_version) || marker != "SURGE_CLUSTER_ARCHIVE_PAYLOAD" || format_version != 2)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  if (!(input >> key >> watermark) || key != "watermark" || watermark != expected_state_version)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
+  if (!(input >> key >> std::quoted(cluster_id)) || key != "cluster" || cluster_id != expected_cluster_id)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
+  if (input >> trailing)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_PREAMBLE_INVALID");
+  if (error) error->clear();
+  return true;
+}
+
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
     const ContextGraph& graph, const std::string& cluster_id,
     const std::vector<std::string>& member_node_ids) {
@@ -498,6 +523,8 @@ ClusterArchiveDetachResult archive_and_detach_cluster(
     return fail("CLUSTER_ARCHIVE_DETACH_ARGUMENT_INVALID");
   if (graph.state_version() != expected_state_version)
     return fail("CLUSTER_ARCHIVE_DETACH_STALE_GRAPH");
+  if (!validate_cluster_archive_payload_identity(payload, cluster_id,
+      expected_state_version, &result.error)) return result;
   const auto plan = plan_cluster_archive_detach(graph, cluster_id, member_node_ids);
   result.preserved_shared_member_ids = plan.shared_member_ids;
   result.ineligible_member_ids = plan.ineligible_member_ids;
