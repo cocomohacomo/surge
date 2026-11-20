@@ -1,6 +1,7 @@
 #include "surge/cluster_archive_store.hpp"
 #include <utility>
 #include <set>
+#include <algorithm>
 namespace surge {
 namespace { constexpr const char* kSchema = "surge.cluster.archive.v1"; }
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
@@ -33,6 +34,29 @@ ClusterArchiveDetachPlan plan_cluster_archive_detach(
       }
     }
     if (!member_of_target) {
+      plan.ineligible_member_ids.push_back(id);
+      continue;
+    }
+    bool has_other_relation = false;
+    for (const auto& edge : graph.relations()) {
+      const auto& relation = edge.second;
+      if (relation.id == cluster_id || relation.kind == RelationKind::Contains &&
+          relation.from == cluster_id && relation.to == id) continue;
+      if (relation.from == id || relation.to == id) {
+        has_other_relation = true;
+        break;
+      }
+    }
+    bool has_typed_reference = false;
+    for (const auto& other : graph.nodes()) {
+      if (other.first == id) continue;
+      if (std::find(other.second.references.begin(), other.second.references.end(), id)
+          != other.second.references.end()) {
+        has_typed_reference = true;
+        break;
+      }
+    }
+    if (has_other_relation || has_typed_reference) {
       plan.ineligible_member_ids.push_back(id);
       continue;
     }
