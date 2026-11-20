@@ -343,6 +343,112 @@ bool read_bounded_file(const fs::path& path, std::size_t maximum_bytes,
   return true;
 }
 
+
+bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
+                                SnapshotDocument* metadata,
+                                const SnapshotPayloadSink& sink,
+                                std::string* error) {
+  if (!metadata || !sink) return fail(error, "SNAPSHOT_STREAM_ARGUMENT_REQUIRED");
+  std::error_code ec;
+  if (!fs::is_regular_file(path, ec) || ec)
+    return fail(error, "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR");
+  const auto file_size = fs::file_size(path, ec);
+  if (ec) return fail(error, "SNAPSHOT_STORE_FILE_SIZE_FAILED");
+  constexpr std::size_t footer_bytes = 64;
+  if (file_size > maximum_bytes || file_size < 8U + 4U + 4U + 4U + 8U + 8U + 4U + footer_bytes)
+    return fail(error, "SNAPSHOT_SIZE_INVALID");
+  const auto total = static_cast<std::uint64_t>(file_size);
+  const auto content_size = total - footer_bytes;
+  std::ifstream input(path, std::ios::binary);
+  if (!input) return fail(error, "SNAPSHOT_STORE_FILE_OPEN_FAILED");
+
+  Sha256Hasher hasher;
+  std::array<char, kIoChunk> buffer{};
+  std::uint64_t remaining = content_size;
+  while (remaining != 0) {
+    const auto amount = static_cast<std::streamsize>(
+        std::min<std::uint64_t>(remaining, buffer.size()));
+    input.read(buffer.data(), amount);
+    if (input.gcount() != amount)
+      return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+    if (!hasher.update(buffer.data(), static_cast<std::size_t>(amount)))
+      return fail(error, "SNAPSHOT_CHECKSUM_FAILED");
+    remaining -= static_cast<std::uint64_t>(amount);
+  }
+  std::array<char, footer_bytes> footer{};
+  input.read(footer.data(), static_cast<std::streamsize>(footer.size()));
+  if (input.gcount() != static_cast<std::streamsize>(footer.size()))
+    return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+  const auto digest = hasher.finalize_hex();
+  if (digest.size() != footer.size() ||
+      !std::equal(digest.begin(), digest.end(), footer.begin()))
+    return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
+
+  input.clear();
+  input.seekg(0, std::ios::beg);
+  auto read_u32 = [&](std::uint32_t* value) {
+    std::array<unsigned char, 4> bytes{};
+    input.read(reinterpret_cast<char*>(bytes.data()), 4);
+    if (input.gcount() != 4) return false;
+    *value = 0;
+    for (const auto byte : bytes) *value = (*value << 8) | byte;
+    return true;
+  };
+  auto read_u64 = [&](std::uint64_t* value) {
+    std::array<unsigned char, 8> bytes{};
+    input.read(reinterpret_cast<char*>(bytes.data()), 8);
+    if (input.gcount() != 8) return false;
+    *value = 0;
+    for (const auto byte : bytes) *value = (*value << 8) | byte;
+    return true;
+  };
+  auto read_string = [&](std::string* value) {
+    std::uint32_t size = 0;
+    if (!read_u32(&size) || size == 0 || size > 4096) return false;
+    value->resize(size);
+    input.read(value->data(), static_cast<std::streamsize>(size));
+    return input.gcount() == static_cast<std::streamsize>(size);
+  };
+  std::array<char, 8> magic{};
+  input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+  std::uint32_t version = 0;
+  SnapshotDocument candidate;
+  if (input.gcount() != static_cast<std::streamsize>(magic.size()) ||
+      std::string(magic.data(), magic.size()) != "SURGESNP" ||
+      !read_u32(&version) || version != 1 ||
+      !read_string(&candidate.schema_id) ||
+      !read_string(&candidate.context_id) ||
+      !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id) ||
+      !read_u64(&candidate.state_version) ||
+      !read_u64(&candidate.journal_sequence))
+    return fail(error, "SNAPSHOT_HEADER_INVALID");
+  std::uint32_t payload_size = 0;
+  if (!read_u32(&payload_size)) return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
+  const auto payload_offset = static_cast<std::uint64_t>(input.tellg());
+  if (payload_size > 60U * 1024U * 1024U ||
+      payload_offset > content_size || content_size - payload_offset != payload_size)
+    return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
+
+  input.clear();
+  input.seekg(static_cast<std::streamoff>(payload_offset), std::ios::beg);
+  std::uint64_t delivered = 0;
+  while (delivered < payload_size) {
+    const auto amount = static_cast<std::size_t>(
+        std::min<std::uint64_t>(payload_size - delivered, buffer.size()));
+    input.read(buffer.data(), static_cast<std::streamsize>(amount));
+    if (input.gcount() != static_cast<std::streamsize>(amount))
+      return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+    if (!sink(buffer.data(), amount, error)) {
+      if (error && error->empty()) *error = "SNAPSHOT_STREAM_SINK_REJECTED";
+      return false;
+    }
+    delivered += amount;
+  }
+  *metadata = std::move(candidate);
+  if (error) error->clear();
+  return true;
+}
+
 SnapshotStoreResult load_generation(const fs::path& path,
                                     std::size_t maximum_bytes,
                                     bool backup) {
