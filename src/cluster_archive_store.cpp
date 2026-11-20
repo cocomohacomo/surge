@@ -270,7 +270,7 @@ bool ClusterArchiveStore::archive_verified(const std::string& cluster_id,
   verified->cluster_id = metadata.context_id;
   verified->state_version = metadata.state_version;
   verified->journal_sequence = metadata.journal_sequence;
-  verified->payload.clear();
+  verified->payload = payload;
   if (error) error->clear();
   return true;
 }
