@@ -61,7 +61,10 @@ ClusterArchiveDetachResult archive_and_detach_cluster(
 // deliberately does not mutate ContextGraph.
 class ClusterArchiveStore {
  public:
-  explicit ClusterArchiveStore(std::string path, SnapshotStoreLimits limits = {});
+  // Cluster archives may exceed the generic snapshot default; the 256 MiB ceiling
+  // is archive-specific and can be overridden by callers.
+  explicit ClusterArchiveStore(std::string path,
+      SnapshotStoreLimits limits = SnapshotStoreLimits{256U * 1024U * 1024U, true});
   bool archive(const std::string& cluster_id, std::uint64_t state_version,
       std::uint64_t journal_sequence, const std::string& payload,
       std::string* error);
