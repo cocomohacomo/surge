@@ -335,6 +335,83 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
   return true;
 }
 
+
+bool validate_cluster_archive_payload_graph_records(const std::string& payload,
+    std::string* error) {
+  auto fail = [&](const char* code) {
+    if (error) *error = code;
+    return false;
+  };
+  std::istringstream input(payload);
+  std::string line;
+  for (int i = 0; i < 3; ++i)
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  auto parse_count = [](const std::string& row_text, const char* expected,
+                        std::size_t& count) {
+    std::istringstream row(row_text);
+    std::string key, extra;
+    if (!(row >> key >> count) || (row >> extra) || key != expected) return false;
+    return true;
+  };
+  std::size_t node_count = 0;
+  if (!parse_count(line, "nodes", node_count) || node_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::set<std::string> node_ids;
+  std::vector<std::string> node_lines;
+  for (std::size_t i = 0; i < node_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, content, extra;
+    unsigned kind = 0;
+    std::size_t refs = 0;
+    if (!(row >> tag >> std::quoted(id) >> kind >> std::quoted(content) >> refs) ||
+        tag != "node" || id.empty() || kind > 9 || refs > payload.size() ||
+        !node_ids.insert(id).second)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    for (std::size_t r = 0; r < refs; ++r) {
+      std::string reference;
+      if (!(row >> std::quoted(reference)) || reference.empty())
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    }
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  }
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::size_t relation_count = 0;
+  if (!parse_count(line, "relations", relation_count) || relation_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::set<std::string> relation_ids;
+  for (std::size_t i = 0; i < relation_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, from, to, extra;
+    unsigned kind = 0;
+    if (!(row >> tag >> std::quoted(id) >> kind >> std::quoted(from) >>
+          std::quoted(to)) || tag != "relation" || id.empty() || kind > 9 ||
+        from.empty() || to.empty() || !node_ids.count(from) || !node_ids.count(to) ||
+        !relation_ids.insert(id).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  }
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  {
+    std::istringstream row(line);
+    std::string tag, extra;
+    unsigned has_focus = 0;
+    if (!(row >> tag >> has_focus) || (row >> extra) ||
+        tag != "has_focus" || has_focus > 1)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  }
+  if (error) error->clear();
+  return true;
+}
+
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
     const ContextGraph& graph, const std::string& cluster_id,
     const std::vector<std::string>& member_node_ids) {
@@ -411,7 +488,8 @@ bool ClusterArchiveStore::archive(const std::string& cluster_id,
     if (error) *error = "CLUSTER_ARCHIVE_INPUT_INVALID";
     return false;
   }
-  if (!validate_cluster_archive_payload_identity(payload, cluster_id, state_version, error))
+  if (!validate_cluster_archive_payload_identity(payload, cluster_id, state_version, error) ||
+      !validate_cluster_archive_payload_graph_records(payload, error))
     return false;
   SnapshotDocument document;
   document.schema_id = kSchema; document.context_id = cluster_id;
@@ -462,7 +540,8 @@ bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
     return false;
   }
   if (!validate_cluster_archive_payload_identity(decoded.payload, expected_cluster_id,
-      decoded.state_version, error)) return false;
+      decoded.state_version, error) ||
+      !validate_cluster_archive_payload_graph_records(decoded.payload, error)) return false;
   ClusterArchiveRecord candidate;
   candidate.cluster_id = decoded.context_id; candidate.state_version = decoded.state_version;
   candidate.journal_sequence = decoded.journal_sequence; candidate.payload = std::move(decoded.payload);
