@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/snapshot.hpp"
+#include <functional>
 #include <cstddef>
 #include <mutex>
 #include <string>
@@ -10,6 +11,8 @@ struct SnapshotStoreLimits {
   std::size_t max_file_bytes{64U * 1024U * 1024U};
   bool keep_backup{true};
 };
+
+using SnapshotChunkReader = std::function<bool(std::string*, bool*)>;
 
 struct SnapshotStoreResult {
   // document contains envelope metadata only; the payload remains in bytes.
@@ -28,6 +31,10 @@ class SnapshotStore {
  public:
   explicit SnapshotStore(std::string path, SnapshotStoreLimits limits = {});
   bool save(const std::string& bytes, std::string* error);
+  // Reads payload chunks (at most 64 KiB each) and writes a complete
+  // version-1 envelope without materializing the payload or envelope.
+  bool save_stream(const SnapshotDocument& metadata, std::size_t payload_bytes,
+                   const SnapshotChunkReader& reader, std::string* error);
   // Makes the backup an exact durable copy of the current generation. Used
   // before journal replacement so both recovery generations share a watermark.
   bool mirror_current_to_backup(std::string* error);
