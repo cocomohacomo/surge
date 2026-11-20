@@ -15,7 +15,7 @@ ResourceBudget::to_array(const ResourceBudgetLimits& limits) {
           limits.decision_evidence};
 }
 
-ResourceBudgetLimits ResourceBudgetLimits::edge_200mb() {
+ResourceBudgetLimits ResourceBudgetLimits::temporary_edge_200mb() {
   constexpr std::size_t kMiB = 1024U * 1024U;
   ResourceBudgetLimits limits;
   limits.resident_bytes = 200U * kMiB;
@@ -63,9 +63,11 @@ bool ResourceBudget::try_acquire(ResourceKind kind, std::size_t amount,
 
 ResourceBudgetSnapshot ResourceBudget::snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return {used_, limits_,
-      used_[index(ResourceKind::ResidentBytes)] +
-          used_[index(ResourceKind::TransientBytes)], total_byte_limit_};
+  const auto resident = used_[index(ResourceKind::ResidentBytes)];
+  const auto transient = used_[index(ResourceKind::TransientBytes)];
+  const auto total = transient > static_cast<std::size_t>(-1) - resident
+      ? static_cast<std::size_t>(-1) : resident + transient;
+  return {used_, limits_, total, total_byte_limit_};
 }
 
 void ResourceBudget::release(ResourceKind kind, std::size_t amount) noexcept {
