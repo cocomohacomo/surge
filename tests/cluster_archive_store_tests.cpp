@@ -8,10 +8,10 @@
 #include <iomanip>
 namespace {
 std::string make_payload(const std::string& cluster, std::uint64_t version,
-                         const std::string& body = "nodes 0\\n") {
+                         const std::string& body = "nodes 0\n") {
   std::ostringstream out;
-  out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark " << version
-      << "\\ncluster " << std::quoted(cluster) << "\\n" << body;
+  out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " << version
+      << "\ncluster " << std::quoted(cluster) << "\n" << body;
   return out.str();
 }
 }
@@ -123,7 +123,7 @@ int main() {
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
   CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
-  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\\nnode \\"n1\\" 2 \\"large-ish payload\\" 0\\n");
+  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\n");
   CHECK(store.archive("cluster-a", 7, 12, large_payload, &error));
   ClusterArchiveRecord record;
   CHECK(store.archive_verified("cluster-a", 7, 12, large_payload, &record, &error));
