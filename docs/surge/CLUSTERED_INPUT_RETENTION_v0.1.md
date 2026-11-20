@@ -409,3 +409,31 @@ not a global increase to SURGE's resident-memory budget and not an RSS cap.
 
 The 3 MiB-plus conformance fixture exercises chunk-boundary crossing. Larger
 production payloads, peak RSS, and restore latency still require measurement.
+
+
+## Complete ContextGraph history capture increment (archive payload v2)
+
+The canonical cluster payload now includes the ContextGraph's history-bearing
+state, filtered to records attached to the archived containment closure:
+- ScopeSpan proposals, opener/closer anchors, target and antecedent references,
+  attribution/modality/temporal metadata, packet references and validation result
+- Full Claim and Evidence validity revision histories with recorded state versions
+- Dependency evaluation records, triggers, impacted nodes and rejected dependencies
+- Temporal reassessment histories, evidence snapshots, support/contradiction sets
+  and hash-chain metadata
+- Question memory states/reference counts, QuestionAspect statuses and Claim lifecycle statuses
+- Existing node/relation content, typed references, Focus and Focus history
+
+This is a capture-completeness increment, not yet a restore-ready format. The
+payload remains version-tagged as v1 until a strict decoder and migration policy
+are implemented; consumers must not infer that a parser can already restore
+these records. Independent ledgers (EvidenceProvenance, ChaosCluster,
+TemporalBoundary and TemporalQuestion) are separate SnapshotDomains and are
+not implicitly owned by ContextGraph; they require an explicit archive bundle
+or shared snapshot coordinator before a cluster archive can claim to contain
+their state. We preserve this boundary rather than silently dropping or
+misrepresenting those records.
+
+Memory limits are relaxed for archival staging, but no global resident-memory
+ceiling or RSS guarantee is asserted. The next gate is strict decode/validate,
+transactional restore preparation, and crash-consistency tests.
