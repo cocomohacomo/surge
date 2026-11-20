@@ -463,11 +463,6 @@ bool SnapshotStore::save_stream(const SnapshotDocument& metadata,
       metadata.schema_id.size() > 4096 || metadata.context_id.size() > 4096 ||
       !is_valid_utf8(metadata.schema_id) || !is_valid_utf8(metadata.context_id))
     return fail(error, "SNAPSHOT_STORE_METADATA_INVALID");
-  constexpr std::size_t fixed_overhead = 8 + 4 + 4 + 4 + 8 + 8 + 4 + 64;
-  if (payload_bytes > limits_.max_file_bytes ||
-      fixed_overhead > limits_.max_file_bytes - payload_bytes)
-    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
-
   std::string prefix("SURGESNP", 8);
   append_u32(prefix, 1);
   append_string(prefix, metadata.schema_id);
@@ -475,6 +470,10 @@ bool SnapshotStore::save_stream(const SnapshotDocument& metadata,
   append_u64(prefix, metadata.state_version);
   append_u64(prefix, metadata.journal_sequence);
   append_u32(prefix, static_cast<std::uint32_t>(payload_bytes));
+  if (payload_bytes > limits_.max_file_bytes ||
+      prefix.size() > limits_.max_file_bytes - payload_bytes ||
+      64U > limits_.max_file_bytes - prefix.size() - payload_bytes)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
   const auto current = native_path(path_);
   const auto temporary = native_path(path_ + ".tmp");
   const auto backup = native_path(path_ + ".bak");
