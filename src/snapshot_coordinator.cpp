@@ -353,13 +353,192 @@ bool SnapshotCoordinator::restore_from_store(
     std::uint64_t minimum_state_version,
     std::uint64_t minimum_journal_sequence,
     JournalTailLimits tail_limits, std::string* error) {
-  const auto stored = store.load();
-  if (!stored.ok)
-    return fail(error, stored.error.empty() ? "SNAPSHOT_STORE_LOAD_FAILED" : stored.error.c_str());
-  if (stored.document.context_id != expected_context_id)
-    return fail(error, "SNAPSHOT_CONTEXT_MISMATCH");
-  return restore_with_tail(stored.bytes, journal, expected_context_id,
-      minimum_state_version, minimum_journal_sequence, tail_limits, error);
+  if (domains_.empty())
+    return fail(error, "SNAPSHOT_NO_DOMAINS_REGISTERED");
+
+  SnapshotDocument metadata;
+  std::vector<PreparedEntry> prepared;
+  std::vector<JournalEvent> tail;
+  ResourceLease restore_staging;
+  std::string pending;
+  std::size_t consumed = 0;
+  std::size_t domain_index = 0;
+  std::uint32_t domain_count = 0;
+  std::uint32_t field_size = 0;
+  std::uint32_t payload_size = 0;
+  std::string domain_id, schema_id;
+  int parser_state = 0;  // count, id length/data, schema length/data, payload length/data, complete
+  bool metadata_checked = false;
+  bool tail_ready = false;
+  bool parser_failed = false;
+  std::string parser_error;
+
+  const auto read_u32 = [&](std::uint32_t* value) {
+    if (pending.size() - consumed < 4) return false;
+    *value = 0;
+    for (int i = 0; i < 4; ++i)
+      *value = (*value << 8) |
+          static_cast<unsigned char>(pending[consumed++]);
+    return true;
+  };
+  const auto append_staging = [&](std::size_t amount) {
+    if (amount == 0) return true;
+    std::size_t current = 0;
+    if (restore_staging) {
+      current = restore_staging.bytes_reserved();
+    }
+    std::size_t next = 0;
+    if (!checked_add(current, amount, &next) ||
+        next > limits_.max_restore_staging_bytes)
+      return fail(error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
+    if (!budget_) return true;
+    std::string budget_error;
+    const bool ok = restore_staging
+        ? restore_staging.grow(amount, budget_error)
+        : budget_->try_acquire(ResourceKind::TransientBytes, amount,
+                               restore_staging, budget_error);
+    if (!ok)
+      return fail(error, budget_error.empty()
+          ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
+          : budget_error.c_str());
+    return true;
+  };
+
+  const auto sink = [&](const char* data, std::size_t size,
+                        std::string* sink_error) {
+    if (!metadata_checked) {
+      metadata_checked = true;
+      if (metadata.schema_id != "surge.snapshot.bundle.v1")
+        return fail(sink_error, "SNAPSHOT_BUNDLE_SCHEMA_MISMATCH");
+      if (metadata.context_id != expected_context_id)
+        return fail(sink_error, "SNAPSHOT_CONTEXT_MISMATCH");
+      if (metadata.state_version < minimum_state_version ||
+          metadata.journal_sequence < minimum_journal_sequence)
+        return fail(sink_error, "SNAPSHOT_WATERMARK_REGRESSION");
+      if (metadata.state_version != metadata.journal_sequence)
+        return fail(sink_error, "SNAPSHOT_JOURNAL_WATERMARK_MISMATCH");
+      const auto checkpoint = journal.checkpoint_info();
+      if (checkpoint.compacted) {
+        if (metadata.context_id != checkpoint.context_id)
+          return fail(sink_error, "SNAPSHOT_JOURNAL_CHECKPOINT_CONTEXT_MISMATCH");
+        if (metadata.state_version < checkpoint.base_state_version)
+          return fail(sink_error, "SNAPSHOT_CHECKPOINT_BEHIND_COMPACTION_BASE");
+        // The streamed API deliberately does not materialize the envelope,
+        // so an equal-watermark byte-for-byte checkpoint comparison is not
+        // available. Fail closed rather than skipping the digest check.
+        if (metadata.state_version == checkpoint.base_state_version)
+          return fail(sink_error, "SNAPSHOT_JOURNAL_CHECKPOINT_STREAM_DIGEST_UNAVAILABLE");
+      }
+      const auto checkpoint_info = journal.checkpoint_info();
+      const auto staged_tail = journal.committed_tail(
+          metadata.journal_sequence, tail_limits);
+      if (!staged_tail.ok)
+        return fail(sink_error, staged_tail.error.empty()
+            ? "SNAPSHOT_JOURNAL_TAIL_UNAVAILABLE" : staged_tail.error.c_str());
+      if (staged_tail.total_bytes > tail_limits.max_total_bytes)
+        return fail(sink_error, "SNAPSHOT_JOURNAL_TAIL_LIMIT_EXCEEDED");
+      if (staged_tail.current_state_version < metadata.state_version)
+        return fail(sink_error, "SNAPSHOT_JOURNAL_BEHIND_CHECKPOINT");
+      if (staged_tail.current_state_version != journal.state_version())
+        return fail(sink_error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
+      tail = staged_tail.events;
+      if (!append_staging(tail_limits.max_total_bytes)) return false;
+      tail_ready = true;
+      (void)checkpoint_info;
+    }
+    if (parser_failed) return fail(sink_error, parser_error.c_str());
+    if (size != 0 && data == nullptr)
+      return fail(sink_error, "SNAPSHOT_DOMAIN_CHUNK_INVALID");
+    if (size > 64U * 1024U)
+      return fail(sink_error, "SNAPSHOT_RESTORE_CHUNK_LIMIT_EXCEEDED");
+    if (!append_staging(size)) return false;
+    if (size != 0) pending.append(data, size);
+
+    while (true) {
+      if (parser_state == 0) {
+        if (!read_u32(&domain_count)) break;
+        if (domain_count != domains_.size() ||
+            domain_count > limits_.max_domains)
+          return fail(sink_error, "SNAPSHOT_DOMAIN_SET_MISMATCH");
+        prepared.reserve(domain_count);
+        parser_state = domain_count == 0 ? 7 : 1;
+      } else if (parser_state == 1) {
+        if (!read_u32(&field_size)) break;
+        if (field_size > 4096)
+          return fail(sink_error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
+        parser_state = 2;
+      } else if (parser_state == 2) {
+        if (pending.size() - consumed < field_size) break;
+        domain_id.assign(pending.data() + consumed, field_size);
+        consumed += field_size;
+        parser_state = 3;
+      } else if (parser_state == 3) {
+        if (!read_u32(&field_size)) break;
+        if (field_size > 4096)
+          return fail(sink_error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
+        parser_state = 4;
+      } else if (parser_state == 4) {
+        if (pending.size() - consumed < field_size) break;
+        schema_id.assign(pending.data() + consumed, field_size);
+        consumed += field_size;
+        parser_state = 5;
+      } else if (parser_state == 5) {
+        if (!read_u32(&payload_size)) break;
+        if (payload_size > limits_.max_domain_payload_bytes)
+          return fail(sink_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
+        if (!append_staging(payload_size)) return false;
+        parser_state = 6;
+      } else if (parser_state == 6) {
+        if (pending.size() - consumed < payload_size) break;
+        if (domain_index >= domains_.size())
+          return fail(sink_error, "SNAPSHOT_DOMAIN_SET_MISMATCH");
+        SnapshotDomain* domain = domains_[domain_index];
+        if (!is_valid_utf8(domain_id) || !is_valid_utf8(schema_id) ||
+            domain_id != domain->domain_id() ||
+            schema_id != domain->schema_id())
+          return fail(sink_error, "SNAPSHOT_DOMAIN_SCHEMA_MISMATCH");
+        std::string payload(pending.data() + consumed, payload_size);
+        consumed += payload_size;
+        std::string domain_error;
+        auto staged = domain->prepare_restore_with_tail(
+            payload, tail, &domain_error);
+        if (!staged)
+          return fail(sink_error, domain_error.empty()
+              ? "SNAPSHOT_DOMAIN_TAIL_PREPARE_FAILED"
+              : domain_error.c_str());
+        prepared.push_back({domain, std::move(staged)});
+        ++domain_index;
+        parser_state = domain_index == domain_count ? 7 : 1;
+      } else {
+        break;
+      }
+    }
+    if (consumed != 0) {
+      pending.erase(0, consumed);
+      consumed = 0;
+    }
+    if (parser_state == 7 && !pending.empty())
+      return fail(sink_error, "SNAPSHOT_BUNDLE_TRAILING_DATA");
+    if (sink_error) sink_error->clear();
+    return true;
+  };
+
+  if (!store.load_stream(&metadata, sink, nullptr, error))
+    return false;
+  if (!metadata_checked || !tail_ready)
+    return fail(error, "SNAPSHOT_STREAM_EMPTY_PAYLOAD");
+  if (parser_state != 7 || domain_index != domains_.size() ||
+      !pending.empty())
+    return fail(error, "SNAPSHOT_BUNDLE_TRUNCATED");
+  if (journal.state_version() !=
+      journal.committed_tail(metadata.journal_sequence, tail_limits).current_state_version)
+    return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
+
+  // Every domain has prepared successfully. Publish only after the complete
+  // authenticated bundle and journal-tail replay have passed validation.
+  for (auto& entry : prepared) entry.restore->commit();
+  if (error) error->clear();
+  return true;
 }
 
 bool SnapshotCoordinator::compact(EventJournal& journal, SnapshotStore& store,
