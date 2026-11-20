@@ -180,10 +180,23 @@ bool ClusterArchiveStore::archive(const std::string& cluster_id,
   SnapshotDocument document;
   document.schema_id = kSchema; document.context_id = cluster_id;
   document.state_version = state_version; document.journal_sequence = journal_sequence;
-  document.payload = payload;
-  std::string bytes;
-  if (!SnapshotCodec::encode(document, {}, &bytes, error)) return false;
-  return store_.save(bytes, error);
+  const std::size_t chunk_bytes = 64U * 1024U;
+  std::size_t offset = 0;
+  const SnapshotChunkReader reader = [&payload, &offset, chunk_bytes](
+      std::string* chunk, bool* done) {
+    if (!chunk || !done) return false;
+    if (offset >= payload.size()) {
+      chunk->clear();
+      *done = true;
+      return true;
+    }
+    const auto count = std::min(chunk_bytes, payload.size() - offset);
+    chunk->assign(payload.data() + offset, count);
+    offset += count;
+    *done = false;
+    return true;
+  };
+  return store_.save_stream(document, payload.size(), reader, error);
 }
 bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
     std::uint64_t minimum_state_version, ClusterArchiveRecord* output,
@@ -230,16 +243,34 @@ bool ClusterArchiveStore::archive_verified(const std::string& cluster_id,
   }
   if (!archive(cluster_id, state_version, journal_sequence, payload, error))
     return false;
-  ClusterArchiveRecord candidate;
-  if (!restore(cluster_id, state_version, &candidate, error, journal_sequence))
-    return false;
-  if (candidate.state_version != state_version ||
-      candidate.journal_sequence != journal_sequence ||
-      candidate.payload != payload) {
+  SnapshotDocument metadata;
+  bool used_backup = false;
+  std::size_t offset = 0;
+  bool mismatch = false;
+  const SnapshotPayloadSink sink = [&payload, &offset, &mismatch](
+      const char* data, std::size_t size, std::string* sink_error) {
+    if (offset > payload.size() || size > payload.size() - offset ||
+        (size != 0 && std::char_traits<char>::compare(
+            payload.data() + offset, data, size) != 0)) {
+      mismatch = true;
+      if (sink_error) *sink_error = "CLUSTER_ARCHIVE_VERIFY_MISMATCH";
+      return false;
+    }
+    offset += size;
+    return true;
+  };
+  if (!store_.load_stream(&metadata, sink, &used_backup, error)) return false;
+  if (mismatch || offset != payload.size() ||
+      metadata.schema_id != kSchema || metadata.context_id != cluster_id ||
+      metadata.state_version != state_version ||
+      metadata.journal_sequence != journal_sequence) {
     if (error) *error = "CLUSTER_ARCHIVE_VERIFY_MISMATCH";
     return false;
   }
-  *verified = std::move(candidate);
+  verified->cluster_id = metadata.context_id;
+  verified->state_version = metadata.state_version;
+  verified->journal_sequence = metadata.journal_sequence;
+  verified->payload.clear();
   if (error) error->clear();
   return true;
 }
