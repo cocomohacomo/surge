@@ -348,3 +348,29 @@ and eligible Entity reclamation commands in one version-checked SemanticDelta.
 If that transaction fails, the verified archive is an inert orphan and the
 graph remains authoritative. Shared members must only be unlinked from the
 target cluster, never reclaimed while another membership remains.
+
+## Verified archive-to-detach coordinator
+
+`archive_and_detach_cluster` now connects the durable archive precondition to
+one version-checked `SemanticDelta`. The caller supplies the complete serialized
+cluster payload and the graph state-version watermark. The coordinator rejects
+a stale watermark, computes the conservative detach plan, writes and verifies
+the archive at that exact state/journal watermark, and checks the graph
+watermark again before constructing the mutation.
+
+Eligible exclusive Entity members have their target-cluster Contains edge
+removed and are reclaimed in the same journal transaction. Shared Entity
+members have only the target-cluster edge removed; their remaining cluster
+memberships preserve the payload. Non-Entity, missing, or otherwise referenced
+members are reported as ineligible and left untouched. `BudgetedContextGraph`
+remains the commit gateway, including its final reclamation checks and logical
+resident-byte lease release.
+
+If archive verification fails, no graph mutation is attempted. If the graph
+changes after archive creation, or the journal transaction is rejected, the
+verified archive is left as an inert recovery artifact and the graph remains
+authoritative. This coordinator does not yet serialize the canonical graph
+itself: callers must provide a complete, internally consistent payload captured
+at the supplied watermark. It also does not yet provide transactional lazy
+rehydration or claim an OS RSS reduction; the budget release is logical
+accounting for reclaimed Entity content.
