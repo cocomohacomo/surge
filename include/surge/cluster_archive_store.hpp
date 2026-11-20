@@ -4,7 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <string>
-namespace surge {
+namespace surge {\nclass BudgetedContextGraph;
 struct ClusterArchiveRecord {
   std::string cluster_id;
   std::uint64_t state_version{0};
@@ -21,6 +21,26 @@ struct ClusterArchiveDetachPlan {
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
     const ContextGraph& graph, const std::string& cluster_id,
     const std::vector<std::string>& member_node_ids);
+
+struct ClusterArchiveDetachResult {
+  bool archive_verified{false};
+  bool graph_detached{false};
+  std::uint64_t archived_state_version{0};
+  std::uint64_t committed_state_version{0};
+  std::vector<std::string> reclaimed_entity_ids;
+  std::vector<std::string> preserved_shared_member_ids;
+  std::vector<std::string> ineligible_member_ids;
+  std::string error;
+};
+
+// Archives caller-supplied complete cluster bytes at an exact graph watermark,
+// verifies readback, then detaches eligible memberships in one journal delta.
+ClusterArchiveDetachResult archive_and_detach_cluster(
+    const ContextGraph& graph, BudgetedContextGraph& budgeted_graph,
+    class ClusterArchiveStore& archive_store, const std::string& cluster_id,
+    const std::vector<std::string>& member_node_ids, const std::string& payload,
+    std::uint64_t expected_state_version, const std::string& delta_id,
+    const std::string& idempotency_key);
 
 // Durable per-cluster payload archive. SnapshotStore supplies atomic
 // generations, SHA-256 validation, and backup recovery. This component
