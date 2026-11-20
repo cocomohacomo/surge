@@ -49,8 +49,11 @@ int main() {
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
   CHECK(store.archive("cluster-a", 7, 12, "large-ish payload", &error));
   ClusterArchiveRecord record;
-  CHECK(store.restore("cluster-a", 7, &record, &error));
+  CHECK(store.archive_verified("cluster-a", 7, 12, "large-ish payload", &record, &error));
   CHECK(record.cluster_id == "cluster-a" && record.state_version == 7);
+  CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
+  CHECK(!store.archive_verified("cluster-a", 7, 12, "payload", nullptr, &error));
+  CHECK(error == "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID");
   CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
   CHECK(!store.restore("cluster-a", 7, &record, &error, 13));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
