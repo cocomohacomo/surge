@@ -70,6 +70,35 @@ ResourceBudgetSnapshot ResourceBudget::snapshot() const {
   return {used_, limits_, total, total_byte_limit_};
 }
 
+bool ResourceBudget::grow(ResourceKind kind, std::size_t amount,
+                          std::string& error) noexcept {
+  error.clear();
+  const auto slot = index(kind);
+  if (slot >= limits_.size()) {
+    error = "RESOURCE_KIND_INVALID";
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (amount > limits_[slot] || used_[slot] > limits_[slot] - amount) {
+    error = "RESOURCE_BUDGET_EXCEEDED";
+    return false;
+  }
+  if (kind == ResourceKind::ResidentBytes ||
+      kind == ResourceKind::TransientBytes) {
+    const auto resident = used_[index(ResourceKind::ResidentBytes)];
+    const auto transient = used_[index(ResourceKind::TransientBytes)];
+    if (total_byte_limit_ != 0 &&
+        (resident > total_byte_limit_ ||
+         transient > total_byte_limit_ - resident ||
+         amount > total_byte_limit_ - resident - transient)) {
+      error = "RESOURCE_TOTAL_BYTE_BUDGET_EXCEEDED";
+      return false;
+    }
+  }
+  used_[slot] += amount;
+  return true;
+}
+
 void ResourceBudget::release(ResourceKind kind, std::size_t amount) noexcept {
   const auto slot = index(kind);
   if (slot >= used_.size()) return;
@@ -103,6 +132,24 @@ bool ResourceLease::shrink(std::size_t amount) noexcept {
   owner_->release(kind_, amount);
   amount_ -= amount;
   if (amount_ == 0) owner_ = nullptr;
+  return true;
+}
+
+bool ResourceLease::grow(std::size_t amount,
+                         std::string& error) noexcept {
+  error.clear();
+  if (!owner_) {
+    error = "RESOURCE_LEASE_NOT_ACTIVE";
+    return false;
+  }
+  if (amount == 0) return true;
+  if (!owner_->grow(kind_, amount, error)) return false;
+  if (amount > static_cast<std::size_t>(-1) - amount_) {
+    owner_->release(kind_, amount);
+    error = "RESOURCE_LEASE_SIZE_OVERFLOW";
+    return false;
+  }
+  amount_ += amount;
   return true;
 }
 
