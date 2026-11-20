@@ -34,6 +34,12 @@ class ClusterArchiveStore {
   bool restore(const std::string& expected_cluster_id,
       std::uint64_t minimum_state_version, ClusterArchiveRecord* output,
       std::string* error, std::uint64_t minimum_journal_sequence = 0) const;
+  // Persists an archive and reads it back, requiring exact identity, watermarks,
+  // and payload equality before reporting success.
+  bool archive_verified(const std::string& cluster_id,
+      std::uint64_t state_version, std::uint64_t journal_sequence,
+      const std::string& payload, ClusterArchiveRecord* verified,
+      std::string* error);
   const std::string& path() const noexcept { return store_.path(); }
  private:
   SnapshotStore store_;
