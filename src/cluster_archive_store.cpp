@@ -40,7 +40,7 @@ ClusterArchiveDetachPlan plan_cluster_archive_detach(
     bool has_other_relation = false;
     for (const auto& edge : graph.relations()) {
       const auto& relation = edge.second;
-      if (relation.id == cluster_id || relation.kind == RelationKind::Contains &&
+      if (relation.kind == RelationKind::Contains &&
           relation.from == cluster_id && relation.to == id) continue;
       if (relation.from == id || relation.to == id) {
         has_other_relation = true;
