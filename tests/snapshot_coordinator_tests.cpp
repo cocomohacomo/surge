@@ -80,6 +80,7 @@ int main() {
       std::filesystem::temp_directory_path() / "surge_coordinator_stream_restore.bin";
   std::error_code cleanup_error;
   std::filesystem::remove(stream_store_path, cleanup_error);
+  std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
   const auto stream_journal_path =
       std::filesystem::temp_directory_path() /
       "surge_coordinator_stream_restore.journal";
@@ -115,7 +116,6 @@ int main() {
   std::filesystem::remove(stream_store_path, cleanup_error);
   std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
   std::filesystem::remove(stream_journal_path, cleanup_error);
-  std::filesystem::remove(stream_journal_path.string() + ".lock", cleanup_error);
 
   // Reject a domain callback that exceeds the configured chunk bound.
   SnapshotCoordinatorLimits chunk_limits;
