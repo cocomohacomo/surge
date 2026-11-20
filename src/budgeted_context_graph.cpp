@@ -376,18 +376,15 @@ DeltaResult BudgetedContextGraph::apply_retention_plan(
   delta.idempotency_key = idempotency_key;
   delta.expected_state_version = plan.planned_state_version;
   std::set<std::string> seen;
-  for (const auto& cluster_id : plan.forget_cluster_ids) {
+  auto append_transition = [&](const std::string& cluster_id, ClusterLifecycleState next) -> bool {
+    if (!seen.insert(cluster_id).second) { error = "CLUSTER_RETENTION_DUPLICATE_TARGET"; return false; }
+    const auto current = graph_.cluster_lifecycle(cluster_id);
+    ClusterLifecycleRecord record;
     if (!seen.insert(cluster_id).second) {
       error = "CLUSTER_RETENTION_DUPLICATE_TARGET";
       return {false, false, graph_.state_version(), error};
     }
-    const auto current = graph_.cluster_lifecycle(cluster_id);
-    const auto state = current ? current->state : ClusterLifecycleState::Active;
-    ClusterLifecycleState next;
-    if (state == ClusterLifecycleState::Active) next = ClusterLifecycleState::Dormant;
-    else if (state == ClusterLifecycleState::Dormant) next = ClusterLifecycleState::Archived;
-    else continue;
-    ClusterLifecycleRecord record;
+    
     record.cluster_id = cluster_id;
     record.state = next;
     record.revision = current ? current->revision + 1 : 1;
@@ -397,8 +394,19 @@ DeltaResult BudgetedContextGraph::apply_retention_plan(
     const auto identity = sha256_hex(cluster_id);
     const auto node_id = "cluster-lifecycle-" + identity + "-" + std::to_string(record.revision);
     const auto relation_id = "cluster-lifecycle-edge-" + identity + "-" + std::to_string(record.revision);
-    if (!graph_.append_cluster_lifecycle(delta, record, node_id, relation_id, error))
-      return {false, false, graph_.state_version(), error};
+    if (!graph_.append_cluster_lifecycle(delta, record, node_id, relation_id, error)) return false;
+    return true;
+  };
+  for (const auto& cluster_id : plan.forget_cluster_ids) {
+    const auto current = graph_.cluster_lifecycle(cluster_id);
+    const auto state = current ? current->state : ClusterLifecycleState::Active;
+    if (state == ClusterLifecycleState::Active) { if (!append_transition(cluster_id, ClusterLifecycleState::Dormant)) return {false,false,graph_.state_version(),error}; }
+    else if (state == ClusterLifecycleState::Dormant) { if (!append_transition(cluster_id, ClusterLifecycleState::Archived)) return {false,false,graph_.state_version(),error}; }
+  }
+  for (const auto& cluster_id : plan.restore_cluster_ids) {
+    const auto current = graph_.cluster_lifecycle(cluster_id);
+    if (!current || (current->state != ClusterLifecycleState::Dormant && current->state != ClusterLifecycleState::Archived)) { error = "CLUSTER_RETENTION_RESTORE_TARGET_NOT_INACTIVE"; return {false,false,graph_.state_version(),error}; }
+    if (!append_transition(cluster_id, ClusterLifecycleState::Active)) return {false,false,graph_.state_version(),error};
   }
   if (delta.nodes.empty()) return {true, true, graph_.state_version(), {}};
   return apply(delta);
