@@ -1,5 +1,6 @@
 #include "surge/snapshot_coordinator.hpp"
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -72,6 +73,44 @@ int main() {
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
 
   const std::string valid_snapshot_bytes = bytes;
+
+  // Store-backed restore consumes the authenticated bundle incrementally and
+  // prepares every domain before publishing any of them.
+  const auto stream_store_path =
+      std::filesystem::temp_directory_path() / "surge_coordinator_stream_restore.bin";
+  std::error_code cleanup_error;
+  std::filesystem::remove(stream_store_path, cleanup_error);
+  std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
+  EventJournal stream_journal(
+      (std::filesystem::temp_directory_path() /
+       "surge_coordinator_stream_restore.journal").string());
+  CHECK(stream_journal.open());
+  SnapshotCoordinator stream_coordinator;
+  MemoryDomain stream_graph("graph", "checkpoint-graph");
+  MemoryDomain stream_chaos("chaos", "checkpoint-chaos");
+  CHECK(stream_coordinator.register_domain(&stream_graph, &error));
+  CHECK(stream_coordinator.register_domain(&stream_chaos, &error));
+  std::string stream_bytes;
+  CHECK(stream_coordinator.capture("stream-ctx", 0, 0, &stream_bytes, &error));
+  SnapshotStore stream_store(stream_store_path.string());
+  CHECK(stream_store.save(stream_bytes, &error));
+  stream_graph.set_value("mutated-graph");
+  stream_chaos.set_value("mutated-chaos");
+  CHECK(stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(stream_graph.value() == "checkpoint-graph");
+  CHECK(stream_chaos.value() == "checkpoint-chaos");
+
+  stream_graph.set_value("atomic-graph");
+  stream_chaos.set_value("atomic-chaos");
+  stream_chaos.reject(true);
+  CHECK(!stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(stream_graph.value() == "atomic-graph");
+  CHECK(stream_chaos.value() == "atomic-chaos");
+  stream_chaos.reject(false);
+  std::filesystem::remove(stream_store_path, cleanup_error);
+  std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
 
   // Reject a domain callback that exceeds the configured chunk bound.
   SnapshotCoordinatorLimits chunk_limits;
