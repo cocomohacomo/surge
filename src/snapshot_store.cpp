@@ -430,6 +430,9 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
       payload_offset > content_size || content_size - payload_offset != payload_size)
     return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
 
+  // Publish authenticated envelope metadata before invoking the sink so a
+  // coordinator can validate context and journal watermarks before staging.
+  *metadata = candidate;
   input.clear();
   input.seekg(static_cast<std::streamoff>(payload_offset), std::ios::beg);
   std::uint64_t delivered = 0;
@@ -445,7 +448,6 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
     }
     delivered += amount;
   }
-  *metadata = std::move(candidate);
   if (error) error->clear();
   return true;
 }
@@ -712,15 +714,13 @@ bool SnapshotStore::load_stream(SnapshotDocument* metadata,
   const auto primary = native_path(path_);
   std::string primary_error;
   bool sink_started = false;
-  SnapshotDocument candidate;
   const SnapshotPayloadSink tracked_sink =
       [&](const char* data, std::size_t size, std::string* sink_error) {
         sink_started = true;
         return sink(data, size, sink_error);
       };
   if (stream_verified_generation(primary, limits_.max_file_bytes,
-                                 &candidate, tracked_sink, &primary_error)) {
-    *metadata = std::move(candidate);
+                                 metadata, tracked_sink, &primary_error)) {
     if (error) error->clear();
     return true;
   }
@@ -732,11 +732,9 @@ bool SnapshotStore::load_stream(SnapshotDocument* metadata,
   }
 
   const auto backup = native_path(path_ + ".bak");
-  SnapshotDocument backup_candidate;
   std::string backup_error;
   if (stream_verified_generation(backup, limits_.max_file_bytes,
-                                 &backup_candidate, sink, &backup_error)) {
-    *metadata = std::move(backup_candidate);
+                                 metadata, sink, &backup_error)) {
     if (used_backup) *used_backup = true;
     if (error) error->clear();
     return true;
