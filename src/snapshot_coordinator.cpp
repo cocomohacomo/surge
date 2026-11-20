@@ -361,7 +361,7 @@ bool SnapshotCoordinator::restore_from_store(
   std::vector<JournalEvent> tail;
   ResourceLease tail_staging;
   ResourceLease payload_staging;
-  std::size_t tail_state_version = 0;
+  std::uint64_t tail_state_version = 0;
   std::size_t tail_bytes_reserved = 0;
   std::string pending;
   std::size_t consumed = 0;
