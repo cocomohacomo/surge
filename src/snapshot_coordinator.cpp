@@ -114,17 +114,45 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
   if (domains_.size() > std::numeric_limits<std::uint32_t>::max())
     return fail(error, "SNAPSHOT_DOMAIN_COUNT_INVALID");
   std::string bundle;
-  put_u32(&bundle, static_cast<std::uint32_t>(domains_.size()));
+  ResourceLease capture_staging;
+  std::size_t accounted_capture_bytes = 0;
   const std::size_t capture_limit = limits_.max_capture_staging_bytes == 0
       ? 64U * 1024U * 1024U : limits_.max_capture_staging_bytes;
   const std::size_t aggregate_limit = limits_.envelope.max_payload_bytes == 0
       ? 60U * 1024U * 1024U : limits_.envelope.max_payload_bytes;
+  const auto account_capture_bytes = [&](std::size_t amount,
+                                         std::string* account_error) {
+    std::size_t next = 0;
+    if (!checked_add(accounted_capture_bytes, amount, &next) ||
+        next > capture_limit)
+      return fail(account_error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+    if (budget_ && amount != 0) {
+      std::string budget_error;
+      const bool ok = capture_staging
+          ? capture_staging.grow(amount, budget_error)
+          : budget_->try_acquire(ResourceKind::TransientBytes, amount,
+                                 capture_staging, budget_error);
+      if (!ok)
+        return fail(account_error, budget_error.empty()
+            ? "SNAPSHOT_CAPTURE_RESOURCE_BUDGET_EXCEEDED"
+            : budget_error.c_str());
+    }
+    accounted_capture_bytes = next;
+    if (account_error) account_error->clear();
+    return true;
+  };
+  if (!account_capture_bytes(4, error)) return false;
+  put_u32(&bundle, static_cast<std::uint32_t>(domains_.size()));
   for (const auto* domain : domains_) {
     const std::string id = domain->domain_id();
     const std::string schema = domain->schema_id();
     if (!is_valid_utf8(id) || !is_valid_utf8(schema) ||
         id.size() > 4096 || schema.size() > 4096)
       return fail(error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
+    std::size_t frame_bytes = 12;
+    if (!checked_add(frame_bytes, id.size(), &frame_bytes) ||
+        !checked_add(frame_bytes, schema.size(), &frame_bytes) ||
+        !account_capture_bytes(frame_bytes, error)) return false;
     if (!put_field(&bundle, id, 4096) || !put_field(&bundle, schema, 4096))
       return fail(error, "SNAPSHOT_BUNDLE_FIELD_INVALID");
     const std::size_t length_offset = bundle.size();
@@ -148,6 +176,7 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
       if (!checked_add(bundle.size(), size, &next_bundle) ||
           next_bundle > aggregate_limit || next_bundle > capture_limit)
         return fail(chunk_error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+      if (!account_capture_bytes(size, chunk_error)) return false;
       if (size != 0) bundle.append(data, size);
       payload_size += size;
       if (chunk_error) chunk_error->clear();
@@ -169,6 +198,9 @@ bool SnapshotCoordinator::capture(const std::string& context_id,
       !checked_add(encode_peak, 128, &encode_peak) ||
       encode_peak > capture_limit)
     return fail(error, "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+  if (encode_peak < accounted_capture_bytes ||
+      !account_capture_bytes(encode_peak - accounted_capture_bytes, error))
+    return false;
   document.payload = std::move(bundle);
   return SnapshotCodec::encode(document, limits_.envelope, bytes, error);
 }
