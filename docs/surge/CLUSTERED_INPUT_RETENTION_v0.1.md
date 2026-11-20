@@ -471,3 +471,9 @@ so a payload cannot be stored under a different cluster/version envelope.
 This remains a preamble-level validator, not a full grammar decoder: record
 counts, enum ranges, duplicate IDs, cross-record references, and ledger bundle
 integrity still require the strict decoder stage.
+
+The preflight also requires a syntactically valid nodes-count section header,
+so a payload truncated immediately after its identity preamble is rejected.
+The store enforces this check on both save and restore. The declared node count
+is not yet reconciled against decoded node records; full section/count and
+cross-reference validation remain explicitly incomplete.
