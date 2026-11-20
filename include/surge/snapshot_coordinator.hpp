@@ -56,6 +56,8 @@ struct SnapshotCoordinatorLimits {
   // Maximum known simultaneous serialized capture staging (domain payload,
   // aggregate bundle and final envelope). This is a logical bound, not RSS.
   std::size_t max_capture_staging_bytes{64U * 1024U * 1024U};
+  // Maximum single chunk accepted from a domain capture callback.
+  std::size_t max_capture_chunk_bytes{64U * 1024U};
   // Maximum logical transient reservation for one restore operation.
   std::size_t max_restore_staging_bytes{64U * 1024U * 1024U};
 };
