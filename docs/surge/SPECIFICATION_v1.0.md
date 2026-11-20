@@ -1,4 +1,23 @@
 # SURGE 基礎設計 v1.0
+### SnapshotStore authenticated streaming restore
+
+SnapshotStore::load_stream provides a bounded-memory restore transport. It
+first scans the complete selected generation in fixed-size chunks and verifies
+the SHA-256 footer before invoking the payload sink. It then parses the bounded
+metadata header and delivers the payload in chunks no larger than 64 KiB.
+Corrupt or truncated primary generations are rejected before sink delivery and
+the verified .bak generation is attempted instead. If sink delivery has
+started and then fails, backup replay is not attempted because the sink may
+already contain a staged prefix; the caller must abort its staging transaction.
+
+The sink must be transactional or write to detached staging. It MUST NOT
+publish restored live state during chunk delivery. The caller may publish only
+after load_stream returns success and its own domain-level validation and
+prepare phase succeeds. The existing load() API remains available and still
+materializes the complete file for compatibility. The streamed API bounds
+transport buffers, not domain restore allocations or process RSS. One writer
+per snapshot path remains required.
+
 ## Universal Context Cognition Framework
 ### Open-World Recognition and Cluster-Native Memory
 
