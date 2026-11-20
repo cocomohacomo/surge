@@ -6,6 +6,9 @@
 
 int main() {
   using namespace surge;
+  constexpr std::size_t kMiB = 1024U * 1024U;
+  const ResourceBudgetLimits defaults;
+  assert(defaults.total_byte_limit == 200U * kMiB);
   ResourceBudget budget({1024, 512, 10, 4, 8, 32});
   std::string error;
   ResourceLease resident;
@@ -46,7 +49,6 @@ int main() {
 
   // The temporary edge profile caps ResidentBytes + TransientBytes
   // together at 200 MiB, rather than allowing each category 200 MiB.
-  constexpr std::size_t kMiB = 1024U * 1024U;
   ResourceBudget edge_budget(ResourceBudgetLimits::temporary_edge_200mb());
   ResourceLease edge_resident;
   ResourceLease edge_transient;
