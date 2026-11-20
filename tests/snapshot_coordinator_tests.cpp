@@ -84,6 +84,7 @@ int main() {
       std::filesystem::temp_directory_path() /
       "surge_coordinator_stream_restore.journal";
   std::filesystem::remove(stream_journal_path, cleanup_error);
+  std::filesystem::remove(stream_journal_path.string() + ".lock", cleanup_error);
   EventJournal stream_journal(stream_journal_path.string());
   CHECK(stream_journal.open());
   SnapshotCoordinator stream_coordinator;
