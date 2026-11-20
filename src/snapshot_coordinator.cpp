@@ -359,7 +359,9 @@ bool SnapshotCoordinator::restore_from_store(
   SnapshotDocument metadata;
   std::vector<PreparedEntry> prepared;
   std::vector<JournalEvent> tail;
-  ResourceLease restore_staging;
+  ResourceLease tail_staging;
+  ResourceLease payload_staging;
+  std::size_t tail_state_version = 0;
   std::string pending;
   std::size_t consumed = 0;
   std::size_t domain_index = 0;
@@ -381,29 +383,6 @@ bool SnapshotCoordinator::restore_from_store(
           static_cast<unsigned char>(pending[consumed++]);
     return true;
   };
-  const auto append_staging = [&](std::size_t amount) {
-    if (amount == 0) return true;
-    std::size_t current = 0;
-    if (restore_staging) {
-      current = restore_staging.bytes_reserved();
-    }
-    std::size_t next = 0;
-    if (!checked_add(current, amount, &next) ||
-        next > limits_.max_restore_staging_bytes)
-      return fail(error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
-    if (!budget_) return true;
-    std::string budget_error;
-    const bool ok = restore_staging
-        ? restore_staging.grow(amount, budget_error)
-        : budget_->try_acquire(ResourceKind::TransientBytes, amount,
-                               restore_staging, budget_error);
-    if (!ok)
-      return fail(error, budget_error.empty()
-          ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
-          : budget_error.c_str());
-    return true;
-  };
-
   const auto sink = [&](const char* data, std::size_t size,
                         std::string* sink_error) {
     if (!metadata_checked) {
@@ -429,7 +408,6 @@ bool SnapshotCoordinator::restore_from_store(
         if (metadata.state_version == checkpoint.base_state_version)
           return fail(sink_error, "SNAPSHOT_JOURNAL_CHECKPOINT_STREAM_DIGEST_UNAVAILABLE");
       }
-      const auto checkpoint_info = journal.checkpoint_info();
       const auto staged_tail = journal.committed_tail(
           metadata.journal_sequence, tail_limits);
       if (!staged_tail.ok)
@@ -442,16 +420,27 @@ bool SnapshotCoordinator::restore_from_store(
       if (staged_tail.current_state_version != journal.state_version())
         return fail(sink_error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
       tail = staged_tail.events;
-      if (!append_staging(tail_limits.max_total_bytes)) return false;
+      tail_state_version = staged_tail.current_state_version;
+      if (budget_ && tail_limits.max_total_bytes != 0) {
+        std::string budget_error;
+        if (!budget_->try_acquire(ResourceKind::TransientBytes,
+                tail_limits.max_total_bytes, tail_staging, budget_error))
+          return fail(sink_error, budget_error.empty()
+              ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
+              : budget_error.c_str());
+      }
+      if (tail_limits.max_total_bytes > limits_.max_restore_staging_bytes)
+        return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
       tail_ready = true;
-      (void)checkpoint_info;
     }
     if (parser_failed) return fail(sink_error, parser_error.c_str());
     if (size != 0 && data == nullptr)
       return fail(sink_error, "SNAPSHOT_DOMAIN_CHUNK_INVALID");
     if (size > 64U * 1024U)
       return fail(sink_error, "SNAPSHOT_RESTORE_CHUNK_LIMIT_EXCEEDED");
-    if (!append_staging(size)) return false;
+    if (size > limits_.max_restore_staging_bytes -
+            std::min(pending.size(), limits_.max_restore_staging_bytes))
+      return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
     if (size != 0) pending.append(data, size);
 
     while (true) {
@@ -486,7 +475,20 @@ bool SnapshotCoordinator::restore_from_store(
         if (!read_u32(&payload_size)) break;
         if (payload_size > limits_.max_domain_payload_bytes)
           return fail(sink_error, "SNAPSHOT_DOMAIN_PAYLOAD_LIMIT_EXCEEDED");
-        if (!append_staging(payload_size)) return false;
+        std::size_t payload_reservation = 0;
+        if (!checked_add(static_cast<std::size_t>(payload_size),
+                         static_cast<std::size_t>(payload_size),
+                         &payload_reservation) ||
+            payload_reservation > limits_.max_restore_staging_bytes)
+          return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
+        if (budget_ && payload_reservation != 0) {
+          std::string budget_error;
+          if (!budget_->try_acquire(ResourceKind::TransientBytes,
+                  payload_reservation, payload_staging, budget_error))
+            return fail(sink_error, budget_error.empty()
+                ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
+                : budget_error.c_str());
+        }
         parser_state = 6;
       } else if (parser_state == 6) {
         if (pending.size() - consumed < payload_size) break;
@@ -507,6 +509,7 @@ bool SnapshotCoordinator::restore_from_store(
               ? "SNAPSHOT_DOMAIN_TAIL_PREPARE_FAILED"
               : domain_error.c_str());
         prepared.push_back({domain, std::move(staged)});
+        payload_staging.reset();
         ++domain_index;
         parser_state = domain_index == domain_count ? 7 : 1;
       } else {
@@ -530,8 +533,7 @@ bool SnapshotCoordinator::restore_from_store(
   if (parser_state != 7 || domain_index != domains_.size() ||
       !pending.empty())
     return fail(error, "SNAPSHOT_BUNDLE_TRUNCATED");
-  if (journal.state_version() !=
-      journal.committed_tail(metadata.journal_sequence, tail_limits).current_state_version)
+  if (journal.state_version() != tail_state_version)
     return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
 
   // Every domain has prepared successfully. Publish only after the complete
