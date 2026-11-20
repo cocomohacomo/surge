@@ -45,8 +45,10 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
  for(const auto& item:by_id)if((item.second.pinned||item.second.knowledge_cluster)&&tombstoned_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
-  if(inactive_ids.count(item.first)||tombstoned_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
-  else if(!protected_ids.count(item.first))ranked.push_back(item.second);
+  if(inactive_ids.count(item.first)||dormant_ids.count(item.first)||tombstoned_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
+  // Dormant/archived clusters remain restoration candidates. They compete for
+  // active slots by the same importance ordering; tombstones never do.
+  if(!tombstoned_ids.count(item.first)&&!protected_ids.count(item.first))ranked.push_back(item.second);
  }
  // Importance is primary. Inactive state breaks equal-priority ties so restoration wins without displacing a more important active cluster.
  std::sort(ranked.begin(),ranked.end(),[&](const auto& left,const auto& right){
