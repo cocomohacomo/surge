@@ -116,10 +116,13 @@ automatic invocation from the Core memory lifecycle remain required next steps.
 
 The retention plan is bound to the ContextGraph state version from which the
 complete candidate set was evaluated. A stale plan is rejected before any
-mutation. ACTIVE clusters rank ahead of DORMANT clusters; DORMANT remains
-recoverable but is deprioritized. ARCHIVED and TOMBSTONED clusters are reported
-as already inactive and do not consume active retention capacity. If an
-inactive cluster is part of the protected floor, planning fails closed.
+mutation. ACTIVE, DORMANT, and ARCHIVED non-tombstoned clusters participate in
+one importance-first ranking when selecting the bounded active set. A selected
+DORMANT or ARCHIVED cluster is restored to ACTIVE; an unselected inactive
+cluster remains inactive and is never emitted as a new forget action.
+TOMBSTONED clusters are excluded from restoration. Inactive clusters are
+reported separately and do not count as protected-floor members unless
+explicitly protected. If a protected cluster is inactive, planning fails closed.
 
 The budgeted Core gateway applies all eligible forget decisions in one
 SemanticDelta. ACTIVE becomes DORMANT; a later retention pass may move DORMANT
@@ -268,3 +271,15 @@ this is not a hard RSS bound.
 Retention priority is the primary ranking key across active and inactive non-knowledge clusters. An inactive cluster wins a tie at equal priority, so restoration is preferred when it does not displace a more important active cluster. Last-access sequence and stable cluster ID break subsequent ties. Both DORMANT and ARCHIVED selected clusters are transitioned back to ACTIVE in the same atomic lifecycle delta. Tombstoned clusters remain excluded from automatic restoration.
 
 The lifecycle planner does not claim physical memory reclamation. DORMANT/ARCHIVED currently changes retention state while canonical graph payload remains available for deterministic recovery. Physical payload offload/compression and measured RSS reduction require a separate storage-backed implementation and benchmark.
+
+
+### Importance-first reversible restoration
+
+Restoration competes for the same configured active-cluster slots as retention.
+This prevents a low-importance active cluster from occupying capacity while a
+higher-importance archived cluster remains unavailable. Importance is the
+primary key; lifecycle state is only a deterministic tie-breaker. Inactive
+clusters that lose the ranking remain inactive without generating redundant
+forget transitions. Shared members are preserved whenever any retained or
+still-inactive cluster continues to reference them. This is still a logical
+lifecycle policy: it does not by itself offload payload bytes or reduce RSS.
