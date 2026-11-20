@@ -398,3 +398,18 @@ allocations, allocator fragmentation, shared libraries, stacks, mapped files or
 OS overhead, and it is not a process RSS limiter. The 200 MiB value is a
 provisional engineering budget, not a verified operating limit. Target-device
 RSS and sustained-load tests are required before treating it as a hard cap.
+
+
+### Capture staging reservation against the shared memory budget
+
+ResourceLease supports atomic incremental growth. SnapshotCoordinator capture
+now reserves TransientBytes before adding the bundle header, domain framing and
+each serialized chunk, then expands the reservation for the known envelope
+encoding peak before encoding. The reservation is released on success and all
+failure paths through RAII. A shared budget rejection stops capture before
+the next append and returns the underlying resource-budget error. This
+integrates snapshot capture with the provisional aggregate 200 MiB accounting
+when a ResourceBudget is supplied. It still accounts logical serialized
+buffers only; it cannot observe allocations internal to domain serializers,
+SnapshotCodec, the standard library or the allocator, and is not a hard RSS
+enforcement mechanism.
