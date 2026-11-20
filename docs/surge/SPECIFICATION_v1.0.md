@@ -426,3 +426,15 @@ and abc vectors, multi-boundary chunk updates, repeated finalization and
 invalid input. SnapshotCodec and SnapshotStore have not yet been migrated to
 consume the incremental interface, so this foundation alone does not remove
 their full-buffer materialization.
+
+
+### Snapshot validation buffer reduction
+
+SnapshotCodec now verifies the envelope digest incrementally over the caller-owned
+byte range and parses header fields directly from that buffer. The validation
+path no longer creates a second full-size copy of the content preceding the
+SHA-256 footer. The parser bounds every field read to the authenticated content
+region, excluding the digest footer. Decode still allocates the requested
+payload in its output document, and SnapshotStore still loads a complete file
+into memory. This is a validation peak reduction, not yet streaming file I/O
+or an end-to-end RSS guarantee.
