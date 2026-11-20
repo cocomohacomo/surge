@@ -380,3 +380,21 @@ uses a smaller configured limit to verify oversized chunk rejection. This is a
 per-callback chunk size guard and does not imply the domain serializer itself
 uses bounded allocations; end-to-end streaming and RSS measurement remain
 pending.
+
+
+### Provisional 200 MiB edge memory budget
+
+ResourceBudgetLimits::temporary_edge_200mb() provides a provisional edge-device
+profile with a combined logical byte ceiling of 200 MiB across ResidentBytes
+and TransientBytes. The per-category ceilings are also 200 MiB, while the
+combined check prevents the two categories from independently consuming that
+amount. Other count-based resource limits remain caller-configured.
+
+The aggregate reservation check is atomic under the ResourceBudget mutex and
+returns RESOURCE_TOTAL_BYTE_BUDGET_EXCEEDED when the combined ceiling would be
+crossed. The snapshot exposes aggregate logical byte usage and its configured
+limit. This is admission accounting only: it does not include uninstrumented
+allocations, allocator fragmentation, shared libraries, stacks, mapped files or
+OS overhead, and it is not a process RSS limiter. The 200 MiB value is a
+provisional engineering budget, not a verified operating limit. Target-device
+RSS and sustained-load tests are required before treating it as a hard cap.
