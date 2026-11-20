@@ -1,5 +1,7 @@
 #pragma once
 #include "surge/snapshot_store.hpp"
+#include "surge/context_graph.hpp"
+#include <vector>
 #include <cstdint>
 #include <string>
 namespace surge {
@@ -9,6 +11,17 @@ struct ClusterArchiveRecord {
   std::uint64_t journal_sequence{0};
   std::string payload;
 };
+struct ClusterArchiveDetachPlan {
+  std::string cluster_id;
+  std::vector<std::string> exclusively_owned_entity_ids;
+  std::vector<std::string> shared_member_ids;
+  std::vector<std::string> ineligible_member_ids;
+};
+// Computes a conservative detach plan. It never mutates the graph.
+ClusterArchiveDetachPlan plan_cluster_archive_detach(
+    const ContextGraph& graph, const std::string& cluster_id,
+    const std::vector<std::string>& member_node_ids);
+
 // Durable per-cluster payload archive. SnapshotStore supplies atomic
 // generations, SHA-256 validation, and backup recovery. This component
 // deliberately does not mutate ContextGraph.
