@@ -4,6 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
+namespace {
+std::string make_payload(const std::string& cluster, std::uint64_t version,
+                         const std::string& body = "nodes 0\\n") {
+  std::ostringstream out;
+  out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark " << version
+      << "\\ncluster " << std::quoted(cluster) << "\\n" << body;
+  return out.str();
+}
+}
 #define CHECK(x) do { if (!(x)) { std::cerr << "CHECK failed: " #x << " at " << __LINE__ << "\n"; std::exit(1); } } while (0)
 int main() {
   using namespace surge;
@@ -110,18 +121,22 @@ int main() {
   CHECK(!store.archive("", 1, 1, "payload", &error));
   CHECK(error == "CLUSTER_ARCHIVE_INPUT_INVALID");
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
-  CHECK(store.archive("cluster-a", 7, 12, "large-ish payload", &error));
+  CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\\nnode \\"n1\\" 2 \\"large-ish payload\\" 0\\n");
+  CHECK(store.archive("cluster-a", 7, 12, large_payload, &error));
   ClusterArchiveRecord record;
-  CHECK(store.archive_verified("cluster-a", 7, 12, "large-ish payload", &record, &error));
+  CHECK(store.archive_verified("cluster-a", 7, 12, large_payload, &record, &error));
   CHECK(record.cluster_id == "cluster-a" && record.state_version == 7);
-  CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
-  const std::string expanded_payload(3U * 1024U * 1024U + 37U, 'x');
+  CHECK(record.journal_sequence == 12 && record.payload == large_payload);
+  std::string expanded_payload = make_payload("cluster-a", 7);
+  expanded_payload.resize(3U * 1024U * 1024U + 37U, 'x');
   CHECK(store.archive_verified("cluster-a", 7, 12, expanded_payload, &record, &error));
   CHECK(record.payload == expanded_payload);
   CHECK(record.state_version == 7 && record.journal_sequence == 12);
   CHECK(!store.archive_verified("cluster-a", 7, 12, "payload", nullptr, &error));
   CHECK(error == "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID");
-  CHECK(record.journal_sequence == 12 && record.payload == "large-ish payload");
+  CHECK(record.journal_sequence == 12 && record.payload == large_payload);
   CHECK(!store.restore("cluster-a", 7, &record, &error, 13));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
   CHECK(store.restore("cluster-a", 7, &record, &error, 12));
@@ -129,13 +144,14 @@ int main() {
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
   CHECK(!store.restore("cluster-a", 8, &record, &error));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
-  CHECK(store.archive("cluster-a", 8, 14, "new payload", &error));
+  const std::string newer_payload = make_payload("cluster-a", 8);
+  CHECK(store.archive("cluster-a", 8, 14, newer_payload, &error));
   CHECK(store.restore("cluster-a", 8, &record, &error));
-  CHECK(record.state_version == 8 && record.payload == "new payload");
+  CHECK(record.state_version == 8 && record.payload == newer_payload);
   { std::ofstream out(path, std::ios::binary | std::ios::trunc);
     CHECK(static_cast<bool>(out)); out << "corrupt"; CHECK(static_cast<bool>(out)); }
   CHECK(store.restore("cluster-a", 7, &record, &error));
-  CHECK(record.state_version == 7 && record.payload == "large-ish payload");
+  CHECK(record.state_version == 7 && record.payload == large_payload);
   std::filesystem::remove(path, ec); std::filesystem::remove(path.string()+".bak", ec);
   std::filesystem::remove(path.string()+".tmp", ec);
   std::cout << "SURGE cluster archive store tests passed\n";
