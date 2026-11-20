@@ -372,8 +372,6 @@ bool SnapshotCoordinator::restore_from_store(
   int parser_state = 0;  // count, id length/data, schema length/data, payload length/data, complete
   bool metadata_checked = false;
   bool tail_ready = false;
-  bool parser_failed = false;
-  std::string parser_error;
 
   const auto read_u32 = [&](std::uint32_t* value) {
     if (pending.size() - consumed < 4) return false;
@@ -421,19 +419,18 @@ bool SnapshotCoordinator::restore_from_store(
         return fail(sink_error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
       tail = staged_tail.events;
       tail_state_version = staged_tail.current_state_version;
-      if (budget_ && tail_limits.max_total_bytes != 0) {
+      if (staged_tail.total_bytes > limits_.max_restore_staging_bytes)
+        return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
+      if (budget_ && staged_tail.total_bytes != 0) {
         std::string budget_error;
         if (!budget_->try_acquire(ResourceKind::TransientBytes,
-                tail_limits.max_total_bytes, tail_staging, budget_error))
+                staged_tail.total_bytes, tail_staging, budget_error))
           return fail(sink_error, budget_error.empty()
               ? "SNAPSHOT_RESTORE_RESOURCE_BUDGET_EXCEEDED"
               : budget_error.c_str());
       }
-      if (tail_limits.max_total_bytes > limits_.max_restore_staging_bytes)
-        return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
       tail_ready = true;
     }
-    if (parser_failed) return fail(sink_error, parser_error.c_str());
     if (size != 0 && data == nullptr)
       return fail(sink_error, "SNAPSHOT_DOMAIN_CHUNK_INVALID");
     if (size > 64U * 1024U)
