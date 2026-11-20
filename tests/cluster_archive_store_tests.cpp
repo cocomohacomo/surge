@@ -8,7 +8,7 @@
 #include <iomanip>
 namespace {
 std::string make_payload(const std::string& cluster, std::uint64_t version,
-                         const std::string& body = "nodes 0\n") {
+                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\n") {
   std::ostringstream out;
   out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " << version
       << "\ncluster " << std::quoted(cluster) << "\n" << body;
@@ -147,7 +147,7 @@ int main() {
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
   CHECK(!store.archive("cluster-a", 7, 12, make_payload("cluster-a", 8), &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
-  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\n");
+  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\nrelations 0\nhas_focus 0\n");
   CHECK(store.archive("cluster-a", 7, 12, large_payload, &error));
   ClusterArchiveRecord record;
   CHECK(store.archive_verified("cluster-a", 7, 12, large_payload, &record, &error));
