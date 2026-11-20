@@ -481,6 +481,8 @@ bool SnapshotCoordinator::restore_from_store(
                          &payload_reservation) ||
             !checked_add(tail_bytes_reserved, payload_reservation,
                          &combined_reservation) ||
+            !checked_add(combined_reservation, 64U * 1024U,
+                         &combined_reservation) ||
             combined_reservation > limits_.max_restore_staging_bytes)
           return fail(sink_error, "SNAPSHOT_RESTORE_STAGING_LIMIT_EXCEEDED");
         if (budget_ && payload_reservation != 0) {
