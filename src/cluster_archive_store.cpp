@@ -198,7 +198,6 @@ ClusterArchiveDetachResult archive_and_detach_cluster(
   for (const auto& id : plan.exclusively_owned_entity_ids) {
     if (!graph.append_entity_reclamation(delta, id, result.error))
       return result;
-    delta.reclaim_entity_node_ids.push_back(id);
   }
   const auto committed = budgeted_graph.apply(delta);
   if (!committed.committed || committed.duplicate)
