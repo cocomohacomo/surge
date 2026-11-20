@@ -39,6 +39,12 @@ int main(){
   assert(plan.retained_cluster_ids.size()==5);assert(plan.forget_cluster_ids.size()==1);assert(plan.already_inactive_cluster_ids.size()==1&&plan.already_inactive_cluster_ids.front()=="archived");
   assert(plan.forget_cluster_ids.front()=="low-a");assert(plan.protected_cluster_ids.size()==4);
   assert(plan.preserved_shared_member_ids.size()==2);
+  auto importance_over_restore=candidates;
+  for(auto& candidate:importance_over_restore){if(candidate.cluster_id=="archived")candidate.retention_priority=0.01;if(candidate.cluster_id=="low-b")candidate.retention_priority=0.9;}
+  const auto importance_plan=ClusterRetentionPlanner::plan(graph,importance_over_restore,5);
+  assert(importance_plan.accepted);
+  assert(std::find(importance_plan.retained_cluster_ids.begin(),importance_plan.retained_cluster_ids.end(),"low-b")!=importance_plan.retained_cluster_ids.end());
+  assert(std::find(importance_plan.restore_cluster_ids.begin(),importance_plan.restore_cluster_ids.end(),"archived")==importance_plan.restore_cluster_ids.end());
   assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"shared-evidence")!=plan.preserved_shared_member_ids.end());
   assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"archived-shared-evidence")!=plan.preserved_shared_member_ids.end());
   auto pinned_archived=candidates;for(auto& candidate:pinned_archived)if(candidate.cluster_id=="archived")candidate.pinned=true;
