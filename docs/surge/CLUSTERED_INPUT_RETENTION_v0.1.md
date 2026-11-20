@@ -437,3 +437,13 @@ misrepresenting those records.
 Memory limits are relaxed for archival staging, but no global resident-memory
 ceiling or RSS guarantee is asserted. The next gate is strict decode/validate,
 transactional restore preparation, and crash-consistency tests.
+
+
+### Archive payload format correction
+
+The expanded canonical payload is explicitly versioned as
+`SURGE_CLUSTER_ARCHIVE_PAYLOAD 2`, with the envelope schema
+`surge.cluster.archive.v2`. Record delimiters are actual newline bytes rather
+than escaped backslash-n text. Older v1 archives are not silently treated as
+v2. A strict v2 decoder and transactional restore path are still required
+before these archives can be used to reconstruct live graph state.
