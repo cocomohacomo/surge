@@ -28,6 +28,10 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
 bool validate_cluster_archive_payload_identity(const std::string& payload,
     const std::string& expected_cluster_id, std::uint64_t expected_state_version,
     std::string* error);
+// Validates the complete core graph prefix (node/relation counts, IDs, enum ranges,
+// and relation endpoints) before an archive can be stored or returned.
+bool validate_cluster_archive_payload_graph_records(const std::string& payload,
+    std::string* error);
 
 // Computes a conservative detach plan. It never mutates the graph.
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
