@@ -447,3 +447,18 @@ The expanded canonical payload is explicitly versioned as
 than escaped backslash-n text. Older v1 archives are not silently treated as
 v2. A strict v2 decoder and transactional restore path are still required
 before these archives can be used to reconstruct live graph state.
+
+
+## Archive v2 identity preflight guard
+
+The archive-to-detach coordinator now validates the canonical payload preamble
+before writing an archive or mutating the graph. It requires the v2 marker,
+the exact expected graph state watermark, and the exact target cluster ID.
+Unsupported/legacy payloads and mismatched identity or watermark fail closed;
+the graph version and nodes remain unchanged and no archive is written.
+
+This is intentionally only an identity preflight guard. It is not a strict
+decoder for the complete v2 record grammar, does not validate every internal
+reference or enum, and does not reconstruct ContextGraph state. Full decode,
+reference validation, independent-ledger bundling, and selective transactional
+rehydration remain the next stages.
