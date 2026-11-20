@@ -83,17 +83,17 @@ bool decode_impl(const std::string& bytes, const SnapshotLimits& limits,
 
   SnapshotDocument candidate;
   if (!get_string(bytes, &pos, kMaxMetadata, &candidate.schema_id) ||
-      !get_string(content, &pos, kMaxMetadata, &candidate.context_id) ||
+      !get_string(bytes, &pos, kMaxMetadata, &candidate.context_id) ||
       candidate.schema_id.empty() || candidate.context_id.empty() ||
       !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id))
     return fail(error, "SNAPSHOT_METADATA_INVALID");
   if (!get_u64(bytes, &pos, &candidate.state_version) ||
-      !get_u64(content, &pos, &candidate.journal_sequence))
+      !get_u64(bytes, &pos, &candidate.journal_sequence))
     return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
   std::uint32_t payload_size = 0;
-  if (!get_u32(content, &pos, &payload_size) ||
+  if (!get_u32(bytes, &pos, &payload_size) ||
       payload_size > payload_limit(limits) ||
-      pos > content_size || content.size() - pos != payload_size)
+      pos > content_size || content_size - pos != payload_size)
     return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
   if (include_payload)
     candidate.payload.assign(bytes.data() + pos, payload_size);
