@@ -488,3 +488,8 @@ context and watermark validation. This path is not a hard RSS cap: prepared
 domain state, journal event object overhead, allocator behavior and internal
 domain allocations are not fully measured. The legacy byte-string restore
 APIs remain available.
+
+
+### Importance-driven retention and restoration
+
+Cluster retention protects knowledge clusters and core focus/question/dependency anchors. Inactive non-knowledge clusters are prioritized for restoration before active low-priority clusters consume capacity. Retention transitions are journaled atomically; DORMANT/ARCHIVED lifecycle state is a compression policy, not deletion, and restoration requires the underlying canonical payload and recovery history to remain available. Tombstoned content is excluded from automatic restoration.
