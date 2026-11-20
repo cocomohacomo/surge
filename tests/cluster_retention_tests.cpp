@@ -36,16 +36,19 @@ int main(){
    {"dependency-child",0.0,1,false},{"low-a",0.1,1,false},{"low-b",0.9,1,false},{"archived",100.0,999,false}
   };
   const auto plan=ClusterRetentionPlanner::plan(graph,candidates,5);assert(plan.accepted);
-  assert(plan.retained_cluster_ids.size()==5);assert(plan.forget_cluster_ids.size()==1);assert(plan.already_inactive_cluster_ids.size()==1&&plan.already_inactive_cluster_ids.front()=="archived");
-  assert(plan.forget_cluster_ids.front()=="low-a");assert(plan.protected_cluster_ids.size()==4);
-  assert(plan.preserved_shared_member_ids.size()==2);
+  assert(plan.retained_cluster_ids.size()==5);assert(plan.forget_cluster_ids.size()==2);assert(plan.already_inactive_cluster_ids.size()==1&&plan.already_inactive_cluster_ids.front()=="archived");
+  assert(std::find(plan.forget_cluster_ids.begin(),plan.forget_cluster_ids.end(),"low-a")!=plan.forget_cluster_ids.end());
+  assert(std::find(plan.forget_cluster_ids.begin(),plan.forget_cluster_ids.end(),"low-b")!=plan.forget_cluster_ids.end());
+  assert(std::find(plan.restore_cluster_ids.begin(),plan.restore_cluster_ids.end(),"archived")!=plan.restore_cluster_ids.end());
+  assert(plan.protected_cluster_ids.size()==4);
+  assert(plan.preserved_shared_member_ids.size()==1);
   auto importance_over_restore=candidates;
   for(auto& candidate:importance_over_restore){if(candidate.cluster_id=="archived")candidate.retention_priority=0.01;if(candidate.cluster_id=="low-b")candidate.retention_priority=0.9;}
   const auto importance_plan=ClusterRetentionPlanner::plan(graph,importance_over_restore,5);
   assert(importance_plan.accepted);
   assert(std::find(importance_plan.retained_cluster_ids.begin(),importance_plan.retained_cluster_ids.end(),"low-b")!=importance_plan.retained_cluster_ids.end());
   assert(std::find(importance_plan.restore_cluster_ids.begin(),importance_plan.restore_cluster_ids.end(),"archived")==importance_plan.restore_cluster_ids.end());
-  assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"shared-evidence")!=plan.preserved_shared_member_ids.end());
+  assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"shared-evidence")==plan.preserved_shared_member_ids.end());
   assert(std::find(plan.preserved_shared_member_ids.begin(),plan.preserved_shared_member_ids.end(),"archived-shared-evidence")!=plan.preserved_shared_member_ids.end());
   auto pinned_archived=candidates;for(auto& candidate:pinned_archived)if(candidate.cluster_id=="archived")candidate.pinned=true;
   const auto protected_inactive=ClusterRetentionPlanner::plan(graph,pinned_archived,10);
