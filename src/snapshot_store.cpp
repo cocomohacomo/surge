@@ -1,4 +1,5 @@
 #include "surge/snapshot_store.hpp"
+#include "surge/sha256.hpp"
 
 #include <array>
 #include <cerrno>
@@ -88,6 +89,91 @@ bool write_durable_file(const fs::path& path, const std::string& bytes,
   if (::close(fd) != 0) ok = false;
   if (!ok) return fail(error, "SNAPSHOT_STORE_TEMP_WRITE_OR_SYNC_FAILED");
 #endif
+  if (error) error->clear();
+  return true;
+}
+
+
+void append_u32(std::string& out, std::uint32_t value) {
+  for (int shift = 24; shift >= 0; shift -= 8)
+    out.push_back(static_cast<char>((value >> shift) & 0xffU));
+}
+void append_u64(std::string& out, std::uint64_t value) {
+  for (int shift = 56; shift >= 0; shift -= 8)
+    out.push_back(static_cast<char>((value >> shift) & 0xffU));
+}
+void append_string(std::string& out, const std::string& value) {
+  append_u32(out, static_cast<std::uint32_t>(value.size()));
+  out.append(value);
+}
+
+bool write_stream_durable_file(const fs::path& path, const std::string& prefix,
+                               std::size_t payload_bytes,
+                               const SnapshotChunkReader& reader,
+                               std::string* error) {
+  Sha256Hasher hasher;
+#ifdef _WIN32
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+    return fail(error, "SNAPSHOT_STORE_TEMP_OPEN_FAILED");
+  auto write = [&](const char* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (offset < size) {
+      const DWORD amount = static_cast<DWORD>(std::min<std::size_t>(
+          size - offset, static_cast<std::size_t>(MAXDWORD)));
+      DWORD written = 0;
+      if (!WriteFile(file, data + offset, amount, &written, nullptr) ||
+          written == 0) return false;
+      offset += written;
+    }
+    return true;
+  };
+#else
+  const int file = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (file < 0) return fail(error, "SNAPSHOT_STORE_TEMP_OPEN_FAILED");
+  auto write = [&](const char* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (offset < size) {
+      const auto count = ::write(file, data + offset, size - offset);
+      if (count < 0 && errno == EINTR) continue;
+      if (count <= 0) return false;
+      offset += static_cast<std::size_t>(count);
+    }
+    return true;
+  };
+#endif
+  bool ok = hasher.update(prefix.data(), prefix.size()) &&
+            write(prefix.data(), prefix.size());
+  std::size_t total = 0;
+  while (ok && total < payload_bytes) {
+    std::string chunk;
+    bool done = false;
+    if (!reader || !reader(&chunk, &done)) { ok = false; break; }
+    if (done || chunk.empty() || chunk.size() > kIoChunk ||
+        chunk.size() > payload_bytes - total) { ok = false; break; }
+    ok = hasher.update(chunk.data(), chunk.size()) &&
+         write(chunk.data(), chunk.size());
+    total += chunk.size();
+  }
+  if (ok) {
+    std::string extra;
+    bool done = false;
+    if (!reader || !reader(&extra, &done) || !done || !extra.empty())
+      ok = false;
+  }
+  if (ok) {
+    const auto digest = hasher.finalize_hex();
+    ok = write(digest.data(), digest.size());
+  }
+#ifdef _WIN32
+  if (ok && !FlushFileBuffers(file)) ok = false;
+  if (!CloseHandle(file)) ok = false;
+#else
+  if (ok && ::fsync(file) != 0) ok = false;
+  if (::close(file) != 0) ok = false;
+#endif
+  if (!ok) return fail(error, "SNAPSHOT_STORE_STREAM_WRITE_FAILED");
   if (error) error->clear();
   return true;
 }
