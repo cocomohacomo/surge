@@ -413,3 +413,16 @@ when a ResourceBudget is supplied. It still accounts logical serialized
 buffers only; it cannot observe allocations internal to domain serializers,
 SnapshotCodec, the standard library or the allocator, and is not a hard RSS
 enforcement mechanism.
+
+
+### Incremental SHA-256 foundation
+
+Sha256Hasher now supports arbitrary chunk boundaries with a fixed 64-byte
+input buffer and fixed compression state. It does not retain previously
+submitted input. Finalization is idempotent and rejects subsequent updates;
+invalid null input and length overflow are rejected. The legacy sha256_hex
+helper delegates to this implementation. Conformance covers standard empty
+and abc vectors, multi-boundary chunk updates, repeated finalization and
+invalid input. SnapshotCodec and SnapshotStore have not yet been migrated to
+consume the incremental interface, so this foundation alone does not remove
+their full-buffer materialization.
