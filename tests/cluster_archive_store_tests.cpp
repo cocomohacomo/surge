@@ -72,6 +72,20 @@ int main() {
     CHECK(canonical_payload.find("claim_lifecycle_states ") != std::string::npos);
     CHECK(validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
         graph.state_version(), &detach_error));
+    CHECK(validate_cluster_archive_payload_graph_records(canonical_payload, &detach_error));
+    const std::string duplicate_nodes = make_payload("cluster-a", graph.state_version(),
+        "nodes 2\\nnode \\"n1\\" 2 \\"a\\" 0\\nnode \\"n1\\" 2 \\"b\\" 0\\nrelations 0\\nhas_focus 0\\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(duplicate_nodes, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    const std::string invalid_enum = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\\nnode \\"n1\\" 99 \\"a\\" 0\\nrelations 0\\nhas_focus 0\\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(invalid_enum, &detach_error));
+    const std::string dangling_relation = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\\nnode \\"n1\\" 2 \\"a\\" 0\\nrelations 1\\nrelation \\"r1\\" 9 \\"n1\\" \\"missing\\"\\nhas_focus 0\\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(dangling_relation, &detach_error));
+    const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\\nrelations 0\\nhas_focus 0\\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(count_mismatch, &detach_error));
     CHECK(!validate_cluster_archive_payload_identity(canonical_payload, "archive-b",
         graph.state_version(), &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
