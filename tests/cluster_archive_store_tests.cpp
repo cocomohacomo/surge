@@ -123,6 +123,10 @@ int main() {
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
   CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+  CHECK(!store.archive("cluster-a", 7, 12, make_payload("other-cluster", 7), &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
+  CHECK(!store.archive("cluster-a", 7, 12, make_payload("cluster-a", 8), &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
   const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\n");
   CHECK(store.archive("cluster-a", 7, 12, large_payload, &error));
   ClusterArchiveRecord record;
