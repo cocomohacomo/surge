@@ -404,6 +404,8 @@ bool ClusterArchiveStore::archive(const std::string& cluster_id,
     if (error) *error = "CLUSTER_ARCHIVE_INPUT_INVALID";
     return false;
   }
+  if (!validate_cluster_archive_payload_identity(payload, cluster_id, state_version, error))
+    return false;
   SnapshotDocument document;
   document.schema_id = kSchema; document.context_id = cluster_id;
   document.state_version = state_version; document.journal_sequence = journal_sequence;
@@ -452,6 +454,8 @@ bool ClusterArchiveStore::restore(const std::string& expected_cluster_id,
     if (error) *error = "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH";
     return false;
   }
+  if (!validate_cluster_archive_payload_identity(decoded.payload, expected_cluster_id,
+      decoded.state_version, error)) return false;
   ClusterArchiveRecord candidate;
   candidate.cluster_id = decoded.context_id; candidate.state_version = decoded.state_version;
   candidate.journal_sequence = decoded.journal_sequence; candidate.payload = std::move(decoded.payload);
