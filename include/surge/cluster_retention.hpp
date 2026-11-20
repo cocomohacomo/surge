@@ -15,12 +15,16 @@ struct ClusterRetentionCandidate {
   double retention_priority{0.0};
   std::uint64_t last_access_sequence{0};
   bool pinned{false};
+  // Knowledge clusters are exempt from capacity forgetting.
+  bool knowledge_cluster{false};
 };
 
 struct ClusterRetentionPlan {
   std::uint64_t planned_state_version{0};
   std::vector<std::string> retained_cluster_ids;
   std::vector<std::string> forget_cluster_ids;
+  // Previously inactive, high-priority clusters selected for restoration.
+  std::vector<std::string> restore_cluster_ids;
   std::vector<std::string> protected_cluster_ids;
   // Members shared by at least one retained and one forgotten cluster. They
   // must remain materialized; forgetting a membership is not payload deletion.
