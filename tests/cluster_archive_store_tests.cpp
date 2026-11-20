@@ -59,6 +59,25 @@ int main() {
     CHECK(canonical_payload.find("question_states ") != std::string::npos);
     CHECK(canonical_payload.find("question_aspect_states ") != std::string::npos);
     CHECK(canonical_payload.find("claim_lifecycle_states ") != std::string::npos);
+    CHECK(validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
+        graph.state_version(), &detach_error));
+    CHECK(!validate_cluster_archive_payload_identity(canonical_payload, "archive-b",
+        graph.state_version(), &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
+    CHECK(!validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
+        graph.state_version() + 1, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
+    CHECK(!validate_cluster_archive_payload_identity("legacy payload", "archive-a",
+        graph.state_version(), &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
+    const auto before_invalid_detach = graph.state_version();
+    const auto invalid_detach = archive_and_detach_cluster(graph, budgeted, detach_store,
+        "archive-a", {"exclusive"}, "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark 999\\ncluster \\\"archive-a\\\"\\n",
+        before_invalid_detach, "invalid-archive-detach", "invalid-archive-detach-key");
+    CHECK(!invalid_detach.archive_verified && !invalid_detach.graph_detached);
+    CHECK(invalid_detach.error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
+    CHECK(graph.state_version() == before_invalid_detach);
+    CHECK(graph.nodes().count("exclusive") == 1);
     CHECK(canonical_payload.find("\\\\n") == std::string::npos);
     CHECK(!canonical_payload.empty() && canonical_payload.back() == '\n');
     std::string canonical_payload_again;
