@@ -462,3 +462,29 @@ or an end-to-end RSS guarantee.
 ### SnapshotStore chunked save API
 
 SnapshotStore exposes save_stream(metadata, payload_bytes, reader, error). The reader yields non-empty chunks of at most 64 KiB with done=false, then must return one final empty chunk with done=true. The writer emits the existing version-1 envelope header, streams payload bytes to a same-directory temporary file while incrementally hashing the exact header+payload bytes, appends the 64-character SHA-256 footer, syncs the file, and uses the existing atomic replacement and backup-generation path. It rejects early EOF, extra bytes, oversized chunks, and payload lengths that do not match the declared length. The streamed path conservatively rejects equal state-version/journal-sequence watermarks because it cannot compare payload equality without materializing the new generation. Existing save/load APIs remain unchanged. The old generation is still loaded into memory for watermark validation, and load() still materializes the file; end-to-end streaming restore is not implemented yet.
+
+
+### Authenticated streaming restore through SnapshotCoordinator
+
+SnapshotStore::load_stream verifies the complete envelope digest before it
+delivers payload bytes and publishes the authenticated header metadata before
+the first sink callback. SnapshotCoordinator::restore_from_store now consumes
+the bundle incrementally: it parses the domain count and length-prefixed
+domain/schema/payload frames across arbitrary 64 KiB chunk boundaries, checks
+the registered domain order and schema IDs, and prepares one domain at a time.
+It does not materialize the complete snapshot envelope or aggregate bundle.
+The current domain payload is bounded by max_domain_payload_bytes; the
+transient reservation accounts for the payload and its parser copy, plus the
+actual journal-tail staging bytes. All prepared domains remain detached until
+the complete bundle is parsed and the journal watermark is rechecked, after
+which their noexcept commits are published.
+
+The streamed coordinator path deliberately fails closed when a compacted
+journal checkpoint has the exact same watermark as the snapshot: the existing
+checkpoint contract compares the digest of the complete encoded snapshot, but
+the streaming API does not yet expose that complete-envelope digest to the
+coordinator. A checkpoint strictly older than the snapshot can proceed after
+context and watermark validation. This path is not a hard RSS cap: prepared
+domain state, journal event object overhead, allocator behavior and internal
+domain allocations are not fully measured. The legacy byte-string restore
+APIs remain available.
