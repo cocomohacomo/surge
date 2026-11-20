@@ -449,6 +449,93 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
 }
 
 
+
+bool SnapshotStore::save_stream(const SnapshotDocument& metadata,
+                                std::size_t payload_bytes,
+                                const SnapshotChunkReader& reader,
+                                std::string* error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
+  if (limits_.max_file_bytes == 0 ||
+      payload_bytes > std::numeric_limits<std::uint32_t>::max())
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
+  if (metadata.schema_id.empty() || metadata.context_id.empty() ||
+      metadata.schema_id.size() > 4096 || metadata.context_id.size() > 4096 ||
+      !is_valid_utf8(metadata.schema_id) || !is_valid_utf8(metadata.context_id))
+    return fail(error, "SNAPSHOT_STORE_METADATA_INVALID");
+  constexpr std::size_t fixed_overhead = 8 + 4 + 4 + 4 + 8 + 8 + 4 + 64;
+  if (payload_bytes > limits_.max_file_bytes ||
+      fixed_overhead > limits_.max_file_bytes - payload_bytes)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
+
+  std::string prefix("SURGESNP", 8);
+  append_u32(prefix, 1);
+  append_string(prefix, metadata.schema_id);
+  append_string(prefix, metadata.context_id);
+  append_u64(prefix, metadata.state_version);
+  append_u64(prefix, metadata.journal_sequence);
+  append_u32(prefix, static_cast<std::uint32_t>(payload_bytes));
+  const auto current = native_path(path_);
+  const auto temporary = native_path(path_ + ".tmp");
+  const auto backup = native_path(path_ + ".bak");
+  const auto backup_temporary = native_path(path_ + ".bak.tmp");
+  remove_if_present(temporary);
+  remove_if_present(backup_temporary);
+  if (!write_stream_durable_file(temporary, prefix, payload_bytes, reader, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+
+  bool current_exists = false;
+  if (!exists_regular_file(current, current_exists, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  SnapshotStoreResult current_generation;
+  if (current_exists)
+    current_generation = load_generation(current, limits_.max_file_bytes, false);
+  SnapshotStoreResult backup_generation;
+  if (!current_generation.ok)
+    backup_generation = load_generation(backup, limits_.max_file_bytes, true);
+  const SnapshotStoreResult& previous =
+      current_generation.ok ? current_generation : backup_generation;
+  if (previous.ok) {
+    if (metadata.context_id != previous.document.context_id) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_CONTEXT_MISMATCH");
+    }
+    if (metadata.state_version < previous.document.state_version ||
+        metadata.journal_sequence < previous.document.journal_sequence) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_WATERMARK_REGRESSION");
+    }
+    if (metadata.state_version == previous.document.state_version &&
+        metadata.journal_sequence == previous.document.journal_sequence) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_STREAM_SAME_WATERMARK_UNVERIFIABLE");
+    }
+  }
+
+  if (limits_.keep_backup && current_generation.ok) {
+    if (!copy_durable_file(current, backup_temporary,
+                           limits_.max_file_bytes, error) ||
+        !atomic_replace(backup_temporary, backup, error) ||
+        !sync_parent_directory(current, error)) {
+      remove_if_present(temporary);
+      remove_if_present(backup_temporary);
+      return false;
+    }
+  }
+  if (!atomic_replace(temporary, current, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  if (!sync_parent_directory(current, error)) return false;
+  if (error) error->clear();
+  return true;
+}
+
+
 bool SnapshotStore::mirror_current_to_backup(std::string* error) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
