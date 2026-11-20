@@ -360,7 +360,6 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   if (!parse_count(line, "nodes", node_count) || node_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::set<std::string> node_ids;
-  std::vector<std::string> node_lines;
   for (std::size_t i = 0; i < node_count; ++i) {
     if (!std::getline(input, line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
