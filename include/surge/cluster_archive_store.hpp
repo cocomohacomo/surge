@@ -5,6 +5,11 @@
 #include <cstdint>
 #include <string>
 namespace surge {
+class ClusterArchiveGraphRestorer {
+ public:
+  static bool apply(ContextGraph& graph, ContextGraph::State& state,
+      const std::string& payload, std::string& error);
+};
 class BudgetedContextGraph;
 struct ClusterArchiveRecord {
   std::string cluster_id;
