@@ -194,3 +194,30 @@ The read-only [Temporal Reassessment and Evidence Validity Trace](docs/surge/TEM
 - SURGE Core owns language-neutral cognition and decision authority; all language-dependent recognition, models, dictionaries, morphology, n-grams and rendering are supplied by replaceable Language Sets.
 - Language Sets are validated and activated by SURGE at session boundaries. Session provenance, resource ceilings, deterministic switching and offline execution are mandatory.
 - The specification defines the target contract. Runtime ABI, loader, built-in generic stages and executable conformance remain staged implementation work.
+
+
+## Install as a C++ library (source build)
+
+The C++ Core can be installed as a relocatable CMake package. This installs
+the shared library and public headers and exports the imported target
+`surge::surge_core`.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix /usr/local
+```
+
+A downstream CMake project can consume the installation with:
+
+```cmake
+find_package(Surge CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE surge::surge_core)
+```
+
+The Python adapter is currently source-tree code and is not yet published as
+a standalone wheel. The native library and Python adapter therefore have
+separate installation paths at this stage. See
+[the library rollout gate](docs/surge/LIBRARY_ROLLOUT_GATE_v0.1.md) for
+supported deployment boundaries and remaining release blockers.
