@@ -40,13 +40,18 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
         pending.push_back(edge.to);
     }
   }
-  // Include referenced records so the archive does not preserve dangling typed IDs.
-  std::vector<std::string> frontier(included.begin(), included.end());
-  for (const auto& id : frontier) {
-    const auto node = graph.nodes().find(id);
+  // Include the transitive typed-reference closure. A one-hop pass is
+  // insufficient when a referenced Claim/Evidence/Question itself references
+  // another record: the resulting payload would contain a dangling ID.
+  std::vector<std::string> reference_frontier(included.begin(), included.end());
+  for (std::size_t cursor = 0; cursor < reference_frontier.size(); ++cursor) {
+    const auto node = graph.nodes().find(reference_frontier[cursor]);
     if (node == graph.nodes().end()) continue;
-    for (const auto& ref : node->second.references)
-      if (graph.nodes().count(ref)) included.insert(ref);
+    for (const auto& ref : node->second.references) {
+      if (!graph.nodes().count(ref)) continue;
+      if (included.insert(ref).second)
+        reference_frontier.push_back(ref);
+    }
   }
 
   std::ostringstream out;
