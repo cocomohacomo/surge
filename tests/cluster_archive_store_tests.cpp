@@ -52,7 +52,33 @@ int main() {
     seed.relations.push_back({{"b-shared", RelationKind::Contains, "archive-b", "shared"}});
     seed.relations.push_back({{"a-question", RelationKind::Contains, "archive-a", "question"}});
     seed.relations.push_back({{"a-reference-middle", RelationKind::Contains, "archive-a", "reference-middle"}});
+    seed.nodes.push_back({{"question-aspect", NodeKind::QuestionAspect,
+        "question aspect", {"question"}}});
+    seed.relations.push_back({{"a-question-aspect", RelationKind::Contains,
+        "archive-a", "question-aspect"}});
+    seed.relations.push_back({{"evidence-supports-claim", RelationKind::Supports,
+        "reference-leaf", "reference-middle"}});
+    seed.claim_validity_updates.push_back({"reference-middle",
+        "2026-01-01T00:00:00Z", "", "reference-leaf", 1, "", ""});
+    seed.evidence_validity_updates.push_back({"reference-leaf",
+        "2026-01-01T00:00:00Z", "", "reference-leaf", 1, "", ""});
     CHECK(graph.apply(seed).committed);
+    TemporalReassessmentRecord reassessment;
+    CHECK(graph.reassess_claim("reference-middle", "2026-11-19T00:00:00Z",
+        graph.state_version(), reassessment, detach_error));
+    bool question_reactivated = false;
+    CHECK(graph.record_question_reference("question", graph.state_version(),
+        question_reactivated, detach_error));
+    CHECK(graph.set_question_memory_state("question", QuestionMemoryState::Dormant,
+        graph.state_version(), detach_error));
+    CHECK(graph.set_question_aspect_status("question-aspect",
+        QuestionAspectStatus::Deferred, graph.state_version(), detach_error));
+    SemanticDelta focus_delta;
+    focus_delta.delta_id = "archive-focus-seed";
+    focus_delta.idempotency_key = "archive-focus-seed-key";
+    focus_delta.expected_state_version = graph.state_version();
+    focus_delta.focus = SetFocus{{"archive-a", "", false}};
+    CHECK(graph.apply(focus_delta).committed);
     const auto plan = plan_cluster_archive_detach(graph, "archive-a",
         {"exclusive", "shared", "question", "missing", "exclusive"});
     CHECK(plan.exclusively_owned_entity_ids.size() == 1);
@@ -120,8 +146,15 @@ int main() {
       CHECK(restored_history.committed);
       CHECK(restored_graph.nodes().count("archive-a") == 1);
       CHECK(restored_graph.nodes().count("question") == 1);
-      CHECK(restored_graph.question_memory_state("question") == QuestionMemoryState::Active);
+      CHECK(restored_graph.question_memory_state("question") == QuestionMemoryState::Dormant);
+      CHECK(restored_graph.question_reference_count("question") == 1);
+      CHECK(restored_graph.question_aspect_status("question-aspect") == QuestionAspectStatus::Deferred);
       CHECK(restored_graph.claim_status("reference-middle") == ClaimStatus::Active);
+      CHECK(restored_graph.claim_validity_history().at("reference-middle").size() == 1);
+      CHECK(restored_graph.evidence_validity_history().at("reference-leaf").size() == 1);
+      CHECK(restored_graph.reassessment_history().at("reference-middle").size() == 1);
+      CHECK(restored_graph.focus().has_value());
+      CHECK(restored_graph.focus()->cluster_id == "archive-a");
 
       // A graph-only archive remains restorable and can be merged idempotently.
       restore_record.payload = make_payload("archive-a", graph.state_version(),
