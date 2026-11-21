@@ -1433,14 +1433,23 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
     focus.chaos_cluster = chaos != 0;
     imported_focus_history.push_back(std::move(focus));
   }
+  auto same_focus = [](const FocusRecord& a, const FocusRecord& b) {
+    return a.cluster_id == b.cluster_id && a.interest_id == b.interest_id &&
+        a.chaos_cluster == b.chaos_cluster;
+  };
   for (const auto& focus : imported_focus_history) {
+    if (std::any_of(state.focus_history.begin(), state.focus_history.end(),
+        [&](const FocusRecord& existing) { return same_focus(existing, focus); }))
+      continue;
     if (!graph.apply_focus(state, focus, error))
       return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_HISTORY_SEMANTICS_INVALID");
   }
   if (preexisting_focus) state.focus = preexisting_focus;
   else if (archived_focus) {
-    if (!graph.apply_focus(state, *archived_focus, error))
+    if (imported_focus_history.empty() &&
+        !graph.apply_focus(state, *archived_focus, error))
       return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_SEMANTICS_INVALID");
+    state.focus = archived_focus;
   } else {
     state.focus.reset();
   }
@@ -1622,6 +1631,21 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
       return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_SEMANTICS_INVALID");
   }
 
+  if (!read_header("claim_lifecycle_states", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    std::istringstream row(line);
+    std::string id, extra;
+    unsigned status = 0;
+    if (!(row >> tag >> std::quoted(id) >> status) ||
+        tag != "claim_status" || status > static_cast<unsigned>(ClaimStatus::Retracted) ||
+        (row >> extra) || !state.nodes.count(id) ||
+        state.nodes.at(id).kind != NodeKind::Claim)
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
+  }
+
   if (!read_header("reassessment_histories", count))
     return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
   for (std::size_t i = 0; i < count; ++i) {
@@ -1747,20 +1771,6 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
     state.question_aspect_statuses[id] = static_cast<QuestionAspectStatus>(status);
   }
 
-  if (!read_header("claim_lifecycle_states", count))
-    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-  for (std::size_t i = 0; i < count; ++i) {
-    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-    std::istringstream row(line);
-    std::string id, extra;
-    unsigned status = 0;
-    if (!(row >> tag >> std::quoted(id) >> status) ||
-        tag != "claim_status" || status > static_cast<unsigned>(ClaimStatus::Retracted) ||
-        (row >> extra) || !state.nodes.count(id) ||
-        state.nodes.at(id).kind != NodeKind::Claim)
-      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
-  }
   if (std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_TRAILING_DATA");
   error.clear();
   return true;
