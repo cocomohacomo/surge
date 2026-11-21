@@ -157,7 +157,9 @@ has_focus 1
 focus "focus-cluster" "focus-interest" 0
 focus_history 0
 )");
-      CHECK(validate_cluster_archive_payload_graph_records(focus_payload, &restore_error));
+      const bool focus_payload_valid = validate_cluster_archive_payload_graph_records(focus_payload, &restore_error);
+      if (!focus_payload_valid) std::cerr << "Focus archive payload validation failed: " << restore_error << "\\n";
+      CHECK(focus_payload_valid);
       ClusterArchiveRecord focus_record;
       focus_record.cluster_id = "focus-cluster";
       focus_record.state_version = 2;
