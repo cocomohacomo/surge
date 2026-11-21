@@ -112,13 +112,29 @@ int main() {
       restore_record.state_version = graph.state_version();
       restore_record.journal_sequence = graph.state_version();
       restore_record.payload = canonical_payload;
+      const auto unsupported_history = restore_cluster_archive_graph_records(
+          restore_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-archive-history", "restore-archive-history-key");
+      CHECK(!unsupported_history.committed);
+      CHECK(unsupported_history.error.rfind(
+          "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_", 0) == 0);
+      CHECK(restored_graph.nodes().empty());
+
+      // A graph-only archive remains restorable. Historical-domain records
+      // above are rejected rather than silently discarded.
+      restore_record.payload = make_payload("archive-a", graph.state_version(),
+          "nodes 2\\n"
+          "node \\"archive-a\\" 0 \\"archive target\\" 0\\n"
+          "node \\"exclusive\\" 2 \\"exclusive payload\\" 0\\n"
+          "relations 1\\n"
+          "relation \\"a-exclusive\\" 0 \\"archive-a\\" \\"exclusive\\"\\n"
+          "has_focus 0\\nfocus_history 0\\n");
       const auto restored = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-archive-a", "restore-archive-a-key");
-      CHECK(restored.committed && restored.added_nodes > 0);
+      CHECK(restored.committed && restored.added_nodes == 2);
       CHECK(restored_graph.nodes().count("archive-a") == 1);
-      CHECK(restored_graph.nodes().count("reference-middle") == 1);
-      CHECK(restored_graph.nodes().count("reference-leaf") == 1);
+      CHECK(restored_graph.nodes().count("exclusive") == 1);
       CHECK(restored_graph.relations().count("a-exclusive") == 1);
       const auto repeated = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
