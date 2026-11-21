@@ -1648,6 +1648,8 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
     if (row >> extra)
       return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
   }
+  if (focus_history_count != 0)
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_focus_history");
 
   // Do not report a successful partial restore when the archive contains
   // historical domains that this transaction cannot yet import. In particular,
@@ -1658,7 +1660,8 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
   const std::set<std::string> unsupported_history_sections = {
       "scope_spans", "claim_validity_histories",
       "evidence_validity_histories", "dependency_evaluations",
-      "reassessment_histories", "claim_lifecycle_states"};
+      "reassessment_histories", "question_states",
+      "question_aspect_states", "claim_lifecycle_states"};
   while (std::getline(input, line)) {
     std::istringstream section(line);
     std::string section_name, extra;
