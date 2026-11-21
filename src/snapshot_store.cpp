@@ -364,6 +364,7 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
   if (!input) return fail(error, "SNAPSHOT_STORE_FILE_OPEN_FAILED");
 
   Sha256Hasher hasher;
+  Sha256Hasher envelope_hasher;
   std::array<char, kIoChunk> buffer{};
   std::uint64_t remaining = content_size;
   while (remaining != 0) {
@@ -372,7 +373,8 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
     input.read(buffer.data(), amount);
     if (input.gcount() != amount)
       return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
-    if (!hasher.update(buffer.data(), static_cast<std::size_t>(amount)))
+    if (!hasher.update(buffer.data(), static_cast<std::size_t>(amount)) ||
+        !envelope_hasher.update(buffer.data(), static_cast<std::size_t>(amount)))
       return fail(error, "SNAPSHOT_CHECKSUM_FAILED");
     remaining -= static_cast<std::uint64_t>(amount);
   }
@@ -384,6 +386,9 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
   if (digest.size() != footer.size() ||
       !std::equal(digest.begin(), digest.end(), footer.begin()))
     return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
+  if (!envelope_hasher.update(footer.data(), footer.size()))
+    return fail(error, "SNAPSHOT_CHECKSUM_FAILED");
+  const auto envelope_digest = envelope_hasher.finalize_hex();
 
   input.clear();
   input.seekg(0, std::ios::beg);
@@ -432,6 +437,7 @@ bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
 
   // Publish authenticated envelope metadata before invoking the sink so a
   // coordinator can validate context and journal watermarks before staging.
+  candidate.envelope_digest = envelope_digest;
   *metadata = candidate;
   input.clear();
   input.seekg(static_cast<std::streamoff>(payload_offset), std::ios::beg);
