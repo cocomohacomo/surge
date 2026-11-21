@@ -753,6 +753,85 @@ bool ContextGraph::prepare_events(const SemanticDelta& d,std::vector<JournalEven
  return prepare_transaction(d,staged,events,error);
 }
 
+bool ContextGraph::append_unresolved_membership(SemanticDelta& delta,
+    const std::string& member_node_id, std::string& chaos_cluster_id,
+    std::string& membership_relation_id, std::string& error) const {
+ error.clear();
+ chaos_cluster_id.clear();
+ membership_relation_id.clear();
+ if(member_node_id.empty()||member_node_id.size()>1024){
+  error="CHAOS_MEMBERSHIP_MEMBER_INVALID";return false;
+ }
+ const auto member=state_.nodes.find(member_node_id);
+ bool member_in_delta=false;
+ NodeKind member_kind=NodeKind::Entity;
+ for(const auto& item:delta.nodes)if(item.node.id==member_node_id){
+  if(member_in_delta){error="CHAOS_MEMBERSHIP_MEMBER_DUPLICATE";return false;}
+  member_in_delta=true;member_kind=item.node.kind;
+ }
+ if(member==state_.nodes.end()&&!member_in_delta){
+  error="CHAOS_MEMBERSHIP_MEMBER_NOT_FOUND";return false;
+ }
+ if(member!=state_.nodes.end())member_kind=member->second.kind;
+ if(member_node_id=="surge:chaos:unresolved-root"){
+  error="CHAOS_MEMBERSHIP_ROOT_CANNOT_BE_MEMBER";return false;
+ }
+ const std::string root_id="surge:chaos:unresolved-root";
+ const auto root=state_.nodes.find(root_id);
+ bool root_in_delta=false;
+ for(const auto& item:delta.nodes)if(item.node.id==root_id){
+  if(item.node.kind!=NodeKind::ChaosCluster){
+   error="CHAOS_MEMBERSHIP_ROOT_ID_CONFLICT";return false;
+  }
+  root_in_delta=true;
+ }
+ if(root!=state_.nodes.end()&&root->second.kind!=NodeKind::ChaosCluster){
+  error="CHAOS_MEMBERSHIP_ROOT_ID_CONFLICT";return false;
+ }
+ if(root==state_.nodes.end()&&!root_in_delta)
+  delta.nodes.push_back({{root_id,NodeKind::ChaosCluster,
+      "UNRESOLVED_OPEN_WORLD",{}}});
+ const std::string digest=sha256_hex(std::to_string(member_node_id.size())+":"+member_node_id);
+ const std::string edge_id="surge:chaos:unresolved-membership:"+digest.substr(0,32);
+ const auto matches=[&](const GraphRelation& relation){
+  return relation.id==edge_id&&relation.kind==RelationKind::Contains&&
+      relation.from==root_id&&relation.to==member_node_id;
+ };
+ const auto existing=state_.relations.find(edge_id);
+ if(existing!=state_.relations.end()&&!matches(existing->second)){
+  error="CHAOS_MEMBERSHIP_RELATION_ID_CONFLICT";return false;
+ }
+ bool edge_present=existing!=state_.relations.end();
+ for(const auto& item:delta.relations)if(item.relation.id==edge_id){
+  if(!matches(item.relation)){
+   error="CHAOS_MEMBERSHIP_RELATION_ID_CONFLICT";return false;
+  }
+  edge_present=true;
+ }
+ // Do not replace an existing meaningful membership. The unresolved bucket
+ // is only the initial home for information that has no cluster membership.
+ for(const auto& item:state_.relations){
+  const auto& relation=item.second;
+  if(relation.kind==RelationKind::Contains&&relation.to==member_node_id&&
+     relation.from!=root_id){
+   const auto parent=state_.nodes.find(relation.from);
+   if(parent!=state_.nodes.end()&&(parent->second.kind==NodeKind::Cluster||
+       parent->second.kind==NodeKind::ChaosCluster)){
+    error="CHAOS_MEMBERSHIP_MEMBER_ALREADY_CLUSTERED";return false;
+   }
+  }
+ }
+ for(const auto& item:delta.relations)if(item.relation.kind==RelationKind::Contains&&
+     item.relation.to==member_node_id&&item.relation.from!=root_id){
+  error="CHAOS_MEMBERSHIP_MEMBER_ALREADY_CLUSTERED";return false;
+ }
+ if(!edge_present)
+  delta.relations.push_back({{edge_id,RelationKind::Contains,root_id,member_node_id}});
+ chaos_cluster_id=root_id;
+ membership_relation_id=edge_id;
+ return true;
+}
+
 bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
     const std::string& parent_cluster_id, const std::string& classification,
     const std::string& partition_key, const std::string& member_node_id,
