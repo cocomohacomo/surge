@@ -1719,6 +1719,135 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
 }
 
 
+
+int surge_context_graph_observe_cognition(void* opaque, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque) {
+      copy_text(error, error_capacity, "COGNITION_OBSERVATION_HANDLE_INVALID");
+      return 0;
+    }
+    const auto observation =
+        static_cast<Handle*>(opaque)->mutations.observe_cognition();
+    const auto node_kind_name = [](surge::NodeKind kind) -> const char* {
+      switch (kind) {
+        case surge::NodeKind::Cluster: return "CLUSTER";
+        case surge::NodeKind::ChaosCluster: return "CHAOS_CLUSTER";
+        case surge::NodeKind::Entity: return "ENTITY";
+        case surge::NodeKind::Evidence: return "EVIDENCE";
+        case surge::NodeKind::Claim: return "CLAIM";
+        case surge::NodeKind::Question: return "QUESTION";
+        case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
+        case surge::NodeKind::Dependency: return "DEPENDENCY";
+        case surge::NodeKind::Interest: return "INTEREST";
+        case surge::NodeKind::ClusterLifecycle: return "CLUSTER_LIFECYCLE";
+      }
+      return "UNKNOWN";
+    };
+    const auto relation_kind_name = [](surge::RelationKind kind) -> const char* {
+      switch (kind) {
+        case surge::RelationKind::Supports: return "SUPPORTS";
+        case surge::RelationKind::Contradicts: return "CONTRADICTS";
+        case surge::RelationKind::AgreesWith: return "AGREES_WITH";
+        case surge::RelationKind::ConflictsWith: return "CONFLICTS_WITH";
+        case surge::RelationKind::DependsOn: return "DEPENDS_ON";
+        case surge::RelationKind::About: return "ABOUT";
+        case surge::RelationKind::Supersedes: return "SUPERSEDES";
+        case surge::RelationKind::Retracts: return "RETRACTS";
+        case surge::RelationKind::Duplicates: return "DUPLICATES";
+        case surge::RelationKind::Contains: return "CONTAINS";
+      }
+      return "UNKNOWN";
+    };
+    std::ostringstream json;
+    json << "{\"state_version\":" << observation.state_version << ",\"nodes\":[";
+    for (size_t i = 0; i < observation.nodes.size(); ++i) {
+      if (i) json << ',';
+      const auto& node = observation.nodes[i];
+      json << "{\"id\":" << json_quote(node.id)
+           << ",\"kind\":" << json_quote(node_kind_name(node.kind))
+           << ",\"content\":" << json_quote(node.content)
+           << ",\"references\":[";
+      for (size_t j = 0; j < node.references.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(node.references[j]);
+      }
+      json << "]}";
+    }
+    json << "],\"relations\":[";
+    for (size_t i = 0; i < observation.relations.size(); ++i) {
+      if (i) json << ',';
+      const auto& relation = observation.relations[i];
+      json << "{\"id\":" << json_quote(relation.id)
+           << ",\"kind\":" << json_quote(relation_kind_name(relation.kind))
+           << ",\"from\":" << json_quote(relation.from)
+           << ",\"to\":" << json_quote(relation.to)
+           << ",\"weight\":" << std::setprecision(17) << relation.weight << "}";
+    }
+    json << "],\"memberships\":[";
+    for (size_t i = 0; i < observation.memberships.size(); ++i) {
+      if (i) json << ',';
+      const auto& membership = observation.memberships[i];
+      json << "{\"member_node_id\":" << json_quote(membership.member_node_id)
+           << ",\"cluster_node_id\":" << json_quote(membership.cluster_node_id)
+           << ",\"upstream_weight\":" << std::setprecision(17)
+           << membership.upstream_weight << "}";
+    }
+    json << "],\"unresolved_member_ids\":[";
+    for (size_t i = 0; i < observation.unresolved_member_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.unresolved_member_ids[i]);
+    }
+    json << "],\"active_question_ids\":[";
+    for (size_t i = 0; i < observation.active_question_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.active_question_ids[i]);
+    }
+    json << "],\"active_interest_ids\":[";
+    for (size_t i = 0; i < observation.active_interest_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.active_interest_ids[i]);
+    }
+    json << "],\"current_focus\":";
+    if (observation.current_focus) {
+      json << "{\"cluster_id\":" << json_quote(observation.current_focus->cluster_id)
+           << ",\"interest_id\":" << json_quote(observation.current_focus->interest_id)
+           << ",\"chaos_cluster\":"
+           << (observation.current_focus->chaos_cluster ? "true" : "false") << "}";
+    } else {
+      json << "null";
+    }
+    json << ",\"focus_history\":[";
+    for (size_t i = 0; i < observation.focus_history.size(); ++i) {
+      if (i) json << ',';
+      const auto& focus = observation.focus_history[i];
+      json << "{\"cluster_id\":" << json_quote(focus.cluster_id)
+           << ",\"interest_id\":" << json_quote(focus.interest_id)
+           << ",\"chaos_cluster\":" << (focus.chaos_cluster ? "true" : "false") << "}";
+    }
+    json << "],\"unresolved_scope_count\":" << observation.unresolved_scope_count
+         << ",\"dependency_evaluation_count\":"
+         << observation.dependency_evaluation_count << "}";
+    const auto payload = json.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "COGNITION_OBSERVATION_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_OBSERVATION_EXCEPTION");
+    return 0;
+  }
+}
+
+
 int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&h=*static_cast<Handle*>(o);auto z=h.temporal_ledger.add(t,i,e,v,x);
 if(z.committed){bool already_synced=false;for(const auto&q:h.temporal_questions.for_claim(z.pending.claim_id))if(q.last_event_id==std::string(e)+"/question")already_synced=true;
 if(!already_synced){auto sync=h.temporal_questions.synchronize(std::string(t)+"/question",std::string(i)+"/question",std::string(e)+"/question",z.state_version,z.pending);
