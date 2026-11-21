@@ -399,12 +399,34 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   }
   if (!std::getline(input, line))
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  unsigned has_focus = 0;
   {
     std::istringstream row(line);
     std::string tag, extra;
-    unsigned has_focus = 0;
     if (!(row >> tag >> has_focus) || (row >> extra) ||
         tag != "has_focus" || has_focus > 1)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  }
+  auto validate_focus = [&](const std::string& focus_line) {
+    std::istringstream row(focus_line);
+    std::string tag, cluster, interest, extra;
+    unsigned chaos = 0;
+    if (!(row >> tag >> std::quoted(cluster) >> std::quoted(interest) >> chaos) ||
+        tag != "focus" || cluster.empty() || !node_ids.count(cluster) ||
+        chaos > 1 || (row >> extra))
+      return false;
+    return true;
+  };
+  if (has_focus && (!std::getline(input, line) || !validate_focus(line)))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::size_t focus_history_count = 0;
+  if (!parse_count(line, "focus_history", focus_history_count) ||
+      focus_history_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  for (std::size_t i = 0; i < focus_history_count; ++i) {
+    if (!std::getline(input, line) || !validate_focus(line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   }
   if (error) error->clear();
