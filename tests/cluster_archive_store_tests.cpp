@@ -108,7 +108,7 @@ int main() {
     CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_history, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
     const std::string bad_claim_timestamp = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"not-a-timestamp\" \"\" \"e1\" 1 \"\" \"\" 1\nevidence_validity_histories 0\n");
+        "nodes 2\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"not-a-timestamp\" \"\" \"e1\" 1 \"\" \"\" 1\nevidence_validity_histories 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_timestamp, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
     const std::string unbound_evidence_basis = make_payload("cluster-a", graph.state_version(),
