@@ -1029,7 +1029,11 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
              relation != static_cast<unsigned>(RelationKind::Contradicts) &&
              relation != static_cast<unsigned>(RelationKind::Retracts)) ||
             evidence_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
-            eligible > 1 || (evidence_version > watermark) ||
+            eligible > 1 ||
+            (eligible && (lifecycle != static_cast<unsigned>(ClaimStatus::Active) ||
+                          temporal_state != static_cast<unsigned>(ClaimTemporalState::Valid) ||
+                          evidence_state != static_cast<unsigned>(ClaimTemporalState::Valid))) ||
+            (evidence_version > watermark) ||
             (!valid_from.empty() && !valid_rfc3339(valid_from)) ||
             (!valid_until.empty() && !valid_rfc3339(valid_until)) ||
             (!basis_id.empty() &&
@@ -1067,6 +1071,27 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         if (std::find(active_contradictions.begin(), active_contradictions.end(), id) !=
             active_contradictions.end())
           return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_RELATIONS_INVALID");
+      if (std::set<std::string>(active_supports.begin(), active_supports.end()) !=
+              eligible_support_ids ||
+          std::set<std::string>(active_contradictions.begin(), active_contradictions.end()) !=
+              eligible_contradiction_ids)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_RELATIONS_INVALID");
+      const bool has_support = !active_supports.empty();
+      const bool has_contradiction = !active_contradictions.empty();
+      const std::string expected_decision =
+          lifecycle != static_cast<unsigned>(ClaimStatus::Active) ? "CLAIM_INACTIVE" :
+          temporal_state != static_cast<unsigned>(ClaimTemporalState::Valid) ? "CLAIM_NOT_CURRENT" :
+          (has_support && has_contradiction) ? "TEMPORAL_CONFLICT" :
+          has_contradiction ? "CONTRADICTED" :
+          has_support ? "SUPPORTED" : "INSUFFICIENT_CURRENT_EVIDENCE";
+      const std::string expected_reason =
+          lifecycle != static_cast<unsigned>(ClaimStatus::Active) ? "CLAIM_LIFECYCLE_NOT_ACTIVE" :
+          temporal_state != static_cast<unsigned>(ClaimTemporalState::Valid) ? "CLAIM_VALIDITY_NOT_ACTIVE_AT_REFERENCE" :
+          (has_support && has_contradiction) ? "ACTIVE_SUPPORT_AND_CONTRADICTION" :
+          has_contradiction ? "ACTIVE_CONTRADICTION" :
+          has_support ? "ACTIVE_SUPPORT" : "NO_ELIGIBLE_CURRENT_EVIDENCE";
+      if (decision != expected_decision || reason_code != expected_reason)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_DECISION_INVALID");
       append_vector_payload(snapshot, active_supports);
       append_vector_payload(snapshot, active_contradictions);
       const auto expected_digest = sha256_hex(snapshot.str());
