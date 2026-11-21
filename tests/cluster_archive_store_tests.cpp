@@ -127,7 +127,7 @@ int main() {
           "node \"archive-a\" 0 \"archive target\" 0\n"
           "node \"exclusive\" 2 \"exclusive payload\" 0\n"
           "relations 1\n"
-          "relation \"a-exclusive\" 0 \"archive-a\" \"exclusive\"\n"
+          "relation \"a-exclusive\" 9 \"archive-a\" \"exclusive\"\n"
           "has_focus 0\nfocus_history 0\n");
       const auto restored = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
