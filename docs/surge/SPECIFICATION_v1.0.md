@@ -476,12 +476,13 @@ actual journal-tail staging bytes. All prepared domains remain detached until
 the complete bundle is parsed and the journal watermark is rechecked, after
 which their noexcept commits are published.
 
-The streamed coordinator path deliberately fails closed when a compacted
-journal checkpoint has the exact same watermark as the snapshot: the existing
-checkpoint contract compares the digest of the complete encoded snapshot, but
-the streaming API does not yet expose that complete-envelope digest to the
-coordinator. A checkpoint strictly older than the snapshot can proceed after
-context and watermark validation. This path is not a hard RSS cap: prepared
+The streamed coordinator path computes the SHA-256 digest of the complete
+authenticated snapshot envelope during the verification pass, without
+materializing the envelope. At an equal compacted-journal watermark, the
+coordinator compares this digest with the journal checkpoint digest before
+preparing domains. A mismatch fails closed; an exact match permits restore.
+A checkpoint strictly older than the snapshot can proceed after context and
+watermark validation. This path is not a hard RSS cap: prepared
 domain state, journal event object overhead, allocator behavior and internal
 domain allocations are not fully measured. The legacy byte-string restore
 APIs remain available.
