@@ -64,7 +64,10 @@ int main() {
     ResourceBudget budget(ResourceBudgetLimits::temporary_edge_200mb());
     BudgetedContextGraph budgeted(graph, budget);
     std::string detach_error;
-    CHECK(budgeted.recover(detach_error));
+    if (!budgeted.recover(detach_error)) {
+      std::cerr << "BudgetedContextGraph recovery failed: " << detach_error << "\\n";
+      return 1;
+    }
     const auto detach_path = std::filesystem::temp_directory_path() /
         "surge_cluster_archive_detach_test.bin";
     std::filesystem::remove(detach_path, ec);
