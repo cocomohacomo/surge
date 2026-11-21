@@ -218,6 +218,12 @@ bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion
 }
 }
 extern "C" {
+uint32_t surge_abi_version(void) {
+  return SURGE_ABI_VERSION_ENCODE(SURGE_ABI_VERSION_MAJOR,
+                                 SURGE_ABI_VERSION_MINOR,
+                                 SURGE_ABI_VERSION_PATCH);
+}
+
 void* surge_packet_core_open_with_limits(const char* path,
     const SurgeResourceBudgetLimits* limits, char* error, size_t cap) {
   try {
