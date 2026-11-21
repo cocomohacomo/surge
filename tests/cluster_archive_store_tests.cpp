@@ -83,6 +83,18 @@ int main() {
     const std::string dangling_relation = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nnode \"n1\" 2 \"a\" 0\nrelations 1\nrelation \"r1\" 9 \"n1\" \"missing\"\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(dangling_relation, &detach_error));
+    const std::string dangling_reference = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\nnode \"n1\" 2 \"a\" 1 \"missing\"\nrelations 0\nhas_focus 0\nfocus_history 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(dangling_reference, &detach_error));
+    const std::string focus_non_cluster = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\nnode \"n1\" 2 \"entity\" 0\nrelations 0\nhas_focus 1\nfocus \"n1\" \"\" 0\nfocus_history 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(focus_non_cluster, &detach_error));
+    const std::string focus_non_interest = make_payload("cluster-a", graph.state_version(),
+        "nodes 2\nnode \"c1\" 0 \"cluster\" 0\nnode \"e1\" 2 \"entity\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"e1\" 0\nfocus_history 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(focus_non_interest, &detach_error));
+    const std::string focus_chaos_mismatch = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\nnode \"c1\" 0 \"cluster\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"\" 1\nfocus_history 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(focus_chaos_mismatch, &detach_error));
     const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nrelations 0\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(count_mismatch, &detach_error));
