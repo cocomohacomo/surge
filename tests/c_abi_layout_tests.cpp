@@ -21,8 +21,8 @@ int main() {
 #define SURGE_LAYOUT_FIELD(T,F) \
   { const auto offset = offsetof(T,F); const auto width = sizeof(((T*)nullptr)->F); \
     if (!field_ok<T>(offset,width)) ok = false; \
-    static bool first_field_##F = true; \
-    static_cast<void>(first_field_##F); \
+    static bool first = true; \
+    if (!first) std::cout << ","; first = false; \
     std::cout << "{\"name\":\"" #F "\",\"offset\":" << offset << ",\"size\":" << width << "}"; }
 #define SURGE_LAYOUT_END() std::cout << "]}";
   SURGE_LAYOUT_BEGIN(SurgeChaosAssociationInput)
