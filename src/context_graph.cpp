@@ -1904,4 +1904,87 @@ CognitionObservation ContextGraph::observe_cognition() const {
   return observation;
 }
 
+
+std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
+    const std::string& input_member_id, const std::vector<std::string>& query_terms,
+    std::size_t max_candidates) const {
+  std::vector<CognitionCandidate> candidates;
+  if (max_candidates == 0 || query_terms.empty()) return candidates;
+  const auto observation = observe_cognition();
+  std::map<std::string, CognitionCandidate> by_cluster;
+  for (const auto& membership : observation.memberships) {
+    if (membership.member_node_id == input_member_id) continue;
+    const auto node_it = state_.nodes.find(membership.member_node_id);
+    if (node_it == state_.nodes.end()) continue;
+    const auto& node = node_it->second;
+    std::vector<std::string> matched;
+    for (const auto& term : query_terms) {
+      if (term.empty()) continue;
+      bool found = node.content.find(term) != std::string::npos;
+      if (!found) for (const auto& ref : node.references)
+        if (ref.find(term) != std::string::npos) { found = true; break; }
+      if (found && std::find(matched.begin(), matched.end(), term) == matched.end())
+        matched.push_back(term);
+    }
+    if (matched.empty()) continue;
+    auto& candidate = by_cluster[membership.cluster_node_id];
+    candidate.cluster_id = membership.cluster_node_id;
+    candidate.memory_state_version = observation.state_version;
+    if (std::find(candidate.supporting_member_ids.begin(),
+        candidate.supporting_member_ids.end(), membership.member_node_id) ==
+        candidate.supporting_member_ids.end()
+        candidate.supporting_member_ids.push_back(membership.member_node_id);
+    for (const auto& term : matched) {
+      if (std::find(candidate.matched_terms.begin(), candidate.matched_terms.end(),
+          term) == candidate.matched_terms.end())
+        candidate.matched_terms.push_back(term);
+      // This score ranks retrieval candidates only; it never changes or copies
+      // the upstream Contains weight into an admission decision.
+      candidate.recall_score += membership.upstream_weight;
+    }
+  }
+  for (auto& item : by_cluster) candidates.push_back(std::move(item.second));
+  std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+    if (a.recall_score != b.recall_score) return a.recall_score > b.recall_score;
+    return a.cluster_id < b.cluster_id;
+  });
+  if (candidates.size() > max_candidates) candidates.resize(max_candidates);
+  return candidates;
+}
+
+bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
+    const CognitionFeedback& feedback, const std::string& feedback_node_id,
+    const std::string& relation_id, std::string& error) const {
+  const auto outcome = feedback.outcome;
+  if (feedback.feedback_id.empty() || feedback.candidate_cluster_id.empty() ||
+      feedback.input_member_id.empty() || feedback.producer_id.empty() ||
+      feedback.producer_version.empty() || feedback.policy_version.empty() ||
+      feedback.recorded_at.empty() || feedback.notes.size() > 4096 ||
+      feedback_node_id.empty() || relation_id.empty() ||
+      (outcome != "CONFIRMED" && outcome != "REJECTED" &&
+       outcome != "UNRESOLVED" && outcome != "REVISED")) {
+    error = "invalid cognition feedback fields";
+    return false;
+  }
+  if (!state_.nodes.count(feedback.candidate_cluster_id) ||
+      !state_.nodes.count(feedback.input_member_id)) {
+    error = "cognition feedback references missing cluster or input member";
+    return false;
+  }
+  std::ostringstream content;
+  content << "SURGE_COGNITION_FEEDBACK_V1 "
+      << std::quoted(feedback.feedback_id) << ' ' << std::quoted(outcome) << ' '
+      << std::quoted(feedback.producer_id) << ' '
+      << std::quoted(feedback.producer_version) << ' '
+      << std::quoted(feedback.policy_version) << ' '
+      << std::quoted(feedback.recorded_at) << ' ' << std::quoted(feedback.notes);
+  delta.nodes.push_back({GraphNode{feedback_node_id, NodeKind::Evidence,
+      content.str(), {feedback.candidate_cluster_id, feedback.input_member_id}}});
+  delta.relations.push_back({GraphRelation{relation_id, RelationKind::About,
+      feedback.candidate_cluster_id, feedback_node_id, 1.0}});
+  error.clear();
+  return true;
+}
+
+
 } // namespace surge
