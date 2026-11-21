@@ -55,6 +55,37 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     }
   }
 
+  // Keep validity-history provenance inside the archive closure too. A
+  // validity record may be bound through a Supports relation rather than a
+  // direct Claim reference, so typed-reference closure alone is insufficient.
+  std::vector<std::string> history_frontier(included.begin(), included.end());
+  for (std::size_t cursor = 0; cursor < history_frontier.size(); ++cursor) {
+    const auto id = history_frontier[cursor];
+    auto include_reference = [&](const std::string& reference) {
+      if (!reference.empty() && graph.nodes().count(reference) &&
+          included.insert(reference).second)
+        history_frontier.push_back(reference);
+    };
+    const auto claim_history = graph.claim_validity_history().find(id);
+    if (claim_history != graph.claim_validity_history().end()) {
+      for (const auto& record : claim_history->second) {
+        include_reference(record.validity.basis_evidence_id);
+        include_reference(record.validity.review_evidence_id);
+      }
+    }
+    const auto evidence_history = graph.evidence_validity_history().find(id);
+    if (evidence_history != graph.evidence_validity_history().end()) {
+      for (const auto& record : evidence_history->second) {
+        include_reference(record.validity.basis_evidence_id);
+        include_reference(record.validity.review_evidence_id);
+      }
+    }
+    const auto node = graph.nodes().find(id);
+    if (node != graph.nodes().end())
+      for (const auto& reference : node->second.references)
+        include_reference(reference);
+  }
+
   std::ostringstream out;
   out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\n";
   out << "watermark " << graph.state_version() << "\n";
