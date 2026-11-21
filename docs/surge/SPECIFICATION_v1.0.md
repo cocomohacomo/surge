@@ -628,3 +628,146 @@ through C++, C ABI and Python, with bounded-buffer handling and read-only
 semantics. A versioned incremental observation stream, inference trace
 ingestion, and model-specific mask-estimation telemetry remain integration
 work and MUST NOT be claimed as implemented until independently tested.
+
+
+## SURGE Model: Associative Cognition Candidate Recall and Growth
+
+### 1. Purpose
+
+The SURGE Model MUST do more than place incoming information into a
+preselected cluster. For each incoming information item, it SHOULD recall
+multiple possible cognition states from existing memory. A cognition state
+candidate describes a possible contextual interpretation of the new input
+through already retained clusters, members, relations, Questions, Interests,
+Focus and historical classification observations.
+
+The candidate set is a first-class, externally observable output of the
+cognition loop. It is not a committed classification and MUST NOT be confused
+with a truth assertion.
+
+### 2. Separate producer-owned admission from model-owned recall
+
+Two responsibilities MUST remain distinct:
+
+- **Admission classification:** the upstream producer (external model,
+  classifier or adapter) supplies classification labels and membership
+  weights. Core validates structural integrity and preserves the supplied
+  values and provenance. Core MUST NOT generate, replace, normalize or
+  silently revise these admission values.
+- **Cognition candidate recall:** the SURGE Model searches and associates
+  existing memory to produce a plural set of possible cognition states for
+  the incoming item. It may use historical classifications and weights as
+  evidence for retrieval and candidate ordering, but those candidates remain
+  hypotheses and MUST NOT silently become admission memberships.
+
+This separation is normative. Candidate recall does not violate the
+producer-owned classification contract because recall is a proposal about
+possible context, not an authoritative input classification.
+
+### 3. Recall inputs and associative evidence
+
+Candidate recall SHOULD consider, where available:
+
+- lexical, token, n-gram and semantic references attached to the input;
+- prior members and clusters sharing those references;
+- historical producer-supplied classification labels and membership weights;
+- co-occurrence, distance, sequence and recurrence patterns;
+- typed relations, including agreement, conflict, support, contradiction,
+  dependency, reference and supersession;
+- temporal validity, source provenance and revision lineage;
+- current and historical Focus, active Questions and Interests;
+- unresolved and exploratory members retained in ChaosClusters;
+- previously recalled candidates and their later confirmation, rejection
+  or revision outcomes.
+
+The model MUST be able to return multiple candidates, including candidates
+from different clusters. It MUST preserve ambiguity where the evidence
+supports more than one interpretation. An empty candidate set is valid and
+must not prevent the input from being retained through the admission path.
+
+### 4. Self-accumulation and model growth
+
+The SURGE Model grows by accumulating the history of producer-supplied
+classifications, membership weights, relations and subsequent outcomes in
+the canonical cluster graph. These observations become reusable associative
+evidence for future recall.
+
+Growth therefore means an expanding and improving set of retrievable
+associations and cognition-state candidates, not an unconstrained mutation
+of model parameters and not an authority transfer over admission labels.
+
+The system SHOULD retain:
+- the original producer label and weight, unchanged;
+- producer identity, model/policy version and observation time;
+- the input/member and target cluster identities;
+- the candidate set and the memory version used to recall it;
+- later confirmation, rejection, correction or unresolved outcome, with
+  source and time provenance.
+
+Historical observations MUST NOT be overwritten when later evidence changes
+the current association. A new observation or revision is appended. Recall
+must be reproducible against a pinned memory version and policy version.
+
+### 5. Candidate lifecycle and feedback
+
+A candidate SHOULD carry at least:
+- candidate ID and input/member reference;
+- candidate cognition-state or target cluster reference;
+- supporting memory references;
+- relation/path evidence explaining why it was recalled;
+- memory state version and recall policy/model version;
+- candidate score or rank with its producer and scoring provenance;
+- uncertainty/ambiguity status;
+- lifecycle status such as proposed, externally-confirmed,
+  externally-rejected, superseded or unresolved.
+
+A candidate score is not an admission membership weight. The two values
+MUST use distinct fields and semantics. SURGE MUST NOT copy a candidate
+score into a Contains edge unless an authorized upstream producer explicitly
+projects a classification and membership weight through the admission API.
+
+External models may inspect candidates and the underlying cognition
+observation, then project a new classification, weight, Question, Interest,
+Focus change or relation back to Core. That feedback is a new versioned
+transaction and MUST preserve the external producer's provenance.
+
+### 6. Observation API integration
+
+The cognition observation surface SHOULD expose both:
+1. the exact committed Core state; and
+2. separately identified recall-candidate records, including their supporting
+   references and version pins.
+
+The committed-state snapshot MUST remain read-only. Candidate generation
+MUST NOT mutate the graph. Candidate outcomes and externally projected
+feedback are committed through explicit mutation APIs.
+
+The API MUST make it impossible to mistake a recalled candidate for a
+committed cluster membership. Snapshot and candidate records must identify
+their respective state/version and status.
+
+### 7. Growth and quality evaluation
+
+Model growth MUST be evaluated by more than memory size. Conformance and
+benchmarking SHOULD measure:
+- candidate recall coverage and candidate diversity;
+- top-k recall and ranking quality against externally reviewed outcomes;
+- ambiguity preservation and false-positive candidate rate;
+- recovery of long-range and cross-cluster associations;
+- improvement as classification/weight history accumulates;
+- stability under contradictory, revised and time-expired evidence;
+- deterministic replay at a pinned memory version;
+- latency, transient memory and resident memory under streaming load.
+
+A larger candidate set is not automatically better. The model must improve
+useful recall while retaining uncertainty, provenance, bounded resource use
+and the distinction between proposals and committed cognition state.
+
+### 8. Implementation boundary
+
+The current cognition observation snapshot reports committed graph state.
+It does not by itself implement associative candidate generation,
+candidate lifecycle storage, candidate feedback learning or candidate-quality
+evaluation. Those capabilities require explicit runtime components and tests.
+They MUST NOT be claimed complete merely because graph observation is
+available.
