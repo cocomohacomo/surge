@@ -36,12 +36,13 @@ class NativeCoreDiscoveryTests(unittest.TestCase):
                 "SURGE_CORE_LIBRARY": str(pathlib.Path(tmp) / "missing.so"),
                 "SURGE_CORE_PREFIX": str(pathlib.Path(tmp) / "empty-prefix"),
             }):
-                with self.assertRaisesRegex(FileNotFoundError, "SURGE_CORE_PREFIX"):
+                with self.assertRaisesRegex(FileNotFoundError, "SURGE_CORE_LIBRARY_NOT_FOUND"):
                     resolve_native_core_library()
 
     def test_candidate_order_is_deterministic_and_deduplicated(self):
         with tempfile.TemporaryDirectory() as tmp:
             explicit = pathlib.Path(tmp) / "libsurge_core.so"
+            explicit.touch()
             with patch.dict(os.environ, {"SURGE_CORE_LIBRARY": str(explicit)}):
                 candidates = native_core_candidates(explicit)
             self.assertEqual(candidates[0], explicit)
