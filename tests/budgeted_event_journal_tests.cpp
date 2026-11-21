@@ -36,7 +36,11 @@ int main(){
  }
  {
   EventJournal journal((root/"resident-over.sgj").string()); CHECK(journal.open());
-  ResourceBudget budget({4096,300,4,4,16,64});
+  ResourceBudgetLimits limits;
+  limits.resident_bytes=300; limits.transient_bytes=4096;
+  limits.retained_events=4; limits.retained_clusters=4;
+  limits.decision_candidates=16; limits.decision_evidence=64;
+  ResourceBudget budget(limits);
   BudgetedEventJournal bounded(journal,budget); std::string error;
   CHECK(bounded.recover(error));
   std::vector<JournalEvent> events{{"e1","CLAIM","payload"},{"e2","EVIDENCE","payload"}};
