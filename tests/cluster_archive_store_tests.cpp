@@ -107,6 +107,14 @@ int main() {
         "nodes 2\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 2 \"\" \"\" 1\nevidence_validity_histories 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_history, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+    const std::string bad_claim_timestamp = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"not-a-timestamp\" \"\" \"e1\" 1 \"\" \"\" 1\nevidence_validity_histories 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_timestamp, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+    const std::string unbound_evidence_basis = make_payload("cluster-a", graph.state_version(),
+        "nodes 3\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nnode \"e2\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"2026-01-01T00:00:00Z\" \"\" \"e2\" 1 \"\" \"\" 1\nevidence_validity_histories 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(unbound_evidence_basis, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
     const std::string bad_evidence_owner = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 0\nevidence_validity_histories 1\nevidence_history \"missing\" 1\nevidence_validity \"missing\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 1\n");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_evidence_owner, &detach_error));
