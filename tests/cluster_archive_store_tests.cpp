@@ -85,7 +85,7 @@ int main() {
         "nodes 1\nnode \"n1\" 99 \"a\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(invalid_enum, &detach_error));
     const std::string dangling_relation = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\nnode \"n1\" 2 \"a\" 0\nrelations 1\nrelation \"r1\" 9 \"n1\" \"missing\"\nhas_focus 0\nfocus_history 0\n");
+        "nodes 1\nnode \"n1\" 2 "a" 0\nrelations 1\nrelation "r1" 9 "n1" "missing"\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(dangling_relation, &detach_error));
     const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nrelations 0\nhas_focus 0\nfocus_history 0\n");
@@ -186,3 +186,5 @@ cluster \"cluster-a\"\n", &error));
   std::cout << "SURGE cluster archive store tests passed\n";
   return 0;
 }
+std::string make_payload(const std::string& cluster, std::uint64_t version,
+                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\n") {
