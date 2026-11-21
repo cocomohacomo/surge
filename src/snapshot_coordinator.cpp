@@ -404,8 +404,10 @@ bool SnapshotCoordinator::restore_from_store(
         // The streamed API deliberately does not materialize the envelope,
         // so an equal-watermark byte-for-byte checkpoint comparison is not
         // available. Fail closed rather than skipping the digest check.
-        if (metadata.state_version == checkpoint.base_state_version)
-          return fail(sink_error, "SNAPSHOT_JOURNAL_CHECKPOINT_STREAM_DIGEST_UNAVAILABLE");
+        if (metadata.state_version == checkpoint.base_state_version &&
+            (metadata.envelope_digest.empty() ||
+             metadata.envelope_digest != checkpoint.snapshot_digest))
+          return fail(sink_error, "SNAPSHOT_JOURNAL_CHECKPOINT_DIGEST_MISMATCH");
       }
       const auto staged_tail = journal.committed_tail(
           metadata.journal_sequence, tail_limits);
