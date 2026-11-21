@@ -211,5 +211,176 @@
       ]
     }
   },
-  "functions": []
+  "functions": [
+    {
+      "name": "surge_abi_version",
+      "return_type": "#pragma once #include <stddef.h> #include <stdint.h> #define SURGE_ABI_VERSION_MAJOR 0u #define SURGE_ABI_VERSION_MINOR 1u #define SURGE_ABI_VERSION_PATCH 0u #define SURGE_ABI_VERSION_ENCODE(major,minor,patch)((((uint32_t)(major)& 0xffu)<< 24)|(((uint32_t)(minor)& 0xffu)<< 16)|((uint32_t)(patch)& 0xffffu))#ifdef __cplusplus uint32_t",
+      "parameters": "void"
+    },
+    {
+      "name": "surge_chaos_cluster_add_pattern_hypothesis",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const SurgeChaosPatternHypothesisInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_admit_member",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const SurgeChaosMemberInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_create",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_expire_due_associations",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_get",
+      "return_type": "int",
+      "parameters": "void*,const char*,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_get_bounded",
+      "return_type": "int",
+      "parameters": "void*,const char*,size_t,size_t,size_t,size_t,size_t,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_merge",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_promote_subset",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*const*,const char*const*,size_t,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_propose_association",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_propose_association_temporal",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const SurgeChaosAssociationTemporalInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_record_entity_observation",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_record_observation",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosScoreObservationInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_review_association",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_review_pattern_hypothesis",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const SurgeChaosHypothesisReviewInput*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_revise_membership",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const char*,int,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_chaos_cluster_transition",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_context_graph_scope_count",
+      "return_type": "size_t",
+      "parameters": "void*handle"
+    },
+    {
+      "name": "surge_packet_core_close",
+      "return_type": "void",
+      "parameters": "void*handle"
+    },
+    {
+      "name": "surge_packet_core_open",
+      "return_type": "void*",
+      "parameters": "const char*journal_path,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_packet_core_packet_count",
+      "return_type": "size_t",
+      "parameters": "void*handle"
+    },
+    {
+      "name": "surge_packet_core_state_version",
+      "return_type": "uint64_t",
+      "parameters": "void*handle"
+    },
+    {
+      "name": "surge_question_get_context_bundle",
+      "return_type": "int",
+      "parameters": "void*handle,const char*question_id,size_t max_depth,size_t max_nodes,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_get_reevaluation_plan",
+      "return_type": "int",
+      "parameters": "void*handle,const char*question_id,size_t max_depth,size_t max_nodes,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_memory_enforce_capacity",
+      "return_type": "int",
+      "parameters": "void*,const char*const*,const double*,size_t,size_t,uint64_t,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_get_state",
+      "return_type": "int",
+      "parameters": "void*,const char*,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_plan",
+      "return_type": "int",
+      "parameters": "void*,size_t,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_recommendation",
+      "return_type": "int",
+      "parameters": "double,double,double,double,double,double,char*,size_t,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_record_reference",
+      "return_type": "int",
+      "parameters": "void*,const char*,uint64_t,int*,uint64_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_record_reference_with_dependents",
+      "return_type": "int",
+      "parameters": "void*,const char*,uint64_t,size_t,size_t,int*,size_t*,char*,size_t"
+    },
+    {
+      "name": "surge_question_memory_set_state",
+      "return_type": "int",
+      "parameters": "void*,const char*,const char*,uint64_t,char*,size_t"
+    },
+    {
+      "name": "surge_temporal_boundary_pending_count",
+      "return_type": "size_t",
+      "parameters": "void*handle"
+    },
+    {
+      "name": "surge_temporal_boundary_resolve_candidate",
+      "return_type": "int",
+      "parameters": "void*handle,const char*transaction_id,const char*idempotency_key,const char*event_id,uint64_t expected_state_version,const char*claim_id,const char*role,const char*candidate_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_temporal_question_count",
+      "return_type": "size_t",
+      "parameters": "void*handle"
+    }
+  ]
 }
