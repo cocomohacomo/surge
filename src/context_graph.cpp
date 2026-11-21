@@ -117,8 +117,8 @@ bool decode_claim_validity(const std::string& payload,ClaimValidityRecord& recor
 }
 std::string encode_node(const GraphNode& n){std::ostringstream o;o<<std::quoted(n.id)<<' '<<node_kind_name(n.kind)<<' '<<std::quoted(n.content)<<' '<<n.references.size();for(const auto& r:n.references)o<<' '<<std::quoted(r);return o.str();}
 bool decode_node(const std::string& p,GraphNode& n){std::istringstream i(p);std::string k;std::size_t c=0;if(!(i>>std::quoted(n.id)>>k>>std::quoted(n.content)>>c)||!parse_node_kind(k,n.kind)||c>1024)return false;for(std::size_t x=0;x<c;++x){std::string r;if(!(i>>std::quoted(r)))return false;n.references.push_back(r);}std::string extra;return !(i>>extra);}
-std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to);return o.str();}
-bool decode_relation(const std::string& p,GraphRelation& r){std::istringstream i(p);std::string k,extra;if(!(i>>std::quoted(r.id)>>k>>std::quoted(r.from)>>std::quoted(r.to))||!parse_relation_kind(k,r.kind))return false;return !(i>>extra);}
+std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::setprecision(17)<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to)<<' '<<r.weight;return o.str();}
+bool decode_relation(const std::string& p,GraphRelation& r){std::istringstream i(p);std::string k;if(!(i>>std::quoted(r.id)>>k>>std::quoted(r.from)>>std::quoted(r.to))||!parse_relation_kind(k,r.kind))return false;if(!(i>>r.weight)){i.clear();r.weight=1.0;}std::string extra;return !(i>>extra)&&std::isfinite(r.weight)&&r.weight>=0.0&&r.weight<=1.0;}
 std::string encode_anchor(const ScopeAnchor& a){std::ostringstream o;o<<std::quoted(a.anchor_id)<<' '<<std::quoted(a.source_digest)<<' '<<std::quoted(a.offset_basis)<<' '<<a.start_offset<<' '<<a.end_offset<<' '<<std::quoted(a.exact_text)<<' '<<std::quoted(a.packet_ref);return o.str();}
 bool decode_anchor(std::istream& i,ScopeAnchor& a){return static_cast<bool>(i>>std::quoted(a.anchor_id)>>std::quoted(a.source_digest)>>std::quoted(a.offset_basis)>>a.start_offset>>a.end_offset>>std::quoted(a.exact_text)>>std::quoted(a.packet_ref));}
 std::string encode_scope(const AddScopeSpan& add){const auto& s=add.span;std::ostringstream o;o<<std::quoted(s.span_id)<<' '<<scope_kind_name(s.kind)<<' '<<std::quoted(s.source_digest)<<' '<<std::quoted(s.offset_basis)<<' '<<encode_anchor(s.opener)<<' '<<(s.closer?1:0);if(s.closer)o<<' '<<encode_anchor(*s.closer);o<<' '<<s.target_refs.size();for(const auto& x:s.target_refs)o<<' '<<std::quoted(x);o<<' '<<s.antecedent_refs.size();for(const auto& x:s.antecedent_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(s.attribution_ref)<<' '<<std::quoted(s.modality_kind)<<' '<<std::quoted(s.temporal_role)<<' '<<std::quoted(s.parent_ref)<<' '<<s.packet_refs.size();for(const auto& x:s.packet_refs)o<<' '<<std::quoted(x);o<<' '<<std::quoted(add.source_snapshot);return o.str();}
@@ -834,9 +834,12 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
     const std::string& parent_cluster_id, const std::string& classification,
     const std::string& partition_key, const std::string& member_node_id,
     const std::string& relation_prefix, std::string& assigned_cluster_id,
-    std::string& error) const {
+    std::string& error, double membership_weight) const {
  error.clear();
  assigned_cluster_id.clear();
+ if(!std::isfinite(membership_weight)||membership_weight<0.0||membership_weight>1.0){
+  error="CLUSTER_CLASSIFICATION_WEIGHT_INVALID";return false;
+ }
  if(parent_cluster_id.empty()||classification.empty()||partition_key.empty()||
     member_node_id.empty()||relation_prefix.empty()||
     parent_cluster_id.size()>1024||classification.size()>128||
@@ -875,7 +878,7 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
  const auto relation_matches=[&](const GraphRelation& relation, const std::string& id,
       const std::string& from, const std::string& to) {
   return relation.id==id&&relation.kind==RelationKind::Contains&&
-         relation.from==from&&relation.to==to;
+         relation.from==from&&relation.to==to&&relation.weight==membership_weight;
  };
  bool parent_edge_exists=false,member_edge_exists=false;
  const auto validate_edge=[&](const std::string& id,const std::string& from,
@@ -905,7 +908,7 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
       parent_cluster_id,cluster_id}});
  if(!member_edge_exists)
   delta.relations.push_back({{member_relation,RelationKind::Contains,
-      cluster_id,member_node_id}});
+      cluster_id,member_node_id,membership_weight}});
  assigned_cluster_id=cluster_id;
  return true;
 }
