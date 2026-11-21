@@ -65,7 +65,7 @@ jobs:
       - name: Install and consume native CMake package
         run: |
           cmake --install build --config Release --prefix stage
-          cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH=stage -DCMAKE_BUILD_TYPE=Release
+          cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/stage" -DCMAKE_BUILD_TYPE=Release
           cmake --build build-consumer --config Release --parallel
           ctest --test-dir build-consumer -C Release --output-on-failure
 
