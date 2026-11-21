@@ -71,7 +71,7 @@ def main() -> int:
             queue.append(requirement.name)
             root_dependency_names.add(normalized(requirement.name))
     visited: dict[str, dict] = {}
-    edges: dict[str, set[str]] = {root["bom-ref"]: set()}
+    edges: dict[str, set[str]] = {}
     while queue:
         name = queue.pop(0)
         key = normalized(name)
