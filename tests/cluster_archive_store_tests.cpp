@@ -62,7 +62,10 @@ int main() {
     CHECK(plan.ineligible_member_ids.size() == 2);
     CHECK(graph.nodes().count("exclusive") == 1);
     CHECK(graph.nodes().count("shared") == 1);
-    ResourceBudget budget(ResourceBudgetLimits::temporary_edge_200mb());
+    auto archive_budget_limits = ResourceBudgetLimits::temporary_edge_200mb();
+    archive_budget_limits.retained_events = 4096;
+    archive_budget_limits.retained_clusters = 256;
+    ResourceBudget budget(archive_budget_limits);
     BudgetedContextGraph budgeted(graph, budget);
     std::string detach_error;
     if (!budgeted.recover(detach_error)) {
