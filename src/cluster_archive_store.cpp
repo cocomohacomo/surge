@@ -1660,7 +1660,7 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
 
   result.added_nodes = delta.nodes.size();
   result.added_relations = delta.relations.size();
-  if (delta.nodes.empty() && delta.relations.empty()) {
+  if (delta.nodes.empty() && delta.relations.empty() && !delta.focus) {
     // The complete archive has been checked and every graph record already
     // exists identically. Avoid submitting an empty semantic delta, which has
     // no journal event and therefore no durable transaction identity.
