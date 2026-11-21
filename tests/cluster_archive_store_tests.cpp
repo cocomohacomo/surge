@@ -198,7 +198,7 @@ focus_history 0
       const auto focus_history_marker = focus_history_record.payload.find(empty_focus_history);
       CHECK(focus_history_marker != std::string::npos);
       focus_history_record.payload.replace(focus_history_marker, empty_focus_history.size(),
-          "focus_history 1\nfocus \"focus-cluster\" \"focus-interest\" 0\n");
+          "focus_history 1\nfocus \"focus-cluster\" \"\" 0\n");
       const auto unsupported_focus_history = restore_cluster_archive_graph_records(
           focus_history_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus-history", "restore-focus-history-key");
