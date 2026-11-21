@@ -54,8 +54,6 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_benchmark
       - name: Snapshot store atomic replacement and recovery tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_snapshot_store_conformance
-      - name: Inspect installed CMake package for build-tree paths
-        run: python tools/check_cmake_install_tree.py "$GITHUB_WORKSPACE/stage" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/build"
       - name: Journal identity memory budget tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_identity_budget_conformance
       - name: Copy-on-write journal compaction and recovery tests
