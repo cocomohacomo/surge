@@ -8,16 +8,17 @@ that all filesystems or storage devices provide identical guarantees.
 
 ## Writer ownership
 
-- A journal has exactly one active writer process at a time.
+- A journal and each snapshot path have exactly one active writer process at a time.
 - The writer lock is an operating-system lock on the adjacent `.lock` file.
   POSIX uses non-blocking exclusive `flock`; Windows opens the lock file with
   zero sharing.
 - A competing process must fail to open the journal with
   `JOURNAL_WRITER_LOCKED`. It must not delete or replace the lock file while
   another process may own it.
-- Multiple readers are not a supported consistency contract while a writer is
-  active. Use the journal tail/backup tooling against a quiescent journal or a
-  verified backup.
+- Snapshot writes use the same adjacent `.lock` convention and exclusive OS lock. Separate SnapshotStore instances and processes cannot replace the same generation concurrently.
+- Multiple readers are not a supported consistency contract while a journal writer is
+  active. Snapshot readers may read atomically replaced generations and verify the
+  primary or backup, but should prefer quiescent backups for forensic inspection.
 - Lock correctness on NFS, SMB, cloud-synchronized folders, FUSE, and other
   network or user-space filesystems is not guaranteed. Use a local filesystem.
 
@@ -69,7 +70,8 @@ require independent qualification and are not covered by this contract.
 
 ## Recovery test obligations
 
-CI exercises frame append/sync fault injection, truncated journal tails,
+CI exercises snapshot writer exclusion, pre-rename and post-rename failure
+injection, frame append/sync fault injection, truncated journal tails,
 checksum corruption, competing writer processes, interrupted snapshot streams,
 corrupt primary fallback, and atomic replacement on Linux, macOS, and Windows.
 These tests validate software recovery paths. They do not simulate physical
