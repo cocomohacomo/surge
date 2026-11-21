@@ -1,4 +1,5 @@
 #include "surge/language_runtime.hpp"
+#include "surge/sha256.hpp"
 #include <cassert>
 #include <filesystem>
 #include <fstream>
