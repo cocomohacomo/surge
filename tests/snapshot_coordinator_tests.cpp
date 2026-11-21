@@ -30,8 +30,19 @@ class MemoryDomain final : public surge::SnapshotDomain {
   class Prepared final : public surge::PreparedSnapshotRestore {
    public:
     Prepared(MemoryDomain* owner, std::string value) : owner_(owner), value_(std::move(value)) {}
-    void commit() noexcept override { owner_->value_ = std::move(value_); }
-   private: MemoryDomain* owner_; std::string value_;
+    bool commit() noexcept override {
+      if (owner_->fail_commit_) return false;
+      previous_ = std::move(owner_->value_);
+      owner_->value_ = std::move(value_);
+      committed_ = true;
+      return true;
+    }
+    void rollback() noexcept override {
+      if (!committed_) return;
+      owner_->value_.swap(previous_);
+      committed_ = false;
+    }
+   private: MemoryDomain* owner_; std::string value_, previous_; bool committed_{false};
   };
   std::unique_ptr<surge::PreparedSnapshotRestore> prepare_restore(
       const std::string& payload, std::string* error) override {
@@ -41,9 +52,10 @@ class MemoryDomain final : public surge::SnapshotDomain {
   std::string value() const { return value_; }
   void set_value(std::string value) { value_ = std::move(value); }
   void reject(bool value) { reject_ = value; }
+  void fail_commit(bool value) { fail_commit_ = value; }
  private:
   std::string id_, value_;
-  bool reject_{false};
+  bool reject_{false}, fail_commit_{false};
 };
 
 int main() {
@@ -68,6 +80,18 @@ int main() {
   CHECK(graph.value() == "keep-graph");
   CHECK(chaos.value() == "keep-chaos");
   chaos.reject(false);
+
+  // A commit failure after an earlier domain has published must roll every
+  // previously committed domain back to its exact pre-restore state.
+  graph.set_value("rollback-graph");
+  chaos.set_value("rollback-chaos");
+  chaos.fail_commit(true);
+  CHECK(!coordinator.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(graph.value() == "rollback-graph");
+  CHECK(chaos.value() == "rollback-chaos");
+  chaos.fail_commit(false);
+
   CHECK(!coordinator.restore(bytes, "wrong-context", 7, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 8, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
