@@ -495,5 +495,29 @@ int main() {
   }
   std::remove(reclaim_path.c_str());
 
+  // Open-world unresolved admission is available through the shared budget
+  // gateway, so provisional retention is subject to the same Core limits.
+  const std::string unresolved_path = "budgeted_unresolved_membership_test.journal";
+  std::remove(unresolved_path.c_str());
+  {
+    EventJournal journal(unresolved_path);assert(journal.open());
+    ContextGraph graph(journal);assert(graph.open());
+    ResourceBudgetLimits limits;limits.resident_bytes=65536;
+    limits.transient_bytes=65536;limits.retained_events=64;limits.retained_clusters=8;
+    ResourceBudget budget(limits);BudgetedContextGraph guarded(graph,budget);
+    std::string error,chaos_id,edge_id;
+    assert(guarded.recover(error));
+    SemanticDelta admission;admission.delta_id="budgeted-unresolved-admission";
+    admission.idempotency_key="budgeted-unresolved-admission";
+    admission.expected_state_version=0;
+    admission.nodes={{{"unclassified-observation",NodeKind::Entity,"initial observation",{}}}};
+    const auto admitted=guarded.append_unresolved_membership(std::move(admission),
+        "unclassified-observation",chaos_id,edge_id,error);
+    assert(admitted.committed&&chaos_id=="surge:chaos:unresolved-root");
+    assert(graph.cluster_membership_reference_count("unclassified-observation")==1);
+    assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::RetainedClusters)]==1);
+  }
+  std::remove(unresolved_path.c_str());
+
   return 0;
 }
