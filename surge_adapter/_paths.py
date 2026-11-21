@@ -33,10 +33,16 @@ def native_core_candidates(explicit: str | Path | None = None) -> list[Path]:
         names = ("libsurge_core.so",)
     candidates: list[Path] = []
     if explicit is not None:
-        candidates.append(Path(explicit).expanduser())
+        selected = Path(explicit).expanduser()
+        if selected.is_file():
+            return [selected]
+        raise FileNotFoundError(f"SURGE_CORE_LIBRARY_NOT_FOUND:{selected}")
     configured = os.environ.get("SURGE_CORE_LIBRARY")
     if configured:
-        candidates.append(Path(configured).expanduser())
+        selected = Path(configured).expanduser()
+        if selected.is_file():
+            return [selected]
+        raise FileNotFoundError(f"SURGE_CORE_LIBRARY_NOT_FOUND:{selected}")
 
     prefixes: list[Path] = []
     configured_prefix = os.environ.get("SURGE_CORE_PREFIX")
