@@ -10,8 +10,9 @@ decision.
 
 - Native Core: C++17 shared library with a C ABI.
 - Build system: CMake.
-- Python: adapter modules are currently source-tree modules; no standalone
-  wheel is published yet.
+- Python: a standalone adapter wheel builds and installs in an isolated
+  environment; the wheel does not bundle the native Core binary. The native
+  library remains a separately installed artifact.
 - Core state: journal-backed, single-process writer model. Multi-process
   writer coordination is not supported.
 - Resource limits: logical admission budgets are available through the
@@ -31,18 +32,20 @@ decision.
 - [x] External consumer smoke project.
 - [ ] Linux, macOS, and Windows install/consumer tests all green on the same
   commit.
-- [ ] ABI versioning and compatibility policy documented and tested.
+- [x] Provisional runtime ABI version query and compatibility policy documented.
+- [ ] ABI symbol/layout diff automation and compatibility matrix.
 - [ ] Install-tree inspection confirms no build-tree paths leak into exports.
 
 ### Gate B: reproducible developer integration
 
 - [x] Build and CTest instructions.
 - [x] Schema/fixture and Python regression CI.
-- [ ] Standalone Python package metadata and wheel build.
+- [x] Standalone Python package metadata and wheel build in CI.
 - [ ] Python package locates the installed native library deterministically.
 - [ ] Clean-environment install test with no repository checkout on
   `PYTHONPATH`.
-- [ ] Versioned public C ABI header and API compatibility test.
+- [x] Public C ABI version macros, runtime query, and conformance test.
+- [ ] Complete public symbol manifest and ABI compatibility automation.
 
 ### Gate C: persistence and recovery safety
 
