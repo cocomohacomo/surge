@@ -137,6 +137,30 @@ int main() {
   CHECK(stream_graph.value() == "atomic-graph");
   CHECK(stream_chaos.value() == "atomic-chaos");
   stream_chaos.reject(false);
+
+  // The store-backed path uses the same rollback contract after every domain
+  // has prepared and an earlier domain has already published.
+  stream_graph.set_value("store-rollback-graph");
+  stream_chaos.set_value("store-rollback-chaos");
+  stream_chaos.fail_commit(true);
+  CHECK(!stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(stream_graph.value() == "store-rollback-graph");
+  CHECK(stream_chaos.value() == "store-rollback-chaos");
+  stream_chaos.fail_commit(false);
+
+  // The checkpoint-plus-tail path also rolls back a previously committed
+  // domain when a later domain refuses publication.
+  stream_graph.set_value("tail-rollback-graph");
+  stream_chaos.set_value("tail-rollback-chaos");
+  stream_chaos.fail_commit(true);
+  CHECK(!stream_coordinator.restore_with_tail(stream_bytes, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(stream_graph.value() == "tail-rollback-graph");
+  CHECK(stream_chaos.value() == "tail-rollback-chaos");
+  stream_chaos.fail_commit(false);
   std::filesystem::remove(stream_store_path, cleanup_error);
   std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
   std::filesystem::remove(stream_journal_path, cleanup_error);
