@@ -36,14 +36,13 @@ int main() {
     seed.nodes.push_back({{"exclusive", NodeKind::Entity, "exclusive payload", {}}});
     seed.nodes.push_back({{"shared", NodeKind::Entity, "shared payload", {}}});
     seed.nodes.push_back({{"question", NodeKind::Question, "not detachable entity", {}}});
-    seed.nodes.push_back({{"reference-owner", NodeKind::Evidence, "owner", {"reference-middle"}}});
     seed.nodes.push_back({{"reference-middle", NodeKind::Claim, "middle", {"reference-leaf"}}});
     seed.nodes.push_back({{"reference-leaf", NodeKind::Evidence, "leaf", {}}});
     seed.relations.push_back({{"a-exclusive", RelationKind::Contains, "archive-a", "exclusive"}});
     seed.relations.push_back({{"a-shared", RelationKind::Contains, "archive-a", "shared"}});
     seed.relations.push_back({{"b-shared", RelationKind::Contains, "archive-b", "shared"}});
     seed.relations.push_back({{"a-question", RelationKind::Contains, "archive-a", "question"}});
-    seed.relations.push_back({{"a-reference-owner", RelationKind::Contains, "archive-a", "reference-owner"}});
+    seed.relations.push_back({{"a-reference-middle", RelationKind::Contains, "archive-a", "reference-middle"}});
     CHECK(graph.apply(seed).committed);
     const auto plan = plan_cluster_archive_detach(graph, "archive-a",
         {"exclusive", "shared", "question", "missing", "exclusive"});
