@@ -113,19 +113,20 @@ int main() {
         "claim_validity_histories 1\nclaim_history \"c1\" 1\n"
         "claim_validity \"c1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 1\n"
         "evidence_validity_histories 1\nevidence_history \"e1\" 1\n"
-        "evidence_validity \"e1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 2\n";
+        "evidence_validity \"e1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 2\n"
+        "dependency_evaluations 0\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_histories, &detach_error));
     const std::string valid_dependency =
-        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark " + std::to_string(graph.state_version()) +
-        "\\ncluster \\"cluster-a\\"\\nnodes 3\\n"
-        "node \\"dep1\\" 7 \\"dependency\\" 2 \\"q1\\" \\"q2\\"\\n"
-        "node \\"q1\\" 5 \\"prerequisite\\" 0\\n"
-        "node \\"q2\\" 5 \\"dependent\\" 0\\n"
-        "relations 0\\nhas_focus 0\\nfocus_history 0\\nscope_spans 0\\n"
-        "claim_validity_histories 0\\nevidence_validity_histories 0\\n"
-        "dependency_evaluations 1\\ndependency \\"delta-1\\" \\"delta-1\\" 1\\n"
-        "trigger \\"dep1\\" \\"q1\\" \\"q2\\"\\n"
-        "impacted 2 \\"q1\\" \\"q2\\"\\nrejected 0\\n";
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version()) +
+        "\ncluster \"cluster-a\"\nnodes 3\n"
+        "node \"dep1\" 7 \"dependency\" 2 \"q1\" \"q2\"\n"
+        "node \"q1\" 5 \"prerequisite\" 0\n"
+        "node \"q2\" 5 \"dependent\" 0\n"
+        "relations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\n"
+        "claim_validity_histories 0\nevidence_validity_histories 0\n"
+        "dependency_evaluations 1\ndependency \"delta-1\" \"delta-1\" 1\n"
+        "trigger \"dep1\" \"q1\" \"q2\"\n"
+        "impacted 2 \"q1\" \"q2\"\nrejected 0\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_dependency, &detach_error));
     std::string bad_dependency_endpoint = valid_dependency;
     const auto bad_endpoint_pos = bad_dependency_endpoint.find("trigger \\"dep1\\" \\"q1\\" \\"q2\\"");
