@@ -17,11 +17,16 @@ decision.
   writer coordination is not supported.
 - Resource limits: logical admission budgets are available through the
   guarded C ABI. They are not an operating-system RSS cap.
-- Language runtime: registry and manifest metadata are implemented, but
-  complete package loading, signature verification, and executable language
-  resource activation are not complete.
-- Archive restore: graph/current Focus restoration is limited. Non-empty
-  unsupported history domains fail closed rather than being silently dropped.
+- Language runtime: bounded manifest/session registry and a directory-backed
+  data-only resource verifier are implemented. Per-resource SHA-256, path
+  containment, symlink rejection, unpacked-byte limits and native-module
+  rejection are checked before callers install metadata. This is not yet a
+  package archive parser, signature verifier, immutable resource loader or
+  executable morphology/lexicon runtime.
+- Archive restore: ClusterArchive v2 imports all serialized ContextGraph
+  history domains through one durable journal transaction with restart replay.
+  Archive publication plus source-graph detachment remains a staged
+  two-resource operation.
 
 ## Rollout gates
 
@@ -70,6 +75,10 @@ decision.
 - [x] Logical resident/transient/event/cluster/candidate/evidence budgets.
 - [x] Guarded C ABI mutation gateway.
 - [ ] All production mutation paths routed through guarded APIs.
+- [x] Directory-backed language resource verification: canonical-root
+  containment, per-component symlink rejection, duplicate/path/kind checks,
+  exact byte counts, bounded 64 KiB streaming SHA-256, aggregate unpacked-byte
+  limits, and native-module rejection are covered by C++ conformance tests.
 - [x] CI EventJournal profile records append percentiles, replay time, identity-index usage, and peak RSS for a bounded 10,000-event workload.
 - [ ] Peak RSS measured under representative long-running semantic streams on declared reference hardware.
 - [ ] Restore, compaction and backup peak-memory measurements.
@@ -125,3 +134,10 @@ that all cognitive features are complete.
 
 Do not merge PR #139 or change repository visibility as part of this rollout
 work unless the repository owner explicitly requests that action.
+
+
+## Language resource verification increment (2026-11-21)
+
+verify_language_package_directory validates caller-supplied resource descriptors against a directory-backed data-only pack. It rejects absolute, dot-segment, backslash and drive-qualified paths; duplicate paths; unsupported resource kinds including native_module; symlink components; files outside the canonical root; size mismatches; SHA-256 mismatches; resource-count excess; and aggregate unpacked-byte excess. File contents are hashed incrementally in 64 KiB chunks. This path does not materialize resource contents and must be run against a package directory that the caller keeps immutable for the verification-to-use interval.
+
+This is a verification primitive, not a complete package loader. It does not parse or authenticate the JSON manifest, verify a publisher signature or whole-package archive digest, retain immutable file handles, load language resources into resident memory, execute morphology/lexicon/n-gram engines, or provide atomic activation rollback. Those remain explicit rollout gates. The test covers valid resource acceptance, tamper/size rejection, path traversal rejection and native-module rejection. Latest-head CI is required before this increment is considered verified.
