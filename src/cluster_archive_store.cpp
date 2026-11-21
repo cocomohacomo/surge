@@ -350,10 +350,19 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   };
   std::istringstream input(payload);
   std::string line;
-  for (int i = 0; i < 3; ++i)
-    if (!std::getline(input, line))
-      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::uint64_t archive_watermark = 0;
+  {
+    std::istringstream watermark_row(line);
+    std::string tag, extra;
+    if (!(watermark_row >> tag >> archive_watermark) || tag != "watermark" ||
+        archive_watermark == 0 || (watermark_row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  }
+  if (!std::getline(input, line) || !std::getline(input, line))
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   auto parse_count = [](const std::string& row_text, const char* expected,
                         std::size_t& count) {
@@ -668,6 +677,91 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
           scope_kind == ScopeKind::TableHeader) && parent.empty()))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
   }
+
+  auto parse_history_header = [&](const char* expected, std::size_t& count) {
+    return std::getline(input, line) && parse_count(line, expected, count) &&
+        count <= node_count;
+  };
+  auto parse_validity_record = [&](const std::string& record_tag,
+      const std::string& owner, NodeKind owner_kind, std::uint64_t& previous_revision,
+      std::uint64_t& previous_version, bool claim_record) {
+    if (!std::getline(input, line)) return false;
+    std::istringstream row(line);
+    std::string tag, subject, valid_from, valid_until, basis, review, reviewer, extra;
+    std::uint64_t revision = 0, recorded_version = 0;
+    if (!(row >> tag >> std::quoted(subject) >> std::quoted(valid_from) >>
+          std::quoted(valid_until) >> std::quoted(basis) >> revision >>
+          std::quoted(review) >> std::quoted(reviewer) >> recorded_version) ||
+        tag != record_tag || subject != owner || subject.empty() ||
+        !node_ids.count(subject) ||
+        node_kinds.at(subject) != static_cast<unsigned>(owner_kind) ||
+        valid_from.empty() || basis.empty() || !node_ids.count(basis) ||
+        node_kinds.at(basis) != static_cast<unsigned>(NodeKind::Evidence) ||
+        (review.empty() != reviewer.empty()) ||
+        (!review.empty() && (!node_ids.count(review) ||
+          node_kinds.at(review) != static_cast<unsigned>(NodeKind::Evidence))) ||
+        revision != previous_revision + 1 || recorded_version == 0 ||
+        recorded_version > archive_watermark || recorded_version < previous_version ||
+        (row >> extra))
+      return false;
+    if (claim_record) {
+      const auto& refs = node_reference_map.at(subject);
+      const bool linked = std::find(refs.begin(), refs.end(), basis) != refs.end();
+      bool supported = false;
+      for (const auto& edge_line : relation_ids) { (void)edge_line; }
+      if (!linked && node_kinds.at(subject) != static_cast<unsigned>(NodeKind::Claim))
+        return false;
+    }
+    previous_revision = revision;
+    previous_version = recorded_version;
+    return true;
+  };
+  std::size_t claim_history_count = 0;
+  if (!parse_history_header("claim_validity_histories", claim_history_count))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+  std::set<std::string> claim_history_ids;
+  for (std::size_t i = 0; i < claim_history_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+    std::istringstream row(line);
+    std::string tag, owner, extra;
+    std::size_t count = 0;
+    if (!(row >> tag >> std::quoted(owner) >> count) || tag != "claim_history" ||
+        owner.empty() || !node_ids.count(owner) ||
+        node_kinds.at(owner) != static_cast<unsigned>(NodeKind::Claim) ||
+        count == 0 || count > payload.size() ||
+        !claim_history_ids.insert(owner).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+    std::uint64_t revision = 0, recorded_version = 0;
+    for (std::size_t j = 0; j < count; ++j)
+      if (!parse_validity_record("claim_validity", owner, NodeKind::Claim,
+                                 revision, recorded_version, true))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+  }
+
+  std::size_t evidence_history_count = 0;
+  if (!parse_history_header("evidence_validity_histories", evidence_history_count))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
+  std::set<std::string> evidence_history_ids;
+  for (std::size_t i = 0; i < evidence_history_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
+    std::istringstream row(line);
+    std::string tag, owner, extra;
+    std::size_t count = 0;
+    if (!(row >> tag >> std::quoted(owner) >> count) || tag != "evidence_history" ||
+        owner.empty() || !node_ids.count(owner) ||
+        node_kinds.at(owner) != static_cast<unsigned>(NodeKind::Evidence) ||
+        count == 0 || count > payload.size() ||
+        !evidence_history_ids.insert(owner).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
+    std::uint64_t revision = 0, recorded_version = 0;
+    for (std::size_t j = 0; j < count; ++j)
+      if (!parse_validity_record("evidence_validity", owner, NodeKind::Evidence,
+                                 revision, recorded_version, false))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
+  }
+
   if (error) error->clear();
   return true;
 }
