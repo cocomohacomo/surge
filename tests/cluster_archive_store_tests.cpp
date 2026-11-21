@@ -119,8 +119,7 @@ int main() {
         "evidence_validity_histories 1\nevidence_history \"e1\" 1\n"
         "evidence_validity \"e1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 2\n"
         "dependency_evaluations 0\n"
-        "reassessment_histories 0\nquestion_states 1\n"
-        "question_state \"q1\" 0 0\n"
+        "reassessment_histories 0\nquestion_states 0\n"
         "question_aspect_states 0\nclaim_lifecycle_states 1\n"
         "claim_status \"c1\" 0\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_histories, &detach_error));
