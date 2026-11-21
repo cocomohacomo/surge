@@ -35,9 +35,10 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
 
 // Restores validated graph nodes/relations and the current Focus in one guarded
 // semantic transaction. Existing identical records are idempotently retained;
-// conflicting IDs abort before any graph mutation. Historical Focus entries,
-// ScopeSpan, validity/dependency/reassessment histories, Question states and
-// Claim lifecycle states are validated but are not imported by this operation.
+// conflicting IDs abort before any graph mutation. Unsupported non-empty
+// ScopeSpan, validity, dependency, reassessment and Claim lifecycle histories
+// fail closed rather than being silently discarded. Historical Focus and
+// Question state import remain separate follow-up work.
 struct ClusterArchiveGraphRestoreResult {
   bool committed{false};
   bool duplicate{false};
