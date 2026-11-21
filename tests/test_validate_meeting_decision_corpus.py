@@ -8,7 +8,7 @@ from tools.validate_meeting_decision_corpus import validate_corpus
 
 
 class FrozenGoldCorpusValidationTests(unittest.TestCase):
-    def build_corpus(self, root: Path, leak=False, bad_span=False, bad_adjudication=False):
+    def build_corpus(self, root: Path, leak=False, bad_span=False, bad_adjudication=False, annotation_disagreement=False):
         cases, gold, annotations = [], [], []
         for index, split in enumerate(("train", "dev", "test"), 1):
             source = f"会議{index}で予算案を承認する。"
@@ -30,11 +30,14 @@ class FrozenGoldCorpusValidationTests(unittest.TestCase):
                 adjudicated["action"] = "別の決定"
             gold.append({"case_id": f"case-{index}", "source_sha256": digest,
                          "items": [item]})
+            second_annotation_item = dict(item)
+            if annotation_disagreement and index == 1:
+                second_annotation_item["action"] = "別の決定"
             annotations.append({
                 "case_id": f"case-{index}",
                 "annotations": [
                     {"annotator_id": "ann-01", "items": [item]},
-                    {"annotator_id": "ann-02", "items": [item]},
+                    {"annotator_id": "ann-02", "items": [second_annotation_item]},
                 ],
                 "adjudication": {
                     "adjudicator_id": "adj-01", "status": "RESOLVED",
@@ -61,6 +64,13 @@ class FrozenGoldCorpusValidationTests(unittest.TestCase):
             "annotation_guide_version": "test-1", "taxonomy_version": "test-1",
             "split_counts": split_counts,
             "minimums": {"meetings": 1, "items": 1, "critical_items": 1},
+            "inter_annotator_agreement": {
+                "minimum_action_f1": 0.80,
+                "minimum_owner_agreement": 0.80,
+                "minimum_deadline_agreement": 0.80,
+                "minimum_criticality_agreement": 0.90,
+                "minimum_evidence_span_agreement": 0.95,
+            },
         }
         manifest_path = root / "manifest.json"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -74,6 +84,18 @@ class FrozenGoldCorpusValidationTests(unittest.TestCase):
             self.assertEqual(result["status"], "VALID_FROZEN_CORPUS")
             self.assertTrue(result["pilot_sample_ready"])
             self.assertEqual(result["meeting_count"], 3)
+            self.assertEqual(result["inter_annotator_agreement"]["gate"], "PASS")
+            self.assertEqual(result["inter_annotator_agreement"]["action_f1"], 1.0)
+
+    def test_low_inter_annotator_agreement_blocks_held_out_evaluation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths, manifest = self.build_corpus(
+                Path(directory), annotation_disagreement=True)
+            result = validate_corpus(paths["cases.jsonl"], paths["gold.jsonl"],
+                                     paths["annotations.jsonl"], manifest)
+            self.assertTrue(result["pilot_sample_ready"])
+            self.assertEqual(result["inter_annotator_agreement"]["gate"], "FAIL")
+            self.assertEqual(result["evaluation_gate"], "INTER_ANNOTATOR_AGREEMENT_FAIL")
 
     def test_meeting_level_split_leakage_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
