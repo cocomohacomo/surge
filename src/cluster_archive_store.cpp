@@ -1631,21 +1631,7 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
       return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_SEMANTICS_INVALID");
   }
 
-  if (!read_header("claim_lifecycle_states", count))
-    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-  for (std::size_t i = 0; i < count; ++i) {
-    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-    std::istringstream row(line);
-    std::string id, extra;
-    unsigned status = 0;
-    if (!(row >> tag >> std::quoted(id) >> status) ||
-        tag != "claim_status" || status > static_cast<unsigned>(ClaimStatus::Retracted) ||
-        (row >> extra) || !state.nodes.count(id) ||
-        state.nodes.at(id).kind != NodeKind::Claim)
-      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
-  }
-
+  std::vector<TemporalReassessmentRecord> pending_reassessments;
   if (!read_header("reassessment_histories", count))
     return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
   for (std::size_t i = 0; i < count; ++i) {
@@ -1733,8 +1719,7 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
       event_payload << std::quoted(record.previous_hash) << ' '
           << std::quoted(record.snapshot_digest) << ' '
           << std::quoted(record.chain_hash) << ' ' << std::quoted(snapshot.str());
-      if (!graph.apply_reassessment(state, record, error))
-        return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_SEMANTICS_INVALID");
+      pending_reassessments.push_back(std::move(record));
     }
   }
 
@@ -1769,6 +1754,26 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
         state.nodes.at(id).kind != NodeKind::QuestionAspect)
       return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_INVALID");
     state.question_aspect_statuses[id] = static_cast<QuestionAspectStatus>(status);
+  }
+
+  if (!read_header("claim_lifecycle_states", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    std::istringstream row(line);
+    std::string id, extra;
+    unsigned status = 0;
+    if (!(row >> tag >> std::quoted(id) >> status) ||
+        tag != "claim_status" || status > static_cast<unsigned>(ClaimStatus::Retracted) ||
+        (row >> extra) || !state.nodes.count(id) ||
+        state.nodes.at(id).kind != NodeKind::Claim)
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
+  }
+
+  for (const auto& record : pending_reassessments) {
+    if (!graph.apply_reassessment(state, record, error))
+      return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_SEMANTICS_INVALID");
   }
 
   if (std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_TRAILING_DATA");
