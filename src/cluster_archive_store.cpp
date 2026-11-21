@@ -1570,6 +1570,15 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
 
   result.added_nodes = delta.nodes.size();
   result.added_relations = delta.relations.size();
+  if (delta.nodes.empty() && delta.relations.empty()) {
+    // The complete archive has been checked and every graph record already
+    // exists identically. Avoid submitting an empty semantic delta, which has
+    // no journal event and therefore no durable transaction identity.
+    result.committed = true;
+    result.duplicate = true;
+    result.committed_state_version = graph.state_version();
+    return result;
+  }
   const auto committed = budgeted_graph.apply(delta);
   if (!committed.committed)
     return fail(committed.error.empty() ?
