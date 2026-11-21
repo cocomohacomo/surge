@@ -67,6 +67,29 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                     })
                 self.assertEqual(core.state_version, before)
 
+    def test_cognition_observation_is_read_only_versioned_and_structured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "cognition-observation.sgj") as core:
+                before = core.state_version
+                observed = core.observe_cognition()
+                self.assertEqual(observed["state_version"], before)
+                self.assertEqual(observed["nodes"], [])
+                self.assertEqual(observed["memberships"], [])
+                self.assertIsNone(observed["current_focus"])
+                self.assertEqual(core.state_version, before)
+                core.apply_semantic_delta({
+                    "delta_id": "observe-node",
+                    "idempotency_key": "observe-node",
+                    "expected_state_version": before,
+                    "nodes": [{"id": "observed-entity", "kind": "ENTITY",
+                               "content": "外部観測テスト"}],
+                    "relations": [],
+                })
+                after = core.observe_cognition()
+                self.assertEqual(after["state_version"], core.state_version)
+                self.assertEqual(after["state_version"], before + 1)
+                self.assertEqual(after["nodes"][0]["id"], "observed-entity")
+
     def test_resource_budget_profile_requires_all_nonnegative_limits(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "resource_limits must define exactly"):
