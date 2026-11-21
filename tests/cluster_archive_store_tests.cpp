@@ -7,12 +7,8 @@
 #include <sstream>
 #include <iomanip>
 namespace {
-                         const std::string& body = "nodes 0
-relations 0
-has_focus 0
-focus_history 0
-") {
-                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\n") {
+std::string make_payload(const std::string& cluster, std::uint64_t version,
+                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\n") {
   std::ostringstream out;
   out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " << version
       << "\ncluster " << std::quoted(cluster) << "\n" << body;
