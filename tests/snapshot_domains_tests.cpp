@@ -48,6 +48,54 @@ int main() {
   CHECK(chaos.create("tx-create-a", "idem-create-a", journal.state_version(),
                      "chaos-a", cp).committed);
 
+  // Seed every nested Chaos history family before the checkpoint so the
+  // snapshot path, not only journal replay, must preserve the full record.
+  ChaosMember chaos_member_a{"chaos-member-a", "chaos-event-a", "NO_STABLE_TOPIC",
+      "2026-11-19T00:00:01Z", "", cp};
+  ChaosMember chaos_member_b{"chaos-member-b", "chaos-event-b", "CREATIVE_EXPLORATION",
+      "2026-11-19T00:00:02Z", "", cp};
+  CHECK(chaos.admit_member("chaos-member-a-add", "chaos-member-a-add",
+      journal.state_version(), "chaos-a", chaos_member_a).committed);
+  CHECK(chaos.admit_member("chaos-member-b-add", "chaos-member-b-add",
+      journal.state_version(), "chaos-a", chaos_member_b).committed);
+  CHECK(chaos.revise_membership("chaos-member-a-review", "chaos-member-a-review",
+      journal.state_version(), "chaos-a", "chaos-member-a", "REVIEWED", true, cp).committed);
+  ChaosAssociation chaos_association{"chaos-association-a", "chaos-member-a",
+      "chaos-member-b", ChaosAssociationType::Analogy,
+      ChaosAssociationStatus::Provisional, cp};
+  chaos_association.valid_from = "2026-11-19T00:00:00Z";
+  chaos_association.valid_until = "2026-11-20T00:00:00Z";
+  CHECK(chaos.propose_association("chaos-association-add", "chaos-association-add",
+      journal.state_version(), "chaos-a", chaos_association).committed);
+  CHECK(chaos.review_association("chaos-association-review", "chaos-association-review",
+      journal.state_version(), "chaos-a", "chaos-association-a",
+      ChaosAssociationStatus::Rejected, cp).committed);
+  ChaosPatternHypothesis chaos_hypothesis;
+  chaos_hypothesis.hypothesis_id = "chaos-hypothesis-a";
+  chaos_hypothesis.statement = "a provisional shared pattern";
+  chaos_hypothesis.member_refs = {"chaos-member-a"};
+  chaos_hypothesis.excluded_member_refs = {"chaos-member-b"};
+  chaos_hypothesis.provenance = cp;
+  CHECK(chaos.add_pattern_hypothesis("chaos-hypothesis-add", "chaos-hypothesis-add",
+      journal.state_version(), "chaos-a", chaos_hypothesis).committed);
+  CHECK(chaos.review_pattern_hypothesis("chaos-hypothesis-review",
+      "chaos-hypothesis-review", journal.state_version(), "chaos-a",
+      "chaos-hypothesis-a", "REVIEWABLE", "UNVERIFIED",
+      {{"chaos-member-b", "insufficient independent support"}}, cp).committed);
+  ChaosScoreObservation chaos_score{0.83, "snapshot-scorer", "1.0",
+      "snapshot-policy", "2026-11-19T00:03:00Z"};
+  CHECK(chaos.record_observation("chaos-score-record", "chaos-score-record",
+      journal.state_version(), "chaos-a", "novelty", chaos_score).committed);
+  CHECK(chaos.record_entity_observation("chaos-member-score", "chaos-member-score",
+      journal.state_version(), "chaos-a", "MEMBER", "chaos-member-a", chaos_score).committed);
+  CHECK(chaos.record_entity_observation("chaos-association-score", "chaos-association-score",
+      journal.state_version(), "chaos-a", "ASSOCIATION", "chaos-association-a", chaos_score).committed);
+  CHECK(chaos.record_entity_observation("chaos-hypothesis-score", "chaos-hypothesis-score",
+      journal.state_version(), "chaos-a", "HYPOTHESIS", "chaos-hypothesis-a", chaos_score).committed);
+  CHECK(chaos.transition("chaos-a-reviewable", "chaos-a-reviewable",
+      journal.state_version(), "chaos-a", ChaosLifecycle::Reviewable,
+      "checkpoint history fixture", cp).committed);
+
   EvidenceProvenance ep;
   ep.evidence_id = "evidence-a";
   ep.revision = 1;
@@ -152,6 +200,19 @@ int main() {
   }
   CHECK(evidence.history().at("evidence-a").size() == 2);
   CHECK(chaos.list().size() == 2);
+  ChaosCluster restored_chaos;
+  CHECK(chaos.get("chaos-a", restored_chaos));
+  CHECK(restored_chaos.lifecycle_history.size() == 3);
+  CHECK(restored_chaos.members.at("chaos-member-a").membership_history.size() == 2);
+  CHECK(restored_chaos.members.at("chaos-member-a").membership_status == "REVIEWED");
+  CHECK(restored_chaos.associations.at("chaos-association-a").history.size() == 2);
+  CHECK(restored_chaos.associations.at("chaos-association-a").valid_from == "2026-11-19T00:00:00Z");
+  CHECK(restored_chaos.associations.at("chaos-association-a").confidence_observations.size() == 1);
+  CHECK(restored_chaos.pattern_hypotheses.at("chaos-hypothesis-a").history.size() == 2);
+  CHECK(restored_chaos.pattern_hypotheses.at("chaos-hypothesis-a").exclusion_reasons.at("chaos-member-b") == "insufficient independent support");
+  CHECK(restored_chaos.pattern_hypotheses.at("chaos-hypothesis-a").confidence_observations.size() == 1);
+  CHECK(restored_chaos.members.at("chaos-member-a").salience_observations.size() == 1);
+  CHECK(restored_chaos.observations.at("novelty").size() == 1);
   TemporalBoundaryPending restored_boundary;
   CHECK(boundary.get("claim/A", restored_boundary));
   CHECK(restored_boundary.candidates.size() == 3);
