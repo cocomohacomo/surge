@@ -574,3 +574,54 @@ Required evidence is tracked independently: (a) focused unit tests for each vali
 7. Add cross-platform crash/fault-injection tests and then measure target-device RSS/latency/throughput under sustained load.
 
 These priorities are a sequencing recommendation. Completing an API or test alone does not close its end-to-end requirement; each item needs the evidence stated above.
+
+
+## External Cognition Observation API
+
+The Core MUST expose the committed cognition state to external SURGE models and
+integrations through a read-only observation interface. Observation is a
+first-class Core capability, not a debug-only side channel.
+
+The initial C++ contract is `ContextGraph::observe_cognition()`, also exposed
+through `BudgetedContextGraph::observe_cognition()`. It returns a detached
+snapshot with the committed state version, canonical typed nodes, typed
+relations, all active cluster memberships and their producer-supplied weights,
+unresolved ChaosCluster memberships, active Questions and Interests, current
+Focus and Focus history, unresolved scope count, and dependency-evaluation
+count. The detached snapshot cannot mutate the graph and is consistent with
+the graph state version captured by the observation.
+
+The observation contract MUST satisfy:
+
+1. **Faithfulness:** report only state actually committed in SURGE. Do not
+   invent a classification, relation, attention target, hypothesis, confidence,
+   or inferred meaning to make the view appear complete.
+2. **Read-only isolation:** observing state MUST NOT change graph version,
+   journal sequence, membership, focus, question state, or resource accounting.
+3. **Provenance and uncertainty:** producer-owned classification labels and
+   weights remain identifiable as such. Unknown or unrepresented dimensions
+   remain unknown; they MUST NOT be serialized as zero-confidence or negative
+   evidence.
+4. **Closed-loop use:** an external model may inspect an observation, perform
+   its own inference/classification, then project a new typed admission or
+   membership delta back through the Core Admission Gateway. Observation itself
+   never commits that inference.
+5. **Versioned inspection:** every observation carries the committed state
+   version so external consumers can detect stale observations and correlate
+   their next projection with the state they inspected.
+6. **No bypass:** external consumers receive a read-only projection, never
+   mutable references to Core-owned graph storage.
+
+The observation model is intentionally distinct from a future inference trace.
+When a model performs mask estimation, contextual completion, candidate
+ranking, or hypothesis generation, those are reported only when the relevant
+model actually supplies a trace record. The Core MUST distinguish observed
+committed state, externally supplied inference, and Core-derived structural
+facts. A missing inference trace MUST NOT be fabricated by the observation
+layer.
+
+The current implementation provides a detached graph-state snapshot. A
+versioned incremental observation stream, C ABI/Python bindings, inference
+trace ingestion, and model-specific mask-estimation telemetry remain
+integration work and MUST NOT be claimed as implemented until independently
+tested.
