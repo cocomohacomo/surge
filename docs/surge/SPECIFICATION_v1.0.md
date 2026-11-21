@@ -108,8 +108,28 @@ The parent cluster, child cluster, member and membership edges are committed
 in one SemanticDelta or equivalent Core-owned transaction. Retry is
 idempotent. Replay reconstructs identical cluster IDs and memberships.
 
-Adapters may provide language-specific classification hints, but they MUST NOT
-maintain a parallel context/memory graph or bypass the Core membership gateway.
+The producer (adapter, external LLM, classifier or upstream runtime) is the
+authority for classification labels and membership weights. The producer MUST
+supply the classification and its weight as part of the streaming admission
+envelope. SURGE MUST preserve these values exactly and MUST NOT infer, replace,
+renormalize, calibrate, rank or silently override them. SURGE validates only
+structural constraints (for example, finite normalized weight in [0,1]),
+deterministic identity, parent existence and transaction integrity. A rejected
+value is an explicit admission error, not an invitation for SURGE to guess.
+
+A classification is a membership assignment, not a truth assertion. One input
+may carry multiple classifications and weights and therefore belong to
+multiple clusters in the same transaction. The weight is stored on the
+member-specific Contains edge, not on the cluster, because different members
+may have different upstream scores. Parent/child hierarchy edges remain
+neutral and MUST NOT inherit a member score. Revisions append a new
+classification/membership observation with provenance; they do not rewrite
+the original source event. Classification labels and weights remain
+replaceable upstream policy outputs, while the Core owns durable placement,
+history, replay, resource admission and later graph evolution.
+
+Adapters MUST NOT maintain a parallel context/memory graph or bypass the
+Core membership gateway.
 A failed admission leaves graph version, journal watermark, membership and
 idempotency state unchanged. A resource-budget rejection applies backpressure
 or returns a retryable failure; it never silently loses input.
@@ -247,7 +267,8 @@ These are implementation increments.
 
 The following remain incomplete and MUST NOT be represented as finished:
 - all public C++, Python, ONNX and adapter ingress paths mandatorily routed
-  through the cluster membership gateway;
+  through one Core Admission Gateway that preserves producer-supplied
+  classification labels and member weights;
 - durable cluster archive/tombstone transactions and membership removal;
 - shared-member reference accounting and safe payload reclamation;
 - expiry-aware cluster retention scoring and automatic lifecycle invocation;
