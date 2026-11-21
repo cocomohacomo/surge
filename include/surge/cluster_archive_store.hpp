@@ -38,12 +38,12 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
 bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     std::string* error);
 
-// Restores validated graph nodes/relations and the current Focus in one guarded
-// semantic transaction. Existing identical records are idempotently retained;
-// conflicting IDs abort before any graph mutation. Unsupported non-empty
-// ScopeSpan, validity, dependency, reassessment and Claim lifecycle histories
-// fail closed rather than being silently discarded. Historical Focus and
-// Question state import remain separate follow-up work.
+// Restores the complete validated v2 graph archive, including graph records,
+// Focus history, ScopeSpan records, validity histories, dependency evaluations,
+// temporal reassessments, Question/QuestionAspect state and Claim lifecycle.
+// The complete import is one durable journal transaction and is replayed after
+// restart. Conflicting existing records abort before journal publication. The
+// host must quiesce graph readers/writers during the import.
 struct ClusterArchiveGraphRestoreResult {
   bool committed{false};
   bool duplicate{false};
