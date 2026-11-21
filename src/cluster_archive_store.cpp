@@ -594,8 +594,67 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         unconditional > 1 || (result >> extra))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
     const auto scope_kind = static_cast<ScopeKind>(kind);
-    if ((scope_kind == ScopeKind::Negation || scope_kind == ScopeKind::Modality ||
-         scope_kind == ScopeKind::Temporal) && !has_closer && status == 0)
+    auto targets_are = [&](std::size_t expected, NodeKind expected_kind) {
+      if (targets.size() != expected) return false;
+      for (const auto& ref : targets)
+        if (node_kinds.at(ref) != static_cast<unsigned>(expected_kind)) return false;
+      return true;
+    };
+    auto antecedents_are_entities = [&]() {
+      if (antecedents.empty()) return false;
+      for (const auto& ref : antecedents)
+        if (node_kinds.at(ref) != static_cast<unsigned>(NodeKind::Entity)) return false;
+      return true;
+    };
+    switch (scope_kind) {
+      case ScopeKind::Negation:
+        if (!targets_are(1, NodeKind::Claim) || effect != static_cast<unsigned>(ScopeEffect::NegatedClaim))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Condition:
+        if (!targets_are(2, NodeKind::Claim) || effect != static_cast<unsigned>(ScopeEffect::ConditionalRelation))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Modality:
+        if (!targets_are(1, NodeKind::Claim) || modality.empty() ||
+            effect != static_cast<unsigned>(ScopeEffect::ModalityQualified))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Concession:
+        if (!targets_are(2, NodeKind::Claim) || effect != static_cast<unsigned>(ScopeEffect::ConcessionRelation))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Contrast:
+        if (!targets_are(2, NodeKind::Claim) || effect != static_cast<unsigned>(ScopeEffect::ContrastRelation))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Coreference:
+      case ScopeKind::Anaphora:
+        if (targets.size() != 1 || !antecedents_are_entities() ||
+            effect != static_cast<unsigned>(ScopeEffect::ReferenceCandidate))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Quotation:
+        if (effect != static_cast<unsigned>(ScopeEffect::QuotationEvidence))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::Temporal:
+        if (!targets_are(1, NodeKind::Claim) || temporal_role.empty() ||
+            effect != static_cast<unsigned>(ScopeEffect::TemporalQualifier))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::ListContinuation:
+        if (parent.empty() || effect != static_cast<unsigned>(ScopeEffect::StructuralContinuation))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+      case ScopeKind::TableHeader:
+        if (parent.empty() || effect != static_cast<unsigned>(ScopeEffect::TableHeaderScope))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        break;
+    }
+    if ((scope_kind == ScopeKind::Condition || scope_kind == ScopeKind::Concession ||
+         scope_kind == ScopeKind::Contrast || scope_kind == ScopeKind::Quotation) &&
+        !has_closer && status != static_cast<unsigned>(ScopeStatus::Unresolved))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
     if (!attribution.empty() &&
         (!node_ids.count(attribution) ||
