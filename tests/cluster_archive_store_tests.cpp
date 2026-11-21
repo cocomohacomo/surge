@@ -1,4 +1,5 @@
 #include "surge/cluster_archive_store.hpp"
+#include "surge/sha256.hpp"
 #include "surge/budgeted_context_graph.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -156,6 +157,40 @@ int main() {
                                     "rejected 1 \"q1\"");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_dependency_rejection, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
+    const std::string reassessment_snapshot =
+        "\"trace1\" \"c1\" \"2026-01-01T00:00:00Z\" \"SUPPORTED\" "
+        "\"2026-01-01T00:00:00Z\" \"2026-12-31T00:00:00Z\" \"e1\" "
+        "\"ACTIVE_SUPPORT\" 1 1 1 2 1 0 2 1 \"e1\" \"rel1\" 0 1 1 "
+        "\"2026-01-01T00:00:00Z\" \"2026-12-31T00:00:00Z\" \"e1\" 2 1 "
+        "1 \"e1\" 0";
+    const std::string previous_hash(64, '0');
+    const std::string snapshot_digest = sha256_hex(reassessment_snapshot);
+    const std::string chain_hash = sha256_hex(previous_hash + snapshot_digest);
+    const std::string valid_reassessment =
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version()) +
+        "\ncluster \"cluster-a\"\nnodes 2\n"
+        "node \"c1\" 4 \"claim\" 0\nnode \"e1\" 3 \"evidence\" 0\n"
+        "relations 1\nrelation \"rel1\" 0 \"e1\" \"c1\"\n"
+        "has_focus 0\nfocus_history 0\nscope_spans 0\n"
+        "claim_validity_histories 0\nevidence_validity_histories 0\n"
+        "dependency_evaluations 0\nreassessment_histories 1\n"
+        "reassessment \"c1\" 1\n"
+        "reassessment_record \"trace1\" \"c1\" \"2026-01-01T00:00:00Z\" "
+        "\"SUPPORTED\" \"2026-01-01T00:00:00Z\" \"2026-12-31T00:00:00Z\" "
+        "\"e1\" \"ACTIVE_SUPPORT\" 1 1 1 2 1 0 2 "
+        "\"" + previous_hash + "\" \"" + snapshot_digest + "\" \"" + chain_hash + "\" 1\n"
+        "reassessment_evidence \"e1\" \"rel1\" 0 1 1 "
+        "\"2026-01-01T00:00:00Z\" \"2026-12-31T00:00:00Z\" \"e1\" 2 1\n"
+        "active_supports 1 \"e1\"\nactive_contradictions 0\n"
+        "question_states 0\nquestion_aspect_states 0\n"
+        "claim_lifecycle_states 1\nclaim_status \"c1\" 0\n";
+    CHECK(validate_cluster_archive_payload_graph_records(valid_reassessment, &detach_error));
+    std::string tampered_reassessment = valid_reassessment;
+    const auto chain_pos = tampered_reassessment.find(chain_hash);
+    CHECK(chain_pos != std::string::npos);
+    tampered_reassessment.replace(chain_pos, chain_hash.size(), std::string(64, 'f'));
+    CHECK(!validate_cluster_archive_payload_graph_records(tampered_reassessment, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_CHAIN_INVALID");
     const std::string trailing_data = valid_dependency + "unexpected tail\\n";
     CHECK(!validate_cluster_archive_payload_graph_records(trailing_data, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_TRAILING_DATA_INVALID");
