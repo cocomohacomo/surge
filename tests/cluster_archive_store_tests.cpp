@@ -101,6 +101,14 @@ int main() {
     const std::string focus_chaos_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nnode \"c1\" 0 \"cluster\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"\" 1\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(focus_chaos_mismatch, &detach_error));
+    const std::string scope_bad_anchor = make_payload("cluster-a", graph.state_version(),
+        "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 1\nscope \"s1\" 0 \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" \"UTF8_BYTE_NFC\" \"a1\" \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" \"UTF8_BYTE_NFC\" 0 0 \"x\" \"packet-1\" 0\n0\nscope_antecedents 0\nscope_meta \"\" \"\" \"\" \"\" 1 \"packet-1\"\nscope_result 0 0 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(scope_bad_anchor, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    const std::string scope_bad_digest = make_payload("cluster-a", graph.state_version(),
+        "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 1\nscope \"s1\" 0 \"bad-digest\" \"UTF8_BYTE_NFC\" \"a1\" \"bad-digest\" \"UTF8_BYTE_NFC\" 1 2 \"x\" \"packet-1\" 0\n0\nscope_antecedents 0\nscope_meta \"\" \"\" \"\" \"\" 1 \"packet-1\"\nscope_result 0 0 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(scope_bad_digest, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
     const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nrelations 0\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(count_mismatch, &detach_error));
