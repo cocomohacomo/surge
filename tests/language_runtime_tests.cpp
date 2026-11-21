@@ -1,5 +1,7 @@
 #include "surge/language_runtime.hpp"
 #include <cassert>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 int main() {
@@ -76,6 +78,39 @@ int main() {
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 100);
     assert(bounded.uninstall("en-budget", "1.0.0", error));
     assert(budget.snapshot().used[static_cast<std::size_t>(ResourceKind::ResidentBytes)] == 0);
+  }
+
+  {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "surge-language-pack-verification";
+    fs::remove_all(root);
+    fs::create_directories(root / "data");
+    const std::string payload = "SURGE-DATA-ONLY-RESOURCE";
+    {
+      std::ofstream out(root / "data" / "lexicon.bin", std::ios::binary);
+      out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    }
+    LanguageSetManifest package = ja;
+    package.package_bytes = 512;
+    package.unpacked_bytes = payload.size();
+    package.resources = {{"data/lexicon.bin", "lexicon", sha256_hex(payload),
+                          payload.size(), true}};
+    assert(verify_language_package_directory(root.string(), package, limits, error));
+    {
+      std::ofstream out(root / "data" / "lexicon.bin", std::ios::binary | std::ios::trunc);
+      out << "tampered";
+    }
+    assert(!verify_language_package_directory(root.string(), package, limits, error));
+    assert(error == "LANGUAGE_PACKAGE_RESOURCE_SIZE_MISMATCH" ||
+           error == "LANGUAGE_PACKAGE_RESOURCE_DIGEST_MISMATCH");
+    package.resources[0].path = "../outside.bin";
+    assert(!verify_language_package_directory(root.string(), package, limits, error));
+    assert(error == "LANGUAGE_PACKAGE_RESOURCE_DESCRIPTOR_INVALID");
+    package.resources[0].path = "data/lexicon.bin";
+    package.resources[0].kind = "native_module";
+    assert(!verify_language_package_directory(root.string(), package, limits, error));
+    assert(error == "LANGUAGE_PACKAGE_RESOURCE_DESCRIPTOR_INVALID");
+    fs::remove_all(root);
   }
   return 0;
 }
