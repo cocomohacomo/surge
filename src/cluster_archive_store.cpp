@@ -930,7 +930,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
       reassessment_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
   std::set<std::string> reassessment_owners, reassessment_trace_ids;
-  auto valid_digest = [](const std::string& value) {
+  auto valid_reassessment_digest = [](const std::string& value) {
     if (value.size() != 64) return false;
     for (unsigned char ch : value)
       if (!std::isxdigit(ch)) return false;
@@ -985,11 +985,11 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
           evidence_count > payload.size() || (row >> trailing) ||
           !reassessment_trace_ids.insert(trace_id).second ||
           sequence != previous_sequence + 1 ||
-          recorded_version == 0 || recorded_version > watermark ||
+          recorded_version == 0 || recorded_version > archive_watermark ||
           (previous_recorded_version != 0 && recorded_version <= previous_recorded_version) ||
-          evaluated_version >= recorded_version || evaluated_version > watermark ||
-          previous_hash != previous_chain || !valid_digest(snapshot_digest) ||
-          !valid_digest(chain_hash) ||
+          evaluated_version >= recorded_version || evaluated_version > archive_watermark ||
+          previous_hash != previous_chain || !valid_reassessment_digest(snapshot_digest) ||
+          !valid_reassessment_digest(chain_hash) ||
           (!claim_basis.empty() &&
            (!node_ids.count(claim_basis) ||
             node_kinds.at(claim_basis) != static_cast<unsigned>(NodeKind::Evidence))))
@@ -1033,7 +1033,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
             (eligible && (lifecycle != static_cast<unsigned>(ClaimStatus::Active) ||
                           temporal_state != static_cast<unsigned>(ClaimTemporalState::Valid) ||
                           evidence_state != static_cast<unsigned>(ClaimTemporalState::Valid))) ||
-            (evidence_version > watermark) ||
+            (evidence_version > archive_watermark) ||
             (!valid_from.empty() && !valid_rfc3339(valid_from)) ||
             (!valid_until.empty() && !valid_rfc3339(valid_until)) ||
             (!basis_id.empty() &&
