@@ -79,7 +79,7 @@ decision.
 
 - [x] Typed graph, Question/Interest/Focus, dependency and temporal primitives.
 - [x] Japanese scoring regression corpus and deterministic policy tests.
-- [ ] Independent gold corpus with annotator agreement and provenance.
+- [x] Gold-corpus validator computes inter-annotator action F1, owner/deadline/criticality agreement, and exact evidence-span agreement against declared thresholds.\n- [ ] Independent gold corpus with real annotators, agreement results, and source provenance.
 - [ ] Precision/recall/F1, selective risk, critical false-negative rate and
   abstention calibration measured.
 - [ ] Streaming continuation, correction, contradiction, topic switch and
