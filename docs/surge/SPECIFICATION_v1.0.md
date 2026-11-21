@@ -582,8 +582,11 @@ The Core MUST expose the committed cognition state to external SURGE models and
 integrations through a read-only observation interface. Observation is a
 first-class Core capability, not a debug-only side channel.
 
-The initial C++ contract is `ContextGraph::observe_cognition()`, also exposed
-through `BudgetedContextGraph::observe_cognition()`. It returns a detached
+The C++ contract is `ContextGraph::observe_cognition()`, also exposed
+through `BudgetedContextGraph::observe_cognition()`. The same observation is
+available through the stable C ABI function
+`surge_context_graph_observe_cognition()` as bounded JSON and through the
+Python `SemanticCoreBridge.observe_cognition()` adapter. All forms return a detached
 snapshot with the committed state version, canonical typed nodes, typed
 relations, all active cluster memberships and their producer-supplied weights,
 unresolved ChaosCluster memberships, active Questions and Interests, current
@@ -620,8 +623,8 @@ committed state, externally supplied inference, and Core-derived structural
 facts. A missing inference trace MUST NOT be fabricated by the observation
 layer.
 
-The current implementation provides a detached graph-state snapshot. A
-versioned incremental observation stream, C ABI/Python bindings, inference
-trace ingestion, and model-specific mask-estimation telemetry remain
-integration work and MUST NOT be claimed as implemented until independently
-tested.
+The current implementation provides detached graph-state snapshots
+through C++, C ABI and Python, with bounded-buffer handling and read-only
+semantics. A versioned incremental observation stream, inference trace
+ingestion, and model-specific mask-estimation telemetry remain integration
+work and MUST NOT be claimed as implemented until independently tested.
