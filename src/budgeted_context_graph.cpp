@@ -528,11 +528,12 @@ DeltaResult BudgetedContextGraph::append_cluster_membership(SemanticDelta delta,
     const std::string& parent_cluster_id, const std::string& classification,
     const std::string& partition_key, const std::string& member_node_id,
     const std::string& relation_prefix, std::string& assigned_cluster_id,
-    std::string& error) {
+    std::string& error, double membership_weight) {
   assigned_cluster_id.clear();
   error.clear();
   if (!graph_.append_cluster_membership(delta, parent_cluster_id, classification,
-      partition_key, member_node_id, relation_prefix, assigned_cluster_id, error))
+      partition_key, member_node_id, relation_prefix, assigned_cluster_id, error,
+      membership_weight))
     return {false, false, graph_.state_version(), error};
   auto result = apply(delta);
   if (!result.committed && !result.duplicate) {
