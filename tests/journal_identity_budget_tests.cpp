@@ -9,9 +9,12 @@ namespace {
 class Restore final : public surge::PreparedSnapshotRestore {
  public:
   explicit Restore(int* target) : target_(target) {}
-  void commit() noexcept override { *target_ = 9; }
+  bool commit() noexcept override { previous_ = *target_; *target_ = 9; committed_ = true; return true; }
+  void rollback() noexcept override { if (committed_) { *target_ = previous_; committed_ = false; } }
  private:
   int* target_;
+  int previous_{0};
+  bool committed_{false};
 };
 class Domain final : public surge::SnapshotDomain {
  public:
