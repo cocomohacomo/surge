@@ -36,10 +36,14 @@ int main() {
     seed.nodes.push_back({{"exclusive", NodeKind::Entity, "exclusive payload", {}}});
     seed.nodes.push_back({{"shared", NodeKind::Entity, "shared payload", {}}});
     seed.nodes.push_back({{"question", NodeKind::Question, "not detachable entity", {}}});
+    seed.nodes.push_back({{"reference-owner", NodeKind::Evidence, "owner", {"reference-middle"}}});
+    seed.nodes.push_back({{"reference-middle", NodeKind::Claim, "middle", {"reference-leaf"}}});
+    seed.nodes.push_back({{"reference-leaf", NodeKind::Evidence, "leaf", {}}});
     seed.relations.push_back({{"a-exclusive", RelationKind::Contains, "archive-a", "exclusive"}});
     seed.relations.push_back({{"a-shared", RelationKind::Contains, "archive-a", "shared"}});
     seed.relations.push_back({{"b-shared", RelationKind::Contains, "archive-b", "shared"}});
     seed.relations.push_back({{"a-question", RelationKind::Contains, "archive-a", "question"}});
+    seed.relations.push_back({{"a-reference-owner", RelationKind::Contains, "archive-a", "reference-owner"}});
     CHECK(graph.apply(seed).committed);
     const auto plan = plan_cluster_archive_detach(graph, "archive-a",
         {"exclusive", "shared", "question", "missing", "exclusive"});
@@ -70,6 +74,8 @@ int main() {
     CHECK(canonical_payload.find("question_states ") != std::string::npos);
     CHECK(canonical_payload.find("question_aspect_states ") != std::string::npos);
     CHECK(canonical_payload.find("claim_lifecycle_states ") != std::string::npos);
+    CHECK(canonical_payload.find("\\\"reference-middle\\\"") != std::string::npos);
+    CHECK(canonical_payload.find("\\\"reference-leaf\\\"") != std::string::npos);
     CHECK(validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
         graph.state_version(), &detach_error));
     CHECK(validate_cluster_archive_payload_graph_records(canonical_payload, &detach_error));
