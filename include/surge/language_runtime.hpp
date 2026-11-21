@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/resource_budget.hpp"
+#include <cstdint>
 #include <cstddef>
 #include <map>
 #include <mutex>
@@ -7,6 +8,14 @@
 #include <vector>
 
 namespace surge {
+
+struct LanguageSetResource {
+  std::string path;
+  std::string kind;
+  std::string sha256;
+  std::size_t bytes{0};
+  bool required{true};
+};
 
 struct LanguageSetManifest {
   std::string language_set_id;
@@ -21,6 +30,7 @@ struct LanguageSetManifest {
   std::size_t max_input_bytes{0};
   std::size_t max_candidates{0};
   std::vector<std::string> capabilities;
+  std::vector<LanguageSetResource> resources;
 };
 
 struct LanguageRuntimeLimits {
@@ -33,7 +43,15 @@ struct LanguageRuntimeLimits {
   std::size_t max_input_bytes{16U * 1024U * 1024U};
   std::size_t max_candidates{4096};
   std::size_t max_capabilities{64};
+  std::size_t max_resources{256};
 };
+
+// Verifies a directory-backed, data-only pack before metadata installation.
+// Each declared resource is streamed through SHA-256; paths must remain inside
+// the canonical root and native modules are rejected.
+bool verify_language_package_directory(const std::string& root,
+    const LanguageSetManifest& manifest, const LanguageRuntimeLimits& limits,
+    std::string& error);
 
 class LanguageRuntimeRegistry {
  public:
