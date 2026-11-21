@@ -36,6 +36,7 @@ int main() {
     CHECK(journal.open());
     ContextGraph graph(journal);
     CHECK(graph.open());
+    std::string detach_error;
     SemanticDelta seed;
     seed.delta_id = "detach-plan-seed";
     seed.idempotency_key = "detach-plan-seed-key";
@@ -93,7 +94,6 @@ int main() {
     archive_budget_limits.retained_clusters = 256;
     ResourceBudget budget(archive_budget_limits);
     BudgetedContextGraph budgeted(graph, budget);
-    std::string detach_error;
     if (!budgeted.recover(detach_error)) {
       std::cerr << "BudgetedContextGraph recovery failed: " << detach_error << "\\n";
       return 1;
