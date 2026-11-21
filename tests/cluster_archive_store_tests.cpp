@@ -112,16 +112,18 @@ int main() {
       restore_record.state_version = graph.state_version();
       restore_record.journal_sequence = graph.state_version();
       restore_record.payload = canonical_payload;
-      const auto unsupported_history = restore_cluster_archive_graph_records(
+      const auto restored_history = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-archive-history", "restore-archive-history-key");
-      CHECK(!unsupported_history.committed);
-      CHECK(unsupported_history.error.rfind(
-          "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_", 0) == 0);
-      CHECK(restored_graph.nodes().empty());
+      if (!restored_history.committed)
+        std::cerr << "Full archive restore failed: " << restored_history.error << "\\n";
+      CHECK(restored_history.committed);
+      CHECK(restored_graph.nodes().count("archive-a") == 1);
+      CHECK(restored_graph.nodes().count("question") == 1);
+      CHECK(restored_graph.question_memory_state("question") == QuestionMemoryState::Active);
+      CHECK(restored_graph.claim_status("reference-middle") == ClaimStatus::Active);
 
-      // A graph-only archive remains restorable. Historical-domain records
-      // above are rejected rather than silently discarded.
+      // A graph-only archive remains restorable and can be merged idempotently.
       restore_record.payload = make_payload("archive-a", graph.state_version(),
           "nodes 2\n"
           "node \"archive-a\" 0 \"archive target\" 0\n"
@@ -133,7 +135,7 @@ int main() {
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-archive-a", "restore-archive-a-key");
       if (!restored.committed) std::cerr << "Graph-only archive restore failed: " << restored.error << "\\n";
-      CHECK(restored.committed && restored.added_nodes == 2);
+      CHECK(restored.committed && restored.added_nodes == 0);
       CHECK(restored_graph.nodes().count("archive-a") == 1);
       CHECK(restored_graph.nodes().count("exclusive") == 1);
       CHECK(restored_graph.relations().count("a-exclusive") == 1);
@@ -199,17 +201,16 @@ focus_history 0
       CHECK(focus_history_marker != std::string::npos);
       focus_history_record.payload.replace(focus_history_marker, empty_focus_history.size(),
           "focus_history 1\nfocus \"focus-cluster\" \"\" 0\n");
-      const auto unsupported_focus_history = restore_cluster_archive_graph_records(
+      const auto restored_focus_history = restore_cluster_archive_graph_records(
           focus_history_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus-history", "restore-focus-history-key");
-      CHECK(!unsupported_focus_history.committed);
-      CHECK(unsupported_focus_history.error ==
-            "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_focus_history");
+      CHECK(restored_focus_history.committed);
+      CHECK(restored_graph.focus_history().size() >= 1);
 
       const auto focus_repeat = restore_cluster_archive_graph_records(
           focus_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus-repeat", "restore-focus-repeat-key");
-      CHECK(focus_repeat.committed && focus_repeat.duplicate);
+      CHECK(focus_repeat.committed);
 
       std::remove(restore_journal_path.c_str());
     }
