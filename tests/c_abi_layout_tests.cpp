@@ -2,7 +2,6 @@
 #include <cstddef>
 #include <iostream>
 #include <type_traits>
-#include <string_view>
 
 template <typename T>
 bool field_ok(std::size_t offset, std::size_t width) {
