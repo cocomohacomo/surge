@@ -413,6 +413,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   if (!parse_count(line, "relations", relation_count) || relation_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::set<std::string> relation_ids;
+  std::set<std::pair<std::string, std::string>> support_edges;
   for (std::size_t i = 0; i < relation_count; ++i) {
     if (!std::getline(input, line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
@@ -424,6 +425,8 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         from.empty() || to.empty() || !node_ids.count(from) || !node_ids.count(to) ||
         !relation_ids.insert(id).second || (row >> extra))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    if (kind == static_cast<unsigned>(RelationKind::Supports))
+      support_edges.emplace(from, to);
   }
   if (!std::getline(input, line))
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
@@ -704,14 +707,12 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         recorded_version > archive_watermark || recorded_version < previous_version ||
         (row >> extra))
       return false;
-    if (claim_record) {
-      const auto& refs = node_reference_map.at(subject);
-      const bool linked = std::find(refs.begin(), refs.end(), basis) != refs.end();
-      bool supported = false;
-      for (const auto& edge_line : relation_ids) { (void)edge_line; }
-      if (!linked && node_kinds.at(subject) != static_cast<unsigned>(NodeKind::Claim))
-        return false;
-    }
+    const auto& refs = node_reference_map.at(subject);
+    const bool directly_linked = std::find(refs.begin(), refs.end(), basis) != refs.end();
+    const bool relation_linked = support_edges.count({basis, subject}) != 0;
+    if (claim_record ? (!directly_linked && !relation_linked)
+                     : (basis != subject && !relation_linked))
+      return false;
     previous_revision = revision;
     previous_version = recorded_version;
     return true;
