@@ -1437,4 +1437,148 @@ ClusterArchiveDetachResult archive_and_detach_cluster(
   result.error.clear();
   return result;
 }
+
+ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
+    const ClusterArchiveRecord& archive, ContextGraph& graph,
+    BudgetedContextGraph& budgeted_graph, std::uint64_t expected_state_version,
+    const std::string& delta_id, const std::string& idempotency_key) {
+  ClusterArchiveGraphRestoreResult result;
+  auto fail = [&](const std::string& code) {
+    result.error = code;
+    return result;
+  };
+  if (archive.cluster_id.empty() || archive.payload.empty() ||
+      archive.state_version == 0 || delta_id.empty() || idempotency_key.empty())
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_ARGUMENT_INVALID");
+  if (graph.state_version() != expected_state_version)
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_STALE_TARGET");
+  if (!validate_cluster_archive_payload_identity(archive.payload,
+      archive.cluster_id, archive.state_version, &result.error) ||
+      !validate_cluster_archive_payload_graph_records(archive.payload, &result.error))
+    return result;
+
+  std::istringstream input(archive.payload);
+  std::string line, tag, cluster;
+  std::uint64_t watermark = 0;
+  if (!std::getline(input, line) || line != "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2" ||
+      !std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  {
+    std::istringstream row(line);
+    if (!(row >> tag >> watermark) || tag != "watermark")
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  }
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  {
+    std::istringstream row(line);
+    if (!(row >> tag >> std::quoted(cluster)) || tag != "cluster" ||
+        cluster != archive.cluster_id)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  }
+  std::size_t node_count = 0;
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  {
+    std::istringstream row(line);
+    if (!(row >> tag >> node_count) || tag != "nodes")
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  }
+  SemanticDelta delta;
+  delta.delta_id = delta_id;
+  delta.idempotency_key = idempotency_key;
+  delta.expected_state_version = expected_state_version;
+  std::set<std::string> archive_node_ids;
+  const auto node_kind_count = static_cast<unsigned>(NodeKind::ClusterLifecycle) + 1;
+  for (std::size_t i = 0; i < node_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    std::istringstream row(line);
+    GraphNode node;
+    unsigned kind = 0;
+    std::size_t reference_count = 0;
+    if (!(row >> tag >> std::quoted(node.id) >> kind >> std::quoted(node.content) >>
+          reference_count) || tag != "node" || kind >= node_kind_count ||
+        node.id.empty() || !archive_node_ids.insert(node.id).second)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    node.kind = static_cast<NodeKind>(kind);
+    for (std::size_t j = 0; j < reference_count; ++j) {
+      std::string ref;
+      if (!(row >> std::quoted(ref)))
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+      node.references.push_back(std::move(ref));
+    }
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    const auto existing = graph.nodes().find(node.id);
+    if (existing != graph.nodes().end()) {
+      const auto& prior = existing->second;
+      if (prior.kind != node.kind || prior.content != node.content ||
+          prior.references != node.references)
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_NODE_CONFLICT");
+      continue;
+    }
+    delta.nodes.push_back({std::move(node)});
+  }
+
+  std::size_t relation_count = 0;
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  {
+    std::istringstream row(line);
+    if (!(row >> tag >> relation_count) || tag != "relations")
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+  }
+  const auto relation_kind_count = static_cast<unsigned>(RelationKind::Contains) + 1;
+  for (std::size_t i = 0; i < relation_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    std::istringstream row(line);
+    GraphRelation relation;
+    unsigned kind = 0;
+    if (!(row >> tag >> std::quoted(relation.id) >> kind >>
+          std::quoted(relation.from) >> std::quoted(relation.to)) ||
+        tag != "relation" || kind >= relation_kind_count || relation.id.empty())
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    relation.kind = static_cast<RelationKind>(kind);
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DECODE_FAILED");
+    const auto existing = graph.relations().find(relation.id);
+    if (existing != graph.relations().end()) {
+      const auto& prior = existing->second;
+      if (prior.kind != relation.kind || prior.from != relation.from ||
+          prior.to != relation.to)
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_RELATION_CONFLICT");
+      continue;
+    }
+    delta.relations.push_back({std::move(relation)});
+  }
+
+  std::set<std::string> available_nodes;
+  for (const auto& item : graph.nodes()) available_nodes.insert(item.first);
+  available_nodes.insert(archive_node_ids.begin(), archive_node_ids.end());
+  for (const auto& add : delta.nodes)
+    for (const auto& ref : add.node.references)
+      if (!available_nodes.count(ref))
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DANGLING_REFERENCE");
+  for (const auto& add : delta.relations)
+    if (!available_nodes.count(add.relation.from) ||
+        !available_nodes.count(add.relation.to))
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_DANGLING_RELATION");
+
+  result.added_nodes = delta.nodes.size();
+  result.added_relations = delta.relations.size();
+  const auto committed = budgeted_graph.apply(delta);
+  if (!committed.committed)
+    return fail(committed.error.empty() ?
+        "CLUSTER_ARCHIVE_GRAPH_RESTORE_COMMIT_REJECTED" : committed.error);
+  result.committed = true;
+  result.duplicate = committed.duplicate;
+  result.committed_state_version = committed.state_version;
+  result.error.clear();
+  return result;
+}
+
 }  // namespace surge
