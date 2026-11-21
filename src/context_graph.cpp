@@ -3,6 +3,7 @@
 #include "surge/sha256.hpp"
 #include "surge/scope_validator.hpp"
 #include "surge/dependency_engine.hpp"
+#include "surge/cluster_archive_store.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -474,6 +475,20 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  return out;
 }
 bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& error)const{
+ if(e.kind=="CLUSTER_ARCHIVE_IMPORT_V1"){
+  std::istringstream wrapper(e.payload);
+  std::string key, fingerprint, archive_payload;
+  if(!(wrapper>>std::quoted(key)>>std::quoted(fingerprint))||key.empty()||fingerprint.empty()){
+   error="JOURNAL_CLUSTER_ARCHIVE_IMPORT_HEADER_INVALID";return false;
+  }
+  std::getline(wrapper,archive_payload);
+  std::ostringstream remainder;remainder<<wrapper.rdbuf();archive_payload=remainder.str();
+  if(sha256_hex(archive_payload)!=fingerprint){
+   error="JOURNAL_CLUSTER_ARCHIVE_IMPORT_DIGEST_INVALID";return false;
+  }
+  return ClusterArchiveGraphRestorer::apply(*const_cast<ContextGraph*>(this),s,
+      archive_payload,error);
+ }
  if(e.kind=="NODE_ADD"){GraphNode n;if(!decode_node(e.payload,n)){error="JOURNAL_NODE_DECODE_FAILED";return false;}return apply_node(s,n,error);}
  if(e.kind=="RELATION_ADD"){GraphRelation r;if(!decode_relation(e.payload,r)){error="JOURNAL_RELATION_DECODE_FAILED";return false;}return apply_relation(s,r,error);}
  if(e.kind=="RELATION_REMOVE"){std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_RELATION_REMOVAL_DECODE_FAILED";return false;}return apply_relation_removal(s,id,error);}
@@ -562,6 +577,23 @@ bool ContextGraph::replay(){
  State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
  bool semantic_packet_waiting_for_delta=false;
  for(const auto& e:journal_->committed_events()){
+  if(e.kind=="CLUSTER_ARCHIVE_IMPORT_V1"){
+   if(have_meta){++version;have_meta=false;}
+   if(!replay_event(rebuilt,e,last_error_)){
+    last_error_="JOURNAL_CLUSTER_ARCHIVE_IMPORT_INVALID:"+last_error_;return false;
+   }
+   std::istringstream wrapper(e.payload);
+   std::string imported_key, imported_fingerprint;
+   if(!(wrapper>>std::quoted(imported_key)>>std::quoted(imported_fingerprint))||
+      imported_key.empty()||imported_fingerprint.empty()){
+    last_error_="JOURNAL_CLUSTER_ARCHIVE_IMPORT_HEADER_INVALID";return false;
+   }
+   idempotency_[imported_key]=imported_fingerprint;
+   ++version;continue;
+  }
+ State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
+ bool semantic_packet_waiting_for_delta=false;
+ for(const auto& e:journal_->committed_events()){
   if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="SEMANTIC_PACKET_ADMITTED"){
    // A committed semantic packet closes the preceding delta transaction.
@@ -597,6 +629,38 @@ bool ContextGraph::replay(){
  if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}
  state_=std::move(rebuilt);
  return true;
+}
+
+DeltaResult ContextGraph::import_cluster_archive_payload(
+    const std::string& payload, std::uint64_t expected_state_version,
+    const std::string& transaction_id, const std::string& idempotency_key) {
+  if (payload.empty() || transaction_id.empty() || idempotency_key.empty())
+    return {false, false, state_version(), "CLUSTER_ARCHIVE_IMPORT_ARGUMENT_INVALID"};
+  if (expected_state_version != state_version())
+    return {false, false, state_version(), "STATE_VERSION_CONFLICT"};
+  const auto fingerprint = sha256_hex(payload);
+  const auto existing = idempotency_.find(idempotency_key);
+  if (existing != idempotency_.end()) {
+    if (existing->second == fingerprint)
+      return {true, true, state_version(), {}};
+    return {false, false, state_version(), "IDEMPOTENCY_KEY_REUSED"};
+  }
+  State candidate = state_;
+  std::string error;
+  if (!ClusterArchiveGraphRestorer::apply(*this, candidate, payload, error))
+    return {false, false, state_version(), error.empty()
+        ? "CLUSTER_ARCHIVE_IMPORT_REJECTED" : error};
+  std::ostringstream event_payload;
+  event_payload << std::quoted(idempotency_key) << ' '
+      << std::quoted(fingerprint) << '\\n' << payload;
+  const auto committed = journal_->commit(transaction_id, idempotency_key,
+      expected_state_version,
+      {{transaction_id, "CLUSTER_ARCHIVE_IMPORT_V1", event_payload.str()}});
+  if (!committed.committed)
+    return {false, false, state_version(), committed.error};
+  state_ = std::move(candidate);
+  idempotency_[idempotency_key] = fingerprint;
+  return {true, committed.duplicate, state_version(), {}};
 }
 
 bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
