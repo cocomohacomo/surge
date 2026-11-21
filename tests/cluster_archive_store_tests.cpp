@@ -40,8 +40,8 @@ int main() {
     seed.nodes.push_back({{"exclusive", NodeKind::Entity, "exclusive payload", {}}});
     seed.nodes.push_back({{"shared", NodeKind::Entity, "shared payload", {}}});
     seed.nodes.push_back({{"question", NodeKind::Question, "not detachable entity", {}}});
-    seed.nodes.push_back({{"reference-middle", NodeKind::Claim, "middle", {"reference-leaf"}}});
     seed.nodes.push_back({{"reference-leaf", NodeKind::Evidence, "leaf", {}}});
+    seed.nodes.push_back({{"reference-middle", NodeKind::Claim, "middle", {"reference-leaf"}}});
     seed.relations.push_back({{"a-exclusive", RelationKind::Contains, "archive-a", "exclusive"}});
     seed.relations.push_back({{"a-shared", RelationKind::Contains, "archive-a", "shared"}});
     seed.relations.push_back({{"b-shared", RelationKind::Contains, "archive-b", "shared"}});
