@@ -125,6 +125,27 @@ int main() {
           "restore-archive-a-repeat", "restore-archive-a-repeat-key");
       CHECK(repeated.committed && repeated.added_nodes == 0 &&
             repeated.added_relations == 0);
+
+      const auto stable_version = restored_graph.state_version();
+      auto conflicting_record = restore_record;
+      const auto content_pos = conflicting_record.payload.find("archive target");
+      CHECK(content_pos != std::string::npos);
+      conflicting_record.payload.replace(content_pos,
+          std::string("archive target").size(), "conflicting target");
+      const auto conflict = restore_cluster_archive_graph_records(
+          conflicting_record, restored_graph, restore_facade, stable_version,
+          "restore-conflict", "restore-conflict-key");
+      CHECK(!conflict.committed &&
+            conflict.error == "CLUSTER_ARCHIVE_GRAPH_RESTORE_NODE_CONFLICT");
+      CHECK(restored_graph.state_version() == stable_version);
+      CHECK(restored_graph.nodes().at("archive-a").content == "archive target");
+
+      const auto stale = restore_cluster_archive_graph_records(
+          restore_record, restored_graph, restore_facade, stable_version - 1,
+          "restore-stale", "restore-stale-key");
+      CHECK(!stale.committed &&
+            stale.error == "CLUSTER_ARCHIVE_GRAPH_RESTORE_STALE_TARGET");
+      CHECK(restored_graph.state_version() == stable_version);
       std::remove(restore_journal_path.c_str());
     }
 
