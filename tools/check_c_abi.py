@@ -22,6 +22,7 @@ def normalize(value: str) -> str:
 def extract_surface(source: str) -> dict:
     source = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
     source = re.sub(r"//[^\n]*", "", source)
+    source = re.sub(r"(?m)^\s*#.*$", "", source)
     source = source.replace('extern "C" {', "")
     source = re.sub(r"\n#ifdef __cplusplus\s*\}\s*#endif\s*$", "\n", source)
     structs = {}
