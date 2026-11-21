@@ -494,6 +494,8 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   if (!parse_count(line, "relations", relation_count) || relation_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::set<std::string> relation_ids;
+  std::map<std::string, unsigned> relation_kinds;
+  std::map<std::string, std::pair<std::string, std::string>> relation_endpoints;
   std::set<std::pair<std::string, std::string>> support_edges;
   for (std::size_t i = 0; i < relation_count; ++i) {
     if (!std::getline(input, line))
@@ -506,6 +508,8 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         from.empty() || to.empty() || !node_ids.count(from) || !node_ids.count(to) ||
         !relation_ids.insert(id).second || (row >> extra))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    relation_kinds.emplace(id, kind);
+    relation_endpoints.emplace(id, std::make_pair(from, to));
     if (kind == static_cast<unsigned>(RelationKind::Supports))
       support_edges.emplace(from, to);
   }
@@ -1000,6 +1004,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
           << evaluated_version << ' ' << recorded_version << ' ' << sequence << ' '
           << lifecycle << ' ' << temporal_state << ' ' << evidence_count;
 
+      std::set<std::string> eligible_support_ids, eligible_contradiction_ids;
       for (std::size_t k = 0; k < evidence_count; ++k) {
         if (!std::getline(input, line))
           return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_EVIDENCE_INVALID");
@@ -1017,6 +1022,12 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
             node_kinds.at(evidence_id) != static_cast<unsigned>(NodeKind::Evidence) ||
             relation > static_cast<unsigned>(RelationKind::Contains) ||
             !relation_ids.count(relation_id) ||
+            relation_kinds.at(relation_id) != relation ||
+            relation_endpoints.at(relation_id).first != evidence_id ||
+            relation_endpoints.at(relation_id).second != claim_id ||
+            (relation != static_cast<unsigned>(RelationKind::Supports) &&
+             relation != static_cast<unsigned>(RelationKind::Contradicts) &&
+             relation != static_cast<unsigned>(RelationKind::Retracts)) ||
             evidence_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
             eligible > 1 || (evidence_version > watermark) ||
             (!valid_from.empty() && !valid_rfc3339(valid_from)) ||
@@ -1026,24 +1037,31 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
               node_kinds.at(basis_id) != static_cast<unsigned>(NodeKind::Evidence))) ||
             (evidence_row >> evidence_extra))
           return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_EVIDENCE_INVALID");
+        if (eligible && relation == static_cast<unsigned>(RelationKind::Supports))
+          eligible_support_ids.insert(evidence_id);
+        if (eligible && relation == static_cast<unsigned>(RelationKind::Contradicts))
+          eligible_contradiction_ids.insert(evidence_id);
         snapshot << ' ' << std::quoted(evidence_id) << ' ' << std::quoted(relation_id)
             << ' ' << relation << ' ' << evidence_revision << ' ' << evidence_version
             << ' ' << std::quoted(valid_from) << ' ' << std::quoted(valid_until)
             << ' ' << std::quoted(basis_id) << ' ' << evidence_state << ' ' << eligible;
       }
 
-      auto parse_id_vector = [&](const char* key, std::vector<std::string>& values) {
+      auto parse_id_vector = [&](const char* key, std::vector<std::string>& values,
+                                 const std::set<std::string>& eligible_ids) {
         if (!std::getline(input, line) || !parse_string_vector(line, key, values))
           return false;
         std::set<std::string> unique;
         for (const auto& id : values)
-          if (id.empty() || !relation_ids.count(id) || !unique.insert(id).second)
+          if (id.empty() || !node_ids.count(id) ||
+              node_kinds.at(id) != static_cast<unsigned>(NodeKind::Evidence) ||
+              !eligible_ids.count(id) || !unique.insert(id).second)
             return false;
         return true;
       };
       std::vector<std::string> active_supports, active_contradictions;
-      if (!parse_id_vector("active_supports", active_supports) ||
-          !parse_id_vector("active_contradictions", active_contradictions))
+      if (!parse_id_vector("active_supports", active_supports, eligible_support_ids) ||
+          !parse_id_vector("active_contradictions", active_contradictions, eligible_contradiction_ids))
         return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_RELATIONS_INVALID");
       for (const auto& id : active_supports)
         if (std::find(active_contradictions.begin(), active_contradictions.end(), id) !=
