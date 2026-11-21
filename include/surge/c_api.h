@@ -8,9 +8,7 @@
 #define SURGE_ABI_VERSION_MAJOR 0u
 #define SURGE_ABI_VERSION_MINOR 1u
 #define SURGE_ABI_VERSION_PATCH 0u
-#define SURGE_ABI_VERSION_ENCODE(major, minor, patch) \\
-  ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | \\
-   ((uint32_t)(patch) & 0xffffu))
+#define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
 extern "C" {
 
