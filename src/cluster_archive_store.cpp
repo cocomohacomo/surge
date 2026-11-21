@@ -535,6 +535,9 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
          (!node_ids.count(interest) ||
           node_kinds.at(interest) != static_cast<unsigned>(NodeKind::Interest) ||
           node_reference_map.at(interest).size() != 2 ||
+          !node_ids.count(node_reference_map.at(interest)[0]) ||
+          node_kinds.at(node_reference_map.at(interest)[0]) !=
+              static_cast<unsigned>(NodeKind::QuestionAspect) ||
           node_reference_map.at(interest)[1] != cluster)) ||
         chaos > 1 || (row >> extra))
       return false;
