@@ -88,8 +88,8 @@ int main() {
     CHECK(canonical_payload.find("question_states ") != std::string::npos);
     CHECK(canonical_payload.find("question_aspect_states ") != std::string::npos);
     CHECK(canonical_payload.find("claim_lifecycle_states ") != std::string::npos);
-    CHECK(canonical_payload.find("\\\"reference-middle\\\"") != std::string::npos);
-    CHECK(canonical_payload.find("\\\"reference-leaf\\\"") != std::string::npos);
+    CHECK(canonical_payload.find("\"reference-middle\"") != std::string::npos);
+    CHECK(canonical_payload.find("\"reference-leaf\"") != std::string::npos);
     CHECK(validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
         graph.state_version(), &detach_error));
     CHECK(validate_cluster_archive_payload_graph_records(canonical_payload, &detach_error));
