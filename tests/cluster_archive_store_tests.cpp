@@ -148,9 +148,10 @@ int main() {
       CHECK(restored_graph.state_version() == stable_version);
 
       const std::string focus_payload = make_payload("focus-cluster", 2,
-          R"(nodes 3
+          R"(nodes 4
 node "focus-cluster" 0 "focus target" 0
-node "focus-aspect" 6 "focus aspect" 0
+node "focus-question" 5 "focus question" 0
+node "focus-aspect" 6 "focus aspect" 1 "focus-question"
 node "focus-interest" 8 "interest" 2 "focus-aspect" "focus-cluster"
 relations 0
 has_focus 1
