@@ -22,7 +22,15 @@ enum class QuestionAspectStatus { Open, Resolved, Deferred };
 enum class QuestionMemoryState { Active, Dormant, Archived };
 enum class ScopeEffect { NegatedClaim, ConditionalRelation, ModalityQualified, ConcessionRelation, ContrastRelation, ReferenceCandidate, QuotationEvidence, TemporalQualifier, StructuralContinuation, TableHeaderScope };
 struct GraphNode { std::string id; NodeKind kind{NodeKind::Cluster}; std::string content; std::vector<std::string> references; };
-struct GraphRelation { std::string id; RelationKind kind{RelationKind::About}; std::string from; std::string to; };
+struct GraphRelation {
+  std::string id;
+  RelationKind kind{RelationKind::About};
+  std::string from;
+  std::string to;
+  // For Contains edges this is the upstream classifier's membership weight.
+  // SURGE stores and transports it; it never recalculates or normalizes it.
+  double weight{1.0};
+};
 struct FocusRecord { std::string cluster_id; std::string interest_id; bool chaos_cluster{false}; };
 struct ScopeAnchor {
   std::string anchor_id, source_digest, offset_basis;
