@@ -750,6 +750,14 @@ int main(){
     classify.remove_relation_ids.push_back(unresolved_edge_id);
     CHECK(graph.apply(classify).committed);
     CHECK(graph.cluster_membership_reference_count("unclassified-note")==1);
+    const auto cognition = graph.observe_cognition();
+    CHECK(cognition.state_version==graph.state_version());
+    CHECK(cognition.unresolved_member_ids.empty());
+    CHECK(std::any_of(cognition.memberships.begin(),cognition.memberships.end(),
+        [&](const auto& item){return item.member_node_id=="unclassified-note" &&
+          item.cluster_node_id==assigned_cluster && item.upstream_weight==1.0;}));
+    CHECK(std::any_of(cognition.nodes.begin(),cognition.nodes.end(),
+        [](const auto& node){return node.id=="unclassified-note";}));
     CHECK(graph.relations().count(unresolved_edge_id)==0);
     CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
         [&](const auto& item){return item.second.kind==RelationKind::Contains &&
