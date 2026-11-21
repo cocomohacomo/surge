@@ -33,7 +33,24 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
 bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     std::string* error);
 
-// Computes a conservative detach plan. It never mutates the graph.
+// Restores the validated node/relation portion of an archive in one guarded
+// semantic transaction. Existing identical records are idempotently retained;
+// conflicting IDs abort before any graph mutation. Ancillary histories are not
+// imported by this graph-records-only operation.
+struct ClusterArchiveGraphRestoreResult {
+  bool committed{false};
+  bool duplicate{false};
+  std::size_t added_nodes{0};
+  std::size_t added_relations{0};
+  std::uint64_t committed_state_version{0};
+  std::string error;
+};
+ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
+    const ClusterArchiveRecord& archive, ContextGraph& graph,
+    BudgetedContextGraph& budgeted_graph, std::uint64_t expected_state_version,
+    const std::string& delta_id, const std::string& idempotency_key);
+
+// Computes a conservative detach plan. It never mutates the graph. 
 ClusterArchiveDetachPlan plan_cluster_archive_detach(
     const ContextGraph& graph, const std::string& cluster_id,
     const std::vector<std::string>& member_node_ids);
