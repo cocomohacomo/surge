@@ -97,6 +97,11 @@ int main() {
     package.resources = {{"data/lexicon.bin", "lexicon", sha256_hex(payload),
                           payload.size(), true}};
     assert(verify_language_package_directory(root.string(), package, limits, error));
+    LanguageRuntimeRegistry verified_runtime(limits);
+    assert(verified_runtime.install_verified_package(root.string(), package, error));
+    assert(verified_runtime.installed_count() == 1);
+    assert(verified_runtime.uninstall("ja-JP", "1.0.0", error));
+
     {
       std::ofstream out(root / "data" / "lexicon.bin", std::ios::binary | std::ios::trunc);
       out << "tampered";
