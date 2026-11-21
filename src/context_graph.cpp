@@ -649,7 +649,7 @@ DeltaResult ContextGraph::import_cluster_archive_payload(
         ? "CLUSTER_ARCHIVE_IMPORT_REJECTED" : error};
   std::ostringstream event_payload;
   event_payload << std::quoted(idempotency_key) << ' '
-      << std::quoted(fingerprint) << '\\n' << payload;
+      << std::quoted(fingerprint) << '\n' << payload;
   const auto committed = journal_->commit(transaction_id, idempotency_key,
       expected_state_version,
       {{transaction_id, "CLUSTER_ARCHIVE_IMPORT_V1", event_payload.str()}});
