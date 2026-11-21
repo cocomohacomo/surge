@@ -6,6 +6,8 @@
 #include <set>
 #include <initializer_list>
 #include <utility>
+#include <sstream>
+#include <iomanip>
 
 namespace surge {
 namespace {
