@@ -842,7 +842,9 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   }
 
   std::size_t dependency_count = 0;
-  if (!parse_history_header("dependency_evaluations", dependency_count))
+  if (!std::getline(input, line) ||
+      !parse_count(line, "dependency_evaluations", dependency_count) ||
+      dependency_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_EVALUATION_INVALID");
   std::set<std::string> dependency_record_ids;
   for (std::size_t i = 0; i < dependency_count; ++i) {
