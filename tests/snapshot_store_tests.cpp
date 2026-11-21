@@ -178,9 +178,54 @@ int main() {
   write_text(no_backup_path, "corrupt-current-generation");
   CHECK(!no_backup.load().ok);
 
-  // Backup recovery is read-only: it does not silently rewrite the primary.
-  CHECK(std::filesystem::file_size(path) ==
-        std::string("corrupt-mirrored-current").size());
+  // Snapshot writer ownership is exclusive across separate store objects.
+  const auto locked_path = (root / "surge_snapshot_store_writer_lock.bin").string();
+  remove_generation(locked_path);
+  std::string competing_error;
+  SnapshotStore competing_store(locked_path);
+  SnapshotStore locking_store(locked_path, {},
+      [&](const char* stage) {
+        if (std::string(stage) != "after_temp_sync") return true;
+        const auto competing_saved = competing_store.save(generation_one, &competing_error);
+        CHECK(!competing_saved);
+        CHECK(competing_error == "SNAPSHOT_STORE_WRITER_LOCKED");
+        return false;
+      });
+  CHECK(!locking_store.save(generation_one, &error));
+  CHECK(error == "SNAPSHOT_STORE_INJECTED_FAILURE:after_temp_sync");
+  CHECK(!std::filesystem::exists(locked_path));
+  remove_generation(locked_path);
+
+  // Failure before atomic replacement leaves the previous generation intact.
+  const auto pre_replace_path = (root / "surge_snapshot_store_pre_replace.bin").string();
+  remove_generation(pre_replace_path);
+  SnapshotStore pre_replace_seed(pre_replace_path);
+  CHECK(pre_replace_seed.save(generation_one, &error));
+  SnapshotStore pre_replace(pre_replace_path, {},
+      [](const char* stage) { return std::string(stage) != "before_primary_replace"; });
+  CHECK(!pre_replace.save(generation_two, &error));
+  CHECK(error == "SNAPSHOT_STORE_INJECTED_FAILURE:before_primary_replace");
+  loaded = pre_replace_seed.load();
+  CHECK(loaded.ok && loaded.document.state_version == 1);
+  remove_generation(pre_replace_path);
+
+  // Failure after rename but before the directory barrier is an ambiguous
+  // result. Reopen resolves it from the verified new primary and old backup.
+  const auto post_replace_path = (root / "surge_snapshot_store_post_replace.bin").string();
+  remove_generation(post_replace_path);
+  SnapshotStore post_replace_seed(post_replace_path);
+  CHECK(post_replace_seed.save(generation_one, &error));
+  SnapshotStore post_replace(post_replace_path, {},
+      [](const char* stage) { return std::string(stage) != "before_primary_directory_sync"; });
+  CHECK(!post_replace.save(generation_two, &error));
+  CHECK(error == "SNAPSHOT_STORE_INJECTED_FAILURE:before_primary_directory_sync");
+  loaded = post_replace_seed.load();
+  CHECK(loaded.ok && !loaded.used_backup && loaded.document.state_version == 2);
+  SnapshotStore post_replace_backup(post_replace_path);
+  write_text(post_replace_path, "damaged-after-ambiguous-result");
+  loaded = post_replace_backup.load();
+  CHECK(loaded.ok && loaded.used_backup && loaded.document.state_version == 1);
+  remove_generation(post_replace_path);
 
   remove_generation(path);
   remove_generation(limited_path);
