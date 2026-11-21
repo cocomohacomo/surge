@@ -236,6 +236,26 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
     return std::any_of(d.rejected_dependencies.begin(), d.rejected_dependencies.end(),
         [&](const std::string& id) { return included.count(id) != 0; });
   };
+  // Temporal reassessment snapshots retain their referenced evidence and
+  // relation provenance in the same archive closure as their owning Claim.
+  std::vector<std::string> reassessment_frontier(included.begin(), included.end());
+  for (std::size_t cursor = 0; cursor < reassessment_frontier.size(); ++cursor) {
+    const auto history = graph.reassessment_history().find(reassessment_frontier[cursor]);
+    if (history == graph.reassessment_history().end()) continue;
+    for (const auto& record : history->second) {
+      auto include_temporal_node = [&](const std::string& id) {
+        if (!id.empty() && graph.nodes().count(id) && included.insert(id).second)
+          reassessment_frontier.push_back(id);
+      };
+      include_temporal_node(record.claim_id);
+      include_temporal_node(record.claim_validity_basis_evidence_id);
+      for (const auto& evidence : record.evidence) {
+        include_temporal_node(evidence.evidence_id);
+        include_temporal_node(evidence.basis_evidence_id);
+      }
+    }
+  }
+
   // Dependency evaluation records are historical references too. Include
   // all connected endpoints and impacted/rejected dependencies in the closure.
   std::vector<std::string> dependency_frontier(included.begin(), included.end());
@@ -899,6 +919,215 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
           !rejected_ids.insert(id).second || triggered_ids.count(id))
         return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
   }
+  // Temporal reassessment histories are tamper-evident per-Claim chains.
+  std::size_t reassessment_count = 0;
+  if (!std::getline(input, line) ||
+      !parse_count(line, "reassessment_histories", reassessment_count) ||
+      reassessment_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
+  std::set<std::string> reassessment_owners, reassessment_trace_ids;
+  auto valid_digest = [](const std::string& value) {
+    if (value.size() != 64) return false;
+    for (unsigned char ch : value)
+      if (!std::isxdigit(ch)) return false;
+    return true;
+  };
+  auto append_vector_payload = [](std::ostringstream& out,
+                                  const std::vector<std::string>& values) {
+    out << ' ' << values.size();
+    for (const auto& value : values) out << ' ' << std::quoted(value);
+  };
+  for (std::size_t i = 0; i < reassessment_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
+    std::istringstream owner_row(line);
+    std::string tag, owner, extra;
+    std::size_t record_count = 0;
+    if (!(owner_row >> tag >> std::quoted(owner) >> record_count) ||
+        tag != "reassessment" || owner.empty() || !node_ids.count(owner) ||
+        node_kinds.at(owner) != static_cast<unsigned>(NodeKind::Claim) ||
+        record_count == 0 || record_count > payload.size() ||
+        !reassessment_owners.insert(owner).second || (owner_row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
+
+    std::uint64_t previous_sequence = 0, previous_recorded_version = 0;
+    std::string previous_chain(64, '0');
+    for (std::size_t j = 0; j < record_count; ++j) {
+      if (!std::getline(input, line))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
+      std::istringstream row(line);
+      std::string record_tag, trace_id, claim_id, reference_at, decision;
+      std::string claim_valid_from, claim_valid_until, claim_basis, reason_code;
+      std::string previous_hash, snapshot_digest, chain_hash, trailing;
+      std::uint64_t validity_revision = 0, validity_version = 0;
+      std::uint64_t evaluated_version = 0, recorded_version = 0, sequence = 0;
+      unsigned lifecycle = 0, temporal_state = 0;
+      std::size_t evidence_count = 0;
+      if (!(row >> record_tag >> std::quoted(trace_id) >> std::quoted(claim_id) >>
+            std::quoted(reference_at) >> std::quoted(decision) >>
+            std::quoted(claim_valid_from) >> std::quoted(claim_valid_until) >>
+            std::quoted(claim_basis) >> std::quoted(reason_code) >>
+            validity_revision >> validity_version >> evaluated_version >>
+            recorded_version >> sequence >> lifecycle >> temporal_state >>
+            std::quoted(previous_hash) >> std::quoted(snapshot_digest) >>
+            std::quoted(chain_hash) >> evidence_count) ||
+          record_tag != "reassessment_record" || trace_id.empty() ||
+          claim_id != owner || reference_at.empty() || decision.empty() ||
+          !valid_timestamp(reference_at) ||
+          (!claim_valid_from.empty() && !valid_timestamp(claim_valid_from)) ||
+          (!claim_valid_until.empty() && !valid_timestamp(claim_valid_until)) ||
+          (lifecycle > static_cast<unsigned>(ClaimStatus::Retracted)) ||
+          temporal_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
+          evidence_count > payload.size() || (row >> trailing) ||
+          !reassessment_trace_ids.insert(trace_id).second ||
+          sequence != previous_sequence + 1 ||
+          recorded_version == 0 || recorded_version > watermark ||
+          (previous_recorded_version != 0 && recorded_version <= previous_recorded_version) ||
+          evaluated_version >= recorded_version || evaluated_version > watermark ||
+          previous_hash != previous_chain || !valid_digest(snapshot_digest) ||
+          !valid_digest(chain_hash) ||
+          (!claim_basis.empty() &&
+           (!node_ids.count(claim_basis) ||
+            node_kinds.at(claim_basis) != static_cast<unsigned>(NodeKind::Evidence))))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_INVALID");
+
+      std::ostringstream snapshot;
+      snapshot << std::quoted(trace_id) << ' ' << std::quoted(claim_id) << ' '
+          << std::quoted(reference_at) << ' ' << std::quoted(decision) << ' '
+          << std::quoted(claim_valid_from) << ' ' << std::quoted(claim_valid_until) << ' '
+          << std::quoted(claim_basis) << ' ' << std::quoted(reason_code) << ' '
+          << validity_revision << ' ' << validity_version << ' '
+          << evaluated_version << ' ' << recorded_version << ' ' << sequence << ' '
+          << lifecycle << ' ' << temporal_state << ' ' << evidence_count;
+
+      for (std::size_t k = 0; k < evidence_count; ++k) {
+        if (!std::getline(input, line))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_EVIDENCE_INVALID");
+        std::istringstream evidence_row(line);
+        std::string evidence_tag, evidence_id, relation_id, valid_from, valid_until;
+        std::string basis_id, evidence_extra;
+        unsigned relation = 0, evidence_state = 0, eligible = 0;
+        std::uint64_t evidence_revision = 0, evidence_version = 0;
+        if (!(evidence_row >> evidence_tag >> std::quoted(evidence_id) >>
+              std::quoted(relation_id) >> relation >> evidence_revision >>
+              evidence_version >> std::quoted(valid_from) >> std::quoted(valid_until) >>
+              std::quoted(basis_id) >> evidence_state >> eligible) ||
+            evidence_tag != "reassessment_evidence" || evidence_id.empty() ||
+            !node_ids.count(evidence_id) ||
+            node_kinds.at(evidence_id) != static_cast<unsigned>(NodeKind::Evidence) ||
+            relation > static_cast<unsigned>(RelationKind::Contains) ||
+            !relation_ids.count(relation_id) ||
+            evidence_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
+            eligible > 1 || (evidence_version > watermark) ||
+            (!valid_from.empty() && !valid_timestamp(valid_from)) ||
+            (!valid_until.empty() && !valid_timestamp(valid_until)) ||
+            (!basis_id.empty() &&
+             (!node_ids.count(basis_id) ||
+              node_kinds.at(basis_id) != static_cast<unsigned>(NodeKind::Evidence))) ||
+            (evidence_row >> evidence_extra))
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_EVIDENCE_INVALID");
+        snapshot << ' ' << std::quoted(evidence_id) << ' ' << std::quoted(relation_id)
+            << ' ' << relation << ' ' << evidence_revision << ' ' << evidence_version
+            << ' ' << std::quoted(valid_from) << ' ' << std::quoted(valid_until)
+            << ' ' << std::quoted(basis_id) << ' ' << evidence_state << ' ' << eligible;
+      }
+
+      auto parse_id_vector = [&](const char* key, std::vector<std::string>& values) {
+        if (!std::getline(input, line) || !parse_string_vector(line, key, values))
+          return false;
+        std::set<std::string> unique;
+        for (const auto& id : values)
+          if (id.empty() || !relation_ids.count(id) || !unique.insert(id).second)
+            return false;
+        return true;
+      };
+      std::vector<std::string> active_supports, active_contradictions;
+      if (!parse_id_vector("active_supports", active_supports) ||
+          !parse_id_vector("active_contradictions", active_contradictions))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_RELATIONS_INVALID");
+      for (const auto& id : active_supports)
+        if (std::find(active_contradictions.begin(), active_contradictions.end(), id) !=
+            active_contradictions.end())
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_RELATIONS_INVALID");
+      append_vector_payload(snapshot, active_supports);
+      append_vector_payload(snapshot, active_contradictions);
+      const auto expected_digest = sha256_hex(snapshot.str());
+      if (expected_digest != snapshot_digest ||
+          sha256_hex(previous_hash + snapshot_digest) != chain_hash)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_REASSESSMENT_CHAIN_INVALID");
+      previous_sequence = sequence;
+      previous_recorded_version = recorded_version;
+      previous_chain = chain_hash;
+    }
+  }
+
+  // State snapshots must cover every included node of the corresponding kind
+  // exactly once and use the public enum domains.
+  std::size_t question_count = 0;
+  if (!std::getline(input, line) ||
+      !parse_count(line, "question_states", question_count) ||
+      question_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
+  std::set<std::string> question_ids;
+  for (std::size_t i = 0; i < question_count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, extra;
+    unsigned state = 0;
+    std::size_t references = 0;
+    if (!(row >> tag >> std::quoted(id) >> state >> references) ||
+        tag != "question_state" || !node_ids.count(id) ||
+        node_kinds.at(id) != static_cast<unsigned>(NodeKind::Question) ||
+        state > static_cast<unsigned>(QuestionMemoryState::Archived) ||
+        !question_ids.insert(id).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
+  }
+  std::size_t aspect_count = 0;
+  if (!std::getline(input, line) ||
+      !parse_count(line, "question_aspect_states", aspect_count) ||
+      aspect_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
+  std::set<std::string> aspect_ids;
+  for (std::size_t i = 0; i < aspect_count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, extra;
+    unsigned state = 0;
+    if (!(row >> tag >> std::quoted(id) >> state) ||
+        tag != "question_aspect_state" || !node_ids.count(id) ||
+        node_kinds.at(id) != static_cast<unsigned>(NodeKind::QuestionAspect) ||
+        state > static_cast<unsigned>(QuestionAspectStatus::Deferred) ||
+        !aspect_ids.insert(id).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
+  }
+  std::size_t claim_count = 0;
+  if (!std::getline(input, line) ||
+      !parse_count(line, "claim_lifecycle_states", claim_count) ||
+      claim_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
+  std::set<std::string> claim_ids;
+  for (std::size_t i = 0; i < claim_count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, extra;
+    unsigned state = 0;
+    if (!(row >> tag >> std::quoted(id) >> state) ||
+        tag != "claim_status" || !node_ids.count(id) ||
+        node_kinds.at(id) != static_cast<unsigned>(NodeKind::Claim) ||
+        state > static_cast<unsigned>(ClaimStatus::Retracted) ||
+        !claim_ids.insert(id).second || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
+  }
+  for (const auto& item : node_kinds) {
+    if (item.second == static_cast<unsigned>(NodeKind::Question) && !question_ids.count(item.first))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
+    if (item.second == static_cast<unsigned>(NodeKind::QuestionAspect) && !aspect_ids.count(item.first))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
+    if (item.second == static_cast<unsigned>(NodeKind::Claim) && !claim_ids.count(item.first))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
+  }
+  while (std::getline(input, line))
+    if (!line.empty()) return fail("CLUSTER_ARCHIVE_PAYLOAD_TRAILING_DATA_INVALID");
   if (error) error->clear();
   return true;
 }
