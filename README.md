@@ -216,8 +216,11 @@ find_package(Surge CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE surge::surge_core)
 ```
 
-The Python adapter is currently source-tree code and is not yet published as
-a standalone wheel. The native library and Python adapter therefore have
-separate installation paths at this stage. See
+The Python adapter can be installed separately with `python -m pip install .`
+(or built as a wheel with `python -m build --wheel`). It installs the
+versioned schema resources and depends on `jsonschema`. Install the native
+C++ library with CMake as above, then set `SURGE_CORE_LIBRARY` to the installed
+shared-library path when using the ctypes bridge. The Python wheel does not
+bundle a platform-specific native binary yet. See
 [the library rollout gate](docs/surge/LIBRARY_ROLLOUT_GATE_v0.1.md) for
 supported deployment boundaries and remaining release blockers.
