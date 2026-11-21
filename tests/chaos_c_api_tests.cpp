@@ -56,6 +56,17 @@ int main(){
    truncated,sizeof(truncated),&required,error,sizeof(error))==1);
  CHECK(std::string(truncated).find("\"complete\":false")!=std::string::npos);
  CHECK(std::string(truncated).find("\"omitted\"")!=std::string::npos);
+ char cognition[32768]{};required=0;
+ CHECK(surge_context_graph_observe_cognition(h,cognition,sizeof(cognition),
+   &required,error,sizeof(error))==1);
+ CHECK(std::string(cognition).find("\\"state_version\\"")!=std::string::npos);
+ CHECK(std::string(cognition).find("\\"memberships\\"")!=std::string::npos);
+ CHECK(std::string(cognition).find("\\"current_focus\\"")!=std::string::npos);
+ CHECK(required>1);
+ char too_small[2]{};size_t required_full=0;
+ CHECK(surge_context_graph_observe_cognition(h,too_small,sizeof(too_small),
+   &required_full,error,sizeof(error))==0);
+ CHECK(required_full==required);
  surge_packet_core_close(h);
  h=surge_packet_core_open(path.c_str(),error,sizeof(error));CHECK(h!=nullptr);
  CHECK(surge_chaos_cluster_get(h,"chaos-c-api",output,sizeof(output),&required,error,sizeof(error))==1);
