@@ -1270,6 +1270,8 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
     ContextGraph::State& state, const std::string& payload,
     std::string& error) {
   auto fail = [&](const char* code) { error = code; return false; };
+  std::set<std::string> preexisting_node_ids;
+  for (const auto& item : state.nodes) preexisting_node_ids.insert(item.first);
   if (!validate_cluster_archive_payload_graph_records(payload, &error))
     return false;
   std::istringstream input(payload);
@@ -1736,7 +1738,18 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
         (row >> extra) || !state.nodes.count(id) ||
         state.nodes.at(id).kind != NodeKind::Question)
       return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_STATE_INVALID");
-    state.question_memory_states[id] = static_cast<QuestionMemoryState>(memory_state);
+    const auto archived_memory = static_cast<QuestionMemoryState>(memory_state);
+    const auto existing_memory = state.question_memory_states.find(id);
+    const auto current_memory = existing_memory == state.question_memory_states.end()
+        ? QuestionMemoryState::Active : existing_memory->second;
+    const auto existing_references = state.question_reference_counts.find(id);
+    const auto current_references = existing_references == state.question_reference_counts.end()
+        ? std::uint64_t{0} : existing_references->second;
+    if (preexisting_node_ids.count(id) &&
+        (current_memory != archived_memory || current_references != references))
+      return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_STATE_CONFLICT");
+    if (memory_state != static_cast<unsigned>(QuestionMemoryState::Active))
+      state.question_memory_states[id] = archived_memory;
     if (references) state.question_reference_counts[id] = references;
   }
 
@@ -1753,7 +1766,14 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
         (row >> extra) || !state.nodes.count(id) ||
         state.nodes.at(id).kind != NodeKind::QuestionAspect)
       return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_INVALID");
-    state.question_aspect_statuses[id] = static_cast<QuestionAspectStatus>(status);
+    const auto archived_status = static_cast<QuestionAspectStatus>(status);
+    const auto existing_status = state.question_aspect_statuses.find(id);
+    const auto current_status = existing_status == state.question_aspect_statuses.end()
+        ? QuestionAspectStatus::Open : existing_status->second;
+    if (preexisting_node_ids.count(id) && current_status != archived_status)
+      return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_STATE_CONFLICT");
+    if (status != static_cast<unsigned>(QuestionAspectStatus::Open))
+      state.question_aspect_statuses[id] = archived_status;
   }
 
   if (!read_header("claim_lifecycle_states", count))
@@ -1768,7 +1788,13 @@ bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
         (row >> extra) || !state.nodes.count(id) ||
         state.nodes.at(id).kind != NodeKind::Claim)
       return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
-    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
+    const auto archived_status = static_cast<ClaimStatus>(status);
+    const auto existing_status = state.claim_statuses.find(id);
+    const auto current_status = existing_status == state.claim_statuses.end()
+        ? ClaimStatus::Active : existing_status->second;
+    if (preexisting_node_ids.count(id) && current_status != archived_status)
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_CONFLICT");
+    state.claim_statuses[id] = archived_status;
   }
 
   for (const auto& record : pending_reassessments) {
