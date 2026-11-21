@@ -116,7 +116,7 @@ int main() {
         "nodes 1\nnode \"c1\" 0 \"cluster\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"\" 1\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(focus_chaos_mismatch, &detach_error));
     const std::string valid_histories =
-        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version()) +
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version() + 1) +
         "\ncluster \"cluster-a\"\nnodes 2\n"
         "node \"c1\" 4 \"claim\" 1 \"e1\"\n"
         "node \"e1\" 3 \"evidence\" 0\n"
