@@ -50,6 +50,8 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Inspect built shared-library C ABI exports
         run: python tools/check_binary_abi.py --library build
+      - name: Inspect public C ABI struct layouts
+        run: ctest --test-dir build -C Release --output-on-failure -R surge_c_abi_layout_conformance
       - name: C++ journal lock and durability tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
       - name: Portable journal benchmark and identity guardrails
