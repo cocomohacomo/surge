@@ -175,12 +175,22 @@ bool LanguageRuntimeRegistry::install_verified_package(
     std::string& error) {
   if (!verify_language_package_directory(root, manifest, limits_, error))
     return false;
-  return install_manifest(manifest, error);
+  return install_manifest_impl(manifest, true, error);
 }
 
 bool LanguageRuntimeRegistry::install_manifest(
     const LanguageSetManifest& manifest, std::string& error) {
+  return install_manifest_impl(manifest, false, error);
+}
+
+bool LanguageRuntimeRegistry::install_manifest_impl(
+    const LanguageSetManifest& manifest, bool package_verified,
+    std::string& error) {
   error.clear();
+  if (!manifest.resources.empty() && !package_verified) {
+    error = "LANGUAGE_PACKAGE_VERIFICATION_REQUIRED";
+    return false;
+  }
   if (manifest.language_set_id.empty() || manifest.language_set_id.size() > 128 ||
       manifest.version.empty() || manifest.version.size() > 64 ||
       !is_sha256_hex(manifest.digest) ||
