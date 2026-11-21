@@ -45,6 +45,10 @@ class BudgetedContextGraph {
       const std::string& cluster_id, const std::string& member_node_id,
       std::string& error);
 
+  DeltaResult append_unresolved_membership(SemanticDelta delta,
+      const std::string& member_node_id, std::string& chaos_cluster_id,
+      std::string& membership_relation_id, std::string& error);
+
   DeltaResult append_cluster_membership(SemanticDelta delta,
       const std::string& parent_cluster_id, const std::string& classification,
       const std::string& partition_key, const std::string& member_node_id,
