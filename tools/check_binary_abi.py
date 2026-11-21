@@ -2,6 +2,7 @@
 """Verify all manifest C ABI functions exist in the built shared library."""
 from __future__ import annotations
 import argparse
+import ctypes
 import json
 import os
 import re
@@ -34,7 +35,10 @@ def parse_symbols(output: str, platform: str) -> set[str]:
 
 def read_symbols(library: Path, platform: str) -> set[str]:
     if platform == "win32":
-        command = ["dumpbin", "/nologo", "/exports", str(library)]
+        module = ctypes.WinDLL(str(library))
+        manifest = json.loads(Path("abi/c-abi-v0.1.json").read_text())
+        return {item["name"] for item in manifest["functions"]
+                if getattr(module, item["name"], None) is not None}
     elif platform == "darwin":
         command = ["nm", "-gU", str(library)]
     else:
