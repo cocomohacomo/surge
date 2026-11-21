@@ -1265,6 +1265,507 @@ ClusterArchiveDetachPlan plan_cluster_archive_detach(
 }
 ClusterArchiveStore::ClusterArchiveStore(std::string path, SnapshotStoreLimits limits)
     : store_(std::move(path), limits) {}
+
+bool ClusterArchiveGraphRestorer::apply(ContextGraph& graph,
+    ContextGraph::State& state, const std::string& payload,
+    std::string& error) {
+  auto fail = [&](const char* code) { error = code; return false; };
+  if (!validate_cluster_archive_payload_graph_records(payload, &error))
+    return false;
+  std::istringstream input(payload);
+  std::string line, tag, cluster;
+  std::uint64_t watermark = 0;
+  auto read_header = [&](const char* expected, std::size_t& count) {
+    if (!std::getline(input, line)) return false;
+    std::istringstream row(line);
+    std::string name, extra;
+    return static_cast<bool>(row >> name >> count) && name == expected &&
+        !(row >> extra) && count <= payload.size();
+  };
+  auto read_vector = [&](const char* expected, std::vector<std::string>& values) {
+    if (!std::getline(input, line)) return false;
+    std::istringstream row(line);
+    std::string name, value, extra;
+    std::size_t count = 0;
+    if (!(row >> name >> count) || name != expected || count > payload.size())
+      return false;
+    values.clear();
+    values.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (!(row >> std::quoted(value)) || value.empty()) return false;
+      values.push_back(value);
+    }
+    return !(row >> extra);
+  };
+  if (!std::getline(input, line) || line != "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2" ||
+      !std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_HEADER_INVALID");
+  {
+    std::istringstream row(line);
+    std::string extra;
+    if (!(row >> tag >> watermark) || tag != "watermark" || (row >> extra) ||
+        watermark == 0) return fail("CLUSTER_ARCHIVE_IMPORT_WATERMARK_INVALID");
+  }
+  if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLUSTER_INVALID");
+  {
+    std::istringstream row(line);
+    std::string extra;
+    if (!(row >> tag >> std::quoted(cluster)) || tag != "cluster" ||
+        cluster.empty() || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLUSTER_INVALID");
+  }
+
+  std::size_t count = 0;
+  if (!read_header("nodes", count)) return fail("CLUSTER_ARCHIVE_IMPORT_NODES_INVALID");
+  std::map<std::string, GraphNode> pending;
+  std::set<std::string> archive_nodes;
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_NODE_INVALID");
+    std::istringstream row(line);
+    GraphNode node;
+    unsigned kind = 0;
+    std::size_t references = 0;
+    std::string extra;
+    if (!(row >> tag >> std::quoted(node.id) >> kind >> std::quoted(node.content) >>
+          references) || tag != "node" ||
+        kind > static_cast<unsigned>(NodeKind::ClusterLifecycle) ||
+        node.id.empty() || references > payload.size() ||
+        !archive_nodes.insert(node.id).second)
+      return fail("CLUSTER_ARCHIVE_IMPORT_NODE_INVALID");
+    node.kind = static_cast<NodeKind>(kind);
+    for (std::size_t j = 0; j < references; ++j) {
+      std::string ref;
+      if (!(row >> std::quoted(ref)) || ref.empty())
+        return fail("CLUSTER_ARCHIVE_IMPORT_NODE_INVALID");
+      node.references.push_back(std::move(ref));
+    }
+    if (row >> extra) return fail("CLUSTER_ARCHIVE_IMPORT_NODE_INVALID");
+    const auto existing = state.nodes.find(node.id);
+    if (existing != state.nodes.end()) {
+      if (existing->second.kind != node.kind ||
+          existing->second.content != node.content ||
+          existing->second.references != node.references)
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_NODE_CONFLICT");
+    } else if (!pending.emplace(node.id, std::move(node)).second) {
+      return fail("CLUSTER_ARCHIVE_IMPORT_NODE_DUPLICATE");
+    }
+  }
+  while (!pending.empty()) {
+    bool progressed = false;
+    for (auto it = pending.begin(); it != pending.end();) {
+      const bool ready = std::all_of(it->second.references.begin(),
+          it->second.references.end(), [&](const std::string& id) {
+            return state.nodes.count(id) != 0;
+          });
+      if (!ready) { ++it; continue; }
+      if (!graph.apply_node(state, it->second, error))
+        return fail("CLUSTER_ARCHIVE_IMPORT_NODE_SEMANTICS_INVALID");
+      it = pending.erase(it);
+      progressed = true;
+    }
+    if (!progressed) return fail("CLUSTER_ARCHIVE_IMPORT_NODE_REFERENCE_CYCLE");
+  }
+
+  if (!read_header("relations", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_RELATIONS_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_RELATION_INVALID");
+    std::istringstream row(line);
+    GraphRelation relation;
+    unsigned kind = 0;
+    std::string extra;
+    if (!(row >> tag >> std::quoted(relation.id) >> kind >>
+          std::quoted(relation.from) >> std::quoted(relation.to)) ||
+        tag != "relation" || relation.id.empty() ||
+        kind > static_cast<unsigned>(RelationKind::Contains) || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_IMPORT_RELATION_INVALID");
+    relation.kind = static_cast<RelationKind>(kind);
+    const auto existing = state.relations.find(relation.id);
+    if (existing != state.relations.end()) {
+      if (existing->second.kind != relation.kind ||
+          existing->second.from != relation.from ||
+          existing->second.to != relation.to)
+        return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_RELATION_CONFLICT");
+      continue;
+    }
+    if (!graph.apply_relation(state, relation, error))
+      return fail("CLUSTER_ARCHIVE_IMPORT_RELATION_SEMANTICS_INVALID");
+  }
+
+  bool has_focus = false;
+  if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_INVALID");
+  {
+    std::istringstream row(line);
+    unsigned value = 0;
+    std::string extra;
+    if (!(row >> tag >> value) || tag != "has_focus" || value > 1 || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_INVALID");
+    has_focus = value != 0;
+  }
+  std::optional<FocusRecord> archived_focus;
+  if (has_focus) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_INVALID");
+    std::istringstream row(line);
+    FocusRecord focus;
+    unsigned chaos = 0;
+    std::string extra;
+    if (!(row >> tag >> std::quoted(focus.cluster_id) >>
+          std::quoted(focus.interest_id) >> chaos) ||
+        tag != "focus" || chaos > 1 || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_INVALID");
+    focus.chaos_cluster = chaos != 0;
+    archived_focus = std::move(focus);
+  }
+  if (!read_header("focus_history", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_HISTORY_INVALID");
+  const auto preexisting_focus = state.focus;
+  std::vector<FocusRecord> imported_focus_history;
+  imported_focus_history.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_HISTORY_INVALID");
+    std::istringstream row(line);
+    FocusRecord focus;
+    unsigned chaos = 0;
+    std::string extra;
+    if (!(row >> tag >> std::quoted(focus.cluster_id) >>
+          std::quoted(focus.interest_id) >> chaos) ||
+        tag != "focus" || chaos > 1 || (row >> extra))
+      return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_HISTORY_INVALID");
+    focus.chaos_cluster = chaos != 0;
+    imported_focus_history.push_back(std::move(focus));
+  }
+  for (const auto& focus : imported_focus_history) {
+    if (!graph.apply_focus(state, focus, error))
+      return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_HISTORY_SEMANTICS_INVALID");
+  }
+  if (preexisting_focus) state.focus = preexisting_focus;
+  else if (archived_focus) {
+    if (!graph.apply_focus(state, *archived_focus, error))
+      return fail("CLUSTER_ARCHIVE_IMPORT_FOCUS_SEMANTICS_INVALID");
+  } else {
+    state.focus.reset();
+  }
+
+  if (!read_header("scope_spans", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    std::istringstream row(line);
+    std::string id, digest, basis, extra;
+    unsigned kind = 0, has_closer = 0;
+    ScopeSpanProposal proposal;
+    if (!(row >> tag >> std::quoted(id) >> kind >> std::quoted(digest) >>
+          std::quoted(basis)) || tag != "scope" ||
+        kind > static_cast<unsigned>(ScopeKind::TableHeader))
+      return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    proposal.span_id = id;
+    proposal.kind = static_cast<ScopeKind>(kind);
+    proposal.source_digest = digest;
+    proposal.offset_basis = basis;
+    auto read_anchor = [&](ScopeAnchor& anchor) {
+      return static_cast<bool>(row >> std::quoted(anchor.anchor_id) >>
+          std::quoted(anchor.source_digest) >> std::quoted(anchor.offset_basis) >>
+          anchor.start_offset >> anchor.end_offset >>
+          std::quoted(anchor.exact_text) >> std::quoted(anchor.packet_ref));
+    };
+    if (!read_anchor(proposal.opener) || !(row >> has_closer) || has_closer > 1)
+      return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    if (has_closer) {
+      ScopeAnchor closer;
+      if (!read_anchor(closer)) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+      proposal.closer = std::move(closer);
+    }
+    if (row >> extra) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    {
+      std::istringstream vector_row(line);
+      std::size_t n = 0;
+      std::string value, trailing;
+      if (!(vector_row >> n) || n > payload.size())
+        return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+      for (std::size_t j = 0; j < n; ++j) {
+        if (!(vector_row >> std::quoted(value))) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+        proposal.target_refs.push_back(value);
+      }
+      if (vector_row >> trailing) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    }
+    if (!read_vector("scope_antecedents", proposal.antecedent_refs))
+      return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    {
+      std::istringstream meta(line);
+      std::size_t n = 0;
+      std::string meta_tag;
+      if (!(meta >> meta_tag >> std::quoted(proposal.attribution_ref) >>
+            std::quoted(proposal.modality_kind) >> std::quoted(proposal.temporal_role) >>
+            std::quoted(proposal.parent_ref) >> n) || meta_tag != "scope_meta" ||
+          n > payload.size())
+        return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+      for (std::size_t j = 0; j < n; ++j) {
+        std::string packet;
+        if (!(meta >> std::quoted(packet))) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+        proposal.packet_refs.push_back(std::move(packet));
+      }
+      std::string trailing;
+      if (meta >> trailing) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    }
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+    {
+      std::istringstream result(line);
+      unsigned status = 0, effect = 0, may_emit = 0;
+      std::string result_tag, trailing;
+      if (!(result >> result_tag >> status >> effect >> may_emit) ||
+          result_tag != "scope_result" || status > 1 || effect > 9 ||
+          may_emit > 1 || (result >> trailing))
+        return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_INVALID");
+      ScopeSpanRecord record{std::move(proposal), static_cast<ScopeStatus>(status),
+          static_cast<ScopeEffect>(effect), may_emit != 0};
+      const auto found = state.scope_spans.find(record.proposal.span_id);
+      if (found != state.scope_spans.end())
+        return fail("CLUSTER_ARCHIVE_IMPORT_SCOPE_ID_CONFLICT");
+      state.scope_spans.emplace(record.proposal.span_id, std::move(record));
+    }
+  }
+
+  if (!read_header("claim_validity_histories", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_VALIDITY_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_VALIDITY_INVALID");
+    std::istringstream owner_row(line);
+    std::string owner, extra;
+    std::size_t records = 0;
+    if (!(owner_row >> tag >> std::quoted(owner) >> records) ||
+        tag != "claim_history" || records > payload.size() ||
+        (owner_row >> extra) || state.claim_validity_history.count(owner))
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_VALIDITY_CONFLICT");
+    for (std::size_t j = 0; j < records; ++j) {
+      if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_VALIDITY_INVALID");
+      std::istringstream row(line);
+      ClaimValidity validity;
+      ClaimValidityRecord record;
+      if (!(row >> tag >> std::quoted(validity.claim_id) >>
+            std::quoted(validity.valid_from) >> std::quoted(validity.valid_until) >>
+            std::quoted(validity.basis_evidence_id) >> validity.revision >>
+            std::quoted(validity.review_evidence_id) >> std::quoted(validity.reviewer_id) >>
+            record.recorded_state_version) || tag != "claim_validity" ||
+          validity.claim_id != owner || !graph.apply_claim_validity(state, validity,
+              record.recorded_state_version, error))
+        return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_VALIDITY_SEMANTICS_INVALID");
+    }
+  }
+
+  if (!read_header("evidence_validity_histories", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_EVIDENCE_VALIDITY_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_EVIDENCE_VALIDITY_INVALID");
+    std::istringstream owner_row(line);
+    std::string owner, extra;
+    std::size_t records = 0;
+    if (!(owner_row >> tag >> std::quoted(owner) >> records) ||
+        tag != "evidence_history" || records > payload.size() ||
+        (owner_row >> extra) || state.evidence_validity_history.count(owner))
+      return fail("CLUSTER_ARCHIVE_IMPORT_EVIDENCE_VALIDITY_CONFLICT");
+    for (std::size_t j = 0; j < records; ++j) {
+      if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_EVIDENCE_VALIDITY_INVALID");
+      std::istringstream row(line);
+      EvidenceValidity validity;
+      std::uint64_t recorded_version = 0;
+      if (!(row >> tag >> std::quoted(validity.evidence_id) >>
+            std::quoted(validity.valid_from) >> std::quoted(validity.valid_until) >>
+            std::quoted(validity.basis_evidence_id) >> validity.revision >>
+            std::quoted(validity.review_evidence_id) >> std::quoted(validity.reviewer_id) >>
+            recorded_version) || tag != "evidence_validity" ||
+          validity.evidence_id != owner ||
+          !graph.apply_evidence_validity(state, validity, recorded_version, error))
+        return fail("CLUSTER_ARCHIVE_IMPORT_EVIDENCE_VALIDITY_SEMANTICS_INVALID");
+    }
+  }
+
+  if (!read_header("dependency_evaluations", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_INVALID");
+    std::istringstream header(line);
+    std::string record_id, delta_id, extra;
+    std::size_t triggers = 0;
+    if (!(header >> tag >> std::quoted(record_id) >> std::quoted(delta_id) >> triggers) ||
+        tag != "dependency" || record_id != delta_id || triggers > payload.size() ||
+        (header >> extra) || state.dependency_evaluations.count(record_id))
+      return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_CONFLICT");
+    DependencyEvaluationRecord record;
+    record.delta_id = delta_id;
+    std::ostringstream encoded;
+    encoded << std::quoted(delta_id) << ' ' << triggers;
+    for (std::size_t j = 0; j < triggers; ++j) {
+      if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_INVALID");
+      std::istringstream trigger(line);
+      DependencyTrigger item;
+      std::string trigger_tag, trailing;
+      if (!(trigger >> trigger_tag >> std::quoted(item.dependency_id) >>
+            std::quoted(item.prerequisite_id) >> std::quoted(item.dependent_id)) ||
+          trigger_tag != "trigger" || (trigger >> trailing))
+        return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_INVALID");
+      record.triggered.push_back(item);
+      encoded << ' ' << std::quoted(item.dependency_id) << ' '
+          << std::quoted(item.prerequisite_id) << ' ' << std::quoted(item.dependent_id);
+    }
+    std::vector<std::string> impacted, rejected;
+    if (!read_vector("impacted", impacted) || !read_vector("rejected", rejected))
+      return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_INVALID");
+    record.impacted_nodes = impacted;
+    record.rejected_dependencies = rejected;
+    encoded << ' ' << impacted.size();
+    for (const auto& id : impacted) encoded << ' ' << std::quoted(id);
+    encoded << ' ' << rejected.size();
+    for (const auto& id : rejected) encoded << ' ' << std::quoted(id);
+    if (!graph.replay_event(state, JournalEvent{"archive/" + record_id,
+        "DEPENDENCY_EVALUATION", encoded.str()}, error))
+      return fail("CLUSTER_ARCHIVE_IMPORT_DEPENDENCY_SEMANTICS_INVALID");
+  }
+
+  if (!read_header("reassessment_histories", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+    std::istringstream owner_row(line);
+    std::string owner, extra;
+    std::size_t records = 0;
+    if (!(owner_row >> tag >> std::quoted(owner) >> records) ||
+        tag != "reassessment" || records > payload.size() ||
+        (owner_row >> extra) || state.reassessment_history.count(owner))
+      return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_CONFLICT");
+    for (std::size_t j = 0; j < records; ++j) {
+      if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+      std::istringstream row(line);
+      TemporalReassessmentRecord record;
+      unsigned lifecycle = 0, temporal = 0;
+      std::size_t evidence_count = 0;
+      if (!(row >> tag >> std::quoted(record.trace_id) >>
+            std::quoted(record.claim_id) >> std::quoted(record.reference_at) >>
+            std::quoted(record.decision) >> std::quoted(record.claim_valid_from) >>
+            std::quoted(record.claim_valid_until) >>
+            std::quoted(record.claim_validity_basis_evidence_id) >>
+            std::quoted(record.reason_code) >> record.claim_validity_revision >>
+            record.claim_validity_recorded_state_version >>
+            record.evaluated_state_version >> record.recorded_state_version >>
+            record.sequence >> lifecycle >> temporal >>
+            std::quoted(record.previous_hash) >> std::quoted(record.snapshot_digest) >>
+            std::quoted(record.chain_hash) >> evidence_count) ||
+          tag != "reassessment_record" || record.claim_id != owner ||
+          lifecycle > static_cast<unsigned>(ClaimStatus::Retracted) ||
+          temporal > static_cast<unsigned>(ClaimTemporalState::Expired) ||
+          evidence_count > payload.size() || (row >> extra))
+        return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+      record.lifecycle = static_cast<ClaimStatus>(lifecycle);
+      record.claim_temporal_state = static_cast<ClaimTemporalState>(temporal);
+      for (std::size_t k = 0; k < evidence_count; ++k) {
+        if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+        std::istringstream evidence_row(line);
+        ReassessmentEvidenceSnapshot evidence;
+        unsigned relation = 0, state_value = 0, eligible = 0;
+        if (!(evidence_row >> tag >> std::quoted(evidence.evidence_id) >>
+              std::quoted(evidence.relation_id) >> relation >>
+              evidence.validity_revision >> evidence.validity_recorded_state_version >>
+              std::quoted(evidence.valid_from) >> std::quoted(evidence.valid_until) >>
+              std::quoted(evidence.basis_evidence_id) >> state_value >> eligible) ||
+            tag != "reassessment_evidence" ||
+            relation > static_cast<unsigned>(RelationKind::Contains) ||
+            state_value > static_cast<unsigned>(ClaimTemporalState::Expired) ||
+            eligible > 1 || (evidence_row >> extra))
+          return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+        evidence.relation = static_cast<RelationKind>(relation);
+        evidence.temporal_state = static_cast<ClaimTemporalState>(state_value);
+        evidence.eligible = eligible != 0;
+        record.evidence.push_back(std::move(evidence));
+      }
+      if (!read_vector("active_supports", record.active_support_ids) ||
+          !read_vector("active_contradictions", record.active_contradiction_ids))
+        return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_INVALID");
+      std::ostringstream snapshot;
+      snapshot << std::quoted(record.trace_id) << ' ' << std::quoted(record.claim_id) << ' '
+          << std::quoted(record.reference_at) << ' ' << std::quoted(record.decision) << ' '
+          << std::quoted(record.claim_valid_from) << ' ' << std::quoted(record.claim_valid_until) << ' '
+          << std::quoted(record.claim_validity_basis_evidence_id) << ' '
+          << std::quoted(record.reason_code) << ' ' << record.claim_validity_revision << ' '
+          << record.claim_validity_recorded_state_version << ' '
+          << record.evaluated_state_version << ' ' << record.recorded_state_version << ' '
+          << record.sequence << ' ' << lifecycle << ' ' << temporal << ' '
+          << record.evidence.size();
+      for (const auto& evidence : record.evidence)
+        snapshot << ' ' << std::quoted(evidence.evidence_id) << ' '
+            << std::quoted(evidence.relation_id) << ' '
+            << static_cast<unsigned>(evidence.relation) << ' '
+            << evidence.validity_revision << ' '
+            << evidence.validity_recorded_state_version << ' '
+            << std::quoted(evidence.valid_from) << ' '
+            << std::quoted(evidence.valid_until) << ' '
+            << std::quoted(evidence.basis_evidence_id) << ' '
+            << static_cast<unsigned>(evidence.temporal_state) << ' '
+            << (evidence.eligible ? 1 : 0);
+      snapshot << ' ' << record.active_support_ids.size();
+      for (const auto& id : record.active_support_ids) snapshot << ' ' << std::quoted(id);
+      snapshot << ' ' << record.active_contradiction_ids.size();
+      for (const auto& id : record.active_contradiction_ids) snapshot << ' ' << std::quoted(id);
+      std::ostringstream event_payload;
+      event_payload << std::quoted(record.previous_hash) << ' '
+          << std::quoted(record.snapshot_digest) << ' '
+          << std::quoted(record.chain_hash) << ' ' << std::quoted(snapshot.str());
+      if (!graph.apply_reassessment(state, record, error))
+        return fail("CLUSTER_ARCHIVE_IMPORT_REASSESSMENT_SEMANTICS_INVALID");
+    }
+  }
+
+  if (!read_header("question_states", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_STATE_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_STATE_INVALID");
+    std::istringstream row(line);
+    std::string id, extra;
+    unsigned memory_state = 0;
+    std::uint64_t references = 0;
+    if (!(row >> tag >> std::quoted(id) >> memory_state >> references) ||
+        tag != "question_state" || memory_state > static_cast<unsigned>(QuestionMemoryState::Archived) ||
+        (row >> extra) || !state.nodes.count(id) ||
+        state.nodes.at(id).kind != NodeKind::Question)
+      return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_STATE_INVALID");
+    state.question_memory_states[id] = static_cast<QuestionMemoryState>(memory_state);
+    if (references) state.question_reference_counts[id] = references;
+  }
+
+  if (!read_header("question_aspect_states", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_INVALID");
+    std::istringstream row(line);
+    std::string id, extra;
+    unsigned status = 0;
+    if (!(row >> tag >> std::quoted(id) >> status) ||
+        tag != "question_aspect_state" ||
+        status > static_cast<unsigned>(QuestionAspectStatus::Deferred) ||
+        (row >> extra) || !state.nodes.count(id) ||
+        state.nodes.at(id).kind != NodeKind::QuestionAspect)
+      return fail("CLUSTER_ARCHIVE_IMPORT_QUESTION_ASPECT_INVALID");
+    state.question_aspect_statuses[id] = static_cast<QuestionAspectStatus>(status);
+  }
+
+  if (!read_header("claim_lifecycle_states", count))
+    return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+  for (std::size_t i = 0; i < count; ++i) {
+    if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    std::istringstream row(line);
+    std::string id, extra;
+    unsigned status = 0;
+    if (!(row >> tag >> std::quoted(id) >> status) ||
+        tag != "claim_status" || status > static_cast<unsigned>(ClaimStatus::Retracted) ||
+        (row >> extra) || !state.nodes.count(id) ||
+        state.nodes.at(id).kind != NodeKind::Claim)
+      return fail("CLUSTER_ARCHIVE_IMPORT_CLAIM_STATUS_INVALID");
+    state.claim_statuses[id] = static_cast<ClaimStatus>(status);
+  }
+  if (std::getline(input, line)) return fail("CLUSTER_ARCHIVE_IMPORT_TRAILING_DATA");
+  error.clear();
+  return true;
+}
+
 bool ClusterArchiveStore::archive(const std::string& cluster_id,
     std::uint64_t state_version, std::uint64_t journal_sequence,
     const std::string& payload, std::string* error) {
