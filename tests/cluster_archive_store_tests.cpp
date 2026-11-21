@@ -286,6 +286,85 @@ focus_history 0
         "question_state \"q1\" 0 0\nquestion_state \"q2\" 0 0\n"
         "question_aspect_states 0\nclaim_lifecycle_states 0\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_dependency, &detach_error));
+
+    // Restore non-empty validity histories into a fresh graph, then prove the
+    // imported state is reconstructed from its journal in a new graph object.
+    {
+      const std::string history_path = "cluster_archive_history_import.journal";
+      std::remove(history_path.c_str());
+      {
+        EventJournal history_journal(history_path);
+        CHECK(history_journal.open());
+        ContextGraph history_graph(history_journal);
+        CHECK(history_graph.open());
+        auto limits = ResourceBudgetLimits::temporary_edge_200mb();
+        limits.retained_events = 4096;
+        limits.retained_clusters = 256;
+        ResourceBudget history_budget(limits);
+        BudgetedContextGraph history_facade(history_graph, history_budget);
+        CHECK(history_facade.recover(detach_error));
+        ClusterArchiveRecord history_record;
+        history_record.cluster_id = "cluster-a";
+        history_record.state_version = graph.state_version() + 1;
+        history_record.journal_sequence = history_record.state_version;
+        history_record.payload = valid_histories;
+        const auto imported = restore_cluster_archive_graph_records(
+            history_record, history_graph, history_facade, history_graph.state_version(),
+            "history-import", "history-import-key");
+        if (!imported.committed) std::cerr << "History import failed: " << imported.error << "\n";
+        CHECK(imported.committed);
+        CHECK(history_graph.claim_validity_history().at("c1").size() == 1);
+        CHECK(history_graph.evidence_validity_history().at("e1").size() == 1);
+        CHECK(history_graph.claim_status("c1") == ClaimStatus::Active);
+      }
+      {
+        EventJournal replay_journal(history_path);
+        CHECK(replay_journal.open());
+        ContextGraph replay_graph(replay_journal);
+        CHECK(replay_graph.open());
+        CHECK(replay_graph.claim_validity_history().at("c1").size() == 1);
+        CHECK(replay_graph.evidence_validity_history().at("e1").size() == 1);
+      }
+      std::remove(history_path.c_str());
+    }
+
+    // Dependency evaluation history is restored with its trigger endpoints
+    // and retained as a first-class graph state after restart.
+    {
+      const std::string dependency_path = "cluster_archive_dependency_import.journal";
+      std::remove(dependency_path.c_str());
+      {
+        EventJournal dependency_journal(dependency_path);
+        CHECK(dependency_journal.open());
+        ContextGraph dependency_graph(dependency_journal);
+        CHECK(dependency_graph.open());
+        auto limits = ResourceBudgetLimits::temporary_edge_200mb();
+        limits.retained_events = 4096;
+        limits.retained_clusters = 256;
+        ResourceBudget dependency_budget(limits);
+        BudgetedContextGraph dependency_facade(dependency_graph, dependency_budget);
+        CHECK(dependency_facade.recover(detach_error));
+        ClusterArchiveRecord dependency_record;
+        dependency_record.cluster_id = "cluster-a";
+        dependency_record.state_version = graph.state_version();
+        dependency_record.journal_sequence = dependency_record.state_version;
+        dependency_record.payload = valid_dependency;
+        const auto imported = restore_cluster_archive_graph_records(
+            dependency_record, dependency_graph, dependency_facade,
+            dependency_graph.state_version(), "dependency-import", "dependency-import-key");
+        if (!imported.committed) std::cerr << "Dependency import failed: " << imported.error << "\n";
+        CHECK(imported.committed);
+        CHECK(dependency_graph.dependency_evaluations().count("delta-1") == 1);
+      }
+      {
+        EventJournal replay_journal(dependency_path);
+        CHECK(replay_journal.open());
+        ContextGraph replay_graph(replay_journal);
+        CHECK(replay_graph.open());
+        CHECK(replay_graph.dependency_evaluations().count("delta-1") == 1);
+      }
+      std::remove(dependency_path.c_str());
+    }
     std::string bad_dependency_endpoint = valid_dependency;
     const auto bad_endpoint_pos = bad_dependency_endpoint.find("trigger ");
     CHECK(bad_endpoint_pos != std::string::npos);
