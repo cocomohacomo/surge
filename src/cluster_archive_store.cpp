@@ -360,6 +360,8 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   if (!parse_count(line, "nodes", node_count) || node_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::set<std::string> node_ids;
+  std::map<std::string, unsigned> node_kinds;
+  std::vector<std::vector<std::string>> node_references;
   for (std::size_t i = 0; i < node_count; ++i) {
     if (!std::getline(input, line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
@@ -371,14 +373,23 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         tag != "node" || id.empty() || kind > 9 || refs > payload.size() ||
         !node_ids.insert(id).second)
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    node_kinds.emplace(id, kind);
+    std::vector<std::string> references;
+    references.reserve(refs);
     for (std::size_t r = 0; r < refs; ++r) {
       std::string reference;
       if (!(row >> std::quoted(reference)) || reference.empty())
         return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+      references.push_back(std::move(reference));
     }
     if (row >> extra)
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    node_references.push_back(std::move(references));
   }
+  for (const auto& references : node_references)
+    for (const auto& reference : references)
+      if (!node_ids.count(reference))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   if (!std::getline(input, line))
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::size_t relation_count = 0;
@@ -413,7 +424,15 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     unsigned chaos = 0;
     if (!(row >> tag >> std::quoted(cluster) >> std::quoted(interest) >> chaos) ||
         tag != "focus" || cluster.empty() || !node_ids.count(cluster) ||
+        (node_kinds.at(cluster) != static_cast<unsigned>(NodeKind::Cluster) &&
+         node_kinds.at(cluster) != static_cast<unsigned>(NodeKind::ChaosCluster)) ||
+        (!interest.empty() &&
+         (!node_ids.count(interest) ||
+          node_kinds.at(interest) != static_cast<unsigned>(NodeKind::Interest))) ||
         chaos > 1 || (row >> extra))
+      return false;
+    if ((node_kinds.at(cluster) == static_cast<unsigned>(NodeKind::ChaosCluster)) !=
+        (chaos != 0))
       return false;
     return true;
   };
