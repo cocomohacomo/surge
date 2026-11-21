@@ -1649,6 +1649,27 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
       return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
   }
 
+  // Do not report a successful partial restore when the archive contains
+  // historical domains that this transaction cannot yet import. In particular,
+  // ScopeSpan restoration requires the original normalized source snapshot,
+  // which is not part of the v2 archive record. The complete payload validator
+  // has already checked the records; this guard makes the remaining limitation
+  // explicit and fail-closed instead of silently dropping durable state.
+  const std::set<std::string> unsupported_history_sections = {
+      "scope_spans", "claim_validity_histories",
+      "evidence_validity_histories", "dependency_evaluations",
+      "reassessment_histories", "claim_lifecycle_states"};
+  while (std::getline(input, line)) {
+    std::istringstream section(line);
+    std::string section_name, extra;
+    std::size_t section_count = 0;
+    if (!(section >> section_name >> section_count)) continue;
+    if (unsupported_history_sections.count(section_name) && section_count != 0)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_" +
+                  section_name);
+    if (section >> extra) continue;
+  }
+
   std::set<std::string> available_nodes;
   for (const auto& item : graph.nodes()) available_nodes.insert(item.first);
   available_nodes.insert(archive_node_ids.begin(), archive_node_ids.end());
