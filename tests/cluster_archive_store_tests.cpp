@@ -200,6 +200,11 @@ focus_history 0
     const std::string focus_non_interest = make_payload("cluster-a", graph.state_version(),
         "nodes 2\nnode \"c1\" 0 \"cluster\" 0\nnode \"e1\" 2 \"entity\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"e1\" 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(focus_non_interest, &detach_error));
+  const std::string focus_interest_wrong_aspect = make_payload("cluster-a", graph.state_version(),
+      "nodes 3\nnode \"c1\" 0 \"cluster\" 0\nnode \"e1\" 2 \"entity\" 0\n"
+      "node \"i1\" 8 \"interest\" 2 \"e1\" \"c1\"\n"
+      "relations 0\nhas_focus 1\nfocus \"c1\" \"i1\" 0\nfocus_history 0\n");
+  CHECK(!validate_cluster_archive_payload_graph_records(focus_interest_wrong_aspect, &detach_error));
     const std::string focus_chaos_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nnode \"c1\" 0 \"cluster\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"\" 1\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(focus_chaos_mismatch, &detach_error));
