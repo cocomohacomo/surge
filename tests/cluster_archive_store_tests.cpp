@@ -212,8 +212,22 @@ focus_history 0
           "restore-focus-repeat", "restore-focus-repeat-key");
       CHECK(focus_repeat.committed);
 
-      std::remove(restore_journal_path.c_str());
     }
+
+    // Archive imports are durable single-event transactions and must rebuild
+    // every imported graph/history domain from the journal after process restart.
+    {
+      EventJournal reopened_archive_journal("cluster_archive_restore_test.journal");
+      CHECK(reopened_archive_journal.open());
+      ContextGraph replayed_archive_graph(reopened_archive_journal);
+      CHECK(replayed_archive_graph.open());
+      CHECK(replayed_archive_graph.nodes().count("archive-a") == 1);
+      CHECK(replayed_archive_graph.nodes().count("exclusive") == 1);
+      CHECK(replayed_archive_graph.nodes().count("focus-cluster") == 1);
+      CHECK(replayed_archive_graph.focus().has_value());
+      CHECK(replayed_archive_graph.focus()->cluster_id == "focus-cluster");
+    }
+    std::remove("cluster_archive_restore_test.journal");
 
     const std::string duplicate_nodes = make_payload("cluster-a", graph.state_version(),
         "nodes 2\nnode \"n1\" 2 \"a\" 0\nnode \"n1\" 2 \"b\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
