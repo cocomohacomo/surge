@@ -764,15 +764,13 @@ bool ContextGraph::append_unresolved_membership(SemanticDelta& delta,
  }
  const auto member=state_.nodes.find(member_node_id);
  bool member_in_delta=false;
- NodeKind member_kind=NodeKind::Entity;
  for(const auto& item:delta.nodes)if(item.node.id==member_node_id){
   if(member_in_delta){error="CHAOS_MEMBERSHIP_MEMBER_DUPLICATE";return false;}
-  member_in_delta=true;member_kind=item.node.kind;
+  member_in_delta=true;
  }
  if(member==state_.nodes.end()&&!member_in_delta){
   error="CHAOS_MEMBERSHIP_MEMBER_NOT_FOUND";return false;
  }
- if(member!=state_.nodes.end())member_kind=member->second.kind;
  if(member_node_id=="surge:chaos:unresolved-root"){
   error="CHAOS_MEMBERSHIP_ROOT_CANNOT_BE_MEMBER";return false;
  }
