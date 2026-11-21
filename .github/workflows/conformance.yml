@@ -25,6 +25,13 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install relocatable CMake package
+        run: cmake --install build --config Release --prefix "$PWD/stage"
+      - name: Build external installed-package consumer
+        run: |
+          cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$PWD/stage" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-consumer --config Release --parallel
+          ./build-consumer/surge_installed_consumer
 
   journal-cross-platform:
     strategy:
