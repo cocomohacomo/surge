@@ -1111,6 +1111,12 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
       !parse_count(line, "question_states", question_count) ||
       question_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
+  const auto expected_question_count = static_cast<std::size_t>(std::count_if(
+      node_kinds.begin(), node_kinds.end(), [](const auto& item) {
+        return item.second == static_cast<unsigned>(NodeKind::Question);
+      }));
+  if (question_count != expected_question_count)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
   std::set<std::string> question_ids;
   for (std::size_t i = 0; i < question_count; ++i) {
     if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_STATE_INVALID");
@@ -1130,6 +1136,12 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
       !parse_count(line, "question_aspect_states", aspect_count) ||
       aspect_count > payload.size())
     return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
+  const auto expected_aspect_count = static_cast<std::size_t>(std::count_if(
+      node_kinds.begin(), node_kinds.end(), [](const auto& item) {
+        return item.second == static_cast<unsigned>(NodeKind::QuestionAspect);
+      }));
+  if (aspect_count != expected_aspect_count)
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
   std::set<std::string> aspect_ids;
   for (std::size_t i = 0; i < aspect_count; ++i) {
     if (!std::getline(input, line)) return fail("CLUSTER_ARCHIVE_PAYLOAD_QUESTION_ASPECT_STATE_INVALID");
@@ -1147,6 +1159,12 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
   if (!std::getline(input, line) ||
       !parse_count(line, "claim_lifecycle_states", claim_count) ||
       claim_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
+  const auto expected_claim_count = static_cast<std::size_t>(std::count_if(
+      node_kinds.begin(), node_kinds.end(), [](const auto& item) {
+        return item.second == static_cast<unsigned>(NodeKind::Claim);
+      }));
+  if (claim_count != expected_claim_count)
     return fail("CLUSTER_ARCHIVE_PAYLOAD_CLAIM_LIFECYCLE_INVALID");
   std::set<std::string> claim_ids;
   for (std::size_t i = 0; i < claim_count; ++i) {
