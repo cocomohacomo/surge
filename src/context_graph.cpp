@@ -1271,14 +1271,25 @@ class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore
   PreparedContextGraphSnapshotRestore(ContextGraph* owner, ContextGraph::State state,
       std::map<std::string, std::string> idempotency)
       : owner_(owner), state_(std::move(state)), idempotency_(std::move(idempotency)) {}
-  void commit() noexcept override {
-    owner_->state_ = std::move(state_);
+  bool commit() noexcept override {
+    using std::swap;
+    swap(owner_->state_, state_);
     owner_->idempotency_.swap(idempotency_);
+    committed_ = true;
+    return true;
+  }
+  void rollback() noexcept override {
+    if (!committed_) return;
+    using std::swap;
+    swap(owner_->state_, state_);
+    owner_->idempotency_.swap(idempotency_);
+    committed_ = false;
   }
  private:
   ContextGraph* owner_;
   ContextGraph::State state_;
   std::map<std::string, std::string> idempotency_;
+  bool committed_{false};
 };
 
 std::string ContextGraphSnapshotDomain::domain_id() const {
