@@ -33,10 +33,11 @@ bool validate_cluster_archive_payload_identity(const std::string& payload,
 bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     std::string* error);
 
-// Restores the validated node/relation portion of an archive in one guarded
+// Restores validated graph nodes/relations and the current Focus in one guarded
 // semantic transaction. Existing identical records are idempotently retained;
-// conflicting IDs abort before any graph mutation. Ancillary histories are not
-// imported by this graph-records-only operation.
+// conflicting IDs abort before any graph mutation. Historical Focus entries,
+// ScopeSpan, validity/dependency/reassessment histories, Question states and
+// Claim lifecycle states are validated but are not imported by this operation.
 struct ClusterArchiveGraphRestoreResult {
   bool committed{false};
   bool duplicate{false};
