@@ -73,12 +73,15 @@ class SnapshotCoordinator {
   bool capture(const std::string& context_id, std::uint64_t state_version,
                std::uint64_t journal_sequence, std::string* bytes,
                std::string* error) const;
+  // All restore variants require the host to quiesce readers and writers
+  // across every registered domain. Preparation is side-effect-free; if a
+  // later domain refuses commit, earlier commits are rolled back in reverse.
   bool restore(const std::string& bytes, const std::string& expected_context_id,
                std::uint64_t minimum_state_version,
                std::uint64_t minimum_journal_sequence,
                std::string* error);
   // Atomically prepare all registered domains from the snapshot plus a
-  // bounded journal tail. The caller must quiesce all writers/readers.
+  // bounded journal tail. The same cross-domain quiescence contract applies.
   bool restore_with_tail(const std::string& bytes, EventJournal& journal,
                const std::string& expected_context_id,
                std::uint64_t minimum_state_version,
