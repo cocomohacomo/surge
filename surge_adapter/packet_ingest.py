@@ -11,6 +11,7 @@ import hashlib
 import os
 import json
 import pathlib
+from surge_adapter._paths import schema_path
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -18,7 +19,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "schemas" / "surge-v0.9-input.schema.json"
+SCHEMA_PATH = schema_path("surge-v0.9-input.schema.json")
 
 
 class PacketRejected(ValueError):
