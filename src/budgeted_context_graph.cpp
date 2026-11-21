@@ -381,7 +381,7 @@ DeltaResult BudgetedContextGraph::restore_cluster_archive(
   // Count only actual cluster nodes in the archive's node section.
   std::istringstream scan(payload);
   std::string line;
-  for (int i = 0; i < 3; ++i)
+  for (int i = 0; i < 4; ++i)
     if (!std::getline(scan, line))
       return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_HEADER_INVALID"};
   std::size_t node_count = 0;
