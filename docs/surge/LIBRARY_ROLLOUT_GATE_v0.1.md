@@ -57,8 +57,9 @@ decision.
 - [x] Backup/verify tooling and snapshot primitives.
 - [x] Explicit power-loss durability contract per supported filesystem/OS (software barriers and limits documented; hardware power-cut qualification remains deployment-specific).
 - [x] Multi-process writer exclusion enforced with OS locks and documented as single-writer ownership.
-- [ ] Full domain snapshot/restore coverage, including histories and atomic
-  cross-domain rollback.
+- [x] SnapshotCoordinator restore coverage for all five registered domains: ContextGraph (including temporal/dependency/reassessment histories and idempotency), EvidenceProvenance, ChaosCluster (including lifecycle, membership, observation, association and hypothesis histories), TemporalBoundary, and TemporalQuestion.
+- [x] Prepared restore publication is reversible: if a later domain refuses commit, already-published domains roll back in reverse order. Failure-injection tests cover direct restore, checkpoint-plus-tail restore, and store-backed restore.
+- [ ] ClusterArchiveStore archive-history restore and cross-domain archive rollback remain a separate, fail-closed workstream.
 - [x] Backup restore tested through the separately installed native verifier in a fresh temporary directory and separate process on Linux, macOS, and Windows.
 - [ ] Corruption, disk-full and permission fault injection across all persistence paths.
 - [x] Snapshot writer exclusion and pre-/post-atomic-replacement failure recovery tests.
@@ -103,6 +104,12 @@ decision.
 - [ ] Release notes, migration guide, supported platform matrix and rollback
   instructions.
 - [ ] Tagged release built from a green, reviewed commit.
+
+## Snapshot restore transaction contract
+
+`SnapshotCoordinator` prepares every registered domain without mutating live state. Each prepared adapter must implement a no-throw reversible publication: a failed `commit()` must leave its own domain unchanged, and `rollback()` must restore the exact pre-commit state. If publication fails, the coordinator rolls back previously committed domains in reverse registration order. The host must quiesce readers and writers across all registered domains for the full restore operation; rollback guarantees failure recovery, while quiescence prevents readers from observing intermediate cross-domain publication.
+
+This contract is verified for `restore`, `restore_with_tail`, and `restore_from_store`. It does not close the separate `ClusterArchiveStore` history-domain restoration gap or establish hardware power-loss qualification.
 
 ## Current stop-ship conditions
 
