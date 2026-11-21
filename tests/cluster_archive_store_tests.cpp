@@ -150,8 +150,8 @@ int main() {
       const std::string focus_payload = make_payload("focus-cluster", 2,
           R"(nodes 3
 node "focus-cluster" 0 "focus target" 0
-node "focus-signal" 2 "signal" 0
-node "focus-interest" 8 "interest" 2 "focus-signal" "focus-cluster"
+node "focus-aspect" 6 "focus aspect" 0
+node "focus-interest" 8 "interest" 2 "focus-aspect" "focus-cluster"
 relations 0
 has_focus 1
 focus "focus-cluster" "focus-interest" 0
