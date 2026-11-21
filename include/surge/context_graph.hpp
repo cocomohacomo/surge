@@ -117,6 +117,19 @@ struct CognitionObservation {
   std::size_t dependency_evaluation_count{0};
   // Snapshot semantics: detached copies, safe for external read-only inspection.
 };
+struct CognitionCandidate {
+  std::string cluster_id;
+  std::vector<std::string> supporting_member_ids;
+  std::vector<std::string> matched_terms;
+  double recall_score{0.0}; // Recall-only score; never a Contains weight.
+  std::uint64_t memory_state_version{0};
+};
+struct CognitionFeedback {
+  std::string feedback_id, candidate_cluster_id, input_member_id;
+  std::string outcome; // CONFIRMED, REJECTED, UNRESOLVED, REVISED
+  std::string producer_id, producer_version, policy_version, recorded_at;
+  std::string notes;
+};
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraphSnapshotDomain;
 class PreparedContextGraphSnapshotRestore;
@@ -156,6 +169,15 @@ class ContextGraph {
   std::uint64_t state_version() const { return journal_->state_version(); }
   // Read-only projection of the exact committed cognition state; no inference or mutation.
   CognitionObservation observe_cognition() const;
+  // Deterministic lightweight associative recall. Query terms are supplied by
+  // the caller; Core does not classify the input. Scores are retrieval-only.
+  std::vector<CognitionCandidate> recall_cognition_candidates(
+      const std::string& input_member_id, const std::vector<std::string>& query_terms,
+      std::size_t max_candidates = 8) const;
+  // Append externally evaluated candidate feedback to a caller-owned transaction.
+  bool append_cognition_feedback(SemanticDelta& delta,
+      const CognitionFeedback& feedback, const std::string& feedback_node_id,
+      const std::string& relation_id, std::string& error) const;
   // Safely encode and append one lifecycle transition plus its required
   // cluster membership edge to a caller-owned delta. No graph mutation occurs.
   bool append_cluster_lifecycle(SemanticDelta& delta,
