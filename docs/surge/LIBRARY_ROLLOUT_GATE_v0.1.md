@@ -47,7 +47,8 @@ decision.
 - [x] Clean-environment install test with no repository checkout on
   `PYTHONPATH`, using an isolated wheel and separately installed native Core.
 - [x] Public C ABI version macros, runtime query, and conformance test.
-- [x] Complete public C ABI function export manifest checked against built shared libraries on Linux, macOS, and Windows.\n- [ ] Version-to-version ABI compatibility automation and retained platform layout baselines.
+- [x] Complete public C ABI function export manifest checked against built shared libraries on Linux, macOS, and Windows.
+- [ ] Version-to-version ABI compatibility automation and retained platform layout baselines.
 
 ### Gate C: persistence and recovery safety
 
