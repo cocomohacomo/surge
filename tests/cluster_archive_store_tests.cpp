@@ -191,6 +191,18 @@ focus_history 0
       focus_record.state_version = 2;
       focus_record.journal_sequence = 2;
       focus_record.payload = focus_payload;
+      const auto unsupported_question_state = restore_cluster_archive_graph_records(
+          focus_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-focus", "restore-focus-key");
+      CHECK(!unsupported_question_state.committed);
+      CHECK(unsupported_question_state.error ==
+            "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_question_states");
+      CHECK(restored_graph.nodes().empty());
+
+      // The graph and current Focus can be restored when no unsupported
+      // question-state history is present. Never silently discard it.
+      focus_record.payload.replace(state_marker, focus_question_states.size(),
+                                   default_question_states);
       const auto focus_restored = restore_cluster_archive_graph_records(
           focus_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus", "restore-focus-key");
