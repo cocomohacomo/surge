@@ -11,7 +11,7 @@ import hashlib
 import os
 import json
 import pathlib
-from surge_adapter._paths import schema_path
+from surge_adapter._paths import resolve_native_core_library, schema_path
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -226,22 +226,7 @@ class CppCoreBridge:
     def __init__(self, journal_path: str | pathlib.Path,
                  library_path: str | pathlib.Path | None = None,
                  resource_limits: dict[str, int] | None = None):
-        import platform
-        if library_path is None:
-            configured = os.environ.get("SURGE_CORE_LIBRARY")
-            candidates = ([pathlib.Path(configured)] if configured else []) + [
-                ROOT / "build" / "libsurge_core.so",
-                ROOT / "build" / "libsurge_core.dylib",
-                ROOT / "build" / "surge_core.dll",
-                ROOT / "build" / "Release" / "surge_core.dll",
-            ]
-            library = next((p for p in candidates if p.is_file()), None)
-            if library is None:
-                raise FileNotFoundError(
-                    "SURGE C++ shared library not found; build it with CMake "
-                    "or set SURGE_CORE_LIBRARY")
-        else:
-            library = pathlib.Path(library_path)
+        library = resolve_native_core_library(library_path)
         self._lib = ctypes.CDLL(str(library))
         charp = ctypes.POINTER(ctypes.c_char)
         self._lib.surge_packet_core_open.argtypes = [
