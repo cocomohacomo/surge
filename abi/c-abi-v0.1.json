@@ -298,9 +298,84 @@
       "parameters": "void*,const char*,const char*,uint64_t,const char*,const char*,const char*,const SurgeChaosProvenanceInput*,uint64_t*,char*,size_t"
     },
     {
+      "name": "surge_classification_proposal_get",
+      "return_type": "int",
+      "parameters": "void*handle,const char*proposal_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_apply",
+      "return_type": "int",
+      "parameters": "void*handle,const char*delta_id,const char*idempotency_key,uint64_t expected_state_version,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeGraphRelationInput*relations,size_t relation_count,const char*focus_cluster_id,const char*focus_interest_id,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_apply_claim_validity",
+      "return_type": "int",
+      "parameters": "void*handle,const char*delta_id,const char*idempotency_key,uint64_t expected_state_version,const char*claim_id,const char*valid_from,const char*valid_until,const char*basis_evidence_id,uint64_t revision,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_apply_claim_validity_reviewed",
+      "return_type": "int",
+      "parameters": "void*handle,const char*delta_id,const char*idempotency_key,uint64_t expected_state_version,const char*claim_id,const char*valid_from,const char*valid_until,const char*basis_evidence_id,uint64_t revision,const char*review_evidence_id,const char*reviewer_id,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_claim_validity_at",
+      "return_type": "int",
+      "parameters": "void*handle,const char*claim_id,const char*instant,char*output,size_t output_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_dependency_evaluation",
+      "return_type": "int",
+      "parameters": "void*handle,const char*delta_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_focus_get",
+      "return_type": "int",
+      "parameters": "void*handle,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_focus_set_chaos",
+      "return_type": "int",
+      "parameters": "void*handle,const char*delta_id,const char*idempotency_key,uint64_t expected_state_version,const char*chaos_cluster_id,const char*interest_id,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_retrieve",
+      "return_type": "int",
+      "parameters": "void*handle,const char*query,const char*kinds_csv,size_t limit,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_retrieve_page",
+      "return_type": "int",
+      "parameters": "void*handle,const char*query,const char*kinds_csv,size_t offset,size_t limit,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
       "name": "surge_context_graph_scope_count",
       "return_type": "size_t",
       "parameters": "void*handle"
+    },
+    {
+      "name": "surge_evidence_provenance_get",
+      "return_type": "int",
+      "parameters": "void*handle,const char*evidence_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_packet_core_admit",
+      "return_type": "int",
+      "parameters": "void*handle,const char*packet_id,const char*idempotency_key,const char*context_id,const char*source_id,const char*source_generation,const char*block_ref,const char*offset_basis,uint64_t start_offset,uint64_t end_offset,uint64_t source_sequence,const char*source_snapshot_digest,const char*source_range_digest,const char*canonical_request_digest,const char*revision_of_packet_id,int revision,uint64_t revision_sequence,const unsigned char*snapshot,size_t snapshot_size,int*duplicate,uint64_t*state_version,uint64_t*watermark,char*packet_status,size_t status_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_packet_core_admit_and_apply",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRecognitionPacketInput*packet,const unsigned char*snapshot,size_t snapshot_size,const char*delta_id,const char*semantic_idempotency_key,uint64_t expected_state_version,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeGraphRelationInput*relations,size_t relation_count,const SurgeScopeSpanInput*scopes,size_t scope_count,const char*focus_cluster_id,const char*focus_interest_id,int*duplicate,uint64_t*state_version,char*packet_status,size_t status_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_packet_core_admit_and_apply_with_metadata",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRecognitionPacketInput*packet,const unsigned char*snapshot,size_t snapshot_size,const char*delta_id,const char*semantic_idempotency_key,uint64_t expected_state_version,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeGraphRelationInput*relations,size_t relation_count,const SurgeScopeSpanInput*scopes,size_t scope_count,const char*focus_cluster_id,const char*focus_interest_id,const SurgeClassificationProposalInput*proposal,const SurgeEvidenceProvenanceInput*provenance,int*duplicate,uint64_t*state_version,char*packet_status,size_t status_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_packet_core_admit_and_apply_with_proposal",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRecognitionPacketInput*packet,const unsigned char*snapshot,size_t snapshot_size,const char*delta_id,const char*semantic_idempotency_key,uint64_t expected_state_version,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeGraphRelationInput*relations,size_t relation_count,const SurgeScopeSpanInput*scopes,size_t scope_count,const char*focus_cluster_id,const char*focus_interest_id,const SurgeClassificationProposalInput*proposal,int*duplicate,uint64_t*state_version,char*packet_status,size_t status_capacity,char*error,size_t error_capacity"
     },
     {
       "name": "surge_packet_core_close",
@@ -313,6 +388,11 @@
       "parameters": "const char*journal_path,char*error,size_t error_capacity"
     },
     {
+      "name": "surge_packet_core_open_with_limits",
+      "return_type": "void*",
+      "parameters": "const char*journal_path,const SurgeResourceBudgetLimits*limits,char*error,size_t error_capacity"
+    },
+    {
       "name": "surge_packet_core_packet_count",
       "return_type": "size_t",
       "parameters": "void*handle"
@@ -323,7 +403,32 @@
       "parameters": "void*handle"
     },
     {
+      "name": "surge_question_aspect_get_status",
+      "return_type": "int",
+      "parameters": "void*handle,const char*aspect_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_aspect_set_status",
+      "return_type": "int",
+      "parameters": "void*handle,const char*aspect_id,const char*status,uint64_t expected_state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_aspect_set_status_batch",
+      "return_type": "int",
+      "parameters": "void*handle,const char*const*aspect_ids,const char*const*statuses,size_t count,uint64_t expected_state_version,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_get_aggregate_status",
+      "return_type": "int",
+      "parameters": "void*handle,const char*question_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
       "name": "surge_question_get_context_bundle",
+      "return_type": "int",
+      "parameters": "void*handle,const char*question_id,size_t max_depth,size_t max_nodes,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_get_reevaluation_candidates",
       "return_type": "int",
       "parameters": "void*handle,const char*question_id,size_t max_depth,size_t max_nodes,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
     },
@@ -368,6 +473,51 @@
       "parameters": "void*,const char*,const char*,uint64_t,char*,size_t"
     },
     {
+      "name": "surge_question_route_contradiction",
+      "return_type": "int",
+      "parameters": "void*handle,const char*relation_id,const char*policy_version,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_question_route_contradiction_scoped",
+      "return_type": "int",
+      "parameters": "void*handle,const char*relation_id,const char*policy_version,const char*scope_key,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_retention_journal_commit",
+      "return_type": "int",
+      "parameters": "void*handle,const char*transaction_id,const char*idempotency_key,uint64_t expected_state_version,const SurgeJournalEventInput*events,size_t event_count,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_retention_journal_get_events",
+      "return_type": "int",
+      "parameters": "void*handle,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_retrieval_ticket_issue",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRetrievalTicketInput*ticket,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_retrieval_ticket_resolve",
+      "return_type": "int",
+      "parameters": "void*handle,const char*ticket_id,uint64_t current_state_version,int query_replayable,const char*const*reevaluated_refs,size_t reevaluated_count,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_temporal_boundary_add",
+      "return_type": "int",
+      "parameters": "void*handle,const char*transaction_id,const char*idempotency_key,const char*event_id,uint64_t expected_state_version,const char*claim_id,const char*role,const char*valid_from,const char*valid_until,const char*evidence_id,const char*packet_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_temporal_boundary_clear",
+      "return_type": "int",
+      "parameters": "void*handle,const char*transaction_id,const char*idempotency_key,const char*event_id,uint64_t expected_state_version,const char*claim_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_temporal_boundary_get",
+      "return_type": "int",
+      "parameters": "void*handle,const char*claim_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
       "name": "surge_temporal_boundary_pending_count",
       "return_type": "size_t",
       "parameters": "void*handle"
@@ -381,6 +531,11 @@
       "name": "surge_temporal_question_count",
       "return_type": "size_t",
       "parameters": "void*handle"
+    },
+    {
+      "name": "surge_temporal_question_get",
+      "return_type": "int",
+      "parameters": "void*handle,const char*claim_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
     }
   ]
 }
