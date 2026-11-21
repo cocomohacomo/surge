@@ -505,6 +505,25 @@ DeltaResult BudgetedContextGraph::append_cluster_unmembership(SemanticDelta delt
   return result;
 }
 
+DeltaResult BudgetedContextGraph::append_unresolved_membership(
+    SemanticDelta delta, const std::string& member_node_id,
+    std::string& chaos_cluster_id, std::string& membership_relation_id,
+    std::string& error) {
+  chaos_cluster_id.clear();
+  membership_relation_id.clear();
+  error.clear();
+  if (!graph_.append_unresolved_membership(delta, member_node_id,
+      chaos_cluster_id, membership_relation_id, error))
+    return {false, false, graph_.state_version(), error};
+  auto result = apply(delta);
+  if (!result.committed && !result.duplicate) {
+    chaos_cluster_id.clear();
+    membership_relation_id.clear();
+    error = result.error;
+  }
+  return result;
+}
+
 DeltaResult BudgetedContextGraph::append_cluster_membership(SemanticDelta delta,
     const std::string& parent_cluster_id, const std::string& classification,
     const std::string& partition_key, const std::string& member_node_id,
