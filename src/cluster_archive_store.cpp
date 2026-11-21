@@ -361,6 +361,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   std::set<std::string> node_ids;
   std::map<std::string, unsigned> node_kinds;
+  std::map<std::string, std::vector<std::string>> node_reference_map;
   std::vector<std::vector<std::string>> node_references;
   for (std::size_t i = 0; i < node_count; ++i) {
     if (!std::getline(input, line))
@@ -384,6 +385,7 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     }
     if (row >> extra)
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+    node_reference_map.emplace(id, references);
     node_references.push_back(std::move(references));
   }
   for (const auto& references : node_references)
@@ -428,7 +430,9 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
          node_kinds.at(cluster) != static_cast<unsigned>(NodeKind::ChaosCluster)) ||
         (!interest.empty() &&
          (!node_ids.count(interest) ||
-          node_kinds.at(interest) != static_cast<unsigned>(NodeKind::Interest))) ||
+          node_kinds.at(interest) != static_cast<unsigned>(NodeKind::Interest) ||
+          node_reference_map.at(interest).size() != 2 ||
+          node_reference_map.at(interest)[1] != cluster)) ||
         chaos > 1 || (row >> extra))
       return false;
     if ((node_kinds.at(cluster) == static_cast<unsigned>(NodeKind::ChaosCluster)) !=
