@@ -73,6 +73,8 @@ jobs:
           cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/surge-stage" -DCMAKE_BUILD_TYPE=Release
           cmake --build build-consumer --config Release --parallel
           ctest --test-dir build-consumer -C Release --output-on-failure
+      - name: Verify clean-prefix backup restore with installed native process
+        run: python tools/test_installed_backup_restore.py
 
   schema-and-fixtures:
     runs-on: ubuntu-latest
