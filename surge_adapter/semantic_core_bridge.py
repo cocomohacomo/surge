@@ -1444,6 +1444,38 @@ class SemanticCoreBridge(CppCoreBridge):
             "FOCUS_BUFFER_TOO_SMALL")
         return result if result.get("found") else None
 
+    def observe_cognition(self) -> dict[str, Any]:
+        """Return a detached, read-only snapshot of SURGE's committed cognition state."""
+        fn = self._lib.surge_context_graph_observe_cognition
+        fn.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        fn.restype = ctypes.c_int
+        required, error = ctypes.c_size_t(0), ctypes.create_string_buffer(512)
+        ok = fn(self._handle, None, 0, ctypes.byref(required), error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if ok or detail != "COGNITION_OBSERVATION_BUFFER_TOO_SMALL":
+            raise PacketRejected(detail or "COGNITION_OBSERVATION_SIZE_QUERY_FAILED")
+        if required.value <= 1 or required.value > 32 * 1024 * 1024:
+            raise PacketRejected("COGNITION_OBSERVATION_RESPONSE_TOO_LARGE")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(512)
+        ok = fn(self._handle, output, len(output), ctypes.byref(required), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "COGNITION_OBSERVATION_READ_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("COGNITION_OBSERVATION_JSON_INVALID") from exc
+        expected = {"state_version", "nodes", "relations", "memberships",
+                    "unresolved_member_ids", "active_question_ids",
+                    "active_interest_ids", "current_focus", "focus_history",
+                    "unresolved_scope_count", "dependency_evaluation_count"}
+        if not isinstance(value, dict) or set(value) != expected:
+            raise PacketRejected("COGNITION_OBSERVATION_RESPONSE_INVALID")
+        return value
+
 
 
     def commit_retention_events(self, transaction_id: str, idempotency_key: str,
