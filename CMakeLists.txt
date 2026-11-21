@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(surge_core VERSION 0.9.11 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -16,7 +19,40 @@ if(SURGE_ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,undefined)
 endif()
 add_library(surge_core SHARED src/c_api.cpp src/decision.cpp src/decision_c_api.cpp src/resource_budget.cpp src/budgeted_packet_admission.cpp src/budgeted_event_journal.cpp src/budgeted_context_graph.cpp src/cluster_retention.cpp src/cluster_archive_store.cpp src/language_runtime.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp src/snapshot_domains.cpp src/snapshot.cpp src/snapshot_coordinator.cpp src/snapshot_store.cpp src/journal_backup_retention.cpp)
-target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(surge_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+add_library(surge::core ALIAS surge_core)
+set_target_properties(surge_core PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+configure_package_config_file(
+  cmake/SurgeConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge
+)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+install(TARGETS surge_core EXPORT SurgeTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+install(EXPORT SurgeTargets FILE SurgeTargets.cmake
+  NAMESPACE surge:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge)
 
 if(SURGE_BUILD_BENCHMARKS)
   add_executable(surge_journal_bench benchmarks/event_journal_bench.cpp)
