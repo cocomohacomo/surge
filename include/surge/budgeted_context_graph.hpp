@@ -25,6 +25,18 @@ class BudgetedContextGraph {
   CognitionObservation observe_cognition() const {
     return graph_.observe_cognition();
   }
+  std::vector<CognitionCandidate> recall_cognition_candidates(
+      const std::string& input_member_id, const std::vector<std::string>& query_terms,
+      std::size_t max_candidates = 8) const {
+    return graph_.recall_cognition_candidates(input_member_id, query_terms, max_candidates);
+  }
+  bool append_cognition_feedback(SemanticDelta delta,
+      const CognitionFeedback& feedback, const std::string& feedback_node_id,
+      const std::string& relation_id, std::string& error) {
+    if (!graph_.append_cognition_feedback(delta, feedback, feedback_node_id,
+        relation_id, error)) return false;
+    return apply(delta).committed;
+  }
   // Import a complete archive through the same transient/resident admission budget.
   DeltaResult restore_cluster_archive(const std::string& payload,
       std::uint64_t expected_state_version, const std::string& transaction_id,
