@@ -1339,8 +1339,13 @@ bool ClusterArchiveStore::archive_verified(const std::string& cluster_id,
     if (error) *error = "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID";
     return false;
   }
-  if (!archive(cluster_id, state_version, journal_sequence, payload, error))
-    return false;
+  if (!archive(cluster_id, state_version, journal_sequence, payload, error)) {
+    // Re-verification at an identical watermark is safe only when the stored
+    // bytes exactly match. SnapshotStore intentionally rejects same-watermark
+    // rewrites because their provenance cannot be distinguished.
+    if (!error || *error != "SNAPSHOT_STORE_STREAM_SAME_WATERMARK_UNVERIFIABLE")
+      return false;
+  }
   SnapshotDocument metadata;
   bool used_backup = false;
   std::size_t offset = 0;
