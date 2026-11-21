@@ -359,13 +359,6 @@ DeltaResult BudgetedContextGraph::restore_cluster_archive(
   if (payload.empty() || payload.size() >
       std::numeric_limits<std::size_t>::max() / 2)
     return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_BUDGET_SIZE_INVALID"};
-  const std::size_t bytes = payload.size() * 2;
-  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
-    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
-  const std::size_t staging_bytes = bytes;
-  if (max_staging_bytes_ != 0 && staging_bytes > max_staging_bytes_)
-    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
-
   std::size_t cluster_count = 0;
   std::size_t event_count = 0;
   for (const char ch : payload) if (ch == '\n') {
@@ -373,6 +366,18 @@ DeltaResult BudgetedContextGraph::restore_cluster_archive(
       return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_EVENT_COUNT_OVERFLOW"};
     ++event_count;
   }
+  constexpr std::size_t kArchiveEntryOverhead = 256;
+  const std::size_t base_bytes = payload.size() * 2;
+  if (event_count > (std::numeric_limits<std::size_t>::max() - base_bytes) /
+          kArchiveEntryOverhead)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  const std::size_t bytes = base_bytes + event_count * kArchiveEntryOverhead;
+  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  const std::size_t staging_bytes = bytes;
+  if (max_staging_bytes_ != 0 && staging_bytes > max_staging_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
+
   // Count only actual cluster nodes in the archive's node section.
   std::istringstream scan(payload);
   std::string line;
