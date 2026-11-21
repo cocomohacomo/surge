@@ -1,4 +1,5 @@
 #include "surge/snapshot_store.hpp"
+#include "surge/sha256.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -94,6 +95,7 @@ int main() {
   CHECK(!restored_from_backup);
   CHECK(restored_metadata.context_id == "ctx");
   CHECK(restored_metadata.state_version == 1);
+  CHECK(restored_metadata.envelope_digest == sha256_hex(generation_one));
   CHECK(restored_payload == streamed_payload);
 
   // A corrupt primary is not exposed to the sink; a valid backup is selected.
@@ -107,6 +109,7 @@ int main() {
       }, &restored_from_backup, &error));
   CHECK(restored_from_backup);
   CHECK(restored_metadata.state_version == 1);
+  CHECK(restored_metadata.envelope_digest == sha256_hex(generation_one));
   CHECK(restored_payload == "state-one");
 
   // Continue with the legacy API to exercise backup rotation compatibility.
