@@ -197,7 +197,10 @@ focus_history 0
       CHECK(!unsupported_question_state.committed);
       CHECK(unsupported_question_state.error ==
             "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_question_states");
-      CHECK(restored_graph.nodes().empty());
+      // A rejected import must leave the already-restored graph unchanged.
+      CHECK(restored_graph.nodes().size() == 2);
+      CHECK(restored_graph.nodes().count("archive-a") == 1);
+      CHECK(restored_graph.nodes().count("exclusive") == 1);
 
       // The graph and current Focus can be restored when no unsupported
       // question-state history is present. Never silently discard it.
