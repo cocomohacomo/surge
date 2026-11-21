@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "surge-framework"
+version = "0.9.11"
+description = "Streaming-native context cognition framework adapters"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "SURGE contributors" }]
+dependencies = ["jsonschema>=4.20,<5"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: C++",
+  "Operating System :: OS Independent",
+]
+
+[tool.setuptools]
+packages = ["surge_adapter"]
+include-package-data = true
+
+[tool.setuptools.data-files]
+"share/surge/schemas" = [
+  "schemas/surge-v0.9-input.schema.json",
+  "schemas/surge-v0.9-proposal.schema.json",
+  "schemas/surge-v0.9-compact-model.schema.json",
+]

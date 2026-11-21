@@ -11,6 +11,7 @@ import hashlib
 import os
 import json
 import pathlib
+from surge_adapter._paths import resolve_native_core_library, schema_path
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -18,7 +19,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "schemas" / "surge-v0.9-input.schema.json"
+SCHEMA_PATH = schema_path("surge-v0.9-input.schema.json")
 
 
 class PacketRejected(ValueError):
@@ -223,28 +224,22 @@ class CppCoreBridge:
     """ctypes bridge to the journal-backed C++ PacketAdmissionCoordinator."""
 
     def __init__(self, journal_path: str | pathlib.Path,
-                 library_path: str | pathlib.Path | None = None):
-        import platform
-        if library_path is None:
-            configured = os.environ.get("SURGE_CORE_LIBRARY")
-            candidates = ([pathlib.Path(configured)] if configured else []) + [
-                ROOT / "build" / "libsurge_core.so",
-                ROOT / "build" / "libsurge_core.dylib",
-                ROOT / "build" / "surge_core.dll",
-                ROOT / "build" / "Release" / "surge_core.dll",
-            ]
-            library = next((p for p in candidates if p.is_file()), None)
-            if library is None:
-                raise FileNotFoundError(
-                    "SURGE C++ shared library not found; build it with CMake "
-                    "or set SURGE_CORE_LIBRARY")
-        else:
-            library = pathlib.Path(library_path)
+                 library_path: str | pathlib.Path | None = None,
+                 resource_limits: dict[str, int] | None = None):
+        library = resolve_native_core_library(library_path)
         self._lib = ctypes.CDLL(str(library))
         charp = ctypes.POINTER(ctypes.c_char)
         self._lib.surge_packet_core_open.argtypes = [
             ctypes.c_char_p, charp, ctypes.c_size_t]
         self._lib.surge_packet_core_open.restype = ctypes.c_void_p
+        class _ResourceBudgetLimits(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_size_t) for name in (
+                "resident_bytes", "transient_bytes", "retained_events",
+                "retained_clusters", "decision_candidates", "decision_evidence")]
+        self._ResourceBudgetLimits = _ResourceBudgetLimits
+        self._lib.surge_packet_core_open_with_limits.argtypes = [
+            ctypes.c_char_p, ctypes.POINTER(_ResourceBudgetLimits), charp, ctypes.c_size_t]
+        self._lib.surge_packet_core_open_with_limits.restype = ctypes.c_void_p
         self._lib.surge_packet_core_close.argtypes = [ctypes.c_void_p]
         self._lib.surge_packet_core_close.restype = None
         self._lib.surge_packet_core_admit.argtypes = [
@@ -264,8 +259,26 @@ class CppCoreBridge:
         self._lib.surge_packet_core_packet_count.argtypes = [ctypes.c_void_p]
         self._lib.surge_packet_core_packet_count.restype = ctypes.c_size_t
         error = ctypes.create_string_buffer(1024)
-        self._handle = self._lib.surge_packet_core_open(
-            str(pathlib.Path(journal_path)).encode("utf-8"), error, len(error))
+        encoded_path = str(pathlib.Path(journal_path)).encode("utf-8")
+        if resource_limits is None:
+            self._handle = self._lib.surge_packet_core_open(encoded_path, error, len(error))
+        else:
+            required = {"resident_bytes", "transient_bytes", "retained_events",
+                        "retained_clusters", "decision_candidates", "decision_evidence"}
+            if set(resource_limits) != required:
+                raise ValueError("resource_limits must define exactly: " + ", ".join(sorted(required)))
+            values = []
+            for key in ("resident_bytes", "transient_bytes", "retained_events",
+                        "retained_clusters", "decision_candidates", "decision_evidence"):
+                value = resource_limits[key]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    raise ValueError(f"resource_limits[{key!r}] must be a non-negative integer")
+                if value > (1 << (ctypes.sizeof(ctypes.c_size_t) * 8)) - 1:
+                    raise ValueError(f"resource_limits[{key!r}] exceeds size_t")
+                values.append(value)
+            limits = self._ResourceBudgetLimits(*values)
+            self._handle = self._lib.surge_packet_core_open_with_limits(
+                encoded_path, ctypes.byref(limits), error, len(error))
         if not self._handle:
             raise PacketRejected(error.value.decode("utf-8", errors="replace") or
                                  "CORE_OPEN_FAILED")

@@ -12,10 +12,13 @@ class CounterDomain;
 class CounterRestore final : public surge::PreparedSnapshotRestore {
  public:
   CounterRestore(CounterDomain* owner, int value) : owner_(owner), value_(value) {}
-  void commit() noexcept override;
+  bool commit() noexcept override;
+  void rollback() noexcept override;
  private:
   CounterDomain* owner_;
   int value_;
+  int previous_{0};
+  bool committed_{false};
 };
 class CounterDomain final : public surge::SnapshotDomain {
  public:
@@ -56,7 +59,8 @@ class CounterDomain final : public surge::SnapshotDomain {
     return std::make_unique<CounterRestore>(this, candidate);
   }
 };
-void CounterRestore::commit() noexcept { owner_->value = value_; }
+bool CounterRestore::commit() noexcept { previous_ = owner_->value; owner_->value = value_; committed_ = true; return true; }
+void CounterRestore::rollback() noexcept { if (committed_) { owner_->value = previous_; committed_ = false; } }
 }
 
 namespace {

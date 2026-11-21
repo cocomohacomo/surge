@@ -1,5 +1,7 @@
 #include "surge/c_api.h"
 #include "surge/context_graph.hpp"
+#include "surge/budgeted_context_graph.hpp"
+#include "surge/resource_budget.hpp"
 #include "surge/chaos_cluster.hpp"
 #include "surge/context_hint.hpp"
 #include "surge/event_journal.hpp"
@@ -13,6 +15,7 @@
 #include <iomanip>
 #include <exception>
 #include <memory>
+#include <limits>
 #include <string>
 #include <sstream>
 #include <set>
@@ -110,6 +113,7 @@ bool node_kind(const char* value, surge::NodeKind& out) {
   else if(s=="QUESTION_ASPECT")out=surge::NodeKind::QuestionAspect;
   else if(s=="DEPENDENCY")out=surge::NodeKind::Dependency;
   else if(s=="INTEREST")out=surge::NodeKind::Interest;
+  else if(s=="CLUSTER_LIFECYCLE")out=surge::NodeKind::ClusterLifecycle;
   else return false;
   return true;
 }
@@ -157,17 +161,25 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   else return false;
   return true;
 }
+surge::ResourceBudgetLimits compatibility_budget_limits() {
+  // Preserve the legacy C ABI's historical unbounded behavior.
+  const auto unlimited = std::numeric_limits<std::size_t>::max();
+  return {unlimited, unlimited, unlimited, unlimited, unlimited, unlimited};
+}
 struct Handle {
   surge::EventJournal journal;
   surge::PacketAdmissionCoordinator coordinator;
   surge::ContextGraph graph;
+  surge::ResourceBudget graph_budget;
+  surge::BudgetedContextGraph mutations;
   surge::PersistentRetrievalTicketRegistry tickets;
   surge::TemporalBoundaryLedger temporal_ledger;
   surge::TemporalQuestionLedger temporal_questions;
   surge::EvidenceProvenanceLedger evidence_provenance;
   surge::ChaosClusterLedger chaos;
-  explicit Handle(const std::string& path)
-      : journal(path), coordinator(journal), graph(journal), tickets(journal),
+  explicit Handle(const std::string& path, surge::ResourceBudgetLimits limits)
+      : journal(path), coordinator(journal), graph(journal),
+        graph_budget(limits), mutations(graph, graph_budget), tickets(journal),
         temporal_ledger(journal), temporal_questions(journal),
         evidence_provenance(journal), chaos(journal) {}
 };
@@ -201,18 +213,33 @@ bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion
       "時間境界の根拠を確認する対象クラスター",{aspect_id,cluster}}});
   }
   if(clusters.size()==1)delta.focus=surge::SetFocus{{*clusters.begin(),interests.front()}};
-  const auto result=handle.graph.apply(delta);
+  const auto result=handle.mutations.apply(delta);
   return result.committed;
 }
 }
 extern "C" {
-void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+uint32_t surge_abi_version(void) {
+  return SURGE_ABI_VERSION_ENCODE(SURGE_ABI_VERSION_MAJOR,
+                                 SURGE_ABI_VERSION_MINOR,
+                                 SURGE_ABI_VERSION_PATCH);
+}
+
+void* surge_packet_core_open_with_limits(const char* path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t cap) {
   try {
     if (!path || !*path) { copy_text(error, cap, "JOURNAL_PATH_REQUIRED"); return nullptr; }
-    auto handle = std::make_unique<Handle>(path);
+    if (!limits) { copy_text(error, cap, "RESOURCE_BUDGET_LIMITS_REQUIRED"); return nullptr; }
+    const surge::ResourceBudgetLimits budget_limits{
+      limits->resident_bytes, limits->transient_bytes, limits->retained_events,
+      limits->retained_clusters, limits->decision_candidates, limits->decision_evidence};
+    auto handle = std::make_unique<Handle>(path, budget_limits);
     if (!handle->journal.open()) { copy_text(error, cap, handle->journal.last_error()); return nullptr; }
     if (!handle->coordinator.recover()) { copy_text(error, cap, "PACKET_COORDINATOR_RECOVERY_FAILED"); return nullptr; }
     if (!handle->graph.open()) { copy_text(error, cap, "CONTEXT_GRAPH_RECOVERY_FAILED"); return nullptr; }
+    std::string graph_budget_error;
+    if (!handle->mutations.recover(graph_budget_error)) {
+      copy_text(error, cap, graph_budget_error); return nullptr;
+    }
     if (!handle->tickets.open()) { copy_text(error, cap, "RETRIEVAL_TICKET_RECOVERY_FAILED"); return nullptr; }
     if (!handle->temporal_ledger.replay()) {
       copy_text(error, cap, handle->temporal_ledger.last_error()); return nullptr;
@@ -228,6 +255,13 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
     return handle.release();
   } catch (const std::exception& ex) { copy_text(error, cap, ex.what()); return nullptr; }
     catch (...) { copy_text(error, cap, "UNKNOWN_CORE_EXCEPTION"); return nullptr; }
+}
+void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+  const auto limits = compatibility_budget_limits();
+  const SurgeResourceBudgetLimits c_limits{
+    limits.resident_bytes, limits.transient_bytes, limits.retained_events,
+    limits.retained_clusters, limits.decision_candidates, limits.decision_evidence};
+  return surge_packet_core_open_with_limits(path, &c_limits, error, cap);
 }
 void surge_packet_core_close(void* opaque) { try { delete static_cast<Handle*>(opaque); } catch (...) {} }
 int surge_packet_core_admit(
@@ -306,7 +340,7 @@ int surge_context_graph_apply(
     }
     if(focus_cluster_id&&*focus_cluster_id)
       delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_cap,result.error);
@@ -381,7 +415,7 @@ int surge_context_graph_apply_scoped(
     }
     if(focus_cluster_id&&*focus_cluster_id)
       delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_cap,result.error);
@@ -749,7 +783,7 @@ int surge_context_graph_apply_claim_validity(void* opaque,
     delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
     delta.expected_state_version=expected_state_version;
     delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",basis_evidence_id,revision,"",""});
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_capacity,result.error);
@@ -775,7 +809,7 @@ int surge_context_graph_apply_claim_validity_reviewed(void* opaque,
     delta.expected_state_version=expected_state_version;
     delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",
         basis_evidence_id,revision,review_evidence_id,reviewer_id});
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_capacity,result.error);
@@ -868,10 +902,10 @@ int surge_question_get_aggregate_status(void* opaque, const char* question_id,
 
 
 
-int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->graph.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->mutations.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
 
-int surge_question_memory_record_reference(void* o,const char* id,uint64_t expected,int* reactivated,uint64_t* count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=g.record_question_reference(id,expected,did,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(count)*count=g.question_reference_count(id);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_REFERENCE_UNKNOWN_EXCEPTION");return 0;}}
-int surge_question_memory_record_reference_with_dependents(void* o,const char* id,uint64_t expected,size_t max_depth,size_t max_nodes,int* reactivated,size_t* dependent_count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;size_t count=0;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=g.record_question_reference_with_dependents(id,expected,max_depth,max_nodes,did,count,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(dependent_count)*dependent_count=count;copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_DEPENDENCY_REACTIVATION_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_record_reference(void* o,const char* id,uint64_t expected,int* reactivated,uint64_t* count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=static_cast<Handle*>(o)->mutations.record_question_reference(id,expected,did,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(count)*count=g.question_reference_count(id);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_REFERENCE_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_record_reference_with_dependents(void* o,const char* id,uint64_t expected,size_t max_depth,size_t max_nodes,int* reactivated,size_t* dependent_count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;size_t count=0;std::string detail;bool ok=static_cast<Handle*>(o)->mutations.record_question_reference_with_dependents(id,expected,max_depth,max_nodes,did,count,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(dependent_count)*dependent_count=count;copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_DEPENDENCY_REACTIVATION_UNKNOWN_EXCEPTION");return 0;}}
 int surge_question_memory_get_state(void* o,const char* id,char* out,size_t cap,size_t* req,char* err,size_t ec){
  try{
   if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}
@@ -970,7 +1004,7 @@ int surge_question_memory_enforce_capacity(void* opaque,const char* const* ids,c
   std::vector<std::pair<std::string,double>> values;values.reserve(count);
   for(size_t i=0;i<count;++i)values.emplace_back(ids[i],scores[i]);
   auto& graph=static_cast<Handle*>(opaque)->graph;std::vector<std::string> demoted;std::string detail;
-  if(!graph.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
+  if(!static_cast<Handle*>(opaque)->mutations.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
   size_t active_after=0;for(const auto& n:graph.nodes())if(n.second.kind==surge::NodeKind::Question&&graph.question_memory_state(n.first)==surge::QuestionMemoryState::Active)++active_after;
   std::ostringstream json;json<<'{'<<char(34)<<"capacity"<<char(34)<<':'<<max_active<<','<<char(34)<<"active_after"<<char(34)<<':'<<active_after<<','<<char(34)<<"demoted"<<char(34)<<":[";
   for(size_t i=0;i<demoted.size();++i){if(i)json<<',';json<<json_quote(demoted[i]);}
@@ -996,7 +1030,7 @@ int surge_question_get_context_bundle(void* opaque,const char* question_id,size_
   for(const auto& item:graph.nodes()){const auto& n=item.second;if(n.kind!=surge::NodeKind::Claim&&n.kind!=surge::NodeKind::Evidence)continue;bool linked=false;for(const auto& ref:n.references)if(anchors.count(ref)||about_targets.count(ref)){linked=true;break;}if(!linked)for(const auto& rel:graph.relations()){const auto&r=rel.second;if((r.from==n.id&&(anchors.count(r.to)||about_targets.count(r.to)))||(r.to==n.id&&(anchors.count(r.from)||about_targets.count(r.from)))){linked=true;break;}}if(linked){if(n.kind==surge::NodeKind::Claim)claims.insert(n.id);else evidence.insert(n.id);}}
   for(const auto& item:graph.relations()){const auto&r=item.second;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(claims.count(r.from)&&b!=graph.nodes().end()&&b->second.kind==surge::NodeKind::Evidence)evidence.insert(r.to);if(claims.count(r.to)&&a!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Evidence)evidence.insert(r.from);}
   if(questions.size()+aspects.size()+claims.size()+evidence.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_CONTEXT_NODE_LIMIT");return 0;}
-  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";default:return "UNKNOWN";}};
+  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";case surge::NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";default:return "UNKNOWN";}};
   auto mn=[](surge::QuestionMemoryState s){return s==surge::QuestionMemoryState::Active?"ACTIVE":s==surge::QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";};
   auto an=[](surge::QuestionAspectStatus s){return s==surge::QuestionAspectStatus::Open?"OPEN":s==surge::QuestionAspectStatus::Resolved?"RESOLVED":"DEFERRED";};
   auto cn=[](surge::ClaimStatus s){return s==surge::ClaimStatus::Active?"ACTIVE":s==surge::ClaimStatus::Superseded?"SUPERSEDED":"RETRACTED";};
@@ -1260,7 +1294,7 @@ int surge_question_aspect_set_status_batch(void* opaque, const char* const* aspe
     }
     auto& graph = static_cast<Handle*>(opaque)->graph;
     std::string message;
-    const bool ok = graph.apply_question_aspect_statuses(updates, expected_state_version, message);
+    const bool ok = static_cast<Handle*>(opaque)->mutations.apply_question_aspect_statuses(updates, expected_state_version, message);
     copy_text(error, error_capacity, message);
     if (!ok) return 0;
     if (state_version) *state_version = graph.state_version();
@@ -1282,8 +1316,7 @@ int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     else if (name == "DEFERRED") value = surge::QuestionAspectStatus::Deferred;
     else { copy_text(error, error_capacity, "QUESTION_ASPECT_STATUS_INVALID"); return 0; }
     std::string message;
-    auto& graph = static_cast<Handle*>(opaque)->graph;
-    const bool ok = graph.set_question_aspect_status(aspect_id, value, expected_state_version, message);
+    const bool ok = static_cast<Handle*>(opaque)->mutations.set_question_aspect_status(aspect_id, value, expected_state_version, message);
     copy_text(error, error_capacity, message);
     return ok ? 1 : 0;
   } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
@@ -1423,6 +1456,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
         case surge::NodeKind::Dependency: return "DEPENDENCY";
         case surge::NodeKind::Interest: return "INTEREST";
+        case surge::NodeKind::ClusterLifecycle: return "CLUSTER_LIFECYCLE";
       }
       return "UNKNOWN";
     };
@@ -1742,7 +1776,7 @@ int surge_context_graph_focus_set_chaos(void* opaque,const char* delta_id,const 
     if(existing==handle.graph.nodes().end()) delta.nodes.push_back({{chaos_cluster_id,surge::NodeKind::ChaosCluster,"Chaos Cluster "+cluster.cluster_id,{}}});
     else if(existing->second.kind!=surge::NodeKind::ChaosCluster) { copy_text(error,error_cap,"CHAOS_FOCUS_GRAPH_ID_CONFLICT");return 0; }
     delta.focus=surge::SetFocus{{chaos_cluster_id,interest_id?interest_id:"",true}};
-    const auto result=handle.graph.apply(delta);
+    const auto result=handle.mutations.apply(delta);
     if(duplicate) *duplicate=result.duplicate?1:0;
     if(state_version) *state_version=result.state_version;
     copy_text(error,error_cap,result.error);return result.committed?1:0;

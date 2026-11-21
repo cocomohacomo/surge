@@ -140,6 +140,9 @@ def validate_corpus(cases_path: pathlib.Path, gold_path: pathlib.Path,
     split_cases = Counter()
     split_meetings = {split: set() for split in SPLITS}
     total_items = critical_items = 0
+    agreement_tp = agreement_fp = agreement_fn = 0
+    field_matches = {"owner": 0, "deadline": 0, "critical": 0, "evidence_span": 0}
+    field_totals = {"owner": 0, "deadline": 0, "critical": 0, "evidence_span": 0}
     observed_annotators, observed_adjudicators = set(), set()
 
     for case_id, case in case_map.items():
@@ -189,6 +192,26 @@ def validate_corpus(cases_path: pathlib.Path, gold_path: pathlib.Path,
             observed_annotators.add(annotator_id)
             for item in items:
                 validate_item(item, source, case_id, "ANNOTATION")
+        left_items, right_items = independent[0]["items"], independent[1]["items"]
+        left = {unicodedata.normalize("NFC", item["action"]).casefold().strip(): item
+                for item in left_items}
+        right = {unicodedata.normalize("NFC", item["action"]).casefold().strip(): item
+                 for item in right_items}
+        shared = set(left) & set(right)
+        agreement_tp += len(shared)
+        agreement_fp += len(set(left) - set(right))
+        agreement_fn += len(set(right) - set(left))
+        for action in shared:
+            a, b = left[action], right[action]
+            for field in ("owner", "deadline", "critical"):
+                field_totals[field] += 1
+                field_matches[field] += a.get(field) == b.get(field)
+            field_totals["evidence_span"] += 1
+            field_matches["evidence_span"] += (
+                a.get("evidence_start") == b.get("evidence_start") and
+                a.get("evidence_end") == b.get("evidence_end") and
+                a.get("evidence_quote") == b.get("evidence_quote")
+            )
         if not isinstance(adjudication, dict) or adjudication.get("status") != "RESOLVED":
             raise ValueError(f"{case_id}: ADJUDICATION_NOT_RESOLVED")
         adjudicator_id = adjudication.get("adjudicator_id")
@@ -226,8 +249,45 @@ def validate_corpus(cases_path: pathlib.Path, gold_path: pathlib.Path,
     if any(isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in required.values()):
         raise ValueError("MINIMUM_SAMPLE_THRESHOLDS_INVALID")
     meeting_count = len(meeting_splits)
-    ready = (meeting_count >= required["meetings"] and total_items >= required["items"] and
-             critical_items >= required["critical_items"])
+    thresholds = manifest.get("inter_annotator_agreement")
+    if not isinstance(thresholds, dict):
+        raise ValueError("INTER_ANNOTATOR_AGREEMENT_THRESHOLDS_MISSING")
+    threshold_names = {
+        "minimum_action_f1": "action_f1",
+        "minimum_owner_agreement": "owner",
+        "minimum_deadline_agreement": "deadline",
+        "minimum_criticality_agreement": "critical",
+        "minimum_evidence_span_agreement": "evidence_span",
+    }
+    parsed_thresholds = {}
+    for threshold_name in threshold_names:
+        value = thresholds.get(threshold_name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ValueError("INTER_ANNOTATOR_AGREEMENT_THRESHOLD_INVALID:" + threshold_name)
+        parsed_thresholds[threshold_name] = float(value)
+    action_precision = agreement_tp / (agreement_tp + agreement_fp) if agreement_tp + agreement_fp else None
+    action_recall = agreement_tp / (agreement_tp + agreement_fn) if agreement_tp + agreement_fn else None
+    action_f1 = (2 * action_precision * action_recall / (action_precision + action_recall)
+                 if action_precision is not None and action_recall is not None and
+                 action_precision + action_recall else None)
+    agreements = {
+        "action_f1": action_f1,
+        "owner": field_matches["owner"] / field_totals["owner"] if field_totals["owner"] else None,
+        "deadline": field_matches["deadline"] / field_totals["deadline"] if field_totals["deadline"] else None,
+        "critical": field_matches["critical"] / field_totals["critical"] if field_totals["critical"] else None,
+        "evidence_span": field_matches["evidence_span"] / field_totals["evidence_span"] if field_totals["evidence_span"] else None,
+    }
+    agreement_gate = "PASS"
+    for threshold_name, metric_name in threshold_names.items():
+        metric = agreements[metric_name]
+        if metric is None:
+            agreement_gate = "INCONCLUSIVE"
+            break
+        if metric < parsed_thresholds[threshold_name]:
+            agreement_gate = "FAIL"
+    sample_ready = (meeting_count >= required["meetings"] and total_items >= required["items"] and
+                    critical_items >= required["critical_items"])
+    ready = sample_ready and agreement_gate == "PASS"
     return {
         "corpus_id": manifest.get("corpus_id"),
         "corpus_version": manifest.get("corpus_version"),
@@ -238,8 +298,24 @@ def validate_corpus(cases_path: pathlib.Path, gold_path: pathlib.Path,
         "critical_item_count": critical_items,
         "split_counts": split_counts,
         "minimums": required,
-        "pilot_sample_ready": ready,
-        "evaluation_gate": "ELIGIBLE_FOR_HELD_OUT_EVALUATION" if ready else "INCOMPLETE_PILOT_SAMPLE",
+        "pilot_sample_ready": sample_ready,
+        "inter_annotator_agreement": {
+            "gate": agreement_gate,
+            "action_f1": agreements["action_f1"],
+            "owner_agreement": agreements["owner"],
+            "deadline_agreement": agreements["deadline"],
+            "criticality_agreement": agreements["critical"],
+            "evidence_span_agreement": agreements["evidence_span"],
+            "thresholds": parsed_thresholds,
+            "matched_actions": agreement_tp,
+            "unmatched_left_actions": agreement_fp,
+            "unmatched_right_actions": agreement_fn,
+        },
+        "evaluation_gate": (
+            "ELIGIBLE_FOR_HELD_OUT_EVALUATION" if ready else
+            "INTER_ANNOTATOR_AGREEMENT_" + agreement_gate if sample_ready else
+            "INCOMPLETE_PILOT_SAMPLE"
+        ),
         "digests": expected_files,
         "note": "Corpus integrity validation is not a model-quality result.",
     }

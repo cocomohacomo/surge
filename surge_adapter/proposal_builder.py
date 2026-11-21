@@ -2,12 +2,13 @@
 from __future__ import annotations
 import json
 import pathlib
+from surge_adapter._paths import schema_path
 from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 from surge_adapter.recognition_scoring import SCORE_FIELDS, ScoringResult
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "schemas" / "surge-v0.9-proposal.schema.json"
+SCHEMA_PATH = schema_path("surge-v0.9-proposal.schema.json")
 ABSTENTION_MAP = {
     "LOW_CONFIDENCE": "LOW_MARGIN",
     "AMBIGUOUS_REFERENCE": "LOW_MARGIN",

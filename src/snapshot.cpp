@@ -22,15 +22,17 @@ void put_u64(std::string* out, std::uint64_t value) {
   for (int shift = 56; shift >= 0; shift -= 8)
     out->push_back(static_cast<char>((value >> shift) & 0xffU));
 }
-bool get_u32(const std::string& in, std::size_t* pos, std::uint32_t* value) {
-  if (*pos > in.size() || in.size() - *pos < 4) return false;
+bool get_u32(const std::string& in, std::size_t* pos, std::uint32_t* value,
+             std::size_t limit) {
+  if (limit > in.size() || *pos > limit || limit - *pos < 4) return false;
   *value = 0;
   for (int i = 0; i < 4; ++i)
     *value = (*value << 8) | static_cast<unsigned char>(in[(*pos)++]);
   return true;
 }
-bool get_u64(const std::string& in, std::size_t* pos, std::uint64_t* value) {
-  if (*pos > in.size() || in.size() - *pos < 8) return false;
+bool get_u64(const std::string& in, std::size_t* pos, std::uint64_t* value,
+             std::size_t limit) {
+  if (limit > in.size() || *pos > limit || limit - *pos < 8) return false;
   *value = 0;
   for (int i = 0; i < 8; ++i)
     *value = (*value << 8) | static_cast<unsigned char>(in[(*pos)++]);
@@ -41,10 +43,10 @@ void put_string(std::string* out, const std::string& value) {
   out->append(value);
 }
 bool get_string(const std::string& in, std::size_t* pos,
-                std::size_t maximum, std::string* value) {
+                std::size_t maximum, std::string* value, std::size_t limit) {
   std::uint32_t size = 0;
-  if (!get_u32(in, pos, &size) || size > maximum ||
-      *pos > in.size() || in.size() - *pos < size) return false;
+  if (!get_u32(in, pos, &size, limit) || size > maximum ||
+      *pos > limit || limit - *pos < size) return false;
   value->assign(in.data() + *pos, size);
   *pos += size;
   return true;
@@ -66,34 +68,37 @@ bool decode_impl(const std::string& bytes, const SnapshotLimits& limits,
   if (bytes.size() > total_limit(limits) || bytes.size() < 8 + 4 + 4 + 4 + 8 + 8 + 4 + kDigestBytes)
     return fail(error, "SNAPSHOT_SIZE_INVALID");
   const std::size_t content_size = bytes.size() - kDigestBytes;
-  const std::string content = bytes.substr(0, content_size);
-  if (sha256_hex(content) != bytes.substr(content_size))
+  Sha256Hasher hasher;
+  if (!hasher.update(bytes.data(), content_size) ||
+      hasher.finalize_hex() != bytes.substr(content_size))
     return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
 
+  // Parse directly from the caller-owned envelope. Avoid a second full-size
+  // content string during inspect/decode validation.
   std::size_t pos = 0;
-  if (content.compare(0, sizeof(kMagic) - 1, kMagic) != 0)
+  if (bytes.compare(0, sizeof(kMagic) - 1, kMagic) != 0)
     return fail(error, "SNAPSHOT_MAGIC_INVALID");
   pos += sizeof(kMagic) - 1;
   std::uint32_t version = 0;
-  if (!get_u32(content, &pos, &version) || version != kFormatVersion)
+  if (!get_u32(bytes, &pos, &version, content_size) || version != kFormatVersion)
     return fail(error, "SNAPSHOT_FORMAT_UNSUPPORTED");
 
   SnapshotDocument candidate;
-  if (!get_string(content, &pos, kMaxMetadata, &candidate.schema_id) ||
-      !get_string(content, &pos, kMaxMetadata, &candidate.context_id) ||
+  if (!get_string(bytes, &pos, kMaxMetadata, &candidate.schema_id, content_size) ||
+      !get_string(bytes, &pos, kMaxMetadata, &candidate.context_id, content_size) ||
       candidate.schema_id.empty() || candidate.context_id.empty() ||
       !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id))
     return fail(error, "SNAPSHOT_METADATA_INVALID");
-  if (!get_u64(content, &pos, &candidate.state_version) ||
-      !get_u64(content, &pos, &candidate.journal_sequence))
+  if (!get_u64(bytes, &pos, &candidate.state_version, content_size) ||
+      !get_u64(bytes, &pos, &candidate.journal_sequence, content_size))
     return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
   std::uint32_t payload_size = 0;
-  if (!get_u32(content, &pos, &payload_size) ||
+  if (!get_u32(bytes, &pos, &payload_size, content_size) ||
       payload_size > payload_limit(limits) ||
-      pos > content.size() || content.size() - pos != payload_size)
+      pos > content_size || content_size - pos != payload_size)
     return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
   if (include_payload)
-    candidate.payload.assign(content.data() + pos, payload_size);
+    candidate.payload.assign(bytes.data() + pos, payload_size);
   *output = std::move(candidate);
   if (error) error->clear();
   return true;

@@ -1,10 +1,13 @@
 #include "surge/snapshot_store.hpp"
+#include "surge/sha256.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <string>
 #include <system_error>
 
 #ifdef _WIN32
@@ -15,6 +18,7 @@
 #else
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <unistd.h>
 #endif
 
@@ -31,6 +35,54 @@ bool fail(std::string* error, const char* message) {
 fs::path native_path(const std::string& value) {
   return fs::u8path(value);
 }
+
+class SnapshotWriterLock {
+ public:
+  ~SnapshotWriterLock() { release(); }
+  bool acquire(const fs::path& snapshot_path, std::string* error) {
+    auto lock_path = snapshot_path;
+    lock_path += ".lock";
+#ifdef _WIN32
+    handle_ = CreateFileW(lock_path.c_str(), GENERIC_READ | GENERIC_WRITE,
+        0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle_ == INVALID_HANDLE_VALUE) {
+      const auto code = GetLastError();
+      return fail(error, code == ERROR_SHARING_VIOLATION
+          ? "SNAPSHOT_STORE_WRITER_LOCKED" : "SNAPSHOT_STORE_WRITER_LOCK_ERROR");
+    }
+#else
+    fd_ = ::open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+    if (fd_ < 0) return fail(error, "SNAPSHOT_STORE_WRITER_LOCK_ERROR");
+    if (::flock(fd_, LOCK_EX | LOCK_NB) != 0) {
+      ::close(fd_);
+      fd_ = -1;
+      return fail(error, "SNAPSHOT_STORE_WRITER_LOCKED");
+    }
+#endif
+    if (error) error->clear();
+    return true;
+  }
+ private:
+  void release() {
+#ifdef _WIN32
+    if (handle_ != INVALID_HANDLE_VALUE) {
+      CloseHandle(handle_);
+      handle_ = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (fd_ >= 0) {
+      ::flock(fd_, LOCK_UN);
+      ::close(fd_);
+      fd_ = -1;
+    }
+#endif
+  }
+#ifdef _WIN32
+  HANDLE handle_{INVALID_HANDLE_VALUE};
+#else
+  int fd_{-1};
+#endif
+};
 
 bool exists_regular_file(const fs::path& path, bool& exists,
                          std::string* error) {
@@ -88,6 +140,91 @@ bool write_durable_file(const fs::path& path, const std::string& bytes,
   if (::close(fd) != 0) ok = false;
   if (!ok) return fail(error, "SNAPSHOT_STORE_TEMP_WRITE_OR_SYNC_FAILED");
 #endif
+  if (error) error->clear();
+  return true;
+}
+
+
+void append_u32(std::string& out, std::uint32_t value) {
+  for (int shift = 24; shift >= 0; shift -= 8)
+    out.push_back(static_cast<char>((value >> shift) & 0xffU));
+}
+void append_u64(std::string& out, std::uint64_t value) {
+  for (int shift = 56; shift >= 0; shift -= 8)
+    out.push_back(static_cast<char>((value >> shift) & 0xffU));
+}
+void append_string(std::string& out, const std::string& value) {
+  append_u32(out, static_cast<std::uint32_t>(value.size()));
+  out.append(value);
+}
+
+bool write_stream_durable_file(const fs::path& path, const std::string& prefix,
+                               std::size_t payload_bytes,
+                               const SnapshotChunkReader& reader,
+                               std::string* error) {
+  Sha256Hasher hasher;
+#ifdef _WIN32
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+    return fail(error, "SNAPSHOT_STORE_TEMP_OPEN_FAILED");
+  auto write = [&](const char* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (offset < size) {
+      const DWORD amount = static_cast<DWORD>(std::min<std::size_t>(
+          size - offset, static_cast<std::size_t>(MAXDWORD)));
+      DWORD written = 0;
+      if (!WriteFile(file, data + offset, amount, &written, nullptr) ||
+          written == 0) return false;
+      offset += written;
+    }
+    return true;
+  };
+#else
+  const int file = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (file < 0) return fail(error, "SNAPSHOT_STORE_TEMP_OPEN_FAILED");
+  auto write = [&](const char* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (offset < size) {
+      const auto count = ::write(file, data + offset, size - offset);
+      if (count < 0 && errno == EINTR) continue;
+      if (count <= 0) return false;
+      offset += static_cast<std::size_t>(count);
+    }
+    return true;
+  };
+#endif
+  bool ok = hasher.update(prefix.data(), prefix.size()) &&
+            write(prefix.data(), prefix.size());
+  std::size_t total = 0;
+  while (ok && total < payload_bytes) {
+    std::string chunk;
+    bool done = false;
+    if (!reader || !reader(&chunk, &done)) { ok = false; break; }
+    if (done || chunk.empty() || chunk.size() > kIoChunk ||
+        chunk.size() > payload_bytes - total) { ok = false; break; }
+    ok = hasher.update(chunk.data(), chunk.size()) &&
+         write(chunk.data(), chunk.size());
+    total += chunk.size();
+  }
+  if (ok) {
+    std::string extra;
+    bool done = false;
+    if (!reader || !reader(&extra, &done) || !done || !extra.empty())
+      ok = false;
+  }
+  if (ok) {
+    const auto digest = hasher.finalize_hex();
+    ok = write(digest.data(), digest.size());
+  }
+#ifdef _WIN32
+  if (ok && !FlushFileBuffers(file)) ok = false;
+  if (!CloseHandle(file)) ok = false;
+#else
+  if (ok && ::fsync(file) != 0) ok = false;
+  if (::close(file) != 0) ok = false;
+#endif
+  if (!ok) return fail(error, "SNAPSHOT_STORE_STREAM_WRITE_FAILED");
   if (error) error->clear();
   return true;
 }
@@ -257,6 +394,120 @@ bool read_bounded_file(const fs::path& path, std::size_t maximum_bytes,
   return true;
 }
 
+
+bool stream_verified_generation(const fs::path& path, std::size_t maximum_bytes,
+                                SnapshotDocument* metadata,
+                                const SnapshotPayloadSink& sink,
+                                std::string* error) {
+  if (!metadata || !sink) return fail(error, "SNAPSHOT_STREAM_ARGUMENT_REQUIRED");
+  std::error_code ec;
+  if (!fs::is_regular_file(path, ec) || ec)
+    return fail(error, "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR");
+  const auto file_size = fs::file_size(path, ec);
+  if (ec) return fail(error, "SNAPSHOT_STORE_FILE_SIZE_FAILED");
+  constexpr std::size_t footer_bytes = 64;
+  if (file_size > maximum_bytes || file_size < 8U + 4U + 4U + 4U + 8U + 8U + 4U + footer_bytes)
+    return fail(error, "SNAPSHOT_SIZE_INVALID");
+  const auto total = static_cast<std::uint64_t>(file_size);
+  const auto content_size = total - footer_bytes;
+  std::ifstream input(path, std::ios::binary);
+  if (!input) return fail(error, "SNAPSHOT_STORE_FILE_OPEN_FAILED");
+
+  Sha256Hasher hasher;
+  Sha256Hasher envelope_hasher;
+  std::array<char, kIoChunk> buffer{};
+  std::uint64_t remaining = content_size;
+  while (remaining != 0) {
+    const auto amount = static_cast<std::streamsize>(
+        std::min<std::uint64_t>(remaining, buffer.size()));
+    input.read(buffer.data(), amount);
+    if (input.gcount() != amount)
+      return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+    if (!hasher.update(buffer.data(), static_cast<std::size_t>(amount)) ||
+        !envelope_hasher.update(buffer.data(), static_cast<std::size_t>(amount)))
+      return fail(error, "SNAPSHOT_CHECKSUM_FAILED");
+    remaining -= static_cast<std::uint64_t>(amount);
+  }
+  std::array<char, footer_bytes> footer{};
+  input.read(footer.data(), static_cast<std::streamsize>(footer.size()));
+  if (input.gcount() != static_cast<std::streamsize>(footer.size()))
+    return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+  const auto digest = hasher.finalize_hex();
+  if (digest.size() != footer.size() ||
+      !std::equal(digest.begin(), digest.end(), footer.begin()))
+    return fail(error, "SNAPSHOT_CHECKSUM_MISMATCH");
+  if (!envelope_hasher.update(footer.data(), footer.size()))
+    return fail(error, "SNAPSHOT_CHECKSUM_FAILED");
+  const auto envelope_digest = envelope_hasher.finalize_hex();
+
+  input.clear();
+  input.seekg(0, std::ios::beg);
+  auto read_u32 = [&](std::uint32_t* value) {
+    std::array<unsigned char, 4> bytes{};
+    input.read(reinterpret_cast<char*>(bytes.data()), 4);
+    if (input.gcount() != 4) return false;
+    *value = 0;
+    for (const auto byte : bytes) *value = (*value << 8) | byte;
+    return true;
+  };
+  auto read_u64 = [&](std::uint64_t* value) {
+    std::array<unsigned char, 8> bytes{};
+    input.read(reinterpret_cast<char*>(bytes.data()), 8);
+    if (input.gcount() != 8) return false;
+    *value = 0;
+    for (const auto byte : bytes) *value = (*value << 8) | byte;
+    return true;
+  };
+  auto read_string = [&](std::string* value) {
+    std::uint32_t size = 0;
+    if (!read_u32(&size) || size == 0 || size > 4096) return false;
+    value->resize(size);
+    input.read(value->data(), static_cast<std::streamsize>(size));
+    return input.gcount() == static_cast<std::streamsize>(size);
+  };
+  std::array<char, 8> magic{};
+  input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+  std::uint32_t version = 0;
+  SnapshotDocument candidate;
+  if (input.gcount() != static_cast<std::streamsize>(magic.size()) ||
+      std::string(magic.data(), magic.size()) != "SURGESNP" ||
+      !read_u32(&version) || version != 1 ||
+      !read_string(&candidate.schema_id) ||
+      !read_string(&candidate.context_id) ||
+      !is_valid_utf8(candidate.schema_id) || !is_valid_utf8(candidate.context_id) ||
+      !read_u64(&candidate.state_version) ||
+      !read_u64(&candidate.journal_sequence))
+    return fail(error, "SNAPSHOT_HEADER_INVALID");
+  std::uint32_t payload_size = 0;
+  if (!read_u32(&payload_size)) return fail(error, "SNAPSHOT_HEADER_TRUNCATED");
+  const auto payload_offset = static_cast<std::uint64_t>(input.tellg());
+  if (payload_size > 60U * 1024U * 1024U ||
+      payload_offset > content_size || content_size - payload_offset != payload_size)
+    return fail(error, "SNAPSHOT_PAYLOAD_INVALID");
+
+  // Publish authenticated envelope metadata before invoking the sink so a
+  // coordinator can validate context and journal watermarks before staging.
+  candidate.envelope_digest = envelope_digest;
+  *metadata = candidate;
+  input.clear();
+  input.seekg(static_cast<std::streamoff>(payload_offset), std::ios::beg);
+  std::uint64_t delivered = 0;
+  while (delivered < payload_size) {
+    const auto amount = static_cast<std::size_t>(
+        std::min<std::uint64_t>(payload_size - delivered, buffer.size()));
+    input.read(buffer.data(), static_cast<std::streamsize>(amount));
+    if (input.gcount() != static_cast<std::streamsize>(amount))
+      return fail(error, "SNAPSHOT_STORE_FILE_READ_FAILED");
+    if (!sink(buffer.data(), amount, error)) {
+      if (error && error->empty()) *error = "SNAPSHOT_STREAM_SINK_REJECTED";
+      return false;
+    }
+    delivered += amount;
+  }
+  if (error) error->clear();
+  return true;
+}
+
 SnapshotStoreResult load_generation(const fs::path& path,
                                     std::size_t maximum_bytes,
                                     bool backup) {
@@ -278,14 +529,31 @@ SnapshotStoreResult load_generation(const fs::path& path,
 }
 }  // namespace
 
-SnapshotStore::SnapshotStore(std::string path, SnapshotStoreLimits limits)
-    : path_(std::move(path)), limits_(limits) {}
+SnapshotStore::SnapshotStore(std::string path, SnapshotStoreLimits limits,
+                             SnapshotStoreStageGate stage_gate)
+    : path_(std::move(path)), limits_(limits),
+      stage_gate_(std::move(stage_gate)) {}
+
+bool SnapshotStore::permit_stage(const char* stage, std::string* error) const {
+  if (!stage_gate_) return true;
+  try {
+    if (stage_gate_(stage)) return true;
+  } catch (...) {
+    if (error) *error = std::string("SNAPSHOT_STORE_STAGE_GATE_EXCEPTION:") + stage;
+    return false;
+  }
+  if (error) *error = std::string("SNAPSHOT_STORE_INJECTED_FAILURE:") + stage;
+  return false;
+}
 
 bool SnapshotStore::save(const std::string& bytes, std::string* error) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
   if (limits_.max_file_bytes == 0 || bytes.size() > limits_.max_file_bytes)
     return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
+
+  SnapshotWriterLock writer_lock;
+  if (!writer_lock.acquire(native_path(path_), error)) return false;
 
   SnapshotDocument document;
   SnapshotLimits codec_limits;
@@ -300,7 +568,8 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
   remove_if_present(temporary);
   remove_if_present(backup_temporary);
 
-  if (!write_durable_file(temporary, bytes, error)) {
+  if (!write_durable_file(temporary, bytes, error) ||
+      !permit_stage("after_temp_sync", error)) {
     remove_if_present(temporary);
     return false;
   }
@@ -344,7 +613,8 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
       remove_if_present(backup_temporary);
       return false;
     }
-    if (!atomic_replace(backup_temporary, backup, error) ||
+    if (!permit_stage("before_backup_replace", error) ||
+        !atomic_replace(backup_temporary, backup, error) ||
         !sync_parent_directory(current, error)) {
       remove_if_present(temporary);
       remove_if_present(backup_temporary);
@@ -352,12 +622,106 @@ bool SnapshotStore::save(const std::string& bytes, std::string* error) {
     }
   }
 
-  if (!atomic_replace(temporary, current, error)) {
+  if (!permit_stage("before_primary_replace", error) ||
+      !atomic_replace(temporary, current, error)) {
     remove_if_present(temporary);
     return false;
   }
-  if (!sync_parent_directory(current, error))
+  if (!permit_stage("before_primary_directory_sync", error) ||
+      !sync_parent_directory(current, error))
     return false;  // Replacement may have succeeded; caller must load to resolve.
+  if (error) error->clear();
+  return true;
+}
+
+
+
+bool SnapshotStore::save_stream(const SnapshotDocument& metadata,
+                                std::size_t payload_bytes,
+                                const SnapshotChunkReader& reader,
+                                std::string* error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
+  if (limits_.max_file_bytes == 0 ||
+      payload_bytes > std::numeric_limits<std::uint32_t>::max())
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
+  if (metadata.schema_id.empty() || metadata.context_id.empty() ||
+      metadata.schema_id.size() > 4096 || metadata.context_id.size() > 4096 ||
+      !is_valid_utf8(metadata.schema_id) || !is_valid_utf8(metadata.context_id))
+    return fail(error, "SNAPSHOT_STORE_METADATA_INVALID");
+  SnapshotWriterLock writer_lock;
+  if (!writer_lock.acquire(native_path(path_), error)) return false;
+  std::string prefix("SURGESNP", 8);
+  append_u32(prefix, 1);
+  append_string(prefix, metadata.schema_id);
+  append_string(prefix, metadata.context_id);
+  append_u64(prefix, metadata.state_version);
+  append_u64(prefix, metadata.journal_sequence);
+  append_u32(prefix, static_cast<std::uint32_t>(payload_bytes));
+  if (payload_bytes > limits_.max_file_bytes ||
+      prefix.size() > limits_.max_file_bytes - payload_bytes ||
+      64U > limits_.max_file_bytes - prefix.size() - payload_bytes)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_EXCEEDED");
+  const auto current = native_path(path_);
+  const auto temporary = native_path(path_ + ".tmp");
+  const auto backup = native_path(path_ + ".bak");
+  const auto backup_temporary = native_path(path_ + ".bak.tmp");
+  remove_if_present(temporary);
+  remove_if_present(backup_temporary);
+  if (!write_stream_durable_file(temporary, prefix, payload_bytes, reader, error) ||
+      !permit_stage("after_temp_sync", error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+
+  bool current_exists = false;
+  if (!exists_regular_file(current, current_exists, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  SnapshotStoreResult current_generation;
+  if (current_exists)
+    current_generation = load_generation(current, limits_.max_file_bytes, false);
+  SnapshotStoreResult backup_generation;
+  if (!current_generation.ok)
+    backup_generation = load_generation(backup, limits_.max_file_bytes, true);
+  const SnapshotStoreResult& previous =
+      current_generation.ok ? current_generation : backup_generation;
+  if (previous.ok) {
+    if (metadata.context_id != previous.document.context_id) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_CONTEXT_MISMATCH");
+    }
+    if (metadata.state_version < previous.document.state_version ||
+        metadata.journal_sequence < previous.document.journal_sequence) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_WATERMARK_REGRESSION");
+    }
+    if (metadata.state_version == previous.document.state_version &&
+        metadata.journal_sequence == previous.document.journal_sequence) {
+      remove_if_present(temporary);
+      return fail(error, "SNAPSHOT_STORE_STREAM_SAME_WATERMARK_UNVERIFIABLE");
+    }
+  }
+
+  if (limits_.keep_backup && current_generation.ok) {
+    if (!copy_durable_file(current, backup_temporary,
+                           limits_.max_file_bytes, error) ||
+        !permit_stage("before_backup_replace", error) ||
+        !atomic_replace(backup_temporary, backup, error) ||
+        !sync_parent_directory(current, error)) {
+      remove_if_present(temporary);
+      remove_if_present(backup_temporary);
+      return false;
+    }
+  }
+  if (!permit_stage("before_primary_replace", error) ||
+      !atomic_replace(temporary, current, error)) {
+    remove_if_present(temporary);
+    return false;
+  }
+  if (!permit_stage("before_primary_directory_sync", error) ||
+      !sync_parent_directory(current, error)) return false;
   if (error) error->clear();
   return true;
 }
@@ -368,6 +732,8 @@ bool SnapshotStore::mirror_current_to_backup(std::string* error) {
   if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
   if (limits_.max_file_bytes == 0)
     return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_INVALID");
+  SnapshotWriterLock writer_lock;
+  if (!writer_lock.acquire(native_path(path_), error)) return false;
   const auto current = native_path(path_);
   const auto backup = native_path(path_ + ".bak");
   const auto temporary = native_path(path_ + ".bak.tmp");
@@ -375,11 +741,13 @@ bool SnapshotStore::mirror_current_to_backup(std::string* error) {
   if (!valid.ok)
     return fail(error, "SNAPSHOT_STORE_CURRENT_GENERATION_INVALID");
   remove_if_present(temporary);
-  if (!copy_durable_file(current, temporary, limits_.max_file_bytes, error)) {
+  if (!copy_durable_file(current, temporary, limits_.max_file_bytes, error) ||
+      !permit_stage("after_backup_temp_sync", error)) {
     remove_if_present(temporary);
     return false;
   }
-  if (!atomic_replace(temporary, backup, error) ||
+  if (!permit_stage("before_backup_replace", error) ||
+      !atomic_replace(temporary, backup, error) ||
       !sync_parent_directory(current, error)) {
     remove_if_present(temporary);
     return false;
@@ -416,6 +784,54 @@ SnapshotStoreResult SnapshotStore::load() const {
         primary.error + ";backup=" + previous.error;
   }
   return failure;
+}
+
+
+bool SnapshotStore::load_stream(SnapshotDocument* metadata,
+                                const SnapshotPayloadSink& sink,
+                                bool* used_backup,
+                                std::string* error) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (used_backup) *used_backup = false;
+  if (!metadata || !sink) return fail(error, "SNAPSHOT_STREAM_ARGUMENT_REQUIRED");
+  if (path_.empty()) return fail(error, "SNAPSHOT_STORE_PATH_REQUIRED");
+  if (limits_.max_file_bytes == 0)
+    return fail(error, "SNAPSHOT_STORE_FILE_LIMIT_INVALID");
+
+  const auto primary = native_path(path_);
+  std::string primary_error;
+  bool sink_started = false;
+  const SnapshotPayloadSink tracked_sink =
+      [&](const char* data, std::size_t size, std::string* sink_error) {
+        sink_started = true;
+        return sink(data, size, sink_error);
+      };
+  if (stream_verified_generation(primary, limits_.max_file_bytes,
+                                 metadata, tracked_sink, &primary_error)) {
+    if (error) error->clear();
+    return true;
+  }
+  // Once delivery starts, never replay a backup into the same sink: the
+  // caller may already have staged a prefix and must abort that transaction.
+  if (sink_started) {
+    if (error) *error = primary_error;
+    return false;
+  }
+
+  const auto backup = native_path(path_ + ".bak");
+  std::string backup_error;
+  if (stream_verified_generation(backup, limits_.max_file_bytes,
+                                 metadata, sink, &backup_error)) {
+    if (used_backup) *used_backup = true;
+    if (error) error->clear();
+    return true;
+  }
+  if (primary_error == "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR" &&
+      backup_error == "SNAPSHOT_STORE_FILE_NOT_FOUND_OR_NOT_REGULAR")
+    return fail(error, "SNAPSHOT_STORE_NOT_FOUND");
+  if (error) *error = "SNAPSHOT_STORE_NO_VALID_GENERATION:primary=" +
+      primary_error + ";backup=" + backup_error;
+  return false;
 }
 
 }  // namespace surge

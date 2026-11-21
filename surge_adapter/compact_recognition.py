@@ -13,6 +13,7 @@ import unicodedata
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from surge_adapter._paths import schema_path
 from typing import Any, Protocol, Sequence
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -281,8 +282,8 @@ def build_recognition_packet(source_text: str, execution: RecognitionExecution,
         },
         "finalization": metadata.finalization,
     }
-    schema_path = Path(__file__).resolve().parents[1] / "schemas" / "surge-v0.9-input.schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema_file = schema_path("surge-v0.9-input.schema.json")
+    schema = json.loads(schema_file.read_text(encoding="utf-8"))
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(packet)
     proposal_batch = {
         "schema_version": "0.1.0",

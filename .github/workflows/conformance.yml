@@ -25,6 +25,13 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install relocatable CMake package
+        run: cmake --install build --config Release --prefix "$PWD/stage"
+      - name: Build external installed-package consumer
+        run: |
+          cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$PWD/stage" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "${{ github.workspace }}/build-consumer" --config Release --parallel
+          ./build-consumer/surge_installed_consumer
 
   journal-cross-platform:
     strategy:
@@ -41,6 +48,10 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSURGE_BUILD_BENCHMARKS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Inspect built shared-library C ABI exports
+        run: python tools/check_binary_abi.py --library build
+      - name: Inspect public C ABI struct layouts
+        run: ctest --test-dir build -C Release --output-on-failure -V -R surge_c_abi_layout_conformance
       - name: C++ journal lock and durability tests
         run: ctest --test-dir build -C Release --output-on-failure -R surge_event_journal_conformance
       - name: Portable journal benchmark and identity guardrails
@@ -55,6 +66,15 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure -R surge_journal_backup_retention_conformance
       - name: Python journal backup and lock parity tests
         run: python -m unittest discover -s tests -p test_journal_backup.py -v
+      - name: Install and consume native CMake package
+        run: |
+          cmake --install build --config Release --prefix "${{ runner.temp }}/surge-stage"
+          python tools/check_cmake_install_tree.py "${{ runner.temp }}/surge-stage" "${{ github.workspace }}" "${{ github.workspace }}/build"
+          cmake -S "${{ github.workspace }}/tests/cmake_consumer" -B "${{ github.workspace }}/build-consumer" -DCMAKE_PREFIX_PATH="${{ runner.temp }}/surge-stage" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "${{ github.workspace }}/build-consumer" --config Release --parallel
+          ctest --test-dir "${{ github.workspace }}/build-consumer" -C Release --output-on-failure
+      - name: Verify clean-prefix backup restore with installed native process
+        run: python tools/test_installed_backup_restore.py
 
   schema-and-fixtures:
     runs-on: ubuntu-latest
@@ -70,8 +90,38 @@ jobs:
           cmake --build build --config Release --parallel
       - name: Validate schemas and fixtures
         run: python tools/validate_fixtures.py
+      - name: Verify reviewed public C ABI declaration surface
+        run: python tools/check_c_abi.py
+      - name: Verify versioned C ABI compatibility against immutable baselines
+        run: python tools/check_abi_compatibility.py
+      - name: Install native Core into an isolated prefix
+        run: cmake --install build --config Release --prefix "$GITHUB_WORKSPACE/native-stage"
       - name: Python adapter regression tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build and install standalone Python wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python tools/generate_sbom.py --wheel dist/*.whl --output dist/surge-sbom.cdx.json
+          python -m venv wheel-test-env
+          wheel-test-env/bin/python -m pip install dist/*.whl
+          cd /tmp
+          "$GITHUB_WORKSPACE/wheel-test-env/bin/python" -c "from surge_adapter.packet_ingest import RecognitionPacketAdapter; RecognitionPacketAdapter(); print('installed wheel schema lookup passed')"
+          env -u PYTHONPATH SURGE_CORE_PREFIX="$GITHUB_WORKSPACE/native-stage" "$GITHUB_WORKSPACE/wheel-test-env/bin/python" - <<'PY'
+          import tempfile
+          from pathlib import Path
+          from surge_adapter.packet_ingest import CppCoreBridge
+          with tempfile.TemporaryDirectory() as tmp:
+              with CppCoreBridge(Path(tmp) / "clean-install.sgj") as core:
+                  assert core.state_version == 0
+          print("isolated wheel + installed native Core discovery passed")
+          PY
+      - name: Retain CycloneDX SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: surge-sbom
+          path: dist/surge-sbom.cdx.json
+          if-no-files-found: error
 
   asan-ubsan:
     runs-on: ubuntu-latest
@@ -116,6 +166,19 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ./build-fuzz/surge_journal_fuzz -max_total_time=20 -max_len=65536
+
+  edge-resource-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Configure measured EventJournal profile
+        run: cmake -S . -B build-edge -DCMAKE_BUILD_TYPE=Release -DSURGE_BUILD_BENCHMARKS=ON
+      - name: Build profile harness
+        run: cmake --build build-edge --target surge_journal_bench --config Release --parallel 2
+      - name: Measure 10000-event bounded profile
+        run: ./build-edge/surge_journal_bench 10000 128 10000 8388608 > "$RUNNER_TEMP/surge-edge-profile.json"
+      - name: Validate profile and publish measurements
+        run: python tools/validate_edge_benchmark.py --report "$RUNNER_TEMP/surge-edge-profile.json" --transactions 10000 --summary "$GITHUB_STEP_SUMMARY"
 
   journal-benchmark-smoke:
     runs-on: ubuntu-latest

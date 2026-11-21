@@ -1,8 +1,19 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+
+// C ABI version is independent from the SURGE package version.
+// Major changes may break ABI; minor changes are additive; patch changes
+// preserve ABI. Major zero denotes the pre-stability compatibility period.
+#define SURGE_ABI_VERSION_MAJOR 0u
+#define SURGE_ABI_VERSION_MINOR 1u
+#define SURGE_ABI_VERSION_PATCH 0u
+#define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
 extern "C" {
+
+// Returns SURGE_ABI_VERSION_ENCODE(major, minor, patch).
+uint32_t surge_abi_version(void);
 #endif
 
 typedef struct SurgeChaosProvenanceInput {
@@ -80,7 +91,7 @@ typedef struct SurgeRecognitionPacketInput {
 
 typedef struct SurgeGraphNodeInput {
   const char* id;
-  const char* kind;       // CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST
+  const char* kind;       // CLUSTER, CHAOS_CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST, CLUSTER_LIFECYCLE
   const char* content;
   const char* const* references;
   size_t reference_count;
@@ -170,6 +181,19 @@ int surge_retention_journal_get_events(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+typedef struct SurgeResourceBudgetLimits {
+  size_t resident_bytes;
+  size_t transient_bytes;
+  size_t retained_events;
+  size_t retained_clusters;
+  size_t decision_candidates;
+  size_t decision_evidence;
+} SurgeResourceBudgetLimits;
+
+// Opens the Core with explicit finite logical resource limits. Zero capacity
+// means no resources of that kind may be admitted.
+void* surge_packet_core_open_with_limits(const char* journal_path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t error_capacity);
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
 int surge_packet_core_admit(

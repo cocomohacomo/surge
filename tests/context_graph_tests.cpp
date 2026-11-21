@@ -1,6 +1,8 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/snapshot_domains.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/snapshot_domains.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -8,6 +10,106 @@
 using namespace surge;
 int main(){
   const auto root=std::filesystem::temp_directory_path()/"surge-context-graph-tests";
+  {
+    const auto lifecycle_path=(root/"cluster-lifecycle.sgj").string();
+    {
+      ContextGraph graph(lifecycle_path);CHECK(graph.open());
+      SemanticDelta dormant;dormant.delta_id="cluster-dormant";dormant.idempotency_key="cluster-dormant";
+      dormant.expected_state_version=0;
+      dormant.nodes={{{"lifecycle-cluster",NodeKind::Cluster,"retained topic",{}}},
+        {{"lifecycle-dormant",NodeKind::ClusterLifecycle,
+          "DORMANT 1 \"2026-11-20T00:00:00Z\" \"low retention priority\" \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+          {"lifecycle-cluster"}}}};
+      dormant.relations={{{"lifecycle-dormant-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-dormant"}}};
+      CHECK(graph.apply(dormant).committed);
+      ClusterLifecycleRecord invalid_builder_record;
+      invalid_builder_record.cluster_id="lifecycle-cluster";
+      invalid_builder_record.state=ClusterLifecycleState::Active;
+      invalid_builder_record.revision=1;
+      invalid_builder_record.recorded_at="2026-11-20T00:00:00Z";
+      invalid_builder_record.reason="invalid same-state transition";
+      invalid_builder_record.provenance_digest=std::string(64,'a');
+      SemanticDelta invalid_builder_delta;
+      std::string lifecycle_error;
+      CHECK(!graph.append_cluster_lifecycle(invalid_builder_delta,invalid_builder_record,
+          "invalid-builder-node","invalid-builder-edge",lifecycle_error));
+      CHECK(invalid_builder_delta.nodes.empty()&&invalid_builder_delta.relations.empty());
+      auto state=graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Dormant && state->revision==1);
+
+      SemanticDelta archived;archived.delta_id="cluster-archive";archived.idempotency_key="cluster-archive";
+      archived.expected_state_version=1;
+      archived.nodes={{{"lifecycle-archived",NodeKind::ClusterLifecycle,
+          "ARCHIVED 2 \"2026-11-20T00:01:00Z\" \"outside active focus\" \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"",
+          {"lifecycle-cluster"}}}};
+      archived.relations={{{"lifecycle-archived-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-archived"}}};
+      CHECK(graph.apply(archived).committed);
+      state=graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Archived && state->revision==2);
+
+      SemanticDelta tombstoned;tombstoned.delta_id="cluster-tombstone";tombstoned.idempotency_key="cluster-tombstone";
+      tombstoned.expected_state_version=2;
+      tombstoned.nodes={{{"lifecycle-tombstone",NodeKind::ClusterLifecycle,
+          "TOMBSTONED 3 \"2026-11-20T00:02:00Z\" \"retention policy approved\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"",
+          {"lifecycle-cluster"}}}};
+      tombstoned.relations={{{"lifecycle-tombstone-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-tombstone"}}};
+      CHECK(graph.apply(tombstoned).committed);
+      CHECK(graph.nodes().count("lifecycle-cluster")==1); // Tombstone is metadata, not physical deletion.
+      CHECK(graph.cluster_lifecycle("lifecycle-cluster")->state==ClusterLifecycleState::Tombstoned);
+
+      SemanticDelta invalid;invalid.delta_id="cluster-resurrect";invalid.idempotency_key="cluster-resurrect";
+      invalid.expected_state_version=3;
+      invalid.nodes={{{"lifecycle-invalid-reactivation",NodeKind::ClusterLifecycle,
+          "ACTIVE 4 \"2026-11-20T00:03:00Z\" \"invalid resurrection\" \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"",
+          {"lifecycle-cluster"}}}};
+      invalid.relations={{{"lifecycle-invalid-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-invalid-reactivation"}}};
+      const auto rejected=graph.apply(invalid);
+      CHECK(!rejected.committed && rejected.error=="CLUSTER_LIFECYCLE_TRANSITION_INVALID");
+      CHECK(graph.state_version()==3);
+
+      std::string snapshot_payload, snapshot_error;
+      ContextGraphSnapshotDomain source_domain(graph);
+      CHECK(source_domain.capture(&snapshot_payload, &snapshot_error));
+      ContextGraph restored_graph((root/"cluster-lifecycle-restored.sgj").string());
+      ContextGraphSnapshotDomain restored_domain(restored_graph);
+      auto prepared_restore=restored_domain.prepare_restore(snapshot_payload,&snapshot_error);
+      CHECK(prepared_restore!=nullptr);
+      prepared_restore->commit();
+      const auto snapshot_state=restored_graph.cluster_lifecycle("lifecycle-cluster");
+      CHECK(snapshot_state && snapshot_state->state==ClusterLifecycleState::Tombstoned && snapshot_state->revision==3);
+
+      SemanticDelta bad_timestamp;bad_timestamp.delta_id="cluster-bad-time";bad_timestamp.idempotency_key="cluster-bad-time";
+      bad_timestamp.expected_state_version=3;
+      bad_timestamp.nodes={{{"lifecycle-bad-time",NodeKind::ClusterLifecycle,
+          "ACTIVE 4 \"not-a-time\" \"invalid timestamp\" \"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"",
+          {"lifecycle-cluster"}}}};
+      bad_timestamp.relations={{{"lifecycle-bad-time-membership",RelationKind::Contains,
+          "lifecycle-cluster","lifecycle-bad-time"}}};
+      const auto bad_time_result=graph.apply(bad_timestamp);
+      CHECK(!bad_time_result.committed && bad_time_result.error=="CLUSTER_LIFECYCLE_RECORD_INVALID");
+      CHECK(graph.state_version()==3);
+
+      SemanticDelta missing_membership;missing_membership.delta_id="cluster-missing-membership";
+      missing_membership.idempotency_key="cluster-missing-membership";missing_membership.expected_state_version=3;
+      missing_membership.nodes={{{"lifecycle-orphan-cluster",NodeKind::Cluster,"orphan parent",{}}},
+        {{"lifecycle-orphan",NodeKind::ClusterLifecycle,
+          "DORMANT 1 \"2026-11-20T00:03:00Z\" \"orphan metadata\" \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"",
+          {"lifecycle-orphan-cluster"}}}};
+      const auto orphan_result=graph.apply(missing_membership);
+      CHECK(!orphan_result.committed && orphan_result.error=="CLUSTER_LIFECYCLE_MEMBERSHIP_REQUIRED");
+      CHECK(graph.state_version()==3);
+    }
+    {
+      ContextGraph recovered(lifecycle_path);CHECK(recovered.open());
+      const auto state=recovered.cluster_lifecycle("lifecycle-cluster");
+      CHECK(state && state->state==ClusterLifecycleState::Tombstoned && state->revision==3);
+      CHECK(recovered.nodes().count("lifecycle-cluster")==1);
+    }
+  }
 
   {
     const auto qpath=(root/"question-aspect-status.sgj").string();
@@ -139,6 +241,131 @@ int main(){
       CHECK(latest && latest->validity.revision==2 && latest->recorded_state_version==2);
       CHECK(recovered.evidence_validity_at("ev-validity-subject","2026-03-01T00:00:00Z")==ClaimTemporalState::Valid);
     }
+  }
+  // Membership unlink is an append-only journal operation. It removes
+  // only the selected Contains edge; shared canonical payload survives.
+  const auto unlink_path=(root/"cluster-membership-unlink.sgj").string();
+  {
+    ContextGraph graph(unlink_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="unlink-seed";seed.idempotency_key="unlink-seed";
+    seed.expected_state_version=0;
+    seed.nodes={{{"unlink-a",NodeKind::Cluster,"a",{} }},
+                {{"unlink-b",NodeKind::Cluster,"b",{} }},
+                {{"unlink-shared",NodeKind::Evidence,"shared evidence",{} }}};
+    seed.relations={{{"unlink-a-edge",RelationKind::Contains,"unlink-a","unlink-shared"}},
+                    {{"unlink-b-edge",RelationKind::Contains,"unlink-b","unlink-shared"}}};
+    CHECK(graph.apply(seed).committed);
+    CHECK(graph.cluster_membership_reference_count("unlink-shared")==2);
+    SemanticDelta unlink;unlink.delta_id="unlink-a-membership";
+    unlink.idempotency_key="unlink-a-membership";unlink.expected_state_version=1;
+    std::string error;
+    CHECK(graph.append_cluster_unmembership(unlink,"unlink-a","unlink-shared",error));
+    CHECK(graph.apply(unlink).committed);
+    CHECK(graph.relations().count("unlink-a-edge")==0);
+    CHECK(graph.relations().count("unlink-b-edge")==1);
+    CHECK(graph.nodes().count("unlink-shared")==1);
+    CHECK(graph.cluster_membership_reference_count("unlink-shared")==1);
+  }
+  {
+    ContextGraph recovered(unlink_path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==2);
+    CHECK(recovered.relations().count("unlink-a-edge")==0);
+    CHECK(recovered.relations().count("unlink-b-edge")==1);
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.cluster_membership_reference_count("unlink-shared")==1);
+    std::string error;
+    SemanticDelta last;last.delta_id="unlink-last";last.idempotency_key="unlink-last";
+    last.expected_state_version=2;
+    CHECK(recovered.append_cluster_unmembership(last,"unlink-b","unlink-shared",error));
+    CHECK(recovered.apply(last).committed);
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.relations().count("unlink-b-edge")==0);
+    CHECK(recovered.cluster_membership_reference_count("unlink-shared")==0);
+  }
+  {
+    ContextGraph recovered(unlink_path);CHECK(recovered.open());
+    CHECK(recovered.nodes().count("unlink-shared")==1);
+    CHECK(recovered.relations().empty());
+  }
+  // Entity reclamation is permitted only after all cluster memberships and
+  // every graph-owned reference are removed in the same durable transaction.
+  const auto entity_reclaim_path=(root/"entity-reclamation.sgj").string();
+  {
+    ContextGraph graph(entity_reclaim_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-reclaim-seed";
+    seed.idempotency_key="entity-reclaim-seed";seed.expected_state_version=0;
+    seed.nodes={{{"reclaim-cluster",NodeKind::Cluster,"cluster",{} }},
+                {{"reclaim-entity",NodeKind::Entity,"orphan entity",{} }}};
+    seed.relations={{{"reclaim-membership",RelationKind::Contains,
+        "reclaim-cluster","reclaim-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta reclaim;reclaim.delta_id="entity-reclaim-commit";
+    reclaim.idempotency_key="entity-reclaim-commit";reclaim.expected_state_version=1;
+    std::string error;
+    CHECK(graph.append_cluster_unmembership(reclaim,"reclaim-cluster",
+        "reclaim-entity",error));
+    CHECK(graph.append_entity_reclamation(reclaim,"reclaim-entity",error));
+    const auto committed=graph.apply(reclaim);
+    CHECK(committed.committed&&committed.state_version==2);
+    CHECK(graph.nodes().count("reclaim-entity")==0);
+    CHECK(graph.nodes().count("reclaim-cluster")==1);
+  }
+  {
+    ContextGraph recovered(entity_reclaim_path);CHECK(recovered.open());
+    CHECK(recovered.state_version()==2);
+    CHECK(recovered.nodes().count("reclaim-entity")==0);
+  }
+  // A snapshot taken before reclamation plus the committed journal tail
+  // must restore to the same graph as full replay.
+  const auto entity_snapshot_path=(root/"entity-reclamation-snapshot.sgj").string();
+  const auto entity_snapshot_target=(root/"entity-reclamation-snapshot-target.sgj").string();
+  {
+    EventJournal journal(entity_snapshot_path);CHECK(journal.open());
+    ContextGraph graph(journal);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-snapshot-seed";
+    seed.idempotency_key="entity-snapshot-seed";seed.expected_state_version=0;
+    seed.nodes={{{"snapshot-cluster",NodeKind::Cluster,"cluster",{} }},
+                {{"snapshot-entity",NodeKind::Entity,"entity",{} }}};
+    seed.relations={{{"snapshot-membership",RelationKind::Contains,
+        "snapshot-cluster","snapshot-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    ContextGraphSnapshotDomain domain(graph);std::string snapshot,error;
+    CHECK(domain.capture(&snapshot,&error));
+    SemanticDelta reclaim;reclaim.delta_id="entity-snapshot-reclaim";
+    reclaim.idempotency_key="entity-snapshot-reclaim";reclaim.expected_state_version=1;
+    CHECK(graph.append_cluster_unmembership(reclaim,"snapshot-cluster",
+        "snapshot-entity",error));
+    CHECK(graph.append_entity_reclamation(reclaim,"snapshot-entity",error));
+    CHECK(graph.apply(reclaim).committed);
+    const auto tail=journal.committed_tail(1);
+    CHECK(tail.ok&&tail.current_state_version==2);
+    EventJournal target_journal(entity_snapshot_target);CHECK(target_journal.open());
+    ContextGraph target(target_journal);CHECK(target.open());
+    ContextGraphSnapshotDomain target_domain(target);
+    auto prepared=target_domain.prepare_restore_with_tail(snapshot,tail.events,&error);
+    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"\\n";
+    CHECK(prepared!=nullptr);
+    prepared->commit();
+    CHECK(target.nodes().count("snapshot-entity")==0);
+    CHECK(target.nodes().count("snapshot-cluster")==1);
+  }
+  // Reclamation fails closed while any non-membership relation still points
+  // to the entity, even when its cluster membership has already been removed.
+  const auto entity_guard_path=(root/"entity-reclamation-guard.sgj").string();
+  {
+    ContextGraph graph(entity_guard_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="entity-guard-seed";
+    seed.idempotency_key="entity-guard-seed";seed.expected_state_version=0;
+    seed.nodes={{{"guard-entity",NodeKind::Entity,"referenced entity",{} }},
+                {{"guard-question",NodeKind::Question,"question",{} }}};
+    seed.relations={{{"guard-about",RelationKind::About,"guard-question","guard-entity"}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta reclaim;reclaim.delta_id="entity-guard-reclaim";
+    reclaim.idempotency_key="entity-guard-reclaim";reclaim.expected_state_version=1;
+    std::string error;
+    CHECK(!graph.append_entity_reclamation(reclaim,"guard-entity",error));
+    CHECK(error=="ENTITY_RECLAMATION_RELATION_REFERENCES_REMAIN");
+    CHECK(graph.nodes().count("guard-entity")==1);
   }
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
@@ -414,6 +641,82 @@ int main(){
     CHECK(recovered.state_version()==3);
     CHECK(recovered.nodes().empty());
   }
+  // Input information is assigned to deterministic typed clusters by Core,
+  // and the parent/member containment survives journal replay.
+  const auto cluster_path=(root/"classified-input-clusters.sgj").string();
+  std::string classified_cluster_id;
+  {
+    ContextGraph graph(cluster_path); CHECK(graph.open());
+    SemanticDelta delta;
+    delta.delta_id="cluster-classification-delta";
+    delta.idempotency_key="cluster-classification-idem";
+    delta.expected_state_version=0;
+    delta.nodes={{{"input-root",NodeKind::Cluster,"stream context",{}}},
+                 {{"evidence-a",NodeKind::Evidence,"classification evidence",{}}},
+                 {{"claim-a",NodeKind::Claim,"candidate claim",{"evidence-a"}}}};
+    std::string error;
+    CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
+        "source-digest:span-0-3","claim-a","classification-test",
+        classified_cluster_id,error));
+    const auto stable_cluster_id=classified_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","LEXICAL_INTERPRETATION",
+        "source-digest:span-0-3","claim-a","classification-test",
+        classified_cluster_id,error));
+    CHECK(classified_cluster_id==stable_cluster_id);
+    std::string second_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","SURFACE_REALIZATION",
+        "source-digest:span-0-3","claim-a","classification-test-surface",
+        second_cluster_id,error));
+    CHECK(second_cluster_id!=classified_cluster_id);
+    std::string invalid_cluster_id;
+    CHECK(!graph.append_cluster_membership(delta,"missing-parent","TOPIC",
+        "partition","claim-a","invalid-parent",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_PARENT_NOT_FOUND");
+    CHECK(graph.append_cluster_membership(delta,"input-root","A|B","C",
+        "claim-a","invalid-parent",invalid_cluster_id,error));
+    const auto delimiter_a=invalid_cluster_id;
+    CHECK(graph.append_cluster_membership(delta,"input-root","A","B|C",
+        "claim-a","delimiter-test",invalid_cluster_id,error));
+    CHECK(invalid_cluster_id!=delimiter_a);
+    CHECK(!graph.append_cluster_membership(delta,"input-root","TOPIC",
+        "partition","missing-member","invalid-member",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_MEMBER_NOT_FOUND");
+    CHECK(!graph.append_cluster_membership(delta,"input-root","TOPIC",
+        "partition","claim-a",std::string(257,'x'),invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_INPUT_INVALID");
+    SemanticDelta conflict_delta;
+    conflict_delta.nodes={{{"input-root",NodeKind::Cluster,"stream context",{}}},
+                          {{"claim-a",NodeKind::Claim,"candidate claim",{}}}};
+    conflict_delta.relations.push_back({{delta.relations.front().relation.id,
+        RelationKind::Contains,"wrong-parent","wrong-child"}});
+    const auto node_count_before=conflict_delta.nodes.size();
+    const auto relation_count_before=conflict_delta.relations.size();
+    CHECK(!graph.append_cluster_membership(conflict_delta,"input-root",
+        "LEXICAL_INTERPRETATION","source-digest:span-0-3","claim-a",
+        "classification-test",invalid_cluster_id,error));
+    CHECK(error=="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT");
+    CHECK(conflict_delta.nodes.size()==node_count_before);
+    CHECK(conflict_delta.relations.size()==relation_count_before);
+    CHECK(!classified_cluster_id.empty());
+    const auto classified_commit = graph.apply(delta);
+    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\n';
+    CHECK(classified_commit.committed);
+    CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
+    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+        [&](const auto& item){return item.second.from=="input-root" &&
+          item.second.to==classified_cluster_id && item.second.kind==RelationKind::Contains;}));
+    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+        [&](const auto& item){return item.second.from==classified_cluster_id &&
+          item.second.to=="claim-a" && item.second.kind==RelationKind::Contains;}));
+  }
+  {
+    ContextGraph recovered(cluster_path); CHECK(recovered.open());
+    CHECK(recovered.nodes().count(classified_cluster_id)==1);
+    CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
+        [&](const auto& item){return item.second.from==classified_cluster_id &&
+          item.second.to=="claim-a";}));
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }

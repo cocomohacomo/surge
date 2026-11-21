@@ -10,7 +10,9 @@
 #include <utility>
 
 namespace surge {
-enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest };
+enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
+enum class ClusterLifecycleState { Active, Dormant, Archived, Tombstoned };
+struct ClusterLifecycleRecord { std::string cluster_id; ClusterLifecycleState state{ClusterLifecycleState::Active}; std::uint64_t revision{0}; std::string recorded_at, reason, provenance_digest; };
 enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts, Duplicates, Contains };
 enum class ClaimStatus { Active, Superseded, Retracted };
 enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
@@ -53,6 +55,10 @@ struct SemanticDelta {
   std::uint64_t expected_state_version{0};
   std::vector<AddNode> nodes;
   std::vector<AddRelation> relations;
+  // Append-only journal command that removes active Contains edges without deleting members.
+  std::vector<std::string> remove_relation_ids;
+  // Explicitly reclaim eligible unreferenced Entity payload nodes.
+  std::vector<std::string> reclaim_entity_node_ids;
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
   std::vector<ClaimValidity> claim_validity_updates;
@@ -87,12 +93,26 @@ struct TemporalReassessmentRecord {
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraphSnapshotDomain;
 class PreparedContextGraphSnapshotRestore;
+class BudgetedContextGraph;
+class ClusterArchiveGraphRestorer;
 class ContextGraph {
  public:
   explicit ContextGraph(std::string journal_path);
   explicit ContextGraph(EventJournal& shared_journal);
   bool open();
   DeltaResult apply(const SemanticDelta& delta);
+  // Core-owned classification: persist a member beneath a deterministic typed
+  // child cluster, creating the cluster and parent edge in the same delta.
+  bool append_entity_reclamation(SemanticDelta& delta,
+      const std::string& entity_node_id, std::string& error) const;
+  bool append_cluster_unmembership(SemanticDelta& delta,
+      const std::string& cluster_id, const std::string& member_node_id,
+      std::string& error) const;
+  bool append_cluster_membership(SemanticDelta& delta,
+      const std::string& parent_cluster_id, const std::string& classification,
+      const std::string& partition_key, const std::string& member_node_id,
+      const std::string& relation_prefix, std::string& assigned_cluster_id,
+      std::string& error) const;
   bool reassess_claim(const std::string& claim_id, const std::string& reference_at,
                       std::uint64_t expected_state_version,
                       TemporalReassessmentRecord& result, std::string& error);
@@ -101,8 +121,16 @@ class ContextGraph {
   }
   bool prepare_events(const SemanticDelta& delta, std::vector<JournalEvent>& events, std::string& error) const;
   std::uint64_t state_version() const { return journal_->state_version(); }
+  // Safely encode and append one lifecycle transition plus its required
+  // cluster membership edge to a caller-owned delta. No graph mutation occurs.
+  bool append_cluster_lifecycle(SemanticDelta& delta,
+      const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
+      const std::string& relation_id, std::string& error) const;
+  std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
+  // Counts active Cluster/ChaosCluster Contains references to a canonical member.
+  std::size_t cluster_membership_reference_count(const std::string& member_node_id) const;
   const std::map<std::string, ScopeSpanRecord>& scope_spans() const { return state_.scope_spans; }
   const std::optional<FocusRecord>& focus() const { return state_.focus; }
   const std::vector<FocusRecord>& focus_history() const { return state_.focus_history; }
@@ -139,9 +167,16 @@ class ContextGraph {
                                   std::uint64_t expected_state_version, std::string& error);
   bool apply_question_aspect_statuses(const std::vector<std::pair<std::string, QuestionAspectStatus>>& updates,
       std::uint64_t expected_state_version, std::string& error);
+  // Durable, merge-only import of a fully validated ClusterArchive v2 payload.
+  // The complete import is one journal transaction and is replayed after restart.
+  DeltaResult import_cluster_archive_payload(const std::string& payload,
+      std::uint64_t expected_state_version, const std::string& transaction_id,
+      const std::string& idempotency_key);
  private:
+  friend class BudgetedContextGraph;
   friend class ContextGraphSnapshotDomain;
   friend class PreparedContextGraphSnapshotRestore;
+  friend class ClusterArchiveGraphRestorer;
   struct State {
     std::map<std::string, GraphNode> nodes;
     std::map<std::string, GraphRelation> relations;
@@ -159,6 +194,8 @@ class ContextGraph {
   };
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
+  bool apply_relation_removal(State&, const std::string&, std::string&) const;
+  bool apply_entity_reclamation(State&, const std::string&, std::string&) const;
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
