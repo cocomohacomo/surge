@@ -156,6 +156,19 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ./build-fuzz/surge_journal_fuzz -max_total_time=20 -max_len=65536
 
+  edge-resource-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Configure measured EventJournal profile
+        run: cmake -S . -B build-edge -DCMAKE_BUILD_TYPE=Release -DSURGE_BUILD_BENCHMARKS=ON
+      - name: Build profile harness
+        run: cmake --build build-edge --target surge_journal_bench --config Release --parallel 2
+      - name: Measure 10000-event bounded profile
+        run: ./build-edge/surge_journal_bench 10000 128 10000 8388608 > "$RUNNER_TEMP/surge-edge-profile.json"
+      - name: Validate profile and publish measurements
+        run: python tools/validate_edge_benchmark.py --report "$RUNNER_TEMP/surge-edge-profile.json" --transactions 10000 --summary "$GITHUB_STEP_SUMMARY"
+
   journal-benchmark-smoke:
     runs-on: ubuntu-latest
     steps:
