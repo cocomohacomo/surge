@@ -82,6 +82,33 @@ def main() -> int:
     expected = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if current != expected:
         print("C_ABI_SURFACE_CHANGED: review ABI version and update abi/c-abi-v0.1.json intentionally")
+        for section in ("abi_version", "structs", "functions"):
+            if current[section] == expected.get(section):
+                continue
+            print("DIFF_SECTION:" + section)
+            if section == "functions":
+                old_items = {item["name"]: item for item in expected.get(section, [])}
+                new_items = {item["name"]: item for item in current[section]}
+                print("MISSING_FUNCTIONS:" + ",".join(sorted(old_items.keys() - new_items.keys())))
+                print("NEW_FUNCTIONS:" + ",".join(sorted(new_items.keys() - old_items.keys())))
+                for name in sorted(old_items.keys() & new_items.keys()):
+                    if old_items[name] != new_items[name]:
+                        print("CHANGED_FUNCTION:" + name)
+                        print("EXPECTED:" + json.dumps(old_items[name], sort_keys=True))
+                        print("ACTUAL:" + json.dumps(new_items[name], sort_keys=True))
+                        break
+            elif section == "structs":
+                print("EXPECTED_STRUCTS:" + ",".join(expected.get(section, {}).keys()))
+                print("ACTUAL_STRUCTS:" + ",".join(current[section].keys()))
+                for name in sorted(current[section].keys() & expected.get(section, {}).keys()):
+                    if current[section][name] != expected[section][name]:
+                        print("CHANGED_STRUCT:" + name)
+                        print("EXPECTED:" + json.dumps(expected[section][name], sort_keys=True))
+                        print("ACTUAL:" + json.dumps(current[section][name], sort_keys=True))
+                        break
+            else:
+                print("EXPECTED:" + json.dumps(expected.get(section), sort_keys=True))
+                print("ACTUAL:" + json.dumps(current[section], sort_keys=True))
         return 1
     print(f"C ABI declaration surface OK: {len(current['functions'])} functions, {len(current['structs'])} structs")
     return 0
