@@ -98,6 +98,25 @@ struct TemporalReassessmentRecord {
   std::vector<std::string> active_support_ids, active_contradiction_ids;
   std::string previous_hash, snapshot_digest, chain_hash;
 };
+struct ObservedMembership {
+  std::string member_node_id;
+  std::string cluster_node_id;
+  double upstream_weight{1.0};
+};
+struct CognitionObservation {
+  std::uint64_t state_version{0};
+  std::vector<GraphNode> nodes;
+  std::vector<GraphRelation> relations;
+  std::vector<ObservedMembership> memberships;
+  std::vector<std::string> unresolved_member_ids;
+  std::vector<std::string> active_question_ids;
+  std::vector<std::string> active_interest_ids;
+  std::optional<FocusRecord> current_focus;
+  std::vector<FocusRecord> focus_history;
+  std::size_t unresolved_scope_count{0};
+  std::size_t dependency_evaluation_count{0};
+  // Snapshot semantics: detached copies, safe for external read-only inspection.
+};
 struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t state_version{0}; std::string error; };
 class ContextGraphSnapshotDomain;
 class PreparedContextGraphSnapshotRestore;
@@ -135,6 +154,8 @@ class ContextGraph {
   }
   bool prepare_events(const SemanticDelta& delta, std::vector<JournalEvent>& events, std::string& error) const;
   std::uint64_t state_version() const { return journal_->state_version(); }
+  // Read-only projection of the exact committed cognition state; no inference or mutation.
+  CognitionObservation observe_cognition() const;
   // Safely encode and append one lifecycle transition plus its required
   // cluster membership edge to a caller-owned delta. No graph mutation occurs.
   bool append_cluster_lifecycle(SemanticDelta& delta,
