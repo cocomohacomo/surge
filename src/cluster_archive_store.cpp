@@ -685,6 +685,21 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     return std::getline(input, line) && parse_count(line, expected, count) &&
         count <= node_count;
   };
+  auto valid_rfc3339 = [](const std::string& value) {
+    if (value.size() < 20 || value[4] != '-' || value[7] != '-' ||
+        value[10] != 'T' || value[13] != ':' || value[16] != ':')
+      return false;
+    for (std::size_t i : {0U,1U,2U,3U,5U,6U,8U,9U,11U,12U,14U,15U,17U,18U})
+      if (value[i] < '0' || value[i] > '9') return false;
+    if (value.size() == 20 && value[19] == 'Z') return true;
+    if (value.size() == 25 && (value[19] == '+' || value[19] == '-') &&
+        value[22] == ':') {
+      for (std::size_t i : {20U,21U,23U,24U})
+        if (value[i] < '0' || value[i] > '9') return false;
+      return true;
+    }
+    return false;
+  };
   auto parse_validity_record = [&](const std::string& record_tag,
       const std::string& owner, NodeKind owner_kind, std::uint64_t& previous_revision,
       std::uint64_t& previous_version, bool claim_record) {
@@ -698,13 +713,15 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         tag != record_tag || subject != owner || subject.empty() ||
         !node_ids.count(subject) ||
         node_kinds.at(subject) != static_cast<unsigned>(owner_kind) ||
-        valid_from.empty() || basis.empty() || !node_ids.count(basis) ||
+        !valid_rfc3339(valid_from) ||
+        (!valid_until.empty() && !valid_rfc3339(valid_until)) ||
+        basis.empty() || !node_ids.count(basis) ||
         node_kinds.at(basis) != static_cast<unsigned>(NodeKind::Evidence) ||
         (review.empty() != reviewer.empty()) ||
         (!review.empty() && (!node_ids.count(review) ||
           node_kinds.at(review) != static_cast<unsigned>(NodeKind::Evidence))) ||
         revision != previous_revision + 1 || recorded_version == 0 ||
-        recorded_version > archive_watermark || recorded_version < previous_version ||
+        recorded_version > archive_watermark || recorded_version <= previous_version ||
         (row >> extra))
       return false;
     const auto& refs = node_reference_map.at(subject);
