@@ -666,8 +666,11 @@ int main(){
     std::string second_cluster_id;
     CHECK(graph.append_cluster_membership(delta,"input-root","SURFACE_REALIZATION",
         "source-digest:span-0-3","claim-a","classification-test-surface",
-        second_cluster_id,error));
+        second_cluster_id,error,0.73));
     CHECK(second_cluster_id!=classified_cluster_id);
+    CHECK(std::any_of(delta.relations.begin(),delta.relations.end(),
+        [&](const auto& item){return item.relation.from==second_cluster_id &&
+          item.relation.to=="claim-a" && item.relation.weight==0.73;}));
     std::string invalid_cluster_id;
     CHECK(!graph.append_cluster_membership(delta,"missing-parent","TOPIC",
         "partition","claim-a","invalid-parent",invalid_cluster_id,error));
