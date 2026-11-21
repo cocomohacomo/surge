@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <cctype>
 namespace surge {
 namespace { constexpr const char* kSchema = "surge.cluster.archive.v2"; }
 bool serialize_cluster_archive_payload(const ContextGraph& graph,
