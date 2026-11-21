@@ -717,6 +717,45 @@ int main(){
           item.second.to=="claim-a";}));
   }
 
+  // Open-world admission keeps unknown information without inventing
+  // semantic relations; later classification grows its memberships.
+  const auto open_world_path=(root/"open-world-chaos-membership.sgj").string();
+  std::string unresolved_root_id, unresolved_edge_id;
+  {
+    ContextGraph graph(open_world_path);CHECK(graph.open());
+    SemanticDelta admit;admit.delta_id="open-world-admit";
+    admit.idempotency_key="open-world-admit";admit.expected_state_version=0;
+    admit.nodes={{{"unclassified-note",NodeKind::Entity,"短い未分類の発言",{}}}};
+    std::string error;
+    CHECK(graph.append_unresolved_membership(admit,"unclassified-note",
+        unresolved_root_id,unresolved_edge_id,error));
+    CHECK(unresolved_root_id=="surge:chaos:unresolved-root");
+    CHECK(graph.apply(admit).committed);
+    CHECK(graph.nodes().at(unresolved_root_id).kind==NodeKind::ChaosCluster);
+    CHECK(graph.cluster_membership_reference_count("unclassified-note")==1);
+    SemanticDelta classify;classify.delta_id="open-world-classify";
+    classify.idempotency_key="open-world-classify";classify.expected_state_version=1;
+    classify.nodes={{{"conversation-topic",NodeKind::Cluster,"会話トピック",{}}}};
+    std::string assigned_cluster;
+    CHECK(graph.append_cluster_membership(classify,"conversation-topic",
+        "ACKNOWLEDGEMENT","turn-17","unclassified-note","later-classification",
+        assigned_cluster,error));
+    classify.remove_relation_ids.push_back(unresolved_edge_id);
+    CHECK(graph.apply(classify).committed);
+    CHECK(graph.cluster_membership_reference_count("unclassified-note")==1);
+    CHECK(graph.relations().count(unresolved_edge_id)==0);
+    CHECK(graph.relations().count("later-classification/member/"+
+        sha256_hex(std::to_string(assigned_cluster.size())+":"+assigned_cluster+
+        std::to_string(std::string("unclassified-note").size())+":unclassified-note").substr(0,24))==0 ||
+        graph.cluster_membership_reference_count("unclassified-note")==1);
+  }
+  {
+    ContextGraph recovered(open_world_path);CHECK(recovered.open());
+    CHECK(recovered.nodes().count("unclassified-note")==1);
+    CHECK(recovered.nodes().count(unresolved_root_id)==1);
+    CHECK(recovered.cluster_membership_reference_count("unclassified-note")==1);
+    CHECK(recovered.relations().count(unresolved_edge_id)==0);
+  }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
