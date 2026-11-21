@@ -1932,8 +1932,8 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     candidate.memory_state_version = observation.state_version;
     if (std::find(candidate.supporting_member_ids.begin(),
         candidate.supporting_member_ids.end(), membership.member_node_id) ==
-        candidate.supporting_member_ids.end()
-        candidate.supporting_member_ids.push_back(membership.member_node_id);
+        candidate.supporting_member_ids.end())
+      candidate.supporting_member_ids.push_back(membership.member_node_id);
     for (const auto& term : matched) {
       if (std::find(candidate.matched_terms.begin(), candidate.matched_terms.end(),
           term) == candidate.matched_terms.end())
