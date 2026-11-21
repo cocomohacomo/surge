@@ -33,7 +33,7 @@ decision.
 - [ ] Linux, macOS, and Windows install/consumer tests all green on the same
   commit.
 - [x] Provisional runtime ABI version query and compatibility policy documented.
-- [ ] ABI symbol/layout diff automation and compatibility matrix.
+- [x] Source-level C ABI declaration manifest and CI diff guard (function signatures and public struct field order/types).\n- [ ] Platform binary export/layout inspection and compatibility matrix.
 - [ ] Install-tree inspection confirms no build-tree paths leak into exports.
 
 ### Gate B: reproducible developer integration
@@ -41,7 +41,7 @@ decision.
 - [x] Build and CTest instructions.
 - [x] Schema/fixture and Python regression CI.
 - [x] Standalone Python package metadata and wheel build in CI.
-- [ ] Python package locates the installed native library deterministically.
+- [ ] Python package locates the installed native library deterministically.\n- [x] Reviewed C ABI declaration surface is checked in CI.
 - [ ] Clean-environment install test with no repository checkout on
   `PYTHONPATH`.
 - [x] Public C ABI version macros, runtime query, and conformance test.
