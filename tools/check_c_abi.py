@@ -39,34 +39,23 @@ def extract_surface(source: str) -> dict:
             "tag": tag,
             "fields": [normalize(item) for item in body.split(";") if item.strip()],
         }
-    declarations = []
-    depth = 0
-    start = 0
-    for index, char in enumerate(source):
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-        elif char == ";" and depth == 0:
-            statement = source[start:index].strip()
-            start = index + 1
-            if "surge_" not in statement or "(" not in statement:
-                continue
-            match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*$", statement, re.S)
-            if not match or not match.group(1).startswith("surge_"):
-                continue
-            declarations.append({
-                "name": match.group(1),
-                "return_type": normalize(statement[:match.start()]),
-                "parameters": normalize(match.group(2)),
-            })
-    declarations.sort(key=lambda item: item["name"])
-    if len({item["name"] for item in declarations}) != len(declarations):
+    function_pattern = re.compile(
+        r"^\s*((?:void|int|size_t|uint32_t|uint64_t)\s*\*?)\s+"
+        r"(surge_[A-Za-z0-9_]+)\s*\((.*?)\)\s*;",
+        flags=re.M | re.S,
+    )
+    functions = [{
+        "name": match.group(2),
+        "return_type": normalize(match.group(1)),
+        "parameters": normalize(match.group(3)),
+    } for match in function_pattern.finditer(source)]
+    functions.sort(key=lambda item: item["name"])
+    if len({item["name"] for item in functions}) != len(functions):
         raise SystemExit("ABI_MANIFEST_DUPLICATE_FUNCTION")
     return {
         "abi_version": versions,
         "structs": dict(sorted(structs.items())),
-        "functions": declarations,
+        "functions": functions,
     }
 
 def main() -> int:
