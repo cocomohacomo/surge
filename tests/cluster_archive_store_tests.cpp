@@ -167,7 +167,7 @@ int main() {
     const std::string snapshot_digest = sha256_hex(reassessment_snapshot);
     const std::string chain_hash = sha256_hex(previous_hash + snapshot_digest);
     const std::string valid_reassessment =
-        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version()) +
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " + std::to_string(graph.state_version() + 1) +
         "\ncluster \"cluster-a\"\nnodes 2\n"
         "node \"c1\" 4 \"claim\" 0\nnode \"e1\" 3 \"evidence\" 0\n"
         "relations 1\nrelation \"rel1\" 0 \"e1\" \"c1\"\n"
