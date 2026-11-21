@@ -8,10 +8,13 @@
 #include <iomanip>
 namespace {
 std::string make_payload(const std::string& cluster, std::uint64_t version,
-                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\n") {
+                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\n") {
   std::ostringstream out;
   out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " << version
-      << "\ncluster " << std::quoted(cluster) << "\n" << body;
+      << "\ncluster " << std::quoted(cluster) << "\n" << body
+      << "scope_spans 0\n"
+      << "claim_validity_histories 0\n"
+      << "evidence_validity_histories 0\n";
   return out.str();
 }
 }
@@ -100,6 +103,14 @@ int main() {
     const std::string focus_chaos_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\nnode \"c1\" 0 \"cluster\" 0\nrelations 0\nhas_focus 1\nfocus \"c1\" \"\" 1\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(focus_chaos_mismatch, &detach_error));
+    const std::string bad_claim_history = make_payload("cluster-a", graph.state_version(),
+        "nodes 2\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 2 \"\" \"\" 1\nevidence_validity_histories 0\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_history, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_CLAIM_VALIDITY_INVALID");
+    const std::string bad_evidence_owner = make_payload("cluster-a", graph.state_version(),
+        "nodes 1\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 0\nevidence_validity_histories 1\nevidence_history \"missing\" 1\nevidence_validity \"missing\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 1\n");
+    CHECK(!validate_cluster_archive_payload_graph_records(bad_evidence_owner, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
     const std::string scope_bad_anchor = make_payload("cluster-a", graph.state_version(),
         "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 1\nscope \"s1\" 0 \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" \"UTF8_BYTE_NFC\" \"a1\" \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" \"UTF8_BYTE_NFC\" 0 0 \"x\" \"packet-1\" 0\n0\nscope_antecedents 0\nscope_meta \"\" \"\" \"\" \"\" 1 \"packet-1\"\nscope_result 0 0 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(scope_bad_anchor, &detach_error));
