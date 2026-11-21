@@ -170,6 +170,14 @@ bool LanguageRuntimeRegistry::add_within(std::size_t& total,
   return true;
 }
 
+bool LanguageRuntimeRegistry::install_verified_package(
+    const std::string& root, const LanguageSetManifest& manifest,
+    std::string& error) {
+  if (!verify_language_package_directory(root, manifest, limits_, error))
+    return false;
+  return install_manifest(manifest, error);
+}
+
 bool LanguageRuntimeRegistry::install_manifest(
     const LanguageSetManifest& manifest, std::string& error) {
   error.clear();
