@@ -93,6 +93,41 @@ int main() {
     CHECK(validate_cluster_archive_payload_identity(canonical_payload, "archive-a",
         graph.state_version(), &detach_error));
     CHECK(validate_cluster_archive_payload_graph_records(canonical_payload, &detach_error));
+    {
+      const std::string restore_journal_path = "cluster_archive_restore_test.journal";
+      std::remove(restore_journal_path.c_str());
+      EventJournal restore_journal(restore_journal_path);
+      CHECK(restore_journal.open());
+      ContextGraph restored_graph(restore_journal);
+      CHECK(restored_graph.open());
+      auto restore_limits = ResourceBudgetLimits::temporary_edge_200mb();
+      restore_limits.retained_events = 4096;
+      restore_limits.retained_clusters = 256;
+      ResourceBudget restore_budget(restore_limits);
+      BudgetedContextGraph restore_facade(restored_graph, restore_budget);
+      std::string restore_error;
+      CHECK(restore_facade.recover(restore_error));
+      ClusterArchiveRecord restore_record;
+      restore_record.cluster_id = "archive-a";
+      restore_record.state_version = graph.state_version();
+      restore_record.journal_sequence = graph.state_version();
+      restore_record.payload = canonical_payload;
+      const auto restored = restore_cluster_archive_graph_records(
+          restore_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-archive-a", "restore-archive-a-key");
+      CHECK(restored.committed && restored.added_nodes > 0);
+      CHECK(restored_graph.nodes().count("archive-a") == 1);
+      CHECK(restored_graph.nodes().count("reference-middle") == 1);
+      CHECK(restored_graph.nodes().count("reference-leaf") == 1);
+      CHECK(restored_graph.relations().count("a-exclusive") == 1);
+      const auto repeated = restore_cluster_archive_graph_records(
+          restore_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-archive-a-repeat", "restore-archive-a-repeat-key");
+      CHECK(repeated.committed && repeated.added_nodes == 0 &&
+            repeated.added_relations == 0);
+      std::remove(restore_journal_path.c_str());
+    }
+
     const std::string duplicate_nodes = make_payload("cluster-a", graph.state_version(),
         "nodes 2\nnode \"n1\" 2 \"a\" 0\nnode \"n1\" 2 \"b\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(duplicate_nodes, &detach_error));
