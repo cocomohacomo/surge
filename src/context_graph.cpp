@@ -117,7 +117,7 @@ bool decode_claim_validity(const std::string& payload,ClaimValidityRecord& recor
 }
 std::string encode_node(const GraphNode& n){std::ostringstream o;o<<std::quoted(n.id)<<' '<<node_kind_name(n.kind)<<' '<<std::quoted(n.content)<<' '<<n.references.size();for(const auto& r:n.references)o<<' '<<std::quoted(r);return o.str();}
 bool decode_node(const std::string& p,GraphNode& n){std::istringstream i(p);std::string k;std::size_t c=0;if(!(i>>std::quoted(n.id)>>k>>std::quoted(n.content)>>c)||!parse_node_kind(k,n.kind)||c>1024)return false;for(std::size_t x=0;x<c;++x){std::string r;if(!(i>>std::quoted(r)))return false;n.references.push_back(r);}std::string extra;return !(i>>extra);}
-std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::setprecision(17)<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to)<<' '<<r.weight;return o.str();}
+std::string encode_relation(const GraphRelation& r){std::ostringstream o;o<<std::quoted(r.id)<<' '<<relation_kind_name(r.kind)<<' '<<std::quoted(r.from)<<' '<<std::quoted(r.to);if(r.weight!=1.0)o<<' '<<std::setprecision(17)<<r.weight;return o.str();}
 bool decode_relation(const std::string& p,GraphRelation& r){std::istringstream i(p);std::string k;if(!(i>>std::quoted(r.id)>>k>>std::quoted(r.from)>>std::quoted(r.to))||!parse_relation_kind(k,r.kind))return false;if(!(i>>r.weight)){i.clear();r.weight=1.0;}std::string extra;return !(i>>extra)&&std::isfinite(r.weight)&&r.weight>=0.0&&r.weight<=1.0;}
 std::string encode_anchor(const ScopeAnchor& a){std::ostringstream o;o<<std::quoted(a.anchor_id)<<' '<<std::quoted(a.source_digest)<<' '<<std::quoted(a.offset_basis)<<' '<<a.start_offset<<' '<<a.end_offset<<' '<<std::quoted(a.exact_text)<<' '<<std::quoted(a.packet_ref);return o.str();}
 bool decode_anchor(std::istream& i,ScopeAnchor& a){return static_cast<bool>(i>>std::quoted(a.anchor_id)>>std::quoted(a.source_digest)>>std::quoted(a.offset_basis)>>a.start_offset>>a.end_offset>>std::quoted(a.exact_text)>>std::quoted(a.packet_ref));}
@@ -250,6 +250,7 @@ bool ContextGraph::apply_node(State& s,const GraphNode& n,std::string& e)const{
  }s.nodes.emplace(n.id,n);if(n.kind==NodeKind::Claim)s.claim_statuses.emplace(n.id,ClaimStatus::Active);return true;
 }
 bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e)const{
+ if(!std::isfinite(r.weight)||r.weight<0.0||r.weight>1.0){e="RELATION_WEIGHT_INVALID";return false;}
  if(r.id.empty()||s.relations.count(r.id)){e="RELATION_ID_INVALID_OR_DUPLICATE";return false;}
  if(r.from==r.to||!s.nodes.count(r.from)||!s.nodes.count(r.to)){e="RELATION_ENDPOINT_INVALID";return false;}
  const auto from=s.nodes.find(r.from),to=s.nodes.find(r.to);
