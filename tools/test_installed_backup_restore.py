@@ -9,7 +9,7 @@ import tempfile
 import zlib
 from pathlib import Path
 
-from tools.journal_backup import create_backup, restore_backup, verify_backup
+from journal_backup import create_backup, restore_backup, verify_backup
 
 
 def quoted(value: str) -> str:
