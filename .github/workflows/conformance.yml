@@ -30,7 +30,7 @@ jobs:
       - name: Build external installed-package consumer
         run: |
           cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$PWD/stage" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-consumer --config Release --parallel
+          cmake --build "${{ github.workspace }}/build-consumer" --config Release --parallel
           ./build-consumer/surge_installed_consumer
 
   journal-cross-platform:
@@ -68,11 +68,11 @@ jobs:
         run: python -m unittest discover -s tests -p test_journal_backup.py -v
       - name: Install and consume native CMake package
         run: |
-          cmake --install build --config Release --prefix "$RUNNER_TEMP/surge-stage"
-          python tools/check_cmake_install_tree.py "$RUNNER_TEMP/surge-stage" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/build"
-          cmake -S tests/cmake_consumer -B build-consumer -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/surge-stage" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-consumer --config Release --parallel
-          ctest --test-dir build-consumer -C Release --output-on-failure
+          cmake --install build --config Release --prefix "${{ runner.temp }}/surge-stage"
+          python tools/check_cmake_install_tree.py "${{ runner.temp }}/surge-stage" "${{ github.workspace }}" "${{ github.workspace }}/build"
+          cmake -S "${{ github.workspace }}/tests/cmake_consumer" -B "${{ github.workspace }}/build-consumer" -DCMAKE_PREFIX_PATH="${{ runner.temp }}/surge-stage" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "${{ github.workspace }}/build-consumer" --config Release --parallel
+          ctest --test-dir "${{ github.workspace }}/build-consumer" -C Release --output-on-failure
       - name: Verify clean-prefix backup restore with installed native process
         run: python tools/test_installed_backup_restore.py
 
