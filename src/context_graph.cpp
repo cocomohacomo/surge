@@ -591,9 +591,6 @@ bool ContextGraph::replay(){
    idempotency_[imported_key]=imported_fingerprint;
    ++version;continue;
   }
- State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
- bool semantic_packet_waiting_for_delta=false;
- for(const auto& e:journal_->committed_events()){
   if(e.kind=="RECOGNITION_PACKET_ADMITTED"){if(have_meta){++version;have_meta=false;}++version;continue;}
   if(e.kind=="SEMANTIC_PACKET_ADMITTED"){
    // A committed semantic packet closes the preceding delta transaction.
