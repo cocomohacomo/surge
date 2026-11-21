@@ -123,12 +123,12 @@ int main() {
       // A graph-only archive remains restorable. Historical-domain records
       // above are rejected rather than silently discarded.
       restore_record.payload = make_payload("archive-a", graph.state_version(),
-          "nodes 2\\n"
-          "node \\"archive-a\\" 0 \\"archive target\\" 0\\n"
-          "node \\"exclusive\\" 2 \\"exclusive payload\\" 0\\n"
-          "relations 1\\n"
-          "relation \\"a-exclusive\\" 0 \\"archive-a\\" \\"exclusive\\"\\n"
-          "has_focus 0\\nfocus_history 0\\n");
+          "nodes 2\n"
+          "node \"archive-a\" 0 \"archive target\" 0\n"
+          "node \"exclusive\" 2 \"exclusive payload\" 0\n"
+          "relations 1\n"
+          "relation \"a-exclusive\" 0 \"archive-a\" \"exclusive\"\n"
+          "has_focus 0\nfocus_history 0\n");
       const auto restored = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-archive-a", "restore-archive-a-key");
