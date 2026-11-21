@@ -7,6 +7,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/surge/c_api.h"
+  SURGE_ABI_MAJOR_DEFINITION REGEX "^#define SURGE_ABI_VERSION_MAJOR [0-9]+u?$")
+string(REGEX MATCH "[0-9]+" SURGE_ABI_MAJOR "${SURGE_ABI_MAJOR_DEFINITION}")
+if(SURGE_ABI_MAJOR STREQUAL "")
+  message(FATAL_ERROR "SURGE_ABI_VERSION_MAJOR is missing from public C ABI header")
+endif()
+
 option(SURGE_ENABLE_SANITIZERS "Build all targets with AddressSanitizer and UBSan" OFF)
 option(SURGE_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 option(SURGE_BUILD_BENCHMARKS "Build opt-in performance benchmarks" OFF)
@@ -26,7 +33,7 @@ target_include_directories(surge_core PUBLIC
 add_library(surge::core ALIAS surge_core)
 set_target_properties(surge_core PROPERTIES
   VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}
+  SOVERSION ${SURGE_ABI_MAJOR}
 )
 
 configure_package_config_file(
