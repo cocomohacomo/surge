@@ -14,7 +14,8 @@ std::string make_payload(const std::string& cluster, std::uint64_t version,
       << "\ncluster " << std::quoted(cluster) << "\n" << body
       << "scope_spans 0\n"
       << "claim_validity_histories 0\n"
-      << "evidence_validity_histories 0\n";
+      << "evidence_validity_histories 0\n"
+      << "dependency_evaluations 0\n";
   return out.str();
 }
 }
@@ -114,6 +115,33 @@ int main() {
         "evidence_validity_histories 1\nevidence_history \"e1\" 1\n"
         "evidence_validity \"e1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 1 \"\" \"\" 2\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_histories, &detach_error));
+    const std::string valid_dependency =
+        "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark " + std::to_string(graph.state_version()) +
+        "\\ncluster \\"cluster-a\\"\\nnodes 3\\n"
+        "node \\"dep1\\" 7 \\"dependency\\" 2 \\"q1\\" \\"q2\\"\\n"
+        "node \\"q1\\" 5 \\"prerequisite\\" 0\\n"
+        "node \\"q2\\" 5 \\"dependent\\" 0\\n"
+        "relations 0\\nhas_focus 0\\nfocus_history 0\\nscope_spans 0\\n"
+        "claim_validity_histories 0\\nevidence_validity_histories 0\\n"
+        "dependency_evaluations 1\\ndependency \\"delta-1\\" \\"delta-1\\" 1\\n"
+        "trigger \\"dep1\\" \\"q1\\" \\"q2\\"\\n"
+        "impacted 2 \\"q1\\" \\"q2\\"\\nrejected 0\\n";
+    CHECK(validate_cluster_archive_payload_graph_records(valid_dependency, &detach_error));
+    std::string bad_dependency_endpoint = valid_dependency;
+    const auto bad_endpoint_pos = bad_dependency_endpoint.find("trigger \\"dep1\\" \\"q1\\" \\"q2\\"");
+    CHECK(bad_endpoint_pos != std::string::npos);
+    bad_dependency_endpoint.replace(bad_endpoint_pos,
+        std::string("trigger \\"dep1\\" \\"q1\\" \\"q2\\"").size(),
+        "trigger \\"dep1\\" \\"missing\\" \\"q2\\"");
+    CHECK(!validate_cluster_archive_payload_graph_records(bad_dependency_endpoint, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_TRIGGER_INVALID");
+    std::string bad_dependency_rejection = valid_dependency;
+    const auto rejection_pos = bad_dependency_rejection.find("rejected 0");
+    CHECK(rejection_pos != std::string::npos);
+    bad_dependency_rejection.replace(rejection_pos, std::string("rejected 0").size(),
+                                    "rejected 1 \\"q1\\"");
+    CHECK(!validate_cluster_archive_payload_graph_records(bad_dependency_rejection, &detach_error));
+    CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
     const std::string bad_claim_history = make_payload("cluster-a", graph.state_version(),
         "nodes 2\nnode \"c1\" 4 \"claim\" 1 \"e1\"\nnode \"e1\" 3 \"evidence\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\nscope_spans 0\nclaim_validity_histories 1\nclaim_history \"c1\" 1\nclaim_validity \"c1\" \"2026-01-01T00:00:00Z\" \"\" \"e1\" 2 \"\" \"\" 1\nevidence_validity_histories 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_claim_history, &detach_error));
