@@ -349,6 +349,86 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   return result;
 }
 
+DeltaResult BudgetedContextGraph::restore_cluster_archive(
+    const std::string& payload, std::uint64_t expected_state_version,
+    const std::string& transaction_id, const std::string& idempotency_key) {
+  if (!recovered_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED"};
+  if (payload.empty() || payload.size() >
+      std::numeric_limits<std::size_t>::max() / 2)
+    return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_BUDGET_SIZE_INVALID"};
+  const std::size_t bytes = payload.size() * 2;
+  const std::size_t staging_bytes = bytes;
+  if (max_staging_bytes_ != 0 && staging_bytes > max_staging_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
+
+  std::size_t cluster_count = 0;
+  std::size_t event_count = 0;
+  for (const char ch : payload) if (ch == '\n') {
+    if (event_count == std::numeric_limits<std::size_t>::max())
+      return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_EVENT_COUNT_OVERFLOW"};
+    ++event_count;
+  }
+  // Count only actual cluster nodes in the archive's node section.
+  std::istringstream scan(payload);
+  std::string line;
+  for (int i = 0; i < 3; ++i)
+    if (!std::getline(scan, line))
+      return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_HEADER_INVALID"};
+  std::size_t node_count = 0;
+  {
+    std::istringstream header(line);
+    std::string tag, extra;
+    if (!(header >> tag >> node_count) || tag != "nodes" ||
+        (header >> extra) || node_count > payload.size())
+      return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_NODE_COUNT_INVALID"};
+  }
+  for (std::size_t i = 0; i < node_count; ++i) {
+    if (!std::getline(scan, line))
+      return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_NODE_SECTION_INVALID"};
+    std::istringstream row(line);
+    std::string tag, id, content, extra;
+    unsigned kind = 0;
+    std::size_t refs = 0;
+    if (!(row >> tag >> std::quoted(id) >> kind >> std::quoted(content) >> refs) ||
+        tag != "node" || kind > static_cast<unsigned>(NodeKind::ClusterLifecycle))
+      return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_NODE_SECTION_INVALID"};
+    if (kind == static_cast<unsigned>(NodeKind::Cluster) ||
+        kind == static_cast<unsigned>(NodeKind::ChaosCluster)) ++cluster_count;
+  }
+  ResourceLease staging, resident, clusters, retained;
+  std::string error;
+  if (staging_bytes && !budget_.try_acquire(ResourceKind::TransientBytes,
+      staging_bytes, staging, error))
+    return {false, false, graph_.state_version(), error};
+  if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes,
+      bytes, resident, error))
+    return {false, false, graph_.state_version(), error};
+  if (cluster_count && !budget_.try_acquire(ResourceKind::RetainedClusters,
+      cluster_count, clusters, error))
+    return {false, false, graph_.state_version(), error};
+  if (event_count && !budget_.try_acquire(ResourceKind::RetainedEvents,
+      event_count, retained, error))
+    return {false, false, graph_.state_version(), error};
+  try {
+    if (resident) resident_leases_.reserve(resident_leases_.size() + 1);
+    if (clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
+    if (retained) mutation_event_leases_.reserve(mutation_event_leases_.size() + 1);
+  } catch (...) {
+    return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_LEASE_STAGING_FAILED"};
+  }
+  auto result = graph_.import_cluster_archive_payload(payload,
+      expected_state_version, transaction_id, idempotency_key);
+  if (!result.committed || result.duplicate) return result;
+  if (resident) resident_leases_.push_back(std::move(resident));
+  if (clusters) cluster_leases_.push_back(std::move(clusters));
+  if (retained) mutation_event_leases_.push_back(std::move(retained));
+  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  accounted_resident_bytes_ += bytes;
+  return result;
+}
+
 DeltaResult BudgetedContextGraph::apply_retention_plan(
     const ClusterRetentionPlan& plan, const std::string& recorded_at,
     const std::string& reason, const std::string& provenance_digest,
