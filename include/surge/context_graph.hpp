@@ -108,6 +108,12 @@ class ContextGraph {
   bool append_cluster_unmembership(SemanticDelta& delta,
       const std::string& cluster_id, const std::string& member_node_id,
       std::string& error) const;
+  // Open-world admission: retain an unclassified member in a stable
+  // ChaosCluster without inventing semantic relations. Later classification
+  // may add memberships and explicitly remove this provisional membership.
+  bool append_unresolved_membership(SemanticDelta& delta,
+      const std::string& member_node_id, std::string& chaos_cluster_id,
+      std::string& membership_relation_id, std::string& error) const;
   bool append_cluster_membership(SemanticDelta& delta,
       const std::string& parent_cluster_id, const std::string& classification,
       const std::string& partition_key, const std::string& member_node_id,
