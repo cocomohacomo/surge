@@ -166,6 +166,9 @@ focus_history 0
       const auto focus_restored = restore_cluster_archive_graph_records(
           focus_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus", "restore-focus-key");
+      if (!focus_restored.committed) {
+        std::cerr << "Focus archive restore failed: " << focus_restored.error << "\\n";
+      }
       CHECK(focus_restored.committed);
       CHECK(restored_graph.focus().has_value());
       CHECK(restored_graph.focus()->cluster_id == "focus-cluster");
