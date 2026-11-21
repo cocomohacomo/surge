@@ -13,16 +13,16 @@ int main() {
   bool ok = true;
   std::cout << "{\"pointer_bytes\":" << sizeof(void*) << ",\"structs\":[";
   bool first_struct = true;
+  bool first_field = true;
 #define SURGE_LAYOUT_BEGIN(T) \
   static_assert(std::is_standard_layout<T>::value, #T " must be standard layout"); \
   static_assert(std::is_trivially_copyable<T>::value, #T " must be trivially copyable"); \
-  if (!first_struct) std::cout << ","; first_struct = false; \
+  if (!first_struct) std::cout << ","; first_struct = false; first_field = true; \
   std::cout << "{\"name\":\"" #T "\",\"size\":" << sizeof(T) << ",\"alignment\":" << alignof(T) << ",\"fields\":[";
 #define SURGE_LAYOUT_FIELD(T,F) \
   { const auto offset = offsetof(T,F); const auto width = sizeof(((T*)nullptr)->F); \
     if (!field_ok<T>(offset,width)) ok = false; \
-    static bool first = true; \
-    if (!first) std::cout << ","; first = false; \
+    if (!first_field) std::cout << ","; first_field = false; \
     std::cout << "{\"name\":\"" #F "\",\"offset\":" << offset << ",\"size\":" << width << "}"; }
 #define SURGE_LAYOUT_END() std::cout << "]}";
   SURGE_LAYOUT_BEGIN(SurgeChaosAssociationInput)
