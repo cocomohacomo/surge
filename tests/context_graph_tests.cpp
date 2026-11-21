@@ -744,10 +744,9 @@ int main(){
     CHECK(graph.apply(classify).committed);
     CHECK(graph.cluster_membership_reference_count("unclassified-note")==1);
     CHECK(graph.relations().count(unresolved_edge_id)==0);
-    CHECK(graph.relations().count("later-classification/member/"+
-        sha256_hex(std::to_string(assigned_cluster.size())+":"+assigned_cluster+
-        std::to_string(std::string("unclassified-note").size())+":unclassified-note").substr(0,24))==0 ||
-        graph.cluster_membership_reference_count("unclassified-note")==1);
+    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+        [&](const auto& item){return item.second.kind==RelationKind::Contains &&
+          item.second.from==assigned_cluster && item.second.to=="unclassified-note";}));
   }
   {
     ContextGraph recovered(open_world_path);CHECK(recovered.open());
