@@ -59,7 +59,7 @@ decision.
 - [ ] Full domain snapshot/restore coverage, including histories and atomic
   cross-domain rollback.
 - [ ] Backup restore tested from a separate process and clean installation.
-- [ ] Corruption, disk-full, permission, interrupted-write and rollback tests.
+- [ ] Corruption, disk-full and permission fault injection across all persistence paths.\n- [x] Snapshot writer exclusion and pre-/post-atomic-replacement failure recovery tests.
 
 ### Gate D: bounded edge operation
 
