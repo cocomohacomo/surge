@@ -80,7 +80,8 @@ decision.
 
 - [x] Typed graph, Question/Interest/Focus, dependency and temporal primitives.
 - [x] Japanese scoring regression corpus and deterministic policy tests.
-- [x] Gold-corpus validator computes inter-annotator action F1, owner/deadline/criticality agreement, and exact evidence-span agreement against declared thresholds.\n- [ ] Independent gold corpus with real annotators, agreement results, and source provenance.
+- [x] Gold-corpus validator computes inter-annotator action F1, owner/deadline/criticality agreement, and exact evidence-span agreement against declared thresholds.
+- [ ] Independent gold corpus with real annotators, agreement results, and source provenance.
 - [ ] Precision/recall/F1, selective risk, critical false-negative rate and
   abstention calibration measured.
 - [ ] Streaming continuation, correction, contradiction, topic switch and
@@ -96,8 +97,8 @@ decision.
 - [x] Release checklist and publication audit records.
 - [x] CI-generated CycloneDX 1.5 SBOM for the Python wheel dependency graph and separately installed native Core (retained as a CI artifact).
 - [ ] Versioned release artifacts, checksums and SBOM attached to a tagged release.
-- [ ] Third-party license inventory and redistribution review for every
-  shipped artifact.
+- [x] Source-level third-party dependency inventory and resolved license metadata captured in the CI SBOM.
+- [ ] Legal redistribution review for every shipped artifact and all transitive dependencies.
 - [ ] Security contact and vulnerability response process verified.
 - [ ] Release notes, migration guide, supported platform matrix and rollback
   instructions.
