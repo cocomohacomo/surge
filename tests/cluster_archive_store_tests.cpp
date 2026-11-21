@@ -333,17 +333,20 @@ int main() {
   CHECK(store.archive_verified("cluster-a", 7, 12, large_payload, &record, &error));
   CHECK(record.cluster_id == "cluster-a" && record.state_version == 7);
   CHECK(record.journal_sequence == 12 && record.payload == large_payload);
-  std::string expanded_payload = make_payload("cluster-a", 7);
-  expanded_payload.resize(3U * 1024U * 1024U + 37U, 'x');
-  CHECK(store.archive_verified("cluster-a", 7, 12, expanded_payload, &record, &error));
+  std::string expanded_content(3U * 1024U * 1024U + 37U, 'x');
+  std::ostringstream expanded_body;
+  expanded_body << "nodes 1\nnode \"n1\" 2 " << std::quoted(expanded_content)
+                << " 0\nrelations 0\nhas_focus 0\nfocus_history 0\n";
+  const std::string expanded_payload = make_payload("cluster-a", 7, expanded_body.str());
+  CHECK(store.archive_verified("cluster-a", 7, 13, expanded_payload, &record, &error));
   CHECK(record.payload == expanded_payload);
-  CHECK(record.state_version == 7 && record.journal_sequence == 12);
-  CHECK(!store.archive_verified("cluster-a", 7, 12, "payload", nullptr, &error));
+  CHECK(record.state_version == 7 && record.journal_sequence == 13);
+  CHECK(!store.archive_verified("cluster-a", 7, 13, "payload", nullptr, &error));
   CHECK(error == "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID");
-  CHECK(record.journal_sequence == 12 && record.payload == large_payload);
-  CHECK(!store.restore("cluster-a", 7, &record, &error, 13));
+  CHECK(record.journal_sequence == 13 && record.payload == expanded_payload);
+  CHECK(!store.restore("cluster-a", 7, &record, &error, 14));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
-  CHECK(store.restore("cluster-a", 7, &record, &error, 12));
+  CHECK(store.restore("cluster-a", 7, &record, &error, 13));
   CHECK(!store.restore("cluster-b", 1, &record, &error));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
   CHECK(!store.restore("cluster-a", 8, &record, &error));
