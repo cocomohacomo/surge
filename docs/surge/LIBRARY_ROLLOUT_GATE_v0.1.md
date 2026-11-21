@@ -59,7 +59,8 @@ decision.
 - [x] Multi-process writer exclusion enforced with OS locks and documented as single-writer ownership.
 - [x] SnapshotCoordinator restore coverage for all five registered domains: ContextGraph (including temporal/dependency/reassessment histories and idempotency), EvidenceProvenance, ChaosCluster (including lifecycle, membership, observation, association and hypothesis histories), TemporalBoundary, and TemporalQuestion.
 - [x] Prepared restore publication is reversible: if a later domain refuses commit, already-published domains roll back in reverse order. Failure-injection tests cover direct restore, checkpoint-plus-tail restore, and store-backed restore.
-- [ ] ClusterArchiveStore archive-history restore and cross-domain archive rollback remain a separate, fail-closed workstream.
+- [x] ClusterArchiveStore v2 restore imports graph nodes/relations, Focus history, ScopeSpan records, Claim/Evidence validity histories, dependency evaluations, temporal reassessments, Question/QuestionAspect state and Claim lifecycle in one durable ContextGraph journal transaction; restart replay is covered by tests.
+- [ ] Archive-store publication plus graph detachment is still a staged two-resource operation: a failed graph detach leaves a verified, inert archive copy rather than rolling back the archive file atomically.
 - [x] Backup restore tested through the separately installed native verifier in a fresh temporary directory and separate process on Linux, macOS, and Windows.
 - [ ] Corruption, disk-full and permission fault injection across all persistence paths.
 - [x] Snapshot writer exclusion and pre-/post-atomic-replacement failure recovery tests.
@@ -104,6 +105,10 @@ decision.
 - [ ] Release notes, migration guide, supported platform matrix and rollback
   instructions.
 - [ ] Tagged release built from a green, reviewed commit.
+
+## Cluster archive restore transaction
+
+ClusterArchiveStore v2 payloads are validated in full before a restore candidate is built. The importer merges graph nodes and relations plus ScopeSpan, Focus history, Claim/Evidence validity, dependency evaluation, temporal reassessment, Question state/reference counts, QuestionAspect status and Claim lifecycle. The import is persisted as one `CLUSTER_ARCHIVE_IMPORT_V1` journal event, so replay either reconstructs the full imported graph state or rejects the event; partial history import is not published. BudgetedContextGraph reserves transient staging, resident, retained-event and cluster capacity before journal commit. The host must quiesce graph readers/writers during the operation. Archive-store publication and graph detachment remain two-resource staged operations: failed detach preserves the source graph and leaves the verified archive copy inert for later recovery.
 
 ## Snapshot restore transaction contract
 
