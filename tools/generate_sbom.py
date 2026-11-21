@@ -64,10 +64,12 @@ def main() -> int:
 
     environment = default_environment()
     queue: list[str] = []
+    root_dependency_names: set[str] = set()
     for raw in root_meta.get_all("Requires-Dist", []):
         requirement = Requirement(raw)
         if requirement.marker is None or requirement.marker.evaluate(environment):
             queue.append(requirement.name)
+            root_dependency_names.add(normalized(requirement.name))
     visited: dict[str, dict] = {}
     edges: dict[str, set[str]] = {root["bom-ref"]: set()}
     while queue:
@@ -122,7 +124,7 @@ def main() -> int:
         "components": sorted([*visited.values(), core], key=lambda item: item["bom-ref"]),
         "dependencies": sorted(
             [*dependencies, {"ref": root["bom-ref"], "dependsOn": sorted(
-                item["bom-ref"] for item in visited.values())},
+                by_name[name]["bom-ref"] for name in root_dependency_names)},
              {"ref": core["bom-ref"], "dependsOn": []}],
             key=lambda item: item["ref"],
         ),
