@@ -34,7 +34,7 @@ decision.
   commit (verified by the cross-platform CI matrix).
 - [x] Provisional runtime ABI version query and compatibility policy documented.
 - [x] Source-level C ABI declaration manifest and CI diff guard (function signatures and public struct field order/types).
-- [ ] Platform binary export/layout inspection and compatibility matrix.
+- [x] Platform binary export presence and public struct layout inspection on Linux, macOS, and Windows (CI; records actual target layouts, not a cross-version compatibility baseline).
 - [x] Install-tree inspection confirms no build-tree paths leak into exports (checked by CI outside the source tree).
 
 ### Gate B: reproducible developer integration
@@ -47,14 +47,14 @@ decision.
 - [x] Clean-environment install test with no repository checkout on
   `PYTHONPATH`, using an isolated wheel and separately installed native Core.
 - [x] Public C ABI version macros, runtime query, and conformance test.
-- [ ] Complete public symbol manifest and ABI compatibility automation.
+- [x] Complete public C ABI function export manifest checked against built shared libraries on Linux, macOS, and Windows.\n- [ ] Version-to-version ABI compatibility automation and retained platform layout baselines.
 
 ### Gate C: persistence and recovery safety
 
 - [x] Journal framing, checksums, replay and truncated-tail handling.
 - [x] Backup/verify tooling and snapshot primitives.
-- [ ] Explicit power-loss durability contract per supported filesystem/OS.
-- [ ] Multi-process writer policy enforced or clearly documented as unsupported.
+- [x] Explicit power-loss durability contract per supported filesystem/OS (software barriers and limits documented; hardware power-cut qualification remains deployment-specific).
+- [x] Multi-process writer exclusion enforced with OS locks and documented as single-writer ownership.
 - [ ] Full domain snapshot/restore coverage, including histories and atomic
   cross-domain rollback.
 - [ ] Backup restore tested from a separate process and clean installation.
