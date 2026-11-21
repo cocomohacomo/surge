@@ -43,7 +43,10 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& item:graph.relations()){const auto& relation=item.second;if(relation.kind!=RelationKind::DependsOn)continue;const auto from=graph.nodes().find(relation.from);const auto to=graph.nodes().find(relation.to);if(from==graph.nodes().end()||to==graph.nodes().end()||!is_cluster(from->second.kind)||!is_cluster(to->second.kind))continue;if(anchors.count(relation.from))dependency_neighbors.insert(relation.to);if(anchors.count(relation.to))dependency_neighbors.insert(relation.from);}
  for(const auto& id:dependency_neighbors)add_ancestors(id,parents,protected_ids);
  for(const auto& item:by_id)if(item.second.pinned||item.second.knowledge_cluster)add_ancestors(item.first,parents,protected_ids);
- for(const auto& item:by_id)if((item.second.pinned||item.second.knowledge_cluster)&&tombstoned_ids.count(item.first)){result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;}
+ for(const auto& item:by_id)if((item.second.pinned||item.second.knowledge_cluster)&&
+      (inactive_ids.count(item.first)||tombstoned_ids.count(item.first))){
+  result.error="CLUSTER_RETENTION_PROTECTED_INACTIVE_CLUSTER";return result;
+}
  std::vector<ClusterRetentionCandidate> ranked;ranked.reserve(by_id.size());for(const auto& item:by_id){
   if(inactive_ids.count(item.first)||dormant_ids.count(item.first)||tombstoned_ids.count(item.first))result.already_inactive_cluster_ids.push_back(item.first);
   // Dormant/archived clusters remain restoration candidates. They compete for
@@ -70,7 +73,9 @@ ClusterRetentionPlan ClusterRetentionPlanner::plan(const ContextGraph& graph,con
  for(const auto& id:protected_ids)if(inactive_ids.count(id)||dormant_ids.count(id))result.restore_cluster_ids.push_back(id);
  for(std::size_t i=0;i<ranked.size();++i){
   if(i<available)selected.insert(ranked[i].cluster_id);
-  else if(!inactive_ids.count(ranked[i].cluster_id)&&!dormant_ids.count(ranked[i].cluster_id))
+  else if(!inactive_ids.count(ranked[i].cluster_id))
+    // Active clusters first become Dormant; a Dormant cluster that remains
+    // outside capacity advances to Archived on the next retention pass.
     result.forget_cluster_ids.push_back(ranked[i].cluster_id);
 }
  result.retained_cluster_ids=result.protected_cluster_ids;for(const auto& candidate:ranked)if(selected.count(candidate.cluster_id)){result.retained_cluster_ids.push_back(candidate.cluster_id);if(inactive_ids.count(candidate.cluster_id)||dormant_ids.count(candidate.cluster_id))result.restore_cluster_ids.push_back(candidate.cluster_id);}
