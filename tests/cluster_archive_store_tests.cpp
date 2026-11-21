@@ -365,6 +365,12 @@ int main() {
   CHECK(!store.archive_verified("cluster-a", 7, 13, "payload", nullptr, &error));
   CHECK(error == "CLUSTER_ARCHIVE_VERIFY_OUTPUT_INVALID");
   CHECK(record.journal_sequence == 13 && record.payload == expanded_payload);
+  ClusterArchiveRecord mismatched_record;
+  const auto same_watermark_different_bytes = make_payload("cluster-a", 7,
+      "nodes 1\nnode \"n1\" 2 \"different bytes\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
+  CHECK(!store.archive_verified("cluster-a", 7, 13,
+      same_watermark_different_bytes, &mismatched_record, &error));
+  CHECK(error == "CLUSTER_ARCHIVE_VERIFY_MISMATCH");
   CHECK(!store.restore("cluster-a", 7, &record, &error, 14));
   CHECK(error == "CLUSTER_ARCHIVE_IDENTITY_OR_VERSION_MISMATCH");
   CHECK(store.restore("cluster-a", 7, &record, &error, 13));
