@@ -1582,6 +1582,70 @@ ClusterArchiveGraphRestoreResult restore_cluster_archive_graph_records(
     delta.relations.push_back({std::move(relation)});
   }
 
+  // Restore the current Focus through the same journaled SemanticDelta as
+  // graph records. Historical Focus entries remain audit history and are not
+  // replayed by this operation.
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+  bool has_focus = false;
+  {
+    std::istringstream row(line);
+    unsigned value = 0;
+    if (!(row >> tag >> value) || tag != "has_focus" || value > 1)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    has_focus = value != 0;
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+  }
+  if (has_focus) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    std::istringstream row(line);
+    FocusRecord focus;
+    unsigned chaos = 0;
+    if (!(row >> tag >> std::quoted(focus.cluster_id) >>
+          std::quoted(focus.interest_id) >> chaos) ||
+        tag != "focus" || chaos > 1)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    focus.chaos_cluster = chaos != 0;
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    if (!graph.focus() || graph.focus()->cluster_id != focus.cluster_id ||
+        graph.focus()->interest_id != focus.interest_id ||
+        graph.focus()->chaos_cluster != focus.chaos_cluster)
+      delta.focus = SetFocus{std::move(focus)};
+  }
+  // Consume the validated historical Focus section. It is deliberately not
+  // imported because the current journal event model records one Focus change
+  // per SemanticDelta and cannot preserve historical state-version stamps.
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+  std::size_t focus_history_count = 0;
+  {
+    std::istringstream row(line);
+    if (!(row >> tag >> focus_history_count) || tag != "focus_history")
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+  }
+  for (std::size_t i = 0; i < focus_history_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    std::istringstream row(line);
+    FocusRecord historical;
+    unsigned chaos = 0;
+    if (!(row >> tag >> std::quoted(historical.cluster_id) >>
+          std::quoted(historical.interest_id) >> chaos) ||
+        tag != "focus" || chaos > 1)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+    std::string extra;
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_GRAPH_RESTORE_FOCUS_DECODE_FAILED");
+  }
+
   std::set<std::string> available_nodes;
   for (const auto& item : graph.nodes()) available_nodes.insert(item.first);
   available_nodes.insert(archive_node_ids.begin(), archive_node_ids.end());
