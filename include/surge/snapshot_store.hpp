@@ -14,6 +14,7 @@ struct SnapshotStoreLimits {
 
 using SnapshotChunkReader = std::function<bool(std::string*, bool*)>;
 using SnapshotPayloadSink = std::function<bool(const char*, std::size_t, std::string*)>;
+using SnapshotStoreStageGate = std::function<bool(const char*)>;
 
 struct SnapshotStoreResult {
   // document contains envelope metadata only; the payload remains in bytes.
@@ -30,7 +31,8 @@ struct SnapshotStoreResult {
 // as ".bak" when enabled. One writer per path is required.
 class SnapshotStore {
  public:
-  explicit SnapshotStore(std::string path, SnapshotStoreLimits limits = {});
+  explicit SnapshotStore(std::string path, SnapshotStoreLimits limits = {},
+                         SnapshotStoreStageGate stage_gate = {});
   bool save(const std::string& bytes, std::string* error);
   // Reads payload chunks (1..64 KiB, done=false), followed by one final
   // empty chunk (done=true). Writes a version-1 envelope without buffering
@@ -51,9 +53,13 @@ class SnapshotStore {
   std::size_t max_file_bytes() const { return limits_.max_file_bytes; }
   std::string backup_path() const { return path_ + ".bak"; }
 
+  // Test-only deterministic failure injection at durable replacement stages.
+  bool permit_stage(const char* stage, std::string* error) const;
+
  private:
   std::string path_;
   SnapshotStoreLimits limits_;
+  SnapshotStoreStageGate stage_gate_;
   mutable std::mutex mutex_;
 };
 
