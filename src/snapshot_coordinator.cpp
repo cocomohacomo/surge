@@ -255,7 +255,13 @@ bool SnapshotCoordinator::restore(const std::string& bytes,
   if (pos != bundle.size()) return fail(error, "SNAPSHOT_BUNDLE_TRAILING_DATA");
 
   // No live domain is mutated until every domain has prepared successfully.
-  for (auto& entry : prepared) entry.restore->commit();
+  std::size_t committed = 0;
+  for (; committed < prepared.size(); ++committed) {
+    if (!prepared[committed].restore->commit()) {
+      while (committed != 0) prepared[--committed].restore->rollback();
+      return fail(error, "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+    }
+  }
   if (error) error->clear();
   return true;
 }
@@ -342,7 +348,13 @@ bool SnapshotCoordinator::restore_with_tail(const std::string& bytes,
   if (journal.state_version() != tail.current_state_version)
     return fail(error, "SNAPSHOT_JOURNAL_ADVANCED_DURING_RESTORE");
 
-  for (auto& entry : prepared) entry.restore->commit();
+  std::size_t committed = 0;
+  for (; committed < prepared.size(); ++committed) {
+    if (!prepared[committed].restore->commit()) {
+      while (committed != 0) prepared[--committed].restore->rollback();
+      return fail(error, "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+    }
+  }
   if (error) error->clear();
   return true;
 }
@@ -544,7 +556,13 @@ bool SnapshotCoordinator::restore_from_store(
 
   // Every domain has prepared successfully. Publish only after the complete
   // authenticated bundle and journal-tail replay have passed validation.
-  for (auto& entry : prepared) entry.restore->commit();
+  std::size_t committed = 0;
+  for (; committed < prepared.size(); ++committed) {
+    if (!prepared[committed].restore->commit()) {
+      while (committed != 0) prepared[--committed].restore->rollback();
+      return fail(error, "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+    }
+  }
   if (error) error->clear();
   return true;
 }
