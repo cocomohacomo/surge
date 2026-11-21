@@ -93,6 +93,17 @@ Admission MUST atomically persist:
 4. any classification, temporal and decision trace needed to reproduce the
    admission.
 
+Membership is a retention and context-placement guarantee, not a claim that
+the member's semantic relationships are already understood. Admission MUST
+NOT wait for complete classification, a resolved topic, a known dependency,
+or a fully populated relation network. When no justified cluster is known,
+the Core may place the information in an unresolved ChaosCluster. That
+provisional membership is sufficient for safe retention and later discovery.
+Subsequent events may add, revise, or remove memberships and may grow typed
+relations as evidence accumulates. The Core MUST preserve provenance and
+history for those changes; it MUST NOT invent semantic edges merely to make
+the graph appear complete.
+
 The parent cluster, child cluster, member and membership edges are committed
 in one SemanticDelta or equivalent Core-owned transaction. Retry is
 idempotent. Replay reconstructs identical cluster IDs and memberships.
