@@ -17,8 +17,8 @@ bool is_sha256_hex(const std::string& value) {
 
 bool is_safe_relative_resource_path(const std::string& value) {
   if (value.empty() || value.size() > 512 || value.front() == '/' ||
-      value.find('\\\\') != std::string::npos ||
-      value.find(':') != std::string::npos || value.find('\\0') != std::string::npos)
+      value.find(static_cast<char>(92)) != std::string::npos ||
+      value.find(':') != std::string::npos || value.find(static_cast<char>(0)) != std::string::npos)
     return false;
   std::size_t begin = 0;
   while (begin <= value.size()) {
@@ -41,6 +41,8 @@ bool path_is_within(const std::filesystem::path& root,
   }
   return true;
 }
+
+}  // namespace
 
 bool verify_language_package_directory(const std::string& root_text,
     const LanguageSetManifest& manifest, const LanguageRuntimeLimits& limits,
@@ -147,8 +149,6 @@ bool verify_language_package_directory(const std::string& root_text,
   }
   return true;
 }
-
-}  // namespace
 
 LanguageRuntimeRegistry::LanguageRuntimeRegistry(LanguageRuntimeLimits limits)
     : limits_(limits) {}
