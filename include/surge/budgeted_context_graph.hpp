@@ -21,6 +21,10 @@ class BudgetedContextGraph {
                        std::size_t max_staging_bytes = 0);
   bool recover(std::string& error);
   DeltaResult apply(const SemanticDelta& delta);
+  // Import a complete archive through the same transient/resident admission budget.
+  DeltaResult restore_cluster_archive(const std::string& payload,
+      std::uint64_t expected_state_version, const std::string& transaction_id,
+      const std::string& idempotency_key);
 
   // Atomic Core-owned classification + budgeted persistence. Callers provide
   // hints and a base delta; cluster identity and membership are assigned by
