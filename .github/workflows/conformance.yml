@@ -98,6 +98,7 @@ jobs:
         run: |
           python -m pip install build
           python -m build --wheel
+          python tools/generate_sbom.py --wheel dist/*.whl --output dist/surge-sbom.cdx.json
           python -m venv wheel-test-env
           wheel-test-env/bin/python -m pip install dist/*.whl
           cd /tmp
@@ -111,6 +112,12 @@ jobs:
                   assert core.state_version == 0
           print("isolated wheel + installed native Core discovery passed")
           PY
+      - name: Retain CycloneDX SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: surge-sbom
+          path: dist/surge-sbom.cdx.json
+          if-no-files-found: error
 
   asan-ubsan:
     runs-on: ubuntu-latest
