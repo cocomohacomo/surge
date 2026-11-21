@@ -146,6 +146,33 @@ int main() {
       CHECK(!stale.committed &&
             stale.error == "CLUSTER_ARCHIVE_GRAPH_RESTORE_STALE_TARGET");
       CHECK(restored_graph.state_version() == stable_version);
+
+      const std::string focus_payload = make_payload("focus-cluster", 2,
+          "nodes 3\\n"
+          "node \\"focus-cluster\\" 0 \\"focus target\\" 0\\n"
+          "node \\"focus-signal\\" 2 \\"signal\\" 0\\n"
+          "node \\"focus-interest\\" 8 \\"interest\\" 2 \\"focus-signal\\" \\"focus-cluster\\"\\n"
+          "relations 0\\nhas_focus 1\\n"
+          "focus \\"focus-cluster\\" \\"focus-interest\\" 0\\n"
+          "focus_history 0\\n");
+      CHECK(validate_cluster_archive_payload_graph_records(focus_payload, &restore_error));
+      ClusterArchiveRecord focus_record;
+      focus_record.cluster_id = "focus-cluster";
+      focus_record.state_version = 2;
+      focus_record.journal_sequence = 2;
+      focus_record.payload = focus_payload;
+      const auto focus_restored = restore_cluster_archive_graph_records(
+          focus_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-focus", "restore-focus-key");
+      CHECK(focus_restored.committed);
+      CHECK(restored_graph.focus().has_value());
+      CHECK(restored_graph.focus()->cluster_id == "focus-cluster");
+      CHECK(restored_graph.focus()->interest_id == "focus-interest");
+      const auto focus_repeat = restore_cluster_archive_graph_records(
+          focus_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-focus-repeat", "restore-focus-repeat-key");
+      CHECK(focus_repeat.committed && focus_repeat.duplicate);
+
       std::remove(restore_journal_path.c_str());
     }
 
