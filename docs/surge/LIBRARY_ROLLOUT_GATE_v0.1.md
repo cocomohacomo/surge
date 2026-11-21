@@ -59,7 +59,7 @@ decision.
 - [x] Multi-process writer exclusion enforced with OS locks and documented as single-writer ownership.
 - [ ] Full domain snapshot/restore coverage, including histories and atomic
   cross-domain rollback.
-- [ ] Backup restore tested from a separate process and clean installation.
+- [x] Backup restore tested through the separately installed native verifier in a fresh temporary directory and separate process on Linux, macOS, and Windows.
 - [ ] Corruption, disk-full and permission fault injection across all persistence paths.
 - [x] Snapshot writer exclusion and pre-/post-atomic-replacement failure recovery tests.
 
