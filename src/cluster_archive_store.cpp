@@ -973,9 +973,9 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
             std::quoted(chain_hash) >> evidence_count) ||
           record_tag != "reassessment_record" || trace_id.empty() ||
           claim_id != owner || reference_at.empty() || decision.empty() ||
-          !valid_timestamp(reference_at) ||
-          (!claim_valid_from.empty() && !valid_timestamp(claim_valid_from)) ||
-          (!claim_valid_until.empty() && !valid_timestamp(claim_valid_until)) ||
+          !valid_rfc3339(reference_at) ||
+          (!claim_valid_from.empty() && !valid_rfc3339(claim_valid_from)) ||
+          (!claim_valid_until.empty() && !valid_rfc3339(claim_valid_until)) ||
           (lifecycle > static_cast<unsigned>(ClaimStatus::Retracted)) ||
           temporal_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
           evidence_count > payload.size() || (row >> trailing) ||
@@ -1019,8 +1019,8 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
             !relation_ids.count(relation_id) ||
             evidence_state > static_cast<unsigned>(ClaimTemporalState::Expired) ||
             eligible > 1 || (evidence_version > watermark) ||
-            (!valid_from.empty() && !valid_timestamp(valid_from)) ||
-            (!valid_until.empty() && !valid_timestamp(valid_until)) ||
+            (!valid_from.empty() && !valid_rfc3339(valid_from)) ||
+            (!valid_until.empty() && !valid_rfc3339(valid_until)) ||
             (!basis_id.empty() &&
              (!node_ids.count(basis_id) ||
               node_kinds.at(basis_id) != static_cast<unsigned>(NodeKind::Evidence))) ||
