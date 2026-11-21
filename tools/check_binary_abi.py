@@ -49,19 +49,27 @@ def read_symbols(library: Path, platform: str) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--library", required=True, type=Path)
+    parser.add_argument("--library", required=True, type=Path,
+                        help="shared library path or CMake build directory")
     parser.add_argument("--manifest", type=Path, default=Path("abi/c-abi-v0.1.json"))
     parser.add_argument("--platform", default=sys.platform)
     args = parser.parse_args()
-    if not args.library.is_file():
-        raise SystemExit("ABI_LIBRARY_NOT_FOUND:" + str(args.library))
+    library = args.library
+    if library.is_dir():
+        patterns = (["surge_core.dll", "Release/surge_core.dll"] if args.platform == "win32"
+                    else ["libsurge_core.dylib"] if args.platform == "darwin"
+                    else ["libsurge_core.so"])
+        candidates = [library / item for item in patterns]
+        library = next((item for item in candidates if item.is_file()), library)
+    if not library.is_file():
+        raise SystemExit("ABI_LIBRARY_NOT_FOUND:" + str(library))
     expected = {item["name"] for item in json.loads(args.manifest.read_text())["functions"]}
-    actual = read_symbols(args.library, args.platform)
+    actual = read_symbols(library, args.platform)
     missing = sorted(expected - actual)
     if missing:
         print("ABI_BINARY_EXPORTS_MISSING:" + ",".join(missing))
         return 1
-    print(f"C ABI binary exports OK: {len(expected)} manifest functions present")
+    print(f"C ABI binary exports OK: {len(expected)} manifest functions present in {library}")
     return 0
 
 
