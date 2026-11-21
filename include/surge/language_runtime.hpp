@@ -58,6 +58,8 @@ class LanguageRuntimeRegistry {
   explicit LanguageRuntimeRegistry(LanguageRuntimeLimits limits = {});
   LanguageRuntimeRegistry(ResourceBudget& budget, LanguageRuntimeLimits limits = {});
   bool install_manifest(const LanguageSetManifest& manifest, std::string& error);
+  bool install_verified_package(const std::string& root,
+      const LanguageSetManifest& manifest, std::string& error);
   bool activate_at_boundary(const std::string& session_id,
       const std::string& language_set_id, const std::string& version,
       bool session_boundary, std::string& error);
