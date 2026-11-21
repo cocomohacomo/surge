@@ -132,6 +132,7 @@ int main() {
       const auto restored = restore_cluster_archive_graph_records(
           restore_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-archive-a", "restore-archive-a-key");
+      if (!restored.committed) std::cerr << "Graph-only archive restore failed: " << restored.error << "\\n";
       CHECK(restored.committed && restored.added_nodes == 2);
       CHECK(restored_graph.nodes().count("archive-a") == 1);
       CHECK(restored_graph.nodes().count("exclusive") == 1);
