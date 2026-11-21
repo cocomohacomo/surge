@@ -523,14 +523,14 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     if (!std::getline(input, line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
     std::vector<std::string> targets;
-    if (!parse_string_vector(line, "", targets)) {
-      // The serializer writes the vector count as a bare line after the scope header.
+    {
+      // The target vector is encoded as a bare count followed by quoted IDs.
       std::istringstream vector_row(line);
       std::size_t count = 0;
       std::string value, trailing;
       if (!(vector_row >> count) || count > payload.size())
         return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
-      targets.clear();
+      targets.reserve(count);
       for (std::size_t j = 0; j < count; ++j) {
         if (!(vector_row >> std::quoted(value)) || value.empty())
           return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
