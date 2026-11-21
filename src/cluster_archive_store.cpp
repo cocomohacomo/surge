@@ -227,13 +227,43 @@ bool serialize_cluster_archive_payload(const ContextGraph& graph,
   auto dependency_attached = [&](const DependencyEvaluationRecord& d) {
     if (std::any_of(d.impacted_nodes.begin(), d.impacted_nodes.end(),
         [&](const std::string& id) { return included.count(id) != 0; })) return true;
-    return std::any_of(d.triggered.begin(), d.triggered.end(),
+    if (std::any_of(d.triggered.begin(), d.triggered.end(),
         [&](const DependencyTrigger& trigger) {
           return included.count(trigger.dependency_id) ||
                  included.count(trigger.prerequisite_id) ||
                  included.count(trigger.dependent_id);
-        });
+        })) return true;
+    return std::any_of(d.rejected_dependencies.begin(), d.rejected_dependencies.end(),
+        [&](const std::string& id) { return included.count(id) != 0; });
   };
+  // Dependency evaluation records are historical references too. Include
+  // all connected endpoints and impacted/rejected dependencies in the closure.
+  std::vector<std::string> dependency_frontier(included.begin(), included.end());
+  for (std::size_t cursor = 0; cursor < dependency_frontier.size(); ++cursor) {
+    const auto id = dependency_frontier[cursor];
+    auto include_dependency_ref = [&](const std::string& reference) {
+      if (!reference.empty() && graph.nodes().count(reference) &&
+          included.insert(reference).second)
+        dependency_frontier.push_back(reference);
+    };
+    for (const auto& item : graph.dependency_evaluations()) {
+      const auto& d = item.second;
+      const bool touches =
+          std::find(d.impacted_nodes.begin(), d.impacted_nodes.end(), id) != d.impacted_nodes.end() ||
+          std::find(d.rejected_dependencies.begin(), d.rejected_dependencies.end(), id) != d.rejected_dependencies.end() ||
+          std::any_of(d.triggered.begin(), d.triggered.end(), [&](const DependencyTrigger& t) {
+            return t.dependency_id == id || t.prerequisite_id == id || t.dependent_id == id;
+          });
+      if (!touches) continue;
+      for (const auto& impacted : d.impacted_nodes) include_dependency_ref(impacted);
+      for (const auto& rejected : d.rejected_dependencies) include_dependency_ref(rejected);
+      for (const auto& trigger : d.triggered) {
+        include_dependency_ref(trigger.dependency_id);
+        include_dependency_ref(trigger.prerequisite_id);
+        include_dependency_ref(trigger.dependent_id);
+      }
+    }
+  }
   std::size_t dependency_count = 0;
   for (const auto& item : graph.dependency_evaluations())
     if (dependency_attached(item.second)) ++dependency_count;
@@ -811,6 +841,62 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
         return fail("CLUSTER_ARCHIVE_PAYLOAD_EVIDENCE_VALIDITY_INVALID");
   }
 
+  std::size_t dependency_count = 0;
+  if (!parse_history_header("dependency_evaluations", dependency_count))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_EVALUATION_INVALID");
+  std::set<std::string> dependency_record_ids;
+  for (std::size_t i = 0; i < dependency_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_EVALUATION_INVALID");
+    std::istringstream header(line);
+    std::string tag, record_id, delta_id, extra;
+    std::size_t trigger_count = 0;
+    if (!(header >> tag >> std::quoted(record_id) >> std::quoted(delta_id) >> trigger_count) ||
+        tag != "dependency" || record_id.empty() || delta_id.empty() ||
+        record_id != delta_id || trigger_count > payload.size() ||
+        !dependency_record_ids.insert(record_id).second || (header >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_EVALUATION_INVALID");
+    std::set<std::string> triggered_ids;
+    for (std::size_t j = 0; j < trigger_count; ++j) {
+      if (!std::getline(input, line))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_TRIGGER_INVALID");
+      std::istringstream trigger_row(line);
+      std::string trigger_tag, dependency_id, prerequisite_id, dependent_id, trailing;
+      if (!(trigger_row >> trigger_tag >> std::quoted(dependency_id) >>
+            std::quoted(prerequisite_id) >> std::quoted(dependent_id)) ||
+          trigger_tag != "trigger" || dependency_id.empty() ||
+          prerequisite_id.empty() || dependent_id.empty() ||
+          (trigger_row >> trailing) || !triggered_ids.insert(dependency_id).second ||
+          !node_ids.count(dependency_id) || !node_ids.count(prerequisite_id) ||
+          !node_ids.count(dependent_id) ||
+          node_kinds.at(dependency_id) != static_cast<unsigned>(NodeKind::Dependency))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_TRIGGER_INVALID");
+      const auto& refs = node_reference_map.at(dependency_id);
+      if (refs.size() != 2 || refs[0] != prerequisite_id || refs[1] != dependent_id ||
+          prerequisite_id == dependent_id)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_TRIGGER_INVALID");
+    }
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_IMPACT_INVALID");
+    std::vector<std::string> impacted;
+    if (!parse_string_vector(line, "impacted", impacted))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_IMPACT_INVALID");
+    std::set<std::string> impacted_ids;
+    for (const auto& id : impacted)
+      if (!node_ids.count(id) || !impacted_ids.insert(id).second)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_IMPACT_INVALID");
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
+    std::vector<std::string> rejected;
+    if (!parse_string_vector(line, "rejected", rejected))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
+    std::set<std::string> rejected_ids;
+    for (const auto& id : rejected)
+      if (!node_ids.count(id) ||
+          node_kinds.at(id) != static_cast<unsigned>(NodeKind::Dependency) ||
+          !rejected_ids.insert(id).second || triggered_ids.count(id))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
+  }
   if (error) error->clear();
   return true;
 }
