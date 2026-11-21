@@ -12,12 +12,15 @@
 
 namespace surge {
 
-// A restore is prepared without mutating live state. commit() must be noexcept;
-// adapters must allocate and validate everything in prepare_restore().
+// A restore is prepared without mutating live state. commit() must either
+// publish the complete prepared state or return false without changing live
+// state. rollback() reverses a successful commit and must be noexcept.
+// Adapters allocate and validate everything during prepare_restore().
 class PreparedSnapshotRestore {
  public:
   virtual ~PreparedSnapshotRestore() = default;
-  virtual void commit() noexcept = 0;
+  virtual bool commit() noexcept = 0;
+  virtual void rollback() noexcept = 0;
 };
 
 using SnapshotChunkWriter = std::function<bool(
