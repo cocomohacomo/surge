@@ -38,45 +38,43 @@ JournalCommitResult BudgetedEventJournal::commit(const std::string& tx,
   // idempotency before retained-ID checks so retries consume no new budget.
   if (expected < failed.state_version)
     return journal_.commit(tx, idem, expected, events);
-  std::size_t transient_bytes=128,resident_bytes=0;
+  std::size_t transient_bytes=128;
+  std::vector<std::size_t> resident_event_bytes;
+  resident_event_bytes.reserve(events.size());
   std::set<std::string> transaction_event_ids;
   for(const auto& e:events){
     if(e.event_id.empty() || retained_.count(e.event_id) ||
        !transaction_event_ids.insert(e.event_id).second){failed.error="JOURNAL_EVENT_ID_ALREADY_RETAINED";return failed;}
+    std::size_t event_bytes=256;
     if(!add(transient_bytes,e.event_id.size())||!add(transient_bytes,e.kind.size())||
-       !add(transient_bytes,e.payload.size())||!add(resident_bytes,256)||
-       !add(resident_bytes,e.event_id.size())||
-       !add(resident_bytes,e.kind.size())||!add(resident_bytes,e.payload.size())){
+       !add(transient_bytes,e.payload.size())||!add(event_bytes,e.event_id.size())||
+       !add(event_bytes,e.kind.size())||!add(event_bytes,e.payload.size())){
       failed.error="JOURNAL_RESOURCE_ACCOUNTING_OVERFLOW";return failed;
     }
+    resident_event_bytes.push_back(event_bytes);
   }
-  ResourceLease transient,resident;
+  ResourceLease transient;
   std::string error;
   if(!budget_.try_acquire(ResourceKind::TransientBytes,transient_bytes,transient,error)){
     failed.error="JOURNAL_TRANSIENT_"+error;return failed;
   }
-  if(!budget_.try_acquire(ResourceKind::ResidentBytes,resident_bytes,resident,error)){
-    failed.error="JOURNAL_RESIDENT_"+error;return failed;
-  }
-  std::vector<ResourceLease> event_leases;
-  event_leases.reserve(events.size());
+  // Reserve resident bytes and retained-event slots independently for every
+  // event. This keeps lease ownership aligned with the event whose lifetime
+  // it accounts for, including future per-event release/compaction paths.
+  std::map<std::string, std::pair<ResourceLease, ResourceLease>> staged;
   for(std::size_t i=0;i<events.size();++i){
-    ResourceLease count;
+    ResourceLease bytes,count;
+    if(!budget_.try_acquire(ResourceKind::ResidentBytes,resident_event_bytes[i],bytes,error)){
+      failed.error="JOURNAL_RESIDENT_"+error;return failed;
+    }
     if(!budget_.try_acquire(ResourceKind::RetainedEvents,1,count,error)){
       failed.error="JOURNAL_EVENT_"+error;return failed;
     }
-    event_leases.push_back(std::move(count));
-  }
-  // Allocate all map nodes before durable commit. Node transfer via merge is
-  // allocation-free, so ordinary allocator pressure cannot strand a committed
-  // transaction outside the retained-state accounting map.
-  std::map<std::string, std::pair<ResourceLease, ResourceLease>> staged;
-  for(std::size_t i=0;i<events.size();++i){
-    ResourceLease bytes;
-    if(i==0) bytes=std::move(resident);
     staged.emplace(events[i].event_id,
-      std::make_pair(std::move(bytes),std::move(event_leases[i])));
+      std::make_pair(std::move(bytes),std::move(count)));
   }
+  // All map nodes and budget leases exist before durable commit. merge() then
+  // transfers preallocated nodes without allocating after the journal commits.
   auto result=journal_.commit(tx,idem,expected,events);
   if(!result.committed || result.duplicate)return result;
   retained_.merge(staged);
