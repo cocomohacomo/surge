@@ -22,9 +22,14 @@ def normalize(value: str) -> str:
 def extract_surface(source: str) -> dict:
     source = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
     source = re.sub(r"//[^\n]*", "", source)
+    versions = {}
+    for part in ("MAJOR", "MINOR", "PATCH"):
+        found = re.search(r"#define\s+SURGE_ABI_VERSION_" + part + r"\s+(\d+)", source)
+        if not found:
+            raise SystemExit("ABI_VERSION_MACRO_MISSING:" + part)
+        versions[part.lower()] = int(found.group(1))
     source = re.sub(r"(?m)^\s*#.*$", "", source)
     source = source.replace('extern "C" {', "")
-    source = re.sub(r"\n#ifdef __cplusplus\s*\}\s*#endif\s*$", "\n", source)
     structs = {}
     for match in re.finditer(
         r"typedef\s+struct\s+(\w+)\s*\{(.*?)\}\s*(\w+)\s*;", source, flags=re.S
@@ -58,12 +63,6 @@ def extract_surface(source: str) -> dict:
     declarations.sort(key=lambda item: item["name"])
     if len({item["name"] for item in declarations}) != len(declarations):
         raise SystemExit("ABI_MANIFEST_DUPLICATE_FUNCTION")
-    versions = {}
-    for part in ("MAJOR", "MINOR", "PATCH"):
-        found = re.search(r"#define\s+SURGE_ABI_VERSION_" + part + r"\s+(\d+)", source)
-        if not found:
-            raise SystemExit("ABI_VERSION_MACRO_MISSING:" + part)
-        versions[part.lower()] = int(found.group(1))
     return {
         "abi_version": versions,
         "structs": dict(sorted(structs.items())),
