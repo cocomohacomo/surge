@@ -644,7 +644,7 @@ int main(){
   // Input information is assigned to deterministic typed clusters by Core,
   // and the parent/member containment survives journal replay.
   const auto cluster_path=(root/"classified-input-clusters.sgj").string();
-  std::string classified_cluster_id;
+  std::string classified_cluster_id, weighted_cluster_id;
   {
     ContextGraph graph(cluster_path); CHECK(graph.open());
     SemanticDelta delta;
@@ -667,6 +667,7 @@ int main(){
     CHECK(graph.append_cluster_membership(delta,"input-root","SURFACE_REALIZATION",
         "source-digest:span-0-3","claim-a","classification-test-surface",
         second_cluster_id,error,0.73));
+    weighted_cluster_id=second_cluster_id;
     CHECK(second_cluster_id!=classified_cluster_id);
     CHECK(std::any_of(delta.relations.begin(),delta.relations.end(),
         [&](const auto& item){return item.relation.from==second_cluster_id &&
@@ -715,6 +716,9 @@ int main(){
   {
     ContextGraph recovered(cluster_path); CHECK(recovered.open());
     CHECK(recovered.nodes().count(classified_cluster_id)==1);
+    CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
+        [&](const auto& item){return item.second.from==weighted_cluster_id &&
+          item.second.to=="claim-a" && item.second.weight==0.73;}));
     CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
         [&](const auto& item){return item.second.from==classified_cluster_id &&
           item.second.to=="claim-a";}));
