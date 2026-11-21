@@ -9,6 +9,7 @@ bool BudgetedEventJournal::add(std::size_t& total, std::size_t value) noexcept {
   total += value; return true;
 }
 bool BudgetedEventJournal::recover(std::string& error) {
+  std::lock_guard<std::mutex> lock(mutex_);
   error.clear(); retained_.clear();
   for (const auto& e : journal_.committed_events()) {
     std::size_t bytes=256;
@@ -28,6 +29,9 @@ bool BudgetedEventJournal::recover(std::string& error) {
 }
 JournalCommitResult BudgetedEventJournal::commit(const std::string& tx,
     const std::string& idem,std::uint64_t expected,const std::vector<JournalEvent>& events) {
+  // Serialize admission, durable commit, and lease publication. Without this lock,
+  // concurrent callers can both pass the retained-ID check and race map::merge.
+  std::lock_guard<std::mutex> lock(mutex_);
   JournalCommitResult failed; failed.state_version=journal_.state_version();
   if(events.empty()){failed.error="JOURNAL_EMPTY_TRANSACTION";return failed;}
   // An older watermark cannot create a new transaction. Resolve durable
