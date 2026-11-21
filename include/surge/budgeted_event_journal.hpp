@@ -2,6 +2,7 @@
 #include "surge/event_journal.hpp"
 #include "surge/resource_budget.hpp"
 #include <map>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,11 +16,15 @@ class BudgetedEventJournal {
   JournalCommitResult commit(const std::string& transaction_id,
       const std::string& idempotency_key, std::uint64_t expected_state_version,
       const std::vector<JournalEvent>& events);
-  std::size_t retained_event_count() const noexcept { return retained_.size(); }
+  std::size_t retained_event_count() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return retained_.size();
+  }
  private:
   static bool add(std::size_t& total, std::size_t value) noexcept;
   EventJournal& journal_;
   ResourceBudget& budget_;
+  mutable std::mutex mutex_;
   std::map<std::string, std::pair<ResourceLease, ResourceLease>> retained_;
 };
 } // namespace surge
