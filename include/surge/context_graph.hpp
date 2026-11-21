@@ -94,6 +94,7 @@ struct DeltaResult { bool committed{false}, duplicate{false}; std::uint64_t stat
 class ContextGraphSnapshotDomain;
 class PreparedContextGraphSnapshotRestore;
 class BudgetedContextGraph;
+class ClusterArchiveGraphRestorer;
 class ContextGraph {
  public:
   explicit ContextGraph(std::string journal_path);
@@ -166,10 +167,16 @@ class ContextGraph {
                                   std::uint64_t expected_state_version, std::string& error);
   bool apply_question_aspect_statuses(const std::vector<std::pair<std::string, QuestionAspectStatus>>& updates,
       std::uint64_t expected_state_version, std::string& error);
+  // Durable, merge-only import of a fully validated ClusterArchive v2 payload.
+  // The complete import is one journal transaction and is replayed after restart.
+  DeltaResult import_cluster_archive_payload(const std::string& payload,
+      std::uint64_t expected_state_version, const std::string& transaction_id,
+      const std::string& idempotency_key);
  private:
   friend class BudgetedContextGraph;
   friend class ContextGraphSnapshotDomain;
   friend class PreparedContextGraphSnapshotRestore;
+  friend class ClusterArchiveGraphRestorer;
   struct State {
     std::map<std::string, GraphNode> nodes;
     std::map<std::string, GraphRelation> relations;
