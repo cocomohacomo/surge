@@ -81,7 +81,7 @@ int main() {
         "nodes 1\\nnode \\"n1\\" 99 \\"a\\" 0\\nrelations 0\\nhas_focus 0\\n");
     CHECK(!validate_cluster_archive_payload_graph_records(invalid_enum, &detach_error));
     const std::string dangling_relation = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\\nnode \\"n1\\" 2 \\"a\\" 0\\nrelations 1\\nrelation \\"r1\\" 9 \\"n1\\" \\"missing\\"\\nhas_focus 0\\n");
+        "nodes 1\nnode \"n1\" 2 \"a\" 0\nrelations 1\nrelation \"r1\" 9 \"n1\" \"missing\"\nhas_focus 0\nfocus_history 0\n");
     CHECK(!validate_cluster_archive_payload_graph_records(dangling_relation, &detach_error));
     const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
         "nodes 1\\nrelations 0\\nhas_focus 0\\n");
@@ -138,16 +138,16 @@ int main() {
   CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
   CHECK(!store.archive("cluster-a", 7, 12,
-      "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark 7\\ncluster \\"cluster-a\\"\\n", &error));
+      "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark 7\ncluster \"cluster-a\"\n", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
   CHECK(!store.archive("cluster-a", 7, 12,
-      make_payload("cluster-a", 7, "nodes invalid\\n"), &error));
+      make_payload("cluster-a", 7, "nodes invalid\n"), &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
   CHECK(!store.archive("cluster-a", 7, 12, make_payload("other-cluster", 7), &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_CLUSTER_MISMATCH");
   CHECK(!store.archive("cluster-a", 7, 12, make_payload("cluster-a", 8), &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
-  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\nrelations 0\nhas_focus 0\n");
+  const std::string large_payload = make_payload("cluster-a", 7, "nodes 1\nnode \"n1\" 2 \"large-ish payload\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
   CHECK(store.archive("cluster-a", 7, 12, large_payload, &error));
   ClusterArchiveRecord record;
   CHECK(store.archive_verified("cluster-a", 7, 12, large_payload, &record, &error));
