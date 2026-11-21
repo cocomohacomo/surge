@@ -877,20 +877,20 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
  const std::string member_digest=sha256_hex(field(cluster_id)+field(member_node_id));
  const std::string member_relation=relation_prefix+"/member/"+member_digest.substr(0,24);
  const auto relation_matches=[&](const GraphRelation& relation, const std::string& id,
-      const std::string& from, const std::string& to) {
+      const std::string& from, const std::string& to, double expected_weight) {
   return relation.id==id&&relation.kind==RelationKind::Contains&&
-         relation.from==from&&relation.to==to&&relation.weight==membership_weight;
+         relation.from==from&&relation.to==to&&relation.weight==expected_weight;
  };
  bool parent_edge_exists=false,member_edge_exists=false;
  const auto validate_edge=[&](const std::string& id,const std::string& from,
-      const std::string& to,bool& exists) {
+      const std::string& to,double expected_weight,bool& exists) {
   const auto stored=state_.relations.find(id);
   if(stored!=state_.relations.end()){
-   if(!relation_matches(stored->second,id,from,to))return false;
+   if(!relation_matches(stored->second,id,from,to,expected_weight))return false;
    exists=true;
   }
   for(const auto& item:delta.relations)if(item.relation.id==id){
-   if(!relation_matches(item.relation,id,from,to))return false;
+   if(!relation_matches(item.relation,id,from,to,expected_weight))return false;
    exists=true;
   }
   return true;
