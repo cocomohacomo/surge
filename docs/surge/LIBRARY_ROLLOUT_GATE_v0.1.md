@@ -35,17 +35,17 @@ decision.
 - [x] Provisional runtime ABI version query and compatibility policy documented.
 - [x] Source-level C ABI declaration manifest and CI diff guard (function signatures and public struct field order/types).
 - [ ] Platform binary export/layout inspection and compatibility matrix.
-- [ ] Install-tree inspection confirms no build-tree paths leak into exports.
+- [x] Install-tree inspection confirms no build-tree paths leak into exports (checked by CI outside the source tree).
 
 ### Gate B: reproducible developer integration
 
 - [x] Build and CTest instructions.
 - [x] Schema/fixture and Python regression CI.
 - [x] Standalone Python package metadata and wheel build in CI.
-- [ ] Python package locates the installed native library deterministically.
+- [x] Python package locates the installed native library deterministically via `SURGE_CORE_PREFIX` / `SURGE_CORE_LIBRARY`.
 - [x] Reviewed C ABI declaration surface is checked in CI.
-- [ ] Clean-environment install test with no repository checkout on
-  `PYTHONPATH`.
+- [x] Clean-environment install test with no repository checkout on
+  `PYTHONPATH`, using an isolated wheel and separately installed native Core.
 - [x] Public C ABI version macros, runtime query, and conformance test.
 - [ ] Complete public symbol manifest and ABI compatibility automation.
 
