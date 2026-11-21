@@ -53,7 +53,7 @@ class BudgetedContextGraph {
       const std::string& parent_cluster_id, const std::string& classification,
       const std::string& partition_key, const std::string& member_node_id,
       const std::string& relation_prefix, std::string& assigned_cluster_id,
-      std::string& error);
+      std::string& error, double membership_weight = 1.0);
 
   // Guarded wrappers for journal-backed Question/QuestionAspect mutations.
   bool record_question_reference(const std::string& id, std::uint64_t expected,
