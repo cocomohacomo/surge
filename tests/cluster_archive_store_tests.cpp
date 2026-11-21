@@ -8,7 +8,7 @@
 #include <iomanip>
 namespace {
 std::string make_payload(const std::string& cluster, std::uint64_t version,
-                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\n") {
+                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\n") {
   std::ostringstream out;
   out << "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark " << version
       << "\ncluster " << std::quoted(cluster) << "\n" << body;
@@ -74,17 +74,17 @@ int main() {
         graph.state_version(), &detach_error));
     CHECK(validate_cluster_archive_payload_graph_records(canonical_payload, &detach_error));
     const std::string duplicate_nodes = make_payload("cluster-a", graph.state_version(),
-        "nodes 2\nnode \"n1\" 2 \"a\" 0\nnode \"n1\" 2 \"b\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
+        "nodes 2\\nnode \\"n1\\" 2 \\"a\\" 0\\nnode \\"n1\\" 2 \\"b\\" 0\\nrelations 0\\nhas_focus 0\\nfocus_history 0\\n");
     CHECK(!validate_cluster_archive_payload_graph_records(duplicate_nodes, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
     const std::string invalid_enum = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\nnode \"n1\" 99 \"a\" 0\nrelations 0\nhas_focus 0\nfocus_history 0\n");
+        "nodes 1\\nnode \\"n1\\" 99 \\"a\\" 0\\nrelations 0\\nhas_focus 0\\n");
     CHECK(!validate_cluster_archive_payload_graph_records(invalid_enum, &detach_error));
     const std::string dangling_relation = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\nnode \"n1\" 2 "a" 0\nrelations 1\nrelation "r1" 9 "n1" "missing"\nhas_focus 0\nfocus_history 0\n");
+        "nodes 1\\nnode \\"n1\\" 2 \\"a\\" 0\\nrelations 1\\nrelation \\"r1\\" 9 \\"n1\\" \\"missing\\"\\nhas_focus 0\\n");
     CHECK(!validate_cluster_archive_payload_graph_records(dangling_relation, &detach_error));
     const std::string count_mismatch = make_payload("cluster-a", graph.state_version(),
-        "nodes 1\nrelations 0\nhas_focus 0\nfocus_history 0\n");
+        "nodes 1\\nrelations 0\\nhas_focus 0\\n");
     CHECK(!validate_cluster_archive_payload_graph_records(count_mismatch, &detach_error));
     CHECK(!validate_cluster_archive_payload_identity(canonical_payload, "archive-b",
         graph.state_version(), &detach_error));
@@ -104,7 +104,7 @@ int main() {
     CHECK(invalid_detach.error == "CLUSTER_ARCHIVE_PAYLOAD_WATERMARK_MISMATCH");
     CHECK(graph.state_version() == before_invalid_detach);
     CHECK(graph.nodes().count("exclusive") == 1);
-    CHECK(canonical_payload.find("\\\\n") == std::string::npos);
+    CHECK(canonical_payload.find("\\n") == std::string::npos);
     CHECK(!canonical_payload.empty() && canonical_payload.back() == '\n');
     std::string canonical_payload_again;
     CHECK(serialize_cluster_archive_payload(graph, "archive-a", &canonical_payload_again, &detach_error));
@@ -136,8 +136,7 @@ int main() {
   CHECK(error == "CLUSTER_ARCHIVE_INPUT_INVALID");
   CHECK(!store.archive("cluster-a", 0, 1, "payload", &error));
   CHECK(!store.archive("cluster-a", 7, 12, "legacy payload", &error));
-      "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\nwatermark 7
-cluster \"cluster-a\"\n", &error));
+  CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_FORMAT_UNSUPPORTED");
   CHECK(!store.archive("cluster-a", 7, 12,
       "SURGE_CLUSTER_ARCHIVE_PAYLOAD 2\\nwatermark 7\\ncluster \\"cluster-a\\"\\n", &error));
   CHECK(error == "CLUSTER_ARCHIVE_PAYLOAD_NODE_SECTION_INVALID");
@@ -182,5 +181,3 @@ cluster \"cluster-a\"\n", &error));
   std::cout << "SURGE cluster archive store tests passed\n";
   return 0;
 }
-std::string make_payload(const std::string& cluster, std::uint64_t version,
-                         const std::string& body = "nodes 0\nrelations 0\nhas_focus 0\nfocus_history 0\n") {
