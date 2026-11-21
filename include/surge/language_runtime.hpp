@@ -72,6 +72,8 @@ class LanguageRuntimeRegistry {
   std::size_t pinned_session_count() const;
 
  private:
+  bool install_manifest_impl(const LanguageSetManifest& manifest,
+      bool package_verified, std::string& error);
   static std::string key(const std::string& id, const std::string& version);
   static bool add_within(std::size_t& total, std::size_t value, std::size_t limit);
   LanguageRuntimeLimits limits_;
