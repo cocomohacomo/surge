@@ -244,13 +244,15 @@ bool decode_questions(const std::string& payload, std::size_t maximum_questions,
 }  // namespace
 class PreparedEvidenceSnapshotRestore final:public PreparedSnapshotRestore{
  public:PreparedEvidenceSnapshotRestore(EvidenceProvenanceLedger*o,std::map<std::string,std::vector<EvidenceProvenanceRecord>>c):owner(o),candidate(std::move(c)){}
- void commit()noexcept override{owner->history_.swap(candidate);}
- private:EvidenceProvenanceLedger*owner;std::map<std::string,std::vector<EvidenceProvenanceRecord>>candidate;
+ bool commit()noexcept override{owner->history_.swap(candidate);committed_=true;return true;}
+ void rollback()noexcept override{if(committed_){owner->history_.swap(candidate);committed_=false;}}
+ private:EvidenceProvenanceLedger*owner;std::map<std::string,std::vector<EvidenceProvenanceRecord>>candidate;bool committed_{false};
 };
 class PreparedChaosSnapshotRestore final:public PreparedSnapshotRestore{
  public:PreparedChaosSnapshotRestore(ChaosClusterLedger*o,ChaosClusterLedger::State c):owner(o),candidate(std::move(c)){}
- void commit()noexcept override{try{std::lock_guard<std::mutex> lock(owner->mutex_);owner->state_.swap(candidate);}catch(...){std::terminate();}}
- private:ChaosClusterLedger*owner;ChaosClusterLedger::State candidate;
+ bool commit()noexcept override{try{std::lock_guard<std::mutex> lock(owner->mutex_);owner->state_.swap(candidate);committed_=true;return true;}catch(...){return false;}}
+ void rollback()noexcept override{if(!committed_)return;try{std::lock_guard<std::mutex> lock(owner->mutex_);owner->state_.swap(candidate);committed_=false;}catch(...){std::terminate();}}
+ private:ChaosClusterLedger*owner;ChaosClusterLedger::State candidate;bool committed_{false};
 };
 
 class PreparedTemporalBoundarySnapshotRestore final : public PreparedSnapshotRestore {
@@ -258,20 +260,24 @@ class PreparedTemporalBoundarySnapshotRestore final : public PreparedSnapshotRes
   PreparedTemporalBoundarySnapshotRestore(TemporalBoundaryLedger* owner,
       std::map<std::string, TemporalBoundaryPending> candidate)
       : owner_(owner), candidate_(std::move(candidate)) {}
-  void commit() noexcept override { owner_->pending_.swap(candidate_); }
+  bool commit() noexcept override { owner_->pending_.swap(candidate_); committed_ = true; return true; }
+  void rollback() noexcept override { if (committed_) { owner_->pending_.swap(candidate_); committed_ = false; } }
  private:
   TemporalBoundaryLedger* owner_;
   std::map<std::string, TemporalBoundaryPending> candidate_;
+  bool committed_{false};
 };
 class PreparedTemporalQuestionSnapshotRestore final : public PreparedSnapshotRestore {
  public:
   PreparedTemporalQuestionSnapshotRestore(TemporalQuestionLedger* owner,
       std::map<std::string, TemporalQuestion> candidate)
       : owner_(owner), candidate_(std::move(candidate)) {}
-  void commit() noexcept override { owner_->questions_.swap(candidate_); }
+  bool commit() noexcept override { owner_->questions_.swap(candidate_); committed_ = true; return true; }
+  void rollback() noexcept override { if (committed_) { owner_->questions_.swap(candidate_); committed_ = false; } }
  private:
   TemporalQuestionLedger* owner_;
   std::map<std::string, TemporalQuestion> candidate_;
+  bool committed_{false};
 };
 std::string EvidenceProvenanceSnapshotDomain::domain_id()const{return "evidence_provenance";}
 std::string EvidenceProvenanceSnapshotDomain::schema_id()const{return "surge.evidence-provenance.v1";}
