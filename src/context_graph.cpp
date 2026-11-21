@@ -1863,4 +1863,45 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
       &graph_, std::move(candidate), std::move(idempotency));
 }
 
+
+CognitionObservation ContextGraph::observe_cognition() const {
+  CognitionObservation observation;
+  observation.state_version = state_version();
+  observation.nodes.reserve(state_.nodes.size());
+  observation.relations.reserve(state_.relations.size());
+  for (const auto& item : state_.nodes) {
+    observation.nodes.push_back(item.second);
+    if (item.second.kind == NodeKind::Question) {
+      const auto status = state_.question_memory_states.find(item.first);
+      if (status == state_.question_memory_states.end() ||
+          status->second == QuestionMemoryState::Active)
+        observation.active_question_ids.push_back(item.first);
+    }
+    if (item.second.kind == NodeKind::Interest)
+      observation.active_interest_ids.push_back(item.first);
+  }
+  for (const auto& item : state_.relations) {
+    const auto& relation = item.second;
+    observation.relations.push_back(relation);
+    if (relation.kind != RelationKind::Contains) continue;
+    const auto parent = state_.nodes.find(relation.from);
+    const auto member = state_.nodes.find(relation.to);
+    if (parent == state_.nodes.end() || member == state_.nodes.end() ||
+        (parent->second.kind != NodeKind::Cluster &&
+         parent->second.kind != NodeKind::ChaosCluster))
+      continue;
+    observation.memberships.push_back(
+        {relation.to, relation.from, relation.weight});
+    if (parent->second.kind == NodeKind::ChaosCluster)
+      observation.unresolved_member_ids.push_back(relation.to);
+  }
+  observation.current_focus = state_.focus;
+  observation.focus_history = state_.focus_history;
+  for (const auto& item : state_.scope_spans)
+    if (item.second.status == ScopeStatus::Unresolved)
+      ++observation.unresolved_scope_count;
+  observation.dependency_evaluation_count = state_.dependency_evaluations.size();
+  return observation;
+}
+
 } // namespace surge
