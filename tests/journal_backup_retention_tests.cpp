@@ -13,10 +13,13 @@ namespace {
 class IntRestore final : public surge::PreparedSnapshotRestore {
  public:
   IntRestore(int* target, int value) : target_(target), value_(value) {}
-  void commit() noexcept override { *target_ = value_; }
+  bool commit() noexcept override { previous_ = *target_; *target_ = value_; committed_ = true; return true; }
+  void rollback() noexcept override { if (committed_) { *target_ = previous_; committed_ = false; } }
  private:
   int* target_;
   int value_;
+  int previous_{0};
+  bool committed_{false};
 };
 class IntDomain final : public surge::SnapshotDomain {
  public:
