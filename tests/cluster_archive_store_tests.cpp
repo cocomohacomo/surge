@@ -147,7 +147,7 @@ int main() {
             stale.error == "CLUSTER_ARCHIVE_GRAPH_RESTORE_STALE_TARGET");
       CHECK(restored_graph.state_version() == stable_version);
 
-      const std::string focus_payload = make_payload("focus-cluster", 2,
+      std::string focus_payload = make_payload("focus-cluster", 2,
           R"(nodes 4
 node "focus-cluster" 0 "focus target" 0
 node "focus-question" 5 "focus question" 0
@@ -158,6 +158,14 @@ has_focus 1
 focus "focus-cluster" "focus-interest" 0
 focus_history 0
 )");
+      const std::string default_question_states =
+          "question_states 0\nquestion_aspect_states 0\n";
+      const std::string focus_question_states =
+          "question_states 1\nquestion_state \"focus-question\" 0 0\n"
+          "question_aspect_states 1\nquestion_aspect_state \"focus-aspect\" 0\n";
+      const auto state_marker = focus_payload.find(default_question_states);
+      CHECK(state_marker != std::string::npos);
+      focus_payload.replace(state_marker, default_question_states.size(), focus_question_states);
       const bool focus_payload_valid = validate_cluster_archive_payload_graph_records(focus_payload, &restore_error);
       if (!focus_payload_valid) std::cerr << "Focus archive payload validation failed: " << restore_error << "\\n";
       CHECK(focus_payload_valid);
