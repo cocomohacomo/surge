@@ -457,6 +457,157 @@ bool validate_cluster_archive_payload_graph_records(const std::string& payload,
     if (!std::getline(input, line) || !validate_focus(line))
       return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
   }
+
+  auto parse_string_vector = [&](const std::string& text, const char* expected,
+                                 std::vector<std::string>& values) {
+    std::istringstream row(text);
+    std::string tag, value, extra;
+    std::size_t count = 0;
+    if (!(row >> tag >> count) || tag != expected || count > payload.size())
+      return false;
+    values.clear();
+    values.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (!(row >> std::quoted(value)) || value.empty()) return false;
+      values.push_back(value);
+    }
+    return !(row >> extra);
+  };
+  auto valid_digest = [](const std::string& digest) {
+    return digest.size() == 64 &&
+        std::all_of(digest.begin(), digest.end(), [](unsigned char c) {
+          return std::isxdigit(c) != 0;
+        });
+  };
+  auto parse_anchor = [&](std::istringstream& row, const std::string& source_digest,
+                          const std::string& offset_basis, ScopeAnchor& anchor) {
+    return static_cast<bool>(row >> std::quoted(anchor.anchor_id) >>
+        std::quoted(anchor.source_digest) >> std::quoted(anchor.offset_basis) >>
+        anchor.start_offset >> anchor.end_offset >> std::quoted(anchor.exact_text) >>
+        std::quoted(anchor.packet_ref)) &&
+        !anchor.anchor_id.empty() && anchor.source_digest == source_digest &&
+        anchor.offset_basis == offset_basis && anchor.offset_basis == "UTF8_BYTE_NFC" &&
+        anchor.start_offset < anchor.end_offset && !anchor.exact_text.empty() &&
+        !anchor.packet_ref.empty();
+  };
+  if (!std::getline(input, line))
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_GRAPH_RECORDS_INVALID");
+  std::size_t scope_count = 0;
+  if (!parse_count(line, "scope_spans", scope_count) || scope_count > payload.size())
+    return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPANS_INVALID");
+  std::set<std::string> scope_ids;
+  for (std::size_t i = 0; i < scope_count; ++i) {
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::istringstream row(line);
+    std::string tag, id, source_digest, offset_basis, extra;
+    unsigned kind = 0, has_closer = 0;
+    ScopeAnchor opener, closer;
+    if (!(row >> tag >> std::quoted(id) >> kind >> std::quoted(source_digest) >>
+          std::quoted(offset_basis)) || tag != "scope" || id.empty() ||
+        !scope_ids.insert(id).second ||
+        kind > static_cast<unsigned>(ScopeKind::TableHeader) ||
+        !valid_digest(source_digest) || offset_basis != "UTF8_BYTE_NFC" ||
+        !parse_anchor(row, source_digest, offset_basis, opener) ||
+        !(row >> has_closer) || has_closer > 1)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    if (has_closer) {
+      if (!parse_anchor(row, source_digest, offset_basis, closer) ||
+          closer.anchor_id == opener.anchor_id ||
+          closer.start_offset < opener.end_offset)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    }
+    if (row >> extra)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::vector<std::string> targets;
+    if (!parse_string_vector(line, "", targets)) {
+      // The serializer writes the vector count as a bare line after the scope header.
+      std::istringstream vector_row(line);
+      std::size_t count = 0;
+      std::string value, trailing;
+      if (!(vector_row >> count) || count > payload.size())
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+      targets.clear();
+      for (std::size_t j = 0; j < count; ++j) {
+        if (!(vector_row >> std::quoted(value)) || value.empty())
+          return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+        targets.push_back(value);
+      }
+      if (vector_row >> trailing)
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    }
+    for (const auto& ref : targets)
+      if (!node_ids.count(ref))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+
+    if (!std::getline(input, line) || line.rfind("scope_antecedents ", 0) != 0)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::vector<std::string> antecedents;
+    if (!parse_string_vector(line, "scope_antecedents", antecedents))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    for (const auto& ref : antecedents)
+      if (!node_ids.count(ref))
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::istringstream meta(line);
+    std::string meta_tag, attribution, modality, temporal_role, parent;
+    if (!(meta >> meta_tag >> std::quoted(attribution) >> std::quoted(modality) >>
+          std::quoted(temporal_role) >> std::quoted(parent)) ||
+        meta_tag != "scope_meta")
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::vector<std::string> packets;
+    std::string packet_count_text;
+    std::getline(meta, packet_count_text);
+    if (packet_count_text.empty()) return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::istringstream packet_row(packet_count_text);
+    std::size_t packet_count = 0;
+    if (!(packet_row >> packet_count) || packet_count == 0 ||
+        packet_count > payload.size())
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    for (std::size_t j = 0; j < packet_count; ++j) {
+      std::string packet;
+      if (!(packet_row >> std::quoted(packet)) || packet.empty())
+        return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+      packets.push_back(std::move(packet));
+    }
+    if (packet_row >> extra ||
+        std::find(packets.begin(), packets.end(), opener.packet_ref) == packets.end() ||
+        (has_closer &&
+         std::find(packets.begin(), packets.end(), closer.packet_ref) == packets.end()))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+
+    if (!std::getline(input, line))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    std::istringstream result(line);
+    std::string result_tag;
+    unsigned status = 0, effect = 0, unconditional = 0;
+    if (!(result >> result_tag >> status >> effect >> unconditional) ||
+        result_tag != "scope_result" ||
+        status > static_cast<unsigned>(ScopeStatus::Unresolved) ||
+        effect > static_cast<unsigned>(ScopeEffect::TableHeaderScope) ||
+        unconditional > 1 || (result >> extra))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    const auto scope_kind = static_cast<ScopeKind>(kind);
+    if ((scope_kind == ScopeKind::Negation || scope_kind == ScopeKind::Modality ||
+         scope_kind == ScopeKind::Temporal) && !has_closer && status == 0)
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    if (!attribution.empty() &&
+        (!node_ids.count(attribution) ||
+         node_kinds.at(attribution) != static_cast<unsigned>(NodeKind::Entity)))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    if (!parent.empty() && !node_ids.count(parent))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+    if ((scope_kind == ScopeKind::Modality && modality.empty()) ||
+        (scope_kind == ScopeKind::Temporal && temporal_role.empty()) ||
+        ((scope_kind == ScopeKind::ListContinuation ||
+          scope_kind == ScopeKind::TableHeader) && parent.empty()))
+      return fail("CLUSTER_ARCHIVE_PAYLOAD_SCOPE_SPAN_INVALID");
+  }
   if (error) error->clear();
   return true;
 }
