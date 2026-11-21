@@ -385,7 +385,7 @@ int main() {
   { std::ofstream out(path, std::ios::binary | std::ios::trunc);
     CHECK(static_cast<bool>(out)); out << "corrupt"; CHECK(static_cast<bool>(out)); }
   CHECK(store.restore("cluster-a", 7, &record, &error));
-  CHECK(record.state_version == 7 && record.payload == large_payload);
+  CHECK(record.state_version == 7 && record.payload == expanded_payload);
   std::filesystem::remove(path, ec); std::filesystem::remove(path.string()+".bak", ec);
   std::filesystem::remove(path.string()+".tmp", ec);
   std::cout << "SURGE cluster archive store tests passed\n";
