@@ -129,18 +129,18 @@ int main() {
         "impacted 2 \"q1\" \"q2\"\nrejected 0\n";
     CHECK(validate_cluster_archive_payload_graph_records(valid_dependency, &detach_error));
     std::string bad_dependency_endpoint = valid_dependency;
-    const auto bad_endpoint_pos = bad_dependency_endpoint.find("trigger \\"dep1\\" \\"q1\\" \\"q2\\"");
+    const auto bad_endpoint_pos = bad_dependency_endpoint.find("trigger ");
     CHECK(bad_endpoint_pos != std::string::npos);
-    bad_dependency_endpoint.replace(bad_endpoint_pos,
-        std::string("trigger \\"dep1\\" \\"q1\\" \\"q2\\"").size(),
-        "trigger \\"dep1\\" \\"missing\\" \\"q2\\"");
+    const auto bad_endpoint_end = bad_dependency_endpoint.find('\n', bad_endpoint_pos);
+    bad_dependency_endpoint.replace(bad_endpoint_pos, bad_endpoint_end - bad_endpoint_pos,
+                                    "trigger \"dep1\" \"missing\" \"q2\"");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_dependency_endpoint, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_TRIGGER_INVALID");
     std::string bad_dependency_rejection = valid_dependency;
     const auto rejection_pos = bad_dependency_rejection.find("rejected 0");
     CHECK(rejection_pos != std::string::npos);
     bad_dependency_rejection.replace(rejection_pos, std::string("rejected 0").size(),
-                                    "rejected 1 \\"q1\\"");
+                                    "rejected 1 \"q1\"");
     CHECK(!validate_cluster_archive_payload_graph_records(bad_dependency_rejection, &detach_error));
     CHECK(detach_error == "CLUSTER_ARCHIVE_PAYLOAD_DEPENDENCY_REJECTION_INVALID");
     const std::string bad_claim_history = make_payload("cluster-a", graph.state_version(),
