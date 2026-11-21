@@ -360,6 +360,8 @@ DeltaResult BudgetedContextGraph::restore_cluster_archive(
       std::numeric_limits<std::size_t>::max() / 2)
     return {false, false, graph_.state_version(), "CLUSTER_ARCHIVE_BUDGET_SIZE_INVALID"};
   const std::size_t bytes = payload.size() * 2;
+  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
   const std::size_t staging_bytes = bytes;
   if (max_staging_bytes_ != 0 && staging_bytes > max_staging_bytes_)
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
@@ -425,8 +427,6 @@ DeltaResult BudgetedContextGraph::restore_cluster_archive(
   if (resident) resident_leases_.push_back(std::move(resident));
   if (clusters) cluster_leases_.push_back(std::move(clusters));
   if (retained) mutation_event_leases_.push_back(std::move(retained));
-  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
-    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
   accounted_resident_bytes_ += bytes;
   return result;
 }
