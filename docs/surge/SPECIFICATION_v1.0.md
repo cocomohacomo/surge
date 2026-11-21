@@ -771,3 +771,33 @@ candidate lifecycle storage, candidate feedback learning or candidate-quality
 evaluation. Those capabilities require explicit runtime components and tests.
 They MUST NOT be claimed complete merely because graph observation is
 available.
+
+
+### Associative recall and feedback implementation increment
+
+ContextGraph now exposes `recall_cognition_candidates(input_member_id,
+query_terms, max_candidates)`. The current implementation performs deterministic
+literal substring matching over retained node content and reference strings,
+aggregates matching member evidence by existing Cluster/ChaosCluster
+membership, returns matched terms and supporting member IDs, pins the
+observation state version, and orders candidates by a retrieval-only score
+with stable cluster-ID tie breaking. This is a lightweight baseline recall
+implementation, not semantic embedding or a learned classifier. Query terms
+are supplied by the caller; SURGE does not infer admission classifications.
+
+Candidate recall is read-only and does not mutate Contains memberships or
+admission weights. Candidate recall scores are distinct from producer-owned
+membership weights and MUST NOT be projected into Contains edges implicitly.
+
+The Core also exposes `append_cognition_feedback`, which stages a typed
+Evidence record containing candidate outcome and producer/model/policy
+provenance and links it to the candidate cluster. The budgeted facade
+provides recall and feedback staging/commit entry points. Feedback outcomes
+are append-only observations and do not automatically alter classifications,
+candidate scores, or graph membership.
+
+Implementation scope at this increment: candidate recall and feedback
+persistence foundations. Native semantic candidate generation, candidate
+history querying/serialization through the cognition observation API,
+feedback-driven recall adaptation, C ABI/Python exposure, and automated
+quality benchmarks remain follow-up integration tasks.
