@@ -138,7 +138,6 @@ The lifecycle distinguishes:
 - TOMBSTONED: payload or membership has been removed under an explicit,
   journaled policy; the tombstone preserves permitted identity, reason,
   provenance digest and lineage metadata.
-
 The Core graph now supports append-only `ClusterLifecycle` records attached to
  their target Cluster/ChaosCluster. Each record carries a monotonic per-cluster
 revision, RFC3339 observation text, policy reason and a 64-character lowercase
@@ -277,8 +276,7 @@ delete payloads or compact the graph.
 ### Journaled cluster membership unlink implementation increment
 
 `ContextGraph::append_cluster_unmembership` and its budgeted gateway
-counterpart now stage an explicit removal of an existing Cluster/ChaosCluster
-`Contains` edge. The journal records `RELATION_REMOVE` so replay
+counterpart now stage an explicit removal of an existing Cluster/ChaosCluster`Contains` edge. The journal records `RELATION_REMOVE` so replay
 reconstructs the same active membership graph. The member node is preserved
 regardless of whether other memberships remain. ClusterLifecycle audit edges
 are protected from this operation. This is an unlink-only operation, not
@@ -427,8 +425,7 @@ each serialized chunk, then expands the reservation for the known envelope
 encoding peak before encoding. The reservation is released on success and all
 failure paths through RAII. A shared budget rejection stops capture before
 the next append and returns the underlying resource-budget error. This
-integrates snapshot capture with the provisional aggregate 200 MiB accounting
-when a ResourceBudget is supplied. It still accounts logical serialized
+integrates snapshot capture with the provisional aggregate 200 MiB accountingwhen a ResourceBudget is supplied. It still accounts logical serialized
 buffers only; it cannot observe allocations internal to domain serializers,
 SnapshotCodec, the standard library or the allocator, and is not a hard RSS
 enforcement mechanism.
@@ -493,3 +490,54 @@ APIs remain available.
 ### Importance-driven retention and restoration
 
 Cluster retention protects knowledge clusters and core focus/question/dependency anchors. Inactive non-knowledge clusters are prioritized for restoration before active low-priority clusters consume capacity. Retention transitions are journaled atomically; DORMANT/ARCHIVED lifecycle state is a compression policy, not deletion, and restoration requires the underlying canonical payload and recovery history to remain available. Tombstoned content is excluded from automatic restoration.
+
+
+## 13. Implementation-to-specification gap review (2026-11-21)
+
+This section reconciles normative v1.0 requirements with implementation evidence available on the current development branch. It is an implementation-status supplement, not a relaxation of the requirements. Code presence, unit conformance, CI completion, and measured target-device performance are distinct evidence levels. Items below marked partial or outstanding MUST NOT be described as complete.
+
+### 13.1 Core admission and cluster graph
+
+**Implemented foundations:** typed ContextGraph; deterministic cluster classification/membership helpers; atomic SemanticDelta; journal replay; budgeted C ABI mutation gateway; explicit cluster membership unlink; canonical membership-reference count; guarded Entity reclamation; Entity checkpoint compaction conformance.
+
+**Gaps:** Core gateway is not mandatory for all C++, Python, ONNX, adapter, and recognition ingress. Some direct ContextGraph and question/status mutators can bypass shared admission/accounting. Existing legacy/unclustered data has no automatic provenance-preserving migration. Every ingress must eventually be audited and routed through the same transaction boundary.
+
+### 13.2 Unified recognition and language runtime
+
+**Implemented foundations:** Core-owned UnifiedDecision and C ABI candidate/surface mapping; bounded manifest metadata registry; session pinning and language-set switching; Japanese/English manifest fixtures; decision safeguards; language runtime logical resource reservations.
+
+**Gaps:** UnifiedDecision is not fully integrated with the Python/ONNX recognition pipeline. LanguageRuntimeRegistry is metadata/session management, not a package loader. Digest/signature verification, safe package parsing, data-only resource readers, activation rollback, executable Japanese resources, functional English recognition and full morphology/lexicon/n-gram runtime remain outstanding. Existing legacy scoring paths still operate.
+
+### 13.3 Budget enforcement and actual memory
+
+**Implemented foundations:** mutex-protected logical ResourceBudget/ResourceLease; aggregate ResidentBytes+TransientBytes ceiling; C ABI budget profile; budgeted graph and journal/packet/snapshot facades; fail-closed admission and staging reservations; recovery accounting.
+
+**Gaps:** budgets are opt-in and do not intercept every allocation or mutation path. Legacy C ABI open defaults to effectively unlimited ceilings for compatibility. Uninstrumented native, morphology, n-gram, ONNX, serializer, allocator, mapped-file, stack and OS costs are excluded. These budgets are accounting/admission safeguards, not hard process RSS limits. No sustained target edge-PC peak RSS, transient high-water, queue-depth, throughput or p50/p95/p99 latency report is yet evidenced.
+
+### 13.4 Cluster retention, archive, restore, and reclamation
+
+**Implemented foundations:** lifecycle records and transitions; versioned complete-candidate retention planning; guarded lifecycle execution; explicit journaled membership unlink; membership reference-count inspection; Entity-only fail-closed reclamation; verified cluster archive envelope/payload identity; streamed archive write and readback; detach planning for exclusive/shared Entity members; archive graph-record validation; checkpoint compaction test for reclaimed Entity.
+
+**Gaps:** archive payload validation currently validates identity, graph node/relation records and Focus/Focus-history records only. It does not yet comprehensively validate the serialized ScopeSpan anchors, Claim/Evidence validity histories, dependency evaluation, temporal reassessment, Question states, QuestionAspect states, Claim lifecycle sections, or independent provenance/chaos/temporal ledgers. The archive restore API returns a verified record but does not perform a complete transactional graph rehydrate. Archive-and-detach is limited to eligible Entity membership and does not implement general cluster tombstoning, typed-node reclamation, complete cross-domain reference closure, or a universal retention/archive workflow. Archive-specific limits do not represent a global memory cap.
+
+### 13.5 Snapshot and journal memory behavior
+
+**Implemented foundations:** incremental SHA-256; snapshot capture staging guard; chunked SnapshotDomain capture API; chunk ceiling; streamed snapshot save; authenticated streamed load; incremental SnapshotCoordinator domain parsing/preparation and detached publish; journal checkpoint compaction and backup pruning safeguards.
+
+**Gaps:** Built-in domain serializers have not all migrated to capture_chunks. Compatibility capture still materializes domain payloads; coordinator still materializes aggregate bundle/envelope in capture; legacy save/load APIs materialize. The stream restore path still allocates prepared domain states and journal-tail objects. These are bounded by configured limits but not proven by hard allocator/RSS enforcement. Crash injection and cross-platform behavior need CI and device evidence.
+
+### 13.6 Conformance, tests, and release evidence
+
+Required evidence is tracked independently: (a) focused unit tests for each validator and failure mode, (b) integration tests covering atomic admission, recovery, archive/restore, lifecycle and compaction, (c) latest-head CI on supported platforms and sanitizer jobs, and (d) target hardware sustained streaming benchmarks. A test fixture must use canonical serializer format and literal newline encoding; malformed fixtures must fail for the intended invariant, not due to malformed escaping. Current cluster-archive test fixture edits need repair and re-review before archive validation can be considered verified.
+
+### 13.7 Priority order for closing gaps
+
+1. Repair and canonicalize archive conformance fixtures; run archive tests and latest-head CI.
+2. Expand archive parser validation to every serialized section, with exact counts, identity/reference closure, enum/state bounds, no trailing records, and tests per malformed section.
+3. Implement detached, transactional archive rehydration and rollback-safe publication; verify replay/idempotency and shared-member safety.
+4. Audit all ingress/mutators and route remaining production paths through the Core cluster/budget gateway; fail closed where admission is unavailable.
+5. Integrate UnifiedDecision and Language Runtime into end-to-end Python/ONNX recognition; remove or explicitly isolate legacy parallel scoring.
+6. Migrate built-in snapshot domain capture to streaming serializers and reduce aggregate/envelope materialization.
+7. Add cross-platform crash/fault-injection tests and then measure target-device RSS/latency/throughput under sustained load.
+
+These priorities are a sequencing recommendation. Completing an API or test alone does not close its end-to-end requirement; each item needs the evidence stated above.
