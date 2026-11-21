@@ -213,6 +213,20 @@ focus_history 0
       CHECK(restored_graph.focus().has_value());
       CHECK(restored_graph.focus()->cluster_id == "focus-cluster");
       CHECK(restored_graph.focus()->interest_id == "focus-interest");
+
+      auto focus_history_record = focus_record;
+      const std::string empty_focus_history = "focus_history 0\\n";
+      const auto focus_history_marker = focus_history_record.payload.find(empty_focus_history);
+      CHECK(focus_history_marker != std::string::npos);
+      focus_history_record.payload.replace(focus_history_marker, empty_focus_history.size(),
+          "focus_history 1\\nfocus \\"focus-cluster\\" \\"focus-interest\\" 0\\n");
+      const auto unsupported_focus_history = restore_cluster_archive_graph_records(
+          focus_history_record, restored_graph, restore_facade, restored_graph.state_version(),
+          "restore-focus-history", "restore-focus-history-key");
+      CHECK(!unsupported_focus_history.committed);
+      CHECK(unsupported_focus_history.error ==
+            "CLUSTER_ARCHIVE_GRAPH_RESTORE_UNSUPPORTED_focus_history");
+
       const auto focus_repeat = restore_cluster_archive_graph_records(
           focus_record, restored_graph, restore_facade, restored_graph.state_version(),
           "restore-focus-repeat", "restore-focus-repeat-key");
