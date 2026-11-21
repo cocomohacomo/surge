@@ -1,4 +1,9 @@
 #include "surge/language_runtime.hpp"
+#include "surge/sha256.hpp"
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -9,6 +14,140 @@ bool is_sha256_hex(const std::string& value) {
   return value.size() == 64 && std::all_of(value.begin(), value.end(),
       [](unsigned char ch) { return std::isxdigit(ch) != 0; });
 }
+
+bool is_safe_relative_resource_path(const std::string& value) {
+  if (value.empty() || value.size() > 512 || value.front() == '/' ||
+      value.find('\\\\') != std::string::npos ||
+      value.find(':') != std::string::npos || value.find('\\0') != std::string::npos)
+    return false;
+  std::size_t begin = 0;
+  while (begin <= value.size()) {
+    const auto end = value.find('/', begin);
+    const auto part = value.substr(begin, end == std::string::npos
+        ? std::string::npos : end - begin);
+    if (part.empty() || part == "." || part == "..") return false;
+    if (end == std::string::npos) break;
+    begin = end + 1;
+  }
+  return true;
+}
+
+bool path_is_within(const std::filesystem::path& root,
+                    const std::filesystem::path& candidate) {
+  auto r = root.begin();
+  auto c = candidate.begin();
+  for (; r != root.end(); ++r, ++c) {
+    if (c == candidate.end() || *r != *c) return false;
+  }
+  return true;
+}
+
+bool verify_language_package_directory(const std::string& root_text,
+    const LanguageSetManifest& manifest, const LanguageRuntimeLimits& limits,
+    std::string& error) {
+  error.clear();
+  namespace fs = std::filesystem;
+  if (root_text.empty() || manifest.resources.empty() ||
+      manifest.resources.size() > limits.max_resources ||
+      manifest.package_bytes == 0 ||
+      manifest.package_bytes > limits.max_package_bytes ||
+      manifest.unpacked_bytes == 0 ||
+      manifest.unpacked_bytes > limits.max_total_unpacked_bytes) {
+    error = "LANGUAGE_PACKAGE_LIMIT_OR_MANIFEST_INVALID";
+    return false;
+  }
+  std::error_code ec;
+  const auto root = fs::canonical(fs::path(root_text), ec);
+  if (ec || !fs::is_directory(root, ec) || ec) {
+    error = "LANGUAGE_PACKAGE_ROOT_INVALID";
+    return false;
+  }
+  std::set<std::string> seen;
+  std::size_t total = 0;
+  constexpr std::size_t kChunkBytes = 64U * 1024U;
+  for (const auto& resource : manifest.resources) {
+    if (!is_safe_relative_resource_path(resource.path) ||
+        !is_sha256_hex(resource.sha256) ||
+        resource.kind.empty() || resource.kind.size() > 32 ||
+        resource.kind == "native_module" ||
+        (resource.kind != "lexicon" && resource.kind != "morphology" &&
+         resource.kind != "connection" && resource.kind != "ngram" &&
+         resource.kind != "orthography" && resource.kind != "rules" &&
+         resource.kind != "model" && resource.kind != "test_vectors" &&
+         resource.kind != "metadata") ||
+        !seen.insert(resource.path).second) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_DESCRIPTOR_INVALID";
+      return false;
+    }
+    if (resource.bytes > limits.max_total_unpacked_bytes ||
+        total > limits.max_total_unpacked_bytes - resource.bytes) {
+      error = "LANGUAGE_PACKAGE_UNPACKED_LIMIT_EXCEEDED";
+      return false;
+    }
+    const fs::path relative(resource.path);
+    auto current = root;
+    for (const auto& component : relative) {
+      current /= component;
+      const auto status = fs::symlink_status(current, ec);
+      if (ec || fs::is_symlink(status)) {
+        error = "LANGUAGE_PACKAGE_SYMLINK_REJECTED";
+        return false;
+      }
+    }
+    const auto resolved = fs::canonical(root / relative, ec);
+    if (ec || !path_is_within(root, resolved) ||
+        !fs::is_regular_file(resolved, ec) || ec) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_PATH_INVALID";
+      return false;
+    }
+    const auto actual_size = fs::file_size(resolved, ec);
+    if (ec || actual_size != resource.bytes) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_SIZE_MISMATCH";
+      return false;
+    }
+    std::ifstream input(resolved, std::ios::binary);
+    if (!input) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_OPEN_FAILED";
+      return false;
+    }
+    Sha256Hasher hasher;
+    std::array<char, kChunkBytes> buffer{};
+    std::size_t read_total = 0;
+    while (input) {
+      input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+      const auto count = static_cast<std::size_t>(input.gcount());
+      if (count != 0) {
+        if (count > resource.bytes - read_total ||
+            !hasher.update(buffer.data(), count)) {
+          error = "LANGUAGE_PACKAGE_RESOURCE_READ_INVALID";
+          return false;
+        }
+        read_total += count;
+      }
+    }
+    if (!input.eof() || read_total != resource.bytes) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_READ_FAILED";
+      return false;
+    }
+    auto actual_digest = hasher.finalize_hex();
+    auto expected_digest = resource.sha256;
+    std::transform(expected_digest.begin(), expected_digest.end(),
+        expected_digest.begin(), [](unsigned char ch) {
+          return static_cast<char>(std::tolower(ch));
+        });
+    if (actual_digest != expected_digest) {
+      error = "LANGUAGE_PACKAGE_RESOURCE_DIGEST_MISMATCH";
+      return false;
+    }
+    total += resource.bytes;
+  }
+  if (total != manifest.unpacked_bytes) {
+    error = "LANGUAGE_PACKAGE_UNPACKED_SIZE_MISMATCH";
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 LanguageRuntimeRegistry::LanguageRuntimeRegistry(LanguageRuntimeLimits limits)
