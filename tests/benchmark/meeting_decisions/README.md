@@ -18,7 +18,7 @@ consent review is complete:
   redaction register, pseudonymous annotator/adjudicator rosters, guide/taxonomy
   versions, split counts and pilot sample minimums.
 
-The validator rejects source-digest drift, missing or duplicated cases,
+The validator computes pairwise action F1 plus owner, deadline, criticality, and exact evidence-span agreement between the two independent annotators. Declared minimum agreement thresholds must pass before a frozen corpus is eligible for held-out evaluation. It rejects source-digest drift, missing or duplicated cases,
 meeting-level split leakage, missing rights records, fewer than two independent
 annotations, unresolved adjudication, gold/adjudication divergence and evidence
 spans that do not match the normalized source bytes.
