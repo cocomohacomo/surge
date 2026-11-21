@@ -199,8 +199,8 @@ int main() {
             stale.error == "CLUSTER_ARCHIVE_GRAPH_RESTORE_STALE_TARGET");
       CHECK(restored_graph.state_version() == stable_version);
 
-      // Focus metadata can be restored independently when it does not carry
-      // Question/QuestionAspect state domains that this importer rejects.
+      // A second archive may contribute historical Focus records without
+      // replacing the target graph's already-active current Focus.
       std::string focus_payload = make_payload("focus-cluster", 2,
           R"(nodes 1
 node "focus-cluster" 0 "focus target" 0
@@ -225,7 +225,7 @@ focus_history 0
       }
       CHECK(focus_restored.committed);
       CHECK(restored_graph.focus().has_value());
-      CHECK(restored_graph.focus()->cluster_id == "focus-cluster");
+      CHECK(restored_graph.focus()->cluster_id == "archive-a");
       CHECK(restored_graph.focus()->interest_id.empty());
 
       auto focus_history_record = focus_record;
@@ -258,7 +258,13 @@ focus_history 0
       CHECK(replayed_archive_graph.nodes().count("exclusive") == 1);
       CHECK(replayed_archive_graph.nodes().count("focus-cluster") == 1);
       CHECK(replayed_archive_graph.focus().has_value());
-      CHECK(replayed_archive_graph.focus()->cluster_id == "focus-cluster");
+      CHECK(replayed_archive_graph.focus()->cluster_id == "archive-a");
+      CHECK(replayed_archive_graph.question_memory_state("question") == QuestionMemoryState::Dormant);
+      CHECK(replayed_archive_graph.question_reference_count("question") == 1);
+      CHECK(replayed_archive_graph.question_aspect_status("question-aspect") == QuestionAspectStatus::Deferred);
+      CHECK(replayed_archive_graph.claim_validity_history().at("reference-middle").size() == 1);
+      CHECK(replayed_archive_graph.evidence_validity_history().at("reference-leaf").size() == 1);
+      CHECK(replayed_archive_graph.reassessment_history().at("reference-middle").size() == 1);
     }
     std::remove("cluster_archive_restore_test.journal");
 
