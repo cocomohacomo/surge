@@ -1,0 +1,215 @@
+{
+  "abi_version": {
+    "major": 0,
+    "minor": 1,
+    "patch": 0
+  },
+  "structs": {
+    "SurgeChaosAssociationInput": {
+      "tag": "SurgeChaosAssociationInput",
+      "fields": [
+        "const char*association_id",
+        "const char*from_member_ref",
+        "const char*to_member_ref",
+        "const char*association_type"
+      ]
+    },
+    "SurgeChaosAssociationTemporalInput": {
+      "tag": "SurgeChaosAssociationTemporalInput",
+      "fields": [
+        "const char*association_id",
+        "const char*from_member_ref",
+        "const char*to_member_ref",
+        "const char*association_type",
+        "const char*valid_from_utc",
+        "const char*valid_until_utc"
+      ]
+    },
+    "SurgeChaosHypothesisReviewInput": {
+      "tag": "SurgeChaosHypothesisReviewInput",
+      "fields": [
+        "const char*status",
+        "const char*epistemic_state",
+        "const char*const*excluded_member_refs",
+        "const char*const*exclusion_reasons",
+        "size_t exclusion_count"
+      ]
+    },
+    "SurgeChaosMemberInput": {
+      "tag": "SurgeChaosMemberInput",
+      "fields": [
+        "const char*member_ref",
+        "const char*event_ref",
+        "const char*admission_reason",
+        "const char*admitted_at",
+        "const char*source_digest"
+      ]
+    },
+    "SurgeChaosPatternHypothesisInput": {
+      "tag": "SurgeChaosPatternHypothesisInput",
+      "fields": [
+        "const char*hypothesis_id",
+        "const char*statement",
+        "const char*epistemic_state",
+        "const char*status",
+        "const char*const*member_refs",
+        "size_t member_count",
+        "const char*const*excluded_member_refs",
+        "size_t excluded_member_count",
+        "const char*const*counterexample_refs",
+        "size_t counterexample_count",
+        "const char*const*alternative_hypothesis_refs",
+        "size_t alternative_hypothesis_count"
+      ]
+    },
+    "SurgeChaosProvenanceInput": {
+      "tag": "SurgeChaosProvenanceInput",
+      "fields": [
+        "const char*producer_id",
+        "const char*producer_version",
+        "const char*policy_version",
+        "const char*recorded_at"
+      ]
+    },
+    "SurgeChaosScoreObservationInput": {
+      "tag": "SurgeChaosScoreObservationInput",
+      "fields": [
+        "double value",
+        "const char*scorer_id",
+        "const char*scorer_version",
+        "const char*policy_version",
+        "const char*observed_at"
+      ]
+    },
+    "SurgeClassificationProposalInput": {
+      "tag": "SurgeClassificationProposalInput",
+      "fields": [
+        "const char*proposal_id",
+        "const char*packet_ref",
+        "uint64_t base_state_version",
+        "uint64_t context_hint_state_version",
+        "const char*packet_source_generation",
+        "uint64_t packet_source_sequence",
+        "const char*serialized_json"
+      ]
+    },
+    "SurgeEvidenceProvenanceInput": {
+      "tag": "SurgeEvidenceProvenanceInput",
+      "fields": [
+        "const char*evidence_id",
+        "const char*observed_at",
+        "const char*source_published_at",
+        "const char*source_retrieved_at",
+        "uint64_t revision"
+      ]
+    },
+    "SurgeGraphNodeInput": {
+      "tag": "SurgeGraphNodeInput",
+      "fields": [
+        "const char*id",
+        "const char*kind",
+        "const char*content",
+        "const char*const*references",
+        "size_t reference_count"
+      ]
+    },
+    "SurgeGraphRelationInput": {
+      "tag": "SurgeGraphRelationInput",
+      "fields": [
+        "const char*id",
+        "const char*kind",
+        "const char*from_id",
+        "const char*to_id"
+      ]
+    },
+    "SurgeJournalEventInput": {
+      "tag": "SurgeJournalEventInput",
+      "fields": [
+        "const char*event_id",
+        "const char*kind",
+        "const char*payload"
+      ]
+    },
+    "SurgeRecognitionPacketInput": {
+      "tag": "SurgeRecognitionPacketInput",
+      "fields": [
+        "const char*packet_id",
+        "const char*idempotency_key",
+        "const char*context_id",
+        "const char*source_id",
+        "const char*source_generation",
+        "const char*block_ref",
+        "const char*offset_basis",
+        "uint64_t start_offset",
+        "uint64_t end_offset",
+        "uint64_t source_sequence",
+        "const char*source_snapshot_digest",
+        "const char*source_range_digest",
+        "const char*canonical_request_digest",
+        "const char*revision_of_packet_id",
+        "int revision",
+        "uint64_t revision_sequence"
+      ]
+    },
+    "SurgeResourceBudgetLimits": {
+      "tag": "SurgeResourceBudgetLimits",
+      "fields": [
+        "size_t resident_bytes",
+        "size_t transient_bytes",
+        "size_t retained_events",
+        "size_t retained_clusters",
+        "size_t decision_candidates",
+        "size_t decision_evidence"
+      ]
+    },
+    "SurgeRetrievalTicketInput": {
+      "tag": "SurgeRetrievalTicketInput",
+      "fields": [
+        "const char*ticket_id",
+        "const char*context_id",
+        "const char*packet_ref",
+        "const char*source_range_digest",
+        "const char*omitted_digest",
+        "const char*policy_version",
+        "uint64_t state_version",
+        "const char*const*omitted_refs",
+        "size_t omitted_count"
+      ]
+    },
+    "SurgeScopeAnchorInput": {
+      "tag": "SurgeScopeAnchorInput",
+      "fields": [
+        "const char*anchor_id",
+        "const char*source_digest",
+        "const char*offset_basis",
+        "uint64_t start_offset",
+        "uint64_t end_offset",
+        "const char*exact_text",
+        "const char*packet_ref"
+      ]
+    },
+    "SurgeScopeSpanInput": {
+      "tag": "SurgeScopeSpanInput",
+      "fields": [
+        "const char*span_id",
+        "const char*kind",
+        "const char*source_digest",
+        "const char*offset_basis",
+        "SurgeScopeAnchorInput opener",
+        "int has_closer",
+        "SurgeScopeAnchorInput closer",
+        "const char*const*target_refs",
+        "size_t target_count",
+        "const char*const*antecedent_refs",
+        "size_t antecedent_count",
+        "const char*attribution_ref",
+        "const char*modality_kind",
+        "const char*temporal_role",
+        "const char*parent_ref",
+        "const char*const*packet_refs",
+        "size_t packet_count"
+      ]
+    }
+  },
+  "functions": []
+}
