@@ -67,7 +67,8 @@ decision.
 - [x] Logical resident/transient/event/cluster/candidate/evidence budgets.
 - [x] Guarded C ABI mutation gateway.
 - [ ] All production mutation paths routed through guarded APIs.
-- [x] CI EventJournal profile records append percentiles, replay time, identity-index usage, and peak RSS for a bounded 10,000-event workload.\n- [ ] Peak RSS measured under representative long-running semantic streams on declared reference hardware.
+- [x] CI EventJournal profile records append percentiles, replay time, identity-index usage, and peak RSS for a bounded 10,000-event workload.
+- [ ] Peak RSS measured under representative long-running semantic streams on declared reference hardware.
 - [ ] Restore, compaction and backup peak-memory measurements.
 - [ ] Stable memory bound demonstrated under adversarial input and repeated
   sessions.
@@ -92,7 +93,8 @@ decision.
 
 - [x] MIT license and security policy.
 - [x] Release checklist and publication audit records.
-- [x] CI-generated CycloneDX 1.5 SBOM for the Python wheel dependency graph and separately installed native Core (retained as a CI artifact).\n- [ ] Versioned release artifacts, checksums and SBOM attached to a tagged release.
+- [x] CI-generated CycloneDX 1.5 SBOM for the Python wheel dependency graph and separately installed native Core (retained as a CI artifact).
+- [ ] Versioned release artifacts, checksums and SBOM attached to a tagged release.
 - [ ] Third-party license inventory and redistribution review for every
   shipped artifact.
 - [ ] Security contact and vulnerability response process verified.
