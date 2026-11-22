@@ -23,7 +23,8 @@
     "source_range_digest": "4a4396e7a356505aba22d43edebbdfaeb227975817b1c4ad0986a825313fe928",
     "canonical_request_digest": "fixture-structured",
     "revision": false,
-    "revision_sequence": 0
+    "revision_sequence": 0,
+    "context_id": "context-structured"
   },
   "normalized_source_snapshot": "{\"asset\":\"A-17\",\"status\":\"inspection_due\",\"due_date\":\"2026-12-01\"}",
   "source_event_refs": [
