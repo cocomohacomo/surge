@@ -151,9 +151,13 @@ class ProjectionBatchAdapter:
         for relation in batch["relations"]:
             if not math.isfinite(relation["weight"]):
                 raise ProjectionRejected("NON_FINITE_RELATION_WEIGHT")
+            if relation["weight"] < 0.0 or relation["weight"] > 1.0:
+                raise ProjectionRejected("RELATION_WEIGHT_OUT_OF_RANGE")
         for membership in batch["memberships"]:
             if not math.isfinite(membership["upstream_weight"]):
                 raise ProjectionRejected("NON_FINITE_MEMBERSHIP_WEIGHT")
+            if membership["upstream_weight"] < 0.0 or membership["upstream_weight"] > 1.0:
+                raise ProjectionRejected("MEMBERSHIP_WEIGHT_OUT_OF_RANGE")
         for placement in batch["spatial_placements"]:
             if not all(math.isfinite(placement["position"][axis]) for axis in ("x", "y", "z")):
                 raise ProjectionRejected("INVALID_SPATIAL_PLACEMENT")
