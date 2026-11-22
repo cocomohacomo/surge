@@ -18,7 +18,8 @@
     "nodes",
     "relations",
     "memberships",
-    "spatial_placements"
+    "spatial_placements",
+    "normalized_source_snapshot"
   ],
   "properties": {
     "schema_version": {
