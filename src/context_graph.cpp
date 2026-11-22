@@ -1910,39 +1910,99 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     std::size_t max_candidates) const {
   std::vector<CognitionCandidate> candidates;
   if (max_candidates == 0 || query_terms.empty()) return candidates;
+
   const auto observation = observe_cognition();
   std::map<std::string, CognitionCandidate> by_cluster;
+  std::map<std::string, std::set<std::string>> cluster_member_terms;
   for (const auto& membership : observation.memberships) {
     if (membership.member_node_id == input_member_id) continue;
     const auto node_it = state_.nodes.find(membership.member_node_id);
     if (node_it == state_.nodes.end()) continue;
+
     const auto& node = node_it->second;
-    std::vector<std::string> matched;
-    for (const auto& term : query_terms) {
-      if (term.empty()) continue;
-      bool found = node.content.find(term) != std::string::npos;
-      if (!found) for (const auto& ref : node.references)
-        if (ref.find(term) != std::string::npos) { found = true; break; }
-      if (found && std::find(matched.begin(), matched.end(), term) == matched.end())
-        matched.push_back(term);
+    std::string corpus = node.content;
+    for (const auto& ref : node.references) {
+      corpus.push_back(' ');
+      corpus += ref;
     }
-    if (matched.empty()) continue;
+    std::vector<std::pair<std::size_t, std::size_t>> positions;
     auto& candidate = by_cluster[membership.cluster_node_id];
     candidate.cluster_id = membership.cluster_node_id;
     candidate.memory_state_version = observation.state_version;
-    if (std::find(candidate.supporting_member_ids.begin(),
-        candidate.supporting_member_ids.end(), membership.member_node_id) ==
-        candidate.supporting_member_ids.end())
-      candidate.supporting_member_ids.push_back(membership.member_node_id);
-    for (const auto& term : matched) {
-      if (std::find(candidate.matched_terms.begin(), candidate.matched_terms.end(),
-          term) == candidate.matched_terms.end())
+
+    for (const auto& term : query_terms) {
+      if (term.empty()) continue;
+      const auto position = corpus.find(term);
+      if (position == std::string::npos) continue;
+      if (std::find(candidate.matched_terms.begin(),
+          candidate.matched_terms.end(), term) == candidate.matched_terms.end())
         candidate.matched_terms.push_back(term);
-      // This score ranks retrieval candidates only; it never changes or copies
-      // the upstream Contains weight into an admission decision.
+      cluster_member_terms[membership.cluster_node_id].insert(term);
+      positions.emplace_back(position, position + term.size());
+      // Upstream membership weight contributes to retrieval ranking only.
+      // It is never written back to a Contains edge or used for admission.
       candidate.recall_score += membership.upstream_weight;
     }
+    if (!positions.empty() &&
+        std::find(candidate.supporting_member_ids.begin(),
+          candidate.supporting_member_ids.end(), membership.member_node_id) ==
+          candidate.supporting_member_ids.end())
+      candidate.supporting_member_ids.push_back(membership.member_node_id);
+
+    // Nearby co-occurring query terms provide a bounded proximity bonus.
+    // This captures local association without requiring a learned embedding.
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+      for (std::size_t j = i + 1; j < positions.size(); ++j) {
+        const auto distance = positions[i].second <= positions[j].first
+            ? positions[j].first - positions[i].second
+            : positions[j].second <= positions[i].first
+                ? positions[i].first - positions[j].second : 0;
+        candidate.recall_score += membership.upstream_weight /
+            (100.0 + static_cast<double>(distance));
+      }
+    }
   }
+
+  // Classification/partition labels stored on clusters are part of recall
+  // context. A label match adds a small signal but never changes membership.
+  for (auto& item : by_cluster) {
+    const auto node = state_.nodes.find(item.first);
+    if (node == state_.nodes.end()) continue;
+    for (const auto& term : query_terms) {
+      if (!term.empty() && node->second.content.find(term) != std::string::npos)
+        item.second.recall_score += 0.25;
+    }
+  }
+
+  // One-hop inter-cluster association: agreement/support/dependency/conflict
+  // edges make related clusters retrievable. Use a fixed relation coefficient
+  // and the stored relation weight; do not recursively amplify scores.
+  std::map<std::string, double> association_bonus;
+  const auto relation_factor = [](RelationKind kind) {
+    switch (kind) {
+      case RelationKind::AgreesWith: return 0.40;
+      case RelationKind::Supports: return 0.30;
+      case RelationKind::DependsOn: return 0.20;
+      case RelationKind::ConflictsWith: return 0.15;
+      case RelationKind::Contradicts: return 0.15;
+      default: return 0.0;
+    }
+  };
+  for (const auto& relation : observation.relations) {
+    const double factor = relation_factor(relation.kind);
+    if (factor == 0.0) continue;
+    const auto from = by_cluster.find(relation.from);
+    const auto to = by_cluster.find(relation.to);
+    if (from != by_cluster.end() && to != by_cluster.end()) {
+      association_bonus[relation.from] +=
+          to->second.recall_score * factor * std::clamp(relation.weight, 0.0, 1.0);
+      association_bonus[relation.to] +=
+          from->second.recall_score * factor * std::clamp(relation.weight, 0.0, 1.0);
+    }
+  }
+  for (auto& item : by_cluster)
+    item.second.recall_score += association_bonus[item.first];
+
   for (auto& item : by_cluster) candidates.push_back(std::move(item.second));
   std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
     if (a.recall_score != b.recall_score) return a.recall_score > b.recall_score;
