@@ -2073,6 +2073,10 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     if (from == seed_candidates.end() && to == seed_candidates.end()) continue;
     const double edge_weight = std::clamp(relation.weight, 0.0, 1.0);
     auto activate = [&](const std::string& target, const CognitionCandidate& source) {
+      const auto target_node = state_.nodes.find(target);
+      if (target_node == state_.nodes.end() ||
+          (target_node->second.kind != NodeKind::Cluster &&
+           target_node->second.kind != NodeKind::ChaosCluster)) return;
       const double signal = source.recall_score * factor * edge_weight;
       if (signal <= 0.0) return;
       auto& candidate = by_cluster[target];
