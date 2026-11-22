@@ -28,8 +28,8 @@ std::string json_quote(const std::string& value) {
   std::string out = "\"";
   for (unsigned char ch : value) {
     switch (ch) {
-      case '"': out += "\\""; break;
-      case '\\': out += "\\\"; break;
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
       case '\b': out += "\\b"; break;
       case '\f': out += "\\f"; break;
       case '\n': out += "\\n"; break;
@@ -1422,8 +1422,8 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
       std::string out = "\"";
       for (unsigned char ch : value) {
         switch (ch) {
-          case '\"': out += "\\""; break;
-          case '\\': out += "\\\"; break;
+          case '"': out += "\\\""; break;
+          case '\\': out += "\\\\"; break;
           case '\b': out += "\\b"; break;
           case '\f': out += "\\f"; break;
           case '\n': out += "\\n"; break;
@@ -1664,8 +1664,8 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
       std::string out = "\"";
       for (unsigned char ch : value) {
         switch (ch) {
-          case '"': out += "\\""; break;
-          case '\\': out += "\\\"; break;
+          case '"': out += "\\\""; break;
+          case '\\': out += "\\\\"; break;
           case '\b': out += "\\b"; break;
           case '\f': out += "\\f"; break;
           case '\n': out += "\\n"; break;
