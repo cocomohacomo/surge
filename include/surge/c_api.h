@@ -226,6 +226,23 @@ int surge_retention_journal_get_events(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+typedef struct SurgeResourceBudgetSnapshot {
+  size_t resident_bytes_used;
+  size_t transient_bytes_used;
+  size_t retained_events_used;
+  size_t retained_clusters_used;
+  size_t decision_candidates_used;
+  size_t decision_evidence_used;
+  size_t resident_bytes_limit;
+  size_t transient_bytes_limit;
+  size_t retained_events_limit;
+  size_t retained_clusters_limit;
+  size_t decision_candidates_limit;
+  size_t decision_evidence_limit;
+  size_t total_byte_used;
+  size_t total_byte_limit;
+} SurgeResourceBudgetSnapshot;
+
 typedef struct SurgeResourceBudgetLimits {
   size_t resident_bytes;
   size_t transient_bytes;
@@ -241,6 +258,8 @@ void* surge_packet_core_open_with_limits(const char* journal_path,
     const SurgeResourceBudgetLimits* limits, char* error, size_t error_capacity);
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
+int surge_packet_core_resource_snapshot(void* handle,
+    SurgeResourceBudgetSnapshot* snapshot, char* error, size_t error_capacity);
 int surge_packet_core_admit(
     void* handle, const char* packet_id, const char* idempotency_key,
     const char* context_id, const char* source_id, const char* source_generation,
