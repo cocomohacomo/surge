@@ -41,7 +41,8 @@ def main():
             packet["end_offset"] != len(source_bytes) or
             packet["source_snapshot_digest"] != digest or
             packet["source_range_digest"] != digest or
-            batch["source_event_refs"] != [packet["packet_id"]]):
+            batch["source_event_refs"] != [packet["packet_id"]] or
+            batch["context_id"] != packet.get("context_id", batch["context_id"])):
             raise AssertionError(f"ProjectionBatch source lineage mismatch: {fixture_path}")
         evidence_ids = {node["id"] for node in batch["nodes"] if node["kind"] == "EVIDENCE"}
         if not set(batch["evidence_refs"]).issubset(evidence_ids):
