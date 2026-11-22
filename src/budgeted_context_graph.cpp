@@ -172,15 +172,18 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
   }
   if (state.focus_region &&
-      !add_parts(bytes,{kEntryOverhead,sizeof(FocusRegion)})) {
+      (!add_parts(bytes,{kEntryOverhead,sizeof(FocusRegion)}) ||
+       !add(1,retained_events))) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
   }
   for (const auto& item : state.cluster_positions)
-    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(SpatialVector3)})) {
+    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(SpatialVector3)}) ||
+        !add(1,retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.cluster_focus_depths)
-    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(std::size_t)})) {
+    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(std::size_t)}) ||
+        !add(1,retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
     }
   for (const auto& item : state.question_aspect_statuses)
