@@ -1,6 +1,7 @@
 #pragma once
 
 #include "surge/context_graph.hpp"
+#include "surge/budgeted_context_graph.hpp"
 #include "surge/packet_admission.hpp"
 
 #include <algorithm>
@@ -159,6 +160,50 @@ inline DeltaResult apply_projection_batch(ContextGraph& graph, const ProjectionB
   if (!build_projection_delta(batch, delta, error))
     return {false, false, graph.state_version(), error};
   return graph.apply(delta);
+}
+
+// Budgeted atomic source-packet + projection commit. Resource reservations
+// are acquired before PacketAdmissionCoordinator writes the shared journal.
+inline PacketAdmissionResult apply_projection_batch(
+    PacketAdmissionCoordinator& packets, BudgetedContextGraph& graph,
+    const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
+    const std::string& normalized_source_snapshot) {
+  PacketAdmissionResult packet_result;
+  packet_result.state_version = graph.state_version();
+  const auto validation = validate_projection_batch(batch);
+  if (!validation.valid) {
+    packet_result.error = validation.error;
+    return packet_result;
+  }
+  if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
+      batch.source_event_refs.front() != packet.packet_id) {
+    packet_result.error = "PROJECTION_SOURCE_PACKET_MISMATCH";
+    return packet_result;
+  }
+  SemanticDelta delta;
+  std::string error;
+  if (!build_projection_delta(batch, delta, error)) {
+    packet_result.error = error;
+    return packet_result;
+  }
+  const auto budgeted = graph.apply_with_external_commit(delta,
+      [&](const std::vector<JournalEvent>& semantic_events) {
+        if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
+          packet_result.error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
+          packet_result.state_version = graph.state_version();
+          return DeltaResult{false, false, graph.state_version(), packet_result.error};
+        }
+        packet_result = packets.admit(packet, normalized_source_snapshot, semantic_events);
+        return DeltaResult{packet_result.admitted, packet_result.duplicate,
+            packet_result.state_version, packet_result.error};
+      });
+  if (!budgeted.committed && packet_result.error.empty())
+    packet_result.error = budgeted.error;
+  if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
+    packet_result.error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
+    packet_result.admitted = false;
+  }
+  return packet_result;
 }
 
 // Atomic source-packet + projection commit. Packet admission and the prepared
