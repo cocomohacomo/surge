@@ -21,7 +21,7 @@ int main() {
     {"evidence-1", surge::NodeKind::Evidence, "source span", {"event-1"}}
   };
   batch.memberships.push_back({"membership-1", "claim-1", "cluster-1", 0.82});
-  batch.spatial_placements.push_back({"cluster-1", {{1.0, 2.0, 3.0}}});
+  batch.spatial_placements.push_back({"cluster-1", {1.0, 2.0, 3.0}});
 
   auto validation = surge::validate_projection_batch(batch);
   assert(validation.valid);
