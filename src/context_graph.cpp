@@ -1981,8 +1981,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   for (const auto& node_item : state_.nodes) {
     const auto& feedback_node = node_item.second;
     if (feedback_node.kind != NodeKind::Evidence ||
-        feedback_node.content.rfind("SURGE_COGNITION_FEEDBACK_V1 ", 0) != 0 ||
-        feedback_node.references.size() < 2) continue;
+        feedback_node.content.rfind("SURGE_COGNITION_FEEDBACK_V1 ", 0) != 0) continue;
     std::istringstream input(feedback_node.content.substr(
         std::string("SURGE_COGNITION_FEEDBACK_V1 ").size()));
     std::string feedback_id, candidate_cluster, evaluated_input, outcome,
