@@ -148,6 +148,7 @@ bool PacketAdmissionCoordinator::apply_recovered(
 
 bool PacketAdmissionCoordinator::recover() {
   streams_.clear();
+  document_streams_.clear();
   packet_digests_.clear();
   packet_encodings_.clear();
   idempotency_packets_.clear();
