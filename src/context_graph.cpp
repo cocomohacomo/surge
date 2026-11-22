@@ -465,6 +465,19 @@ bool ContextGraph::apply_focus_region(State& s,const FocusRegion& region,std::st
  }
  s.focus_region=region;return true;
 }
+bool ContextGraph::apply_focus_region_move(State& s,const SpatialVector3& center,std::string& error)const{
+ if(!s.focus_region||!std::isfinite(center.x)||!std::isfinite(center.y)||!std::isfinite(center.z)){
+  error="FOCUS_REGION_MOVE_INVALID";return false;
+ }
+ s.focus_region->center=center;return true;
+}
+bool ContextGraph::apply_focus_region_resize(State& s,const SpatialVector3& extents,std::string& error)const{
+ if(!s.focus_region||!std::isfinite(extents.x)||!std::isfinite(extents.y)||!std::isfinite(extents.z)||
+    extents.x<0.0||extents.y<0.0||extents.z<0.0){
+  error="FOCUS_REGION_RESIZE_INVALID";return false;
+ }
+ s.focus_region->half_extents=extents;return true;
+}
 bool ContextGraph::apply_cluster_position(State& s,const ClusterSpatialPosition& p,std::string& error)const{
  const auto node=s.nodes.find(p.cluster_id);
  if(p.cluster_id.empty()||node==s.nodes.end()||
