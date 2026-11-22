@@ -1886,6 +1886,7 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
         <<",\"clusters_deferred\":"<<observation.focus_work.clusters_deferred
         <<",\"position_checks\":"<<observation.focus_work.position_checks
         <<",\"nodes_processed\":"<<observation.focus_work.nodes_processed
+        <<",\"relations_examined\":"<<observation.focus_work.relations_examined
         <<",\"relations_processed\":"<<observation.focus_work.relations_processed
         <<",\"work_units\":"<<observation.focus_work.work_units
         <<",\"elapsed_microseconds\":"<<observation.focus_work.elapsed_microseconds
