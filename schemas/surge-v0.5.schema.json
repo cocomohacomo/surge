@@ -2328,7 +2328,12 @@
               "const": "FOCUS_REGION_MOVE_V1"
             },
             "center": {
-              "$ref": "#/$defs/focusRegionDescriptor"
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
             }
           },
           "required": [
