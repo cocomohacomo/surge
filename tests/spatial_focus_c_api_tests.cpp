@@ -40,6 +40,7 @@ int main() {
   assert(json.find("\"processed_region_cluster_ids\":[\"focus-cluster\"]")!=std::string::npos);
   assert(json.find("\"depth\":3")!=std::string::npos);
   assert(json.find("\"cluster_spatial_positions\"")!=std::string::npos);
+  assert(json.find("\"position\":[0.5,0,0]")!=std::string::npos);
   assert(json.find("\"budget_exhausted\":false")!=std::string::npos);
   surge_packet_core_close(handle);
   std::filesystem::remove(path,ec);
