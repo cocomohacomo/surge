@@ -337,8 +337,9 @@ int surge_packet_core_admit(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_CORE_EXCEPTION");return 0;}
 }
-int surge_projection_batch_admit_and_apply(
+int surge_projection_batch_admit_and_apply_v2(
     void* opaque, const SurgeRecognitionPacketInput* input,
+    const SurgeDocumentStreamInput* document_stream,
     const unsigned char* snapshot, size_t snapshot_size,
     const SurgeProjectionMetadataInput* metadata,
     const char* const* evidence_refs, size_t evidence_count,
@@ -352,7 +353,9 @@ int surge_projection_batch_admit_and_apply(
     if (!opaque || !input || !metadata ||
         !input->packet_id || !input->idempotency_key || !input->context_id ||
         !input->source_id || !input->source_generation || !input->block_ref ||
-        !input->document_ref || !input->document_generation || !input->offset_basis || !input->source_snapshot_digest ||
+        !input->offset_basis ||
+        (document_stream && (!document_stream->document_ref ||
+         !document_stream->document_generation)) || !input->source_snapshot_digest ||
         !input->source_range_digest || !input->canonical_request_digest ||
         !metadata->projection_id || !metadata->idempotency_key ||
         !metadata->context_id || !metadata->producer_id ||
@@ -375,11 +378,13 @@ int surge_projection_batch_admit_and_apply(
     packet.source_id = input->source_id;
     packet.source_generation = input->source_generation;
     packet.block_ref = input->block_ref;
-    packet.document_ref = input->document_ref;
-    packet.document_generation = input->document_generation;
-    packet.document_sequence = input->document_sequence;
-    packet.global_start_offset = input->global_start_offset;
-    packet.global_end_offset = input->global_end_offset;
+    if (document_stream) {
+      packet.document_ref = document_stream->document_ref;
+      packet.document_generation = document_stream->document_generation;
+      packet.document_sequence = document_stream->document_sequence;
+      packet.global_start_offset = document_stream->global_start_offset;
+      packet.global_end_offset = document_stream->global_end_offset;
+    }
     packet.offset_basis = input->offset_basis;
     packet.start_offset = input->start_offset;
     packet.end_offset = input->end_offset;
@@ -488,6 +493,24 @@ int surge_projection_batch_admit_and_apply(
     copy_text(error, error_cap, "UNKNOWN_PROJECTION_C_API_EXCEPTION");
     return 0;
   }
+}
+
+int surge_projection_batch_admit_and_apply(
+    void* opaque, const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_cap,
+    char* error, size_t error_cap) {
+  return surge_projection_batch_admit_and_apply_v2(opaque, input, nullptr,
+      snapshot, snapshot_size, metadata, evidence_refs, evidence_count,
+      nodes, node_count, relations, relation_count, memberships, membership_count,
+      placements, placement_count, duplicate, state_version, status, status_cap,
+      error, error_cap);
 }
 
 int surge_context_graph_apply(
