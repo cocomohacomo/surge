@@ -30,11 +30,22 @@ std::string PacketAdmissionCoordinator::range_key(
   return stream_key(p) + key_part(p.block_ref) + key_part(p.offset_basis) +
          std::to_string(p.start_offset) + ":" + std::to_string(p.end_offset);
 }
+std::string PacketAdmissionCoordinator::document_stream_key(
+    const ValidatedRecognitionPacket& p) {
+  return key_part(p.context_id) + key_part(p.document_ref) +
+         key_part(p.document_generation);
+}
+std::string PacketAdmissionCoordinator::document_range_key(
+    const ValidatedRecognitionPacket& p) {
+  return std::to_string(p.document_sequence) + ":" +
+         std::to_string(p.global_start_offset) + ":" +
+         std::to_string(p.global_end_offset);
+}
 
 std::string PacketAdmissionCoordinator::encode(
     const ValidatedRecognitionPacket& p) {
   std::ostringstream out;
-  out << "RPA2 " << std::quoted(p.packet_id) << ' '
+  out << "RPA3 " << std::quoted(p.packet_id) << ' '
       << std::quoted(p.idempotency_key) << ' ' << std::quoted(p.context_id) << ' '
       << std::quoted(p.source_id) << ' ' << std::quoted(p.source_generation) << ' '
       << std::quoted(p.block_ref) << ' ' << std::quoted(p.offset_basis) << ' '
@@ -52,7 +63,7 @@ bool PacketAdmissionCoordinator::decode(
   std::istringstream in(payload);
   std::string magic;
   int revision = 0;
-  if (!(in >> magic) || (magic != "RPA1" && magic != "RPA2")) return false;
+  if (!(in >> magic) || (magic != "RPA1" && magic != "RPA2" && magic != "RPA3")) return false;
   if (!(in >> std::quoted(p.packet_id) >> std::quoted(p.idempotency_key)
         >> std::quoted(p.context_id) >> std::quoted(p.source_id)
         >> std::quoted(p.source_generation) >> std::quoted(p.block_ref)
