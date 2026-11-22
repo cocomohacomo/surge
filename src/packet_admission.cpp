@@ -48,8 +48,11 @@ std::string PacketAdmissionCoordinator::encode(
   out << "RPA3 " << std::quoted(p.packet_id) << ' '
       << std::quoted(p.idempotency_key) << ' ' << std::quoted(p.context_id) << ' '
       << std::quoted(p.source_id) << ' ' << std::quoted(p.source_generation) << ' '
-      << std::quoted(p.block_ref) << ' ' << std::quoted(p.offset_basis) << ' '
-      << p.start_offset << ' ' << p.end_offset << ' ' << p.source_sequence << ' '
+      << std::quoted(p.block_ref) << ' ' << std::quoted(p.document_ref) << ' '
+      << std::quoted(p.document_generation) << ' ' << p.document_sequence << ' '
+      << p.global_start_offset << ' ' << p.global_end_offset << ' '
+      << std::quoted(p.offset_basis) << ' ' << p.start_offset << ' '
+      << p.end_offset << ' ' << p.source_sequence << ' '
       << std::quoted(p.source_snapshot_digest) << ' '
       << std::quoted(p.source_range_digest) << ' '
       << std::quoted(p.canonical_request_digest) << ' '
@@ -63,13 +66,21 @@ bool PacketAdmissionCoordinator::decode(
   std::istringstream in(payload);
   std::string magic;
   int revision = 0;
-  if (!(in >> magic) || (magic != "RPA1" && magic != "RPA2" && magic != "RPA3")) return false;
+  if (!(in >> magic) || (magic != "RPA1" && magic != "RPA2" && magic != "RPA3"))
+    return false;
   if (!(in >> std::quoted(p.packet_id) >> std::quoted(p.idempotency_key)
         >> std::quoted(p.context_id) >> std::quoted(p.source_id)
-        >> std::quoted(p.source_generation) >> std::quoted(p.block_ref)
-        >> std::quoted(p.offset_basis) >> p.start_offset >> p.end_offset
+        >> std::quoted(p.source_generation) >> std::quoted(p.block_ref)))
+    return false;
+  if (magic == "RPA3") {
+    if (!(in >> std::quoted(p.document_ref) >> std::quoted(p.document_generation)
+          >> p.document_sequence >> p.global_start_offset >> p.global_end_offset))
+      return false;
+  }
+  if (!(in >> std::quoted(p.offset_basis) >> p.start_offset >> p.end_offset
         >> p.source_sequence)) return false;
-  if (magic == "RPA2" && !(in >> std::quoted(p.source_snapshot_digest))) return false;
+  if ((magic == "RPA2" || magic == "RPA3") &&
+      !(in >> std::quoted(p.source_snapshot_digest))) return false;
   if (!(in >> std::quoted(p.source_range_digest)
         >> std::quoted(p.canonical_request_digest)
         >> std::quoted(p.revision_of_packet_id) >> revision
@@ -85,6 +96,33 @@ bool PacketAdmissionCoordinator::apply_recovered(
     const ValidatedRecognitionPacket& p) {
   const auto skey = stream_key(p);
   auto& state = streams_[skey];
+  if (!p.document_ref.empty()) {
+    if (p.document_generation.empty() || p.document_sequence == 0 ||
+        p.global_end_offset <= p.global_start_offset) return false;
+    auto& document = document_streams_[document_stream_key(p)];
+    const auto drange = document_range_key(p);
+    const auto prior = document.sequence_packets.find(p.document_sequence);
+    if (p.revision) {
+      const auto latest_document = document.range_latest_packets.find(drange);
+      if (prior == document.sequence_packets.end() ||
+          latest_document == document.range_latest_packets.end() ||
+          prior->second != p.revision_of_packet_id ||
+          latest_document->second != p.revision_of_packet_id) return false;
+      prior->second = p.packet_id;
+      latest_document->second = p.packet_id;
+    } else {
+      if (p.document_sequence != document.next_sequence ||
+          p.global_start_offset != document.next_global_offset ||
+          prior != document.sequence_packets.end()) return false;
+      document.sequence_packets[p.document_sequence] = p.packet_id;
+      document.range_latest_packets[drange] = p.packet_id;
+      ++document.next_sequence;
+      document.next_global_offset = p.global_end_offset;
+    }
+  } else if (!p.document_generation.empty() || p.document_sequence != 0 ||
+             p.global_start_offset != 0 || p.global_end_offset != 0) {
+    return false;
+  }
   const auto rkey = range_key(p);
   const auto latest = state.range_latest_packets.find(rkey);
   if (p.revision) {
