@@ -432,6 +432,10 @@ int main(){
       {"spatial-a",1},{"spatial-b",0},{"spatial-nested",1}};
     const auto deeper_view=graph.observe_focused_cognition(compact,positions,deeper,20,20);
     CHECK(deeper_view.nodes.size()==focused.nodes.size()+1);
+    const std::vector<ClusterFocusDepth> radius_two={
+      {"spatial-a",2},{"spatial-b",0},{"spatial-nested",0}};
+    const auto two_levels=graph.observe_focused_cognition(compact,positions,radius_two,20,20);
+    CHECK(two_levels.nodes.size()==focused.nodes.size()+1);
     const auto bounded=graph.observe_focused_cognition(expanded,positions,deeper,2,20);
     CHECK(bounded.focus_work.budget_exhausted);
     CHECK(bounded.nodes.size()<=2);
