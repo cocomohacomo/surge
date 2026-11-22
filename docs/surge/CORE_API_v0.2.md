@@ -463,3 +463,23 @@ submit_proposalはsemantic_contract_versionとcanonicalization_versionを検証�
 
 ### 12.7 Lifecycle and migration
 Focus更新とCluster lifecycle更新は別操作とする。v0.4 payloadはschema_versionを書き換えるだけでv0.5に移行しない。Migrationは元Schema、Migration Policy、未解決Mapping、Provenanceを記録する。
+
+### 5.11 observe_focused_cognition
+
+**Purpose:** Read the externally observable cognition centered on the currently focused cluster.
+
+**Response result**
+- committed `state_version`
+- current Focus and Focus history
+- focused Cluster node
+- direct member nodes and their membership weights
+- relations whose endpoints are both in the focused projection
+
+This operation is read-only. If no Focus exists, it returns an empty focused projection with the current state version. It does not infer truth or mutate Cluster lifecycle.
+
+### 5.12 append_derived_cognition_cluster (Core library operation)
+
+**Purpose:** Persist a newly composed recognition as a new Cluster.
+
+The caller supplies the recognized content, a unique Cluster ID, and at least two existing or same-Delta source Cluster IDs. The Core validates source types and identifiers, adds the new Cluster, and records `DERIVED_FROM` relations from the new Cluster to each source Cluster in the same SemanticDelta. The operation does not judge whether the recognition is true. Focus selection is a separate operation and may target the new Cluster in the same transaction.
+
