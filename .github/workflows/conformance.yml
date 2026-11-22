@@ -191,13 +191,13 @@ jobs:
           assert report["events_committed"] == 1000, report
           assert report["logical_vs_rss_are_distinct_metrics"] is True
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-              summary.write("### ContextGraph streaming profile (1,000 events)\\n\\n")
-              summary.write("| Metric | Value |\\n|---|---:|\\n")
+              summary.write("### ContextGraph streaming profile (1,000 events)\n\n")
+              summary.write("| Metric | Value |\n|---|---:|\n")
               for key in ("peak_rss_bytes", "rss_growth_bytes_per_1000_events",
                           "logical_resident_peak_accounted_bytes", "logical_resident_limit_bytes",
                           "candidate_total", "candidate_max_per_event",
                           "operation_p50_us", "operation_p95_us", "operation_p99_us"):
-                  summary.write(f"| {key} | {report[key]} |\\n")
+                  summary.write(f"| {key} | {report[key]} |\n")
           PY
 
   journal-benchmark-smoke:
