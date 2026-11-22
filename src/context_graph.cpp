@@ -1997,7 +1997,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   for (auto& item : by_cluster) {
     const auto feedback = feedback_adjustment.find(item.first);
     if (feedback != feedback_adjustment.end())
-      item.second.recall_score += feedback->second;
+      item.second.recall_score += std::clamp(feedback->second, -0.5, 0.5);
   }
 
   // One-hop inter-cluster association: agreement/support/dependency/conflict
