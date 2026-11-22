@@ -2109,7 +2109,7 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     roots.push_back(item.first);
   }
 
-  struct FrontierItem { std::string cluster_id; std::size_t level; };
+  struct FrontierItem { std::string cluster_id; std::size_t level; std::string origin_cluster_id; };
   std::set<std::string> visible_ids;
   std::set<std::string> visible_relation_ids;
   std::set<std::string> expanded_paths;
@@ -2125,16 +2125,16 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         focused.deferred_region_cluster_ids.push_back(roots[j]);
       break;
     }
-    std::vector<FrontierItem> frontier{{root,0}};
+    std::vector<FrontierItem> frontier{{root,0,root}};
     std::set<std::string> visited_for_root;
     bool complete=true;
     while(!frontier.empty() && complete) {
       const auto current=frontier.back();frontier.pop_back();
-      const std::string path_key=root+"\n"+current.cluster_id;
+      const std::string path_key=current.origin_cluster_id+"\n"+current.cluster_id;
       if(!expanded_paths.insert(path_key).second)continue;
       if(visible_ids.insert(current.cluster_id).second &&
          visible_ids.size()>max_nodes){visible_ids.erase(current.cluster_id);complete=false;break;}
-      const auto configured=depth_by_cluster.find(root);
+      const auto configured=depth_by_cluster.find(current.origin_cluster_id);
       const std::size_t root_depth=configured==depth_by_cluster.end()?1:configured->second;
       if(current.level>=root_depth)continue;
       for(const auto& relation:full.relations) {
@@ -2150,9 +2150,9 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         const auto child=state_.nodes.find(relation.to);
         if(child!=state_.nodes.end() &&
            (child->second.kind==NodeKind::Cluster||child->second.kind==NodeKind::ChaosCluster)){
-          frontier.push_back({relation.to,current.level+1});
+          frontier.push_back({relation.to,current.level+1,current.origin_cluster_id});
           if(depth_by_cluster.count(relation.to))
-            frontier.push_back({relation.to,0});
+            frontier.push_back({relation.to,0,relation.to});
         }
       }
     }
