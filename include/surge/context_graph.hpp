@@ -312,6 +312,8 @@ class ContextGraph {
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
   bool apply_focus_region(State&, const FocusRegion&, std::string&) const;
+  bool apply_focus_region_move(State&, const SpatialVector3&, std::string&) const;
+  bool apply_focus_region_resize(State&, const SpatialVector3&, std::string&) const;
   bool apply_cluster_position(State&, const ClusterSpatialPosition&, std::string&) const;
   bool apply_cluster_depth(State&, const ClusterFocusDepth&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
