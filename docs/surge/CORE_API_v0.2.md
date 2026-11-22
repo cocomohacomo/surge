@@ -500,9 +500,10 @@ The caller supplies the recognized content, a unique Cluster ID, and at least tw
 - Depth zero returns the cluster only; positive depth traverses Contains edges.
 - A nested cluster uses its own depth setting, independently of its parent.
 - The response contains every node and relation admitted by the region/depth/budget projection, plus work metrics and an explicit budget-exhausted flag.
-- The overload is read-only. The caller currently supplies positions and depths; durable spatial state and independent journaled updates are a subsequent migration stage.
-
-The no-argument legacy overload remains available and preserves its historical single-cluster behavior for source compatibility. New integrations SHOULD use the spatial overload.
+- This explicit-argument overload is read-only and projects the caller-supplied region, positions and depths. It is useful for isolated projection, testing and compatibility.
+- The persisted overload `observe_focused_cognition(max_nodes, max_relations)` reads the journaled FocusRegion, cluster positions and per-cluster depths from ContextGraph. It does not require the caller to reconstruct those inputs.
+- The no-argument overload uses persisted spatial Focus when a region exists. If no spatial region has been configured, it falls back to the legacy single-cluster projection for source compatibility.
+- The logical region membership is computed independently of node/relation traversal budgets. `logical_region_cluster_ids` remains complete while `processed_region_cluster_ids` and `deferred_region_cluster_ids` report actual execution. Budget exhaustion never silently contracts the logical region.
 
 
 ### 5.14 Durable spatial Focus updates
