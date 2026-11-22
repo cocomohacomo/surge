@@ -423,6 +423,9 @@ int main(){
     CHECK(focused.nodes.size()==4);
     CHECK(focused.focus_work.nodes_processed==4);
     CHECK(focused.focus_work.relations_processed==2);
+    CHECK(focused.focus_work.relations_examined==3);
+    CHECK(focused.focus_work.relations_traversed==2);
+    CHECK(focused.focus_work.work_units==12);
     CHECK(!focused.focus_work.budget_exhausted);
     const FocusRegion expanded{{0.0,0.0,0.0},{10.0,1.0,1.0}};
     const auto wider=graph.observe_focused_cognition(expanded,positions,depths,20,20);
