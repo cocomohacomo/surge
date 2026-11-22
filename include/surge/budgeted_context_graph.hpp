@@ -35,7 +35,12 @@ class BudgetedContextGraph {
       const std::string& relation_id, std::string& error) {
     if (!graph_.append_cognition_feedback(delta, feedback, feedback_node_id,
         relation_id, error)) return false;
-    return apply(delta).committed;
+    const auto result = apply(delta);
+    if (!result.committed) {
+      error = result.error.empty() ? "COGNITION_FEEDBACK_BUDGETED_COMMIT_FAILED" : result.error;
+      return false;
+    }
+    return true;
   }
   // Import a complete archive through the same transient/resident admission budget.
   DeltaResult restore_cluster_archive(const std::string& payload,
