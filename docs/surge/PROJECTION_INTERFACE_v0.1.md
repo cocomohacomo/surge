@@ -309,3 +309,13 @@ Result: PASS against the existing Core API contract. Runtime behavior still requ
 8. Spatial placement, Focus geometry, and per-cluster depth remain independent.
 9. Focus budget exhaustion never changes logical Focus membership.
 10. Conversation, document, and structured-data tests pass through the same Core path.
+
+## 12. Initial C++ adapter implementation
+
+The repository now includes `include/surge/projection.hpp` with a typed `ProjectionBatch`, deterministic structural validation, and `build_projection_delta()`. The adapter maps information nodes, explicit relations, upstream membership weights (as `Contains` edges), and spatial placements into the existing `SemanticDelta` representation. It preserves the caller's base state version and idempotency key.
+
+The adapter deliberately does not commit state itself. Callers must pass the resulting delta through the existing `ContextGraph::apply()` path so that the established journal, conflict, idempotency, and graph invariants remain authoritative.
+
+The initial executable test target is `surge_projection_tests`. It covers valid mapping, preservation of membership weight, missing evidence, non-finite weights, invalid spatial coordinates, and missing required metadata.
+
+**Scope limitation:** this first adapter does not yet provide a transport-level JSON parser, C ABI entry point, automatic source-event admission, or transactional orchestration across Event/Evidence creation and graph commit. Those remain subsequent integration tasks.
