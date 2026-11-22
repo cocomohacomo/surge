@@ -52,9 +52,7 @@
       "id": "evidence-conversation",
       "kind": "EVIDENCE",
       "content": "source span / record",
-      "references": [
-        "packet-conversation"
-      ]
+      "references": []
     }
   ],
   "relations": [],
