@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <filesystem>
 
 int main() {
   surge::ProjectionBatch batch;
@@ -56,5 +57,34 @@ int main() {
   invalid.idempotency_key.clear();
   validation = surge::validate_projection_batch(invalid);
   assert(!validation.valid && validation.error == "MISSING_REQUIRED_METADATA");
+
+  const auto journal_path =
+      (std::filesystem::temp_directory_path() / "surge-projection-integration.sgj").string();
+  std::filesystem::remove(journal_path);
+  {
+    surge::ContextGraph graph(journal_path);
+    assert(graph.open());
+    auto commit_batch = batch;
+    commit_batch.base_state_version = 0;
+    const auto committed = surge::apply_projection_batch(graph, commit_batch);
+    assert(committed.committed && !committed.duplicate);
+    assert(committed.state_version == 1);
+    assert(graph.nodes().count("cluster-1") == 1);
+    assert(graph.nodes().count("claim-1") == 1);
+    assert(graph.nodes().count("evidence-1") == 1);
+    assert(graph.relations().count("membership-1") == 1);
+
+    const auto duplicate = surge::apply_projection_batch(graph, commit_batch);
+    assert(duplicate.committed && duplicate.duplicate);
+    assert(graph.state_version() == 1);
+  }
+  {
+    surge::ContextGraph replayed(journal_path);
+    assert(replayed.open());
+    assert(replayed.state_version() == 1);
+    assert(replayed.nodes().count("claim-1") == 1);
+    assert(replayed.relations().count("membership-1") == 1);
+  }
+  std::filesystem::remove(journal_path);
   return 0;
 }
