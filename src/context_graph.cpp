@@ -2096,6 +2096,7 @@ CognitionObservation ContextGraph::observe_focused_cognition(
 
   std::map<std::string, SpatialVector3> position_by_cluster;
   for (const auto& item : positions) {
+    ++focused.focus_work.position_checks;
     const auto node = state_.nodes.find(item.cluster_id);
     if (item.cluster_id.empty() || node == state_.nodes.end() ||
         (node->second.kind != NodeKind::Cluster &&
@@ -2210,7 +2211,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     }
   focused.focus_work.nodes_processed = focused.nodes.size();
   focused.focus_work.relations_processed = focused.relations.size();
-  focused.focus_work.position_checks = focused.focus_work.clusters_considered;
   focused.focus_work.clusters_deferred = focused.deferred_region_cluster_ids.size();
   focused.focus_work.work_units = focused.focus_work.position_checks +
       focused.focus_work.nodes_processed + focused.focus_work.relations_processed;
