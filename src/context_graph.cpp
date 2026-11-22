@@ -487,6 +487,22 @@ bool ContextGraph::append_focus_region_update(SemanticDelta& delta,const FocusRe
  State staged=state_;if(!apply_focus_region(staged,region,error))return false;
  delta.focus_region=SetFocusRegion{region};error.clear();return true;
 }
+bool ContextGraph::append_focus_region_move(SemanticDelta& delta,const SpatialVector3& center,std::string& error)const{
+ if(delta.focus_region_move){error="FOCUS_REGION_MOVE_DUPLICATE";return false;}
+ const auto finite=[](double v){return std::isfinite(v);};
+ if(!finite(center.x)||!finite(center.y)||!finite(center.z)){error="FOCUS_REGION_CENTER_INVALID";return false;}
+ const auto current=delta.focus_region?std::optional<FocusRegion>(delta.focus_region->region):state_.focus_region;
+ if(!current){error="FOCUS_REGION_NOT_INITIALIZED";return false;}
+ delta.focus_region_move=MoveFocusRegion{center};error.clear();return true;
+}
+bool ContextGraph::append_focus_region_resize(SemanticDelta& delta,const SpatialVector3& extents,std::string& error)const{
+ if(delta.focus_region_resize){error="FOCUS_REGION_RESIZE_DUPLICATE";return false;}
+ if(!std::isfinite(extents.x)||!std::isfinite(extents.y)||!std::isfinite(extents.z)||
+    extents.x<0.0||extents.y<0.0||extents.z<0.0){error="FOCUS_REGION_EXTENTS_INVALID";return false;}
+ const auto current=delta.focus_region?std::optional<FocusRegion>(delta.focus_region->region):state_.focus_region;
+ if(!current){error="FOCUS_REGION_NOT_INITIALIZED";return false;}
+ delta.focus_region_resize=ResizeFocusRegion{extents};error.clear();return true;
+}
 bool ContextGraph::append_cluster_spatial_position_update(SemanticDelta& delta,const ClusterSpatialPosition& p,std::string& error)const{
  if(std::any_of(delta.cluster_position_updates.begin(),delta.cluster_position_updates.end(),[&](const auto& x){return x.position.cluster_id==p.cluster_id;})){
   error="CLUSTER_SPATIAL_POSITION_UPDATE_DUPLICATE";return false;
