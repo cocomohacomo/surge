@@ -388,6 +388,67 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
   return result;
 }
 
+DeltaResult BudgetedContextGraph::apply_with_external_commit(
+    const SemanticDelta& delta,
+    const std::function<DeltaResult(const std::vector<JournalEvent>&)>& commit) {
+  if (!recovered_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_NOT_RECOVERED"};
+  if (!commit)
+    return {false, false, graph_.state_version(), "EXTERNAL_COMMIT_CALLBACK_REQUIRED"};
+  if (!delta.reclaim_entity_node_ids.empty())
+    return {false, false, graph_.state_version(), "EXTERNAL_COMMIT_RECLAMATION_UNSUPPORTED"};
+
+  std::size_t bytes = 0, clusters = 0, retained_events = 0;
+  std::string error;
+  if (!estimate_delta(delta, bytes, clusters, retained_events, error))
+    return {false, false, graph_.state_version(), error};
+
+  const auto staging_estimate = bytes > std::numeric_limits<std::size_t>::max() / 2
+      ? std::numeric_limits<std::size_t>::max() : bytes * 2;
+  if (max_staging_bytes_ != 0 && staging_estimate > max_staging_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
+
+  ResourceLease staging, resident, retained_clusters, retained;
+  if (staging_estimate && !budget_.try_acquire(ResourceKind::TransientBytes,
+      staging_estimate, staging, error))
+    return {false, false, graph_.state_version(), error};
+
+  std::vector<JournalEvent> prepared;
+  if (!graph_.prepare_events(delta, prepared, error))
+    return {false, false, graph_.state_version(), error};
+
+  if (!prepared.empty()) {
+    if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
+      return {false, false, graph_.state_version(), error};
+    if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
+        retained_clusters, error))
+      return {false, false, graph_.state_version(), error};
+    if (retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
+        retained_events, retained, error))
+      return {false, false, graph_.state_version(), error};
+    try {
+      if (resident) resident_leases_.reserve(resident_leases_.size() + 1);
+      if (retained_clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
+      if (retained) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
+    } catch (...) {
+      return {false, false, graph_.state_version(), "CONTEXT_GRAPH_LEASE_STAGING_FAILED"};
+    }
+  }
+
+  auto result = commit(prepared);
+  if (!result.committed || result.duplicate) return result;
+  if (!graph_.open())
+    return {false, false, graph_.state_version(), "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED"};
+
+  if (resident) resident_leases_.push_back(std::move(resident));
+  if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
+  if (retained) recovery_event_leases_.push_back(std::move(retained));
+  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
+  accounted_resident_bytes_ += bytes;
+  return result;
+}
+
 DeltaResult BudgetedContextGraph::restore_cluster_archive(
     const std::string& payload, std::uint64_t expected_state_version,
     const std::string& transaction_id, const std::string& idempotency_key) {
