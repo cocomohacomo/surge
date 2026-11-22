@@ -48,6 +48,11 @@ int main() {
   CHECK(!validation.valid && validation.error == "NON_FINITE_MEMBERSHIP_WEIGHT");
 
   invalid = batch;
+  invalid.memberships.front().upstream_weight = 1.1;
+  validation = surge::validate_projection_batch(invalid);
+  CHECK(!validation.valid && validation.error == "MEMBERSHIP_WEIGHT_OUT_OF_RANGE");
+
+  invalid = batch;
   invalid.evidence_refs = {"missing-evidence"};
   validation = surge::validate_projection_batch(invalid);
   CHECK(!validation.valid && validation.error == "EVIDENCE_NODE_NOT_FOUND");
