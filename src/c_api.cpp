@@ -437,10 +437,6 @@ int surge_projection_batch_admit_and_apply(
       if (state_version) *state_version = admitted.state_version;
       return 0;
     }
-    if (!handle->graph.open()) {
-      copy_text(error, error_cap, "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED");
-      return 0;
-    }
     if (duplicate) *duplicate = admitted.duplicate ? 1 : 0;
     if (state_version) *state_version = admitted.state_version;
     copy_text(status, status_cap, admitted.packet_status);
