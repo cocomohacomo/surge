@@ -21,6 +21,7 @@ class BudgetedContextGraph {
                        std::size_t max_staging_bytes = 0);
   bool recover(std::string& error);
   DeltaResult apply(const SemanticDelta& delta);
+  std::uint64_t state_version() const noexcept { return graph_.state_version(); }
   // Reserve all graph mutation resources before an external journal transaction.
   // The callback must atomically commit the supplied prepared semantic events.
   DeltaResult apply_with_external_commit(
