@@ -870,20 +870,22 @@ int main(){
     if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\n';
     CHECK(classified_commit.committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
-    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+    const auto classified_relations = graph.relations();
+    CHECK(std::any_of(classified_relations.begin(),classified_relations.end(),
         [&](const auto& item){return item.second.from=="input-root" &&
           item.second.to==classified_cluster_id && item.second.kind==RelationKind::Contains;}));
-    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+    CHECK(std::any_of(classified_relations.begin(),classified_relations.end(),
         [&](const auto& item){return item.second.from==classified_cluster_id &&
           item.second.to=="claim-a" && item.second.kind==RelationKind::Contains;}));
   }
   {
     ContextGraph recovered(cluster_path); CHECK(recovered.open());
     CHECK(recovered.nodes().count(classified_cluster_id)==1);
-    CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
+    const auto recovered_relations = recovered.relations();
+    CHECK(std::any_of(recovered_relations.begin(),recovered_relations.end(),
         [&](const auto& item){return item.second.from==weighted_cluster_id &&
           item.second.to=="claim-a" && item.second.weight==0.73;}));
-    CHECK(std::any_of(recovered.relations().begin(),recovered.relations().end(),
+    CHECK(std::any_of(recovered_relations.begin(),recovered_relations.end(),
         [&](const auto& item){return item.second.from==classified_cluster_id &&
           item.second.to=="claim-a";}));
   }
@@ -923,7 +925,8 @@ int main(){
     CHECK(std::any_of(cognition.nodes.begin(),cognition.nodes.end(),
         [](const auto& node){return node.id=="unclassified-note";}));
     CHECK(graph.relations().count(unresolved_edge_id)==0);
-    CHECK(std::any_of(graph.relations().begin(),graph.relations().end(),
+    const auto open_world_relations = graph.relations();
+    CHECK(std::any_of(open_world_relations.begin(),open_world_relations.end(),
         [&](const auto& item){return item.second.kind==RelationKind::Contains &&
           item.second.from==assigned_cluster && item.second.to=="unclassified-note";}));
   }
