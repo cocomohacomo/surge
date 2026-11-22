@@ -120,6 +120,26 @@ class ProjectionBatchAdapter:
         if batch["source_event_refs"] != [packet["packet_id"]]:
             raise ProjectionRejected("PROJECTION_SOURCE_PACKET_MISMATCH")
 
+        string_values = [
+            batch["projection_id"], batch["idempotency_key"], batch["context_id"],
+            batch["producer"]["producer_id"], batch["producer"]["producer_version"],
+            batch["policy_version"], packet["packet_id"], packet["idempotency_key"],
+            packet["context_id"], packet["source_id"], packet["source_generation"],
+            packet["block_ref"], packet["offset_basis"], packet["source_snapshot_digest"],
+            packet["source_range_digest"], packet["canonical_request_digest"],
+            *batch["source_event_refs"], *batch["evidence_refs"],
+        ]
+        for node in batch["nodes"]:
+            string_values.extend([node["id"], node["kind"], node["content"], *node["references"]])
+        for relation in batch["relations"]:
+            string_values.extend([relation["id"], relation["kind"], relation["from"], relation["to"]])
+        for membership in batch["memberships"]:
+            string_values.extend([membership["relation_id"], membership["member_ref"], membership["cluster_ref"]])
+        for placement in batch["spatial_placements"]:
+            string_values.append(placement["cluster_id"])
+        if any("\\x00" in value for value in string_values):
+            raise ProjectionRejected("C_API_STRING_CONTAINS_NUL")
+
         node_ids = {node["id"] for node in batch["nodes"]}
         if len(node_ids) != len(batch["nodes"]):
             raise ProjectionRejected("EMPTY_OR_DUPLICATE_NODE_ID")
