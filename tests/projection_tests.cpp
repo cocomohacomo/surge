@@ -53,7 +53,12 @@ int main() {
   invalid = batch;
   invalid.spatial_placements.front().position.x = std::numeric_limits<double>::infinity();
   validation = surge::validate_projection_batch(invalid);
-  CHECK(!validation.valid && validation.error == "INVALID_SPATIAL_PLACEMENT");
+  CHECK(!validation.valid && validation.error == "INVALID_OR_DUPLICATE_SPATIAL_PLACEMENT");
+
+  invalid = batch;
+  invalid.nodes[2].references.clear();
+  validation = surge::validate_projection_batch(invalid);
+  CHECK(!validation.valid && validation.error == "EVIDENCE_SOURCE_LINEAGE_MISSING");
 
   invalid = batch;
   invalid.idempotency_key.clear();
