@@ -402,6 +402,8 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
   std::string error;
   if (!estimate_delta(delta, bytes, clusters, retained_events, error))
     return {false, false, graph_.state_version(), error};
+  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
 
   const auto staging_estimate = bytes > std::numeric_limits<std::size_t>::max() / 2
       ? std::numeric_limits<std::size_t>::max() : bytes * 2;
@@ -443,8 +445,6 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
   if (resident) resident_leases_.push_back(std::move(resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
   if (retained) recovery_event_leases_.push_back(std::move(retained));
-  if (bytes > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
-    return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
   accounted_resident_bytes_ += bytes;
   return result;
 }
