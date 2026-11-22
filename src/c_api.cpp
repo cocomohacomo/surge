@@ -352,7 +352,7 @@ int surge_projection_batch_admit_and_apply(
     if (!opaque || !input || !metadata ||
         !input->packet_id || !input->idempotency_key || !input->context_id ||
         !input->source_id || !input->source_generation || !input->block_ref ||
-        !input->offset_basis || !input->source_snapshot_digest ||
+        !input->document_ref || !input->document_generation || !input->offset_basis || !input->source_snapshot_digest ||
         !input->source_range_digest || !input->canonical_request_digest ||
         !metadata->projection_id || !metadata->idempotency_key ||
         !metadata->context_id || !metadata->producer_id ||
@@ -375,6 +375,11 @@ int surge_projection_batch_admit_and_apply(
     packet.source_id = input->source_id;
     packet.source_generation = input->source_generation;
     packet.block_ref = input->block_ref;
+    packet.document_ref = input->document_ref;
+    packet.document_generation = input->document_generation;
+    packet.document_sequence = input->document_sequence;
+    packet.global_start_offset = input->global_start_offset;
+    packet.global_end_offset = input->global_end_offset;
     packet.offset_basis = input->offset_basis;
     packet.start_offset = input->start_offset;
     packet.end_offset = input->end_offset;
