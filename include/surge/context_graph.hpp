@@ -32,6 +32,17 @@ struct GraphRelation {
   double weight{1.0};
 };
 struct FocusRecord { std::string cluster_id; std::string interest_id; bool chaos_cluster{false}; };
+// Spatial focus is a region in cognition graph space, not a selected cluster.
+struct SpatialVector3 { double x{0.0}, y{0.0}, z{0.0}; };
+struct FocusRegion { SpatialVector3 center; SpatialVector3 half_extents; };
+struct ClusterSpatialPosition { std::string cluster_id; SpatialVector3 position; };
+struct ClusterFocusDepth { std::string cluster_id; std::size_t depth{0}; };
+struct FocusWorkMetrics {
+  std::size_t clusters_considered{0}, clusters_in_region{0};
+  std::size_t nodes_processed{0}, relations_processed{0};
+  std::size_t max_nodes{0}, max_relations{0};
+  bool budget_exhausted{false};
+};
 struct ScopeAnchor {
   std::string anchor_id, source_digest, offset_basis;
   std::size_t start_offset{0}, end_offset{0};
@@ -113,6 +124,9 @@ struct CognitionObservation {
   std::vector<std::string> active_interest_ids;
   std::optional<FocusRecord> current_focus;
   std::vector<FocusRecord> focus_history;
+  std::optional<FocusRegion> focus_region;
+  std::vector<ClusterFocusDepth> cluster_focus_depths;
+  FocusWorkMetrics focus_work;
   std::size_t unresolved_scope_count{0};
   std::size_t dependency_evaluation_count{0};
   // Snapshot semantics: detached copies, safe for external read-only inspection.
@@ -171,6 +185,15 @@ class ContextGraph {
   CognitionObservation observe_cognition() const;
   // Read-only projection containing only the focused cognition cluster and its direct members.
   CognitionObservation observe_focused_cognition() const;
+  // Spatial projection with independent region geometry and per-cluster depth.
+  // Depth 0 exposes the cluster only; each level traverses one Contains edge.
+  // Budgets cap node/relation work deterministically.
+  CognitionObservation observe_focused_cognition(
+      const FocusRegion& region,
+      const std::vector<ClusterSpatialPosition>& positions,
+      const std::vector<ClusterFocusDepth>& depths,
+      std::size_t max_nodes = 10000,
+      std::size_t max_relations = 20000) const;
   // Add a new cognition cluster with explicit lineage to the activated source clusters.
   // The caller supplies the recognized content; Core validates and journals the structure.
   bool append_derived_cognition_cluster(SemanticDelta& delta,
