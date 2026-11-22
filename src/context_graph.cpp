@@ -1913,7 +1913,6 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
 
   const auto observation = observe_cognition();
   std::map<std::string, CognitionCandidate> by_cluster;
-  std::map<std::string, std::set<std::string>> cluster_member_terms;
   for (const auto& membership : observation.memberships) {
     if (membership.member_node_id == input_member_id) continue;
     const auto node_it = state_.nodes.find(membership.member_node_id);
@@ -1937,7 +1936,6 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       if (std::find(candidate.matched_terms.begin(),
           candidate.matched_terms.end(), term) == candidate.matched_terms.end())
         candidate.matched_terms.push_back(term);
-      cluster_member_terms[membership.cluster_node_id].insert(term);
       positions.emplace_back(position, position + term.size());
       // Upstream membership weight contributes to retrieval ranking only.
       // It is never written back to a Contains edge or used for admission.
