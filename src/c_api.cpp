@@ -1850,18 +1850,21 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
         <<",\"budget_exhausted\":"<<(observation.focus_work.budget_exhausted?"true":"false")<<"}";
     json<<",\"cluster_focus_depths\":[";
     for(size_t i=0;i<observation.cluster_focus_depths.size();++i){
-      if(i)json<<',';const auto& d=observation.cluster_focus_depths[i];
+      if(i) json<<',';
+      const auto& d=observation.cluster_focus_depths[i];
       json<<"{\"cluster_id\":"<<json_quote(d.cluster_id)<<",\"depth\":"<<d.depth<<"}";
     }
     json<<"],\"nodes\":[";
     for(size_t i=0;i<observation.nodes.size();++i){
-      if(i)json<<',';const auto& n=observation.nodes[i];
+      if(i) json<<',';
+      const auto& n=observation.nodes[i];
       json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(node_name(n.kind))
           <<",\"content\":"<<json_quote(n.content)<<"}";
     }
     json<<"],\"relations\":[";
     for(size_t i=0;i<observation.relations.size();++i){
-      if(i)json<<',';const auto& rel=observation.relations[i];
+      if(i) json<<',';
+      const auto& rel=observation.relations[i];
       json<<"{\"id\":"<<json_quote(rel.id)<<",\"kind\":"<<json_quote(relation_name(rel.kind))
           <<",\"from\":"<<json_quote(rel.from)<<",\"to\":"<<json_quote(rel.to)
           <<",\"weight\":"<<std::setprecision(17)<<rel.weight<<"}";
