@@ -1848,6 +1848,115 @@ int surge_context_graph_observe_cognition(void* opaque, char* output,
 }
 
 
+
+int surge_context_graph_recall_candidates(void* opaque, const char* input_member_id,
+    const char* const* query_terms, size_t query_term_count, size_t max_candidates,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !input_member_id || (!query_terms && query_term_count) ||
+        query_term_count > 4096 || max_candidates > 1024) {
+      copy_text(error, error_capacity, "COGNITION_RECALL_ARGUMENT_INVALID");
+      return 0;
+    }
+    std::vector<std::string> terms;
+    terms.reserve(query_term_count);
+    for (size_t i = 0; i < query_term_count; ++i) {
+      if (!query_terms[i]) {
+        copy_text(error, error_capacity, "COGNITION_RECALL_TERM_INVALID");
+        return 0;
+      }
+      terms.emplace_back(query_terms[i]);
+    }
+    const auto& handle = *static_cast<Handle*>(opaque);
+    const auto candidates = handle.mutations.recall_cognition_candidates(
+        input_member_id, terms, max_candidates);
+    std::ostringstream json;
+    json << "{\\"state_version\\":" << handle.journal.state_version()
+         << ",\\"candidates\\":[";
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      if (i) json << ',';
+      const auto& candidate = candidates[i];
+      json << "{\\"cluster_id\\":" << json_quote(candidate.cluster_id)
+           << ",\\"recall_score\\":" << std::setprecision(17)
+           << candidate.recall_score
+           << ",\\"memory_state_version\\":" << candidate.memory_state_version
+           << ",\\"supporting_member_ids\\":[";
+      for (size_t j = 0; j < candidate.supporting_member_ids.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(candidate.supporting_member_ids[j]);
+      }
+      json << "],\\"matched_terms\\":[";
+      for (size_t j = 0; j < candidate.matched_terms.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(candidate.matched_terms[j]);
+      }
+      json << "]}";
+    }
+    json << "]}";
+    const auto payload = json.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "COGNITION_RECALL_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_RECALL_EXCEPTION"); return 0;
+  }
+}
+
+int surge_context_graph_record_cognition_feedback(void* opaque,
+    const char* feedback_id, const char* candidate_cluster_id,
+    const char* input_member_id, const char* outcome, const char* producer_id,
+    const char* producer_version, const char* policy_version,
+    const char* recorded_at, const char* notes, uint64_t expected_state_version,
+    const char* feedback_node_id, const char* relation_id,
+    uint64_t* state_version, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !feedback_id || !candidate_cluster_id || !input_member_id ||
+        !outcome || !producer_id || !producer_version || !policy_version ||
+        !recorded_at || !feedback_node_id || !relation_id) {
+      copy_text(error, error_capacity, "COGNITION_FEEDBACK_ARGUMENT_INVALID");
+      return 0;
+    }
+    auto& handle = *static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;
+    delta.delta_id = std::string("cognition-feedback/") + feedback_id;
+    delta.idempotency_key = delta.delta_id;
+    delta.expected_state_version = expected_state_version;
+    surge::CognitionFeedback feedback;
+    feedback.feedback_id = feedback_id;
+    feedback.candidate_cluster_id = candidate_cluster_id;
+    feedback.input_member_id = input_member_id;
+    feedback.outcome = outcome;
+    feedback.producer_id = producer_id;
+    feedback.producer_version = producer_version;
+    feedback.policy_version = policy_version;
+    feedback.recorded_at = recorded_at;
+    feedback.notes = notes ? notes : "";
+    std::string detail;
+    const auto result = handle.mutations.append_cognition_feedback(
+        std::move(delta), feedback, feedback_node_id, relation_id, detail);
+    if (!result) {
+      copy_text(error, error_capacity, detail.empty() ?
+          "COGNITION_FEEDBACK_COMMIT_FAILED" : detail);
+      return 0;
+    }
+    if (state_version) *state_version = handle.journal.state_version();
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_FEEDBACK_EXCEPTION"); return 0;
+  }
+}
+
 int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&h=*static_cast<Handle*>(o);auto z=h.temporal_ledger.add(t,i,e,v,x);
 if(z.committed){bool already_synced=false;for(const auto&q:h.temporal_questions.for_claim(z.pending.claim_id))if(q.last_event_id==std::string(e)+"/question")already_synced=true;
 if(!already_synced){auto sync=h.temporal_questions.synchronize(std::string(t)+"/question",std::string(i)+"/question",std::string(e)+"/question",z.state_version,z.pending);
