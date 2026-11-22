@@ -691,6 +691,11 @@
       "name": "surge_temporal_question_get",
       "return_type": "int",
       "parameters": "void*handle,const char*claim_id,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_projection_batch_admit_and_apply_v2",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRecognitionPacketInput*packet,const SurgeDocumentStreamInput*document_stream,const unsigned char*snapshot,size_t snapshot_size,const SurgeProjectionMetadataInput*metadata,const char*const*evidence_refs,size_t evidence_count,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeProjectionRelationInput*relations,size_t relation_count,const SurgeProjectionMembershipInput*memberships,size_t membership_count,const SurgeProjectionSpatialPlacementInput*placements,size_t placement_count,int*duplicate,uint64_t*state_version,char*status,size_t status_capacity,char*error,size_t error_capacity"
     }
   ]
 }
