@@ -520,8 +520,10 @@ region, persisted 3D positions for clusters, and independent per-cluster focus d
 These are three different state dimensions and are updated by different journal event
 families:
 
-- `FOCUS_REGION_SET_V1`: move, expand or contract the region by replacing its center
-  and half-extents. This event never changes cluster depth or cluster coordinates.
+- `FOCUS_REGION_SET_V1`: initialize or replace the region descriptor.
+- `FOCUS_REGION_MOVE_V1`: change only the region center.
+- `FOCUS_REGION_RESIZE_V1`: change only the region half-extents.
+  Move and resize events never change cluster depth or cluster coordinates.
 - `CLUSTER_SPATIAL_POSITION_SET_V1`: update one cluster's position. It never moves
   or resizes the focus region.
 - `CLUSTER_FOCUS_DEPTH_SET_V1`: update one cluster's depth. It never changes region
