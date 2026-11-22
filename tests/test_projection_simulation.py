@@ -275,10 +275,10 @@ class ProjectionStreamSimulation(unittest.TestCase):
                                       "no external model inference and no Focus mutation.\n")
 
             # All records survive journal recovery, not just the in-memory coordinator.
-        with CppCoreBridge(journal) as recovered:
-            self.assertEqual(recovered.state_version, BATCH_COUNT)
-            self.assertEqual(recovered.packet_count, BATCH_COUNT)
-            self.assertGreater(recovered.resource_snapshot["resident_bytes_used"], 0)
+            with CppCoreBridge(journal) as recovered:
+                self.assertEqual(recovered.state_version, BATCH_COUNT)
+                self.assertEqual(recovered.packet_count, BATCH_COUNT)
+                self.assertGreater(recovered.resource_snapshot["resident_bytes_used"], 0)
 
         # The report artifact is deliberately generated after successful native commits.
         self.assertEqual(BATCH_COUNT, sum(
