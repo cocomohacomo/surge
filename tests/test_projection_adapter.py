@@ -48,6 +48,12 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectionRejected, "NON_FINITE_MEMBERSHIP_WEIGHT"):
             self.adapter.validate(batch)
 
+    def test_out_of_range_membership_weight_is_rejected(self):
+        batch = self.fixture("conversation")
+        batch["memberships"][0]["upstream_weight"] = 1.1
+        with self.assertRaisesRegex(ProjectionRejected, "SCHEMA_INVALID"):
+            self.adapter.validate(batch)
+
 
 if __name__ == "__main__":
     unittest.main()
