@@ -431,7 +431,7 @@ int surge_projection_batch_admit_and_apply(
     }
 
     const auto admitted = surge::apply_projection_batch(
-        handle->coordinator, handle->graph, batch, packet, source);
+        handle->coordinator, handle->mutations, batch, packet, source);
     if (!admitted.admitted) {
       copy_text(error, error_cap, admitted.error);
       if (state_version) *state_version = admitted.state_version;
