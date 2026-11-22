@@ -78,6 +78,11 @@ def make_batch(template: dict, text: str, index: int, global_start: int,
             "source_id": "long-meeting-document",
             "source_generation": "generation-1",
             "block_ref": f"meeting-document-v1-block-{index:03d}",
+            "document_ref": "meeting-document-v1",
+            "document_generation": "generation-1",
+            "document_sequence": index + 1,
+            "global_start_offset": global_start,
+            "global_end_offset": global_end,
             "offset_basis": "UTF8_BYTE_NFC",
             "start_offset": 0,
             "end_offset": len(raw),
@@ -128,11 +133,11 @@ class ProjectionContinuitySimulation(unittest.TestCase):
             self.assertEqual(previous["_global_end"], current["_global_start"])
         self.assertEqual(batches[-1]["_global_end"], offset)
 
-        # Private test metadata is not part of the public ProjectionBatch envelope.
+        # Global byte ranges are now part of the persisted packet envelope.
         for batch in batches:
             batch.pop("_global_start")
             batch.pop("_global_end")
-            self.assertGreater(adapter.validate(batch).__len__(), 0)
+            self.assertGreater(len(adapter.validate(batch)), 0)
 
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "continuity.sgj"
@@ -177,12 +182,11 @@ class ProjectionContinuitySimulation(unittest.TestCase):
                     "replay_resource_delta_bytes": (
                         after["resident_bytes_used"] - before["resident_bytes_used"]
                     ),
-                    "global_offsets": "producer-side contiguous UTF8 byte ranges verified",
-                    "global_offset_persistence": "NOT_IMPLEMENTED_IN_PROJECTION_BATCH_V0.1",
+                    "global_offsets": "Core-enforced contiguous UTF8 byte ranges",
+                    "global_offset_persistence": "PERSISTED_IN_RECOGNITION_PACKET_RPA3",
                     "result": "PASS",
                     "limitations": [
-                        "The Core receives block-local snapshots and block-local offsets.",
-                        "Global document offsets are checked in the producer test harness, not persisted by Core.",
+                        "The Core persists document identity, generation, sequence and global UTF-8 byte ranges.",
                         "Topic assignment and membership weights are supplied by the projector; Core does not infer topics.",
                         "No Focus geometry or per-cluster depth is changed by projection.",
                     ],
@@ -201,7 +205,7 @@ class ProjectionContinuitySimulation(unittest.TestCase):
                         summary.write("- 2 topic clusters / 8 claims / 8 memberships\n")
                         summary.write("- Interrupted after 4 blocks; resumed remaining 4\n")
                         summary.write("- Full replay: 8 duplicates / 0 additional resident bytes\n")
-                        summary.write("- Global offsets: producer-side only; not persisted in ProjectionBatch v0.1\n\n")
+                        summary.write("- Global offsets: persisted and validated by Core across all 8 packets\n\n")
                         summary.write("**Result: PASS** (block-local Core anchors; no Focus mutation).\n")
 
             with CppCoreBridge(journal) as recovered:
