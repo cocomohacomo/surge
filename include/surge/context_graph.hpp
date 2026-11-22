@@ -142,9 +142,6 @@ struct CognitionObservation {
   std::vector<std::string> logical_region_cluster_ids;
   std::vector<std::string> processed_region_cluster_ids;
   std::vector<std::string> deferred_region_cluster_ids;
-  // Opaque stateless continuation token bound to the graph version and Focus query.
-  std::string continuation_token;
-  bool continuation_stale{false};
   FocusWorkMetrics focus_work;
   std::size_t unresolved_scope_count{0};
   std::size_t dependency_evaluation_count{0};
@@ -205,10 +202,6 @@ class ContextGraph {
   // Read-only projection containing only the focused cognition cluster and its direct members.
   CognitionObservation observe_focused_cognition() const;
   CognitionObservation observe_focused_cognition(std::size_t max_nodes, std::size_t max_relations) const;
-  // Resume a prior bounded spatial projection. Tokens are caller-persistable and
-  // become stale whenever the graph state or Focus query changes.
-  CognitionObservation observe_focused_cognition(std::size_t max_nodes,
-      std::size_t max_relations, const std::string& continuation_token) const;
   bool append_focus_region_update(SemanticDelta& delta, const FocusRegion& region, std::string& error) const;
   bool append_focus_region_move(SemanticDelta& delta, const SpatialVector3& center, std::string& error) const;
   bool append_focus_region_resize(SemanticDelta& delta, const SpatialVector3& half_extents, std::string& error) const;
@@ -329,10 +322,6 @@ class ContextGraph {
       std::uint64_t, TemporalReassessmentRecord&, std::string&) const;
   bool apply_reassessment(State&, const TemporalReassessmentRecord&, std::string&) const;
   bool replay();
-  CognitionObservation observe_spatial_projection(
-      const FocusRegion&, const std::vector<ClusterSpatialPosition>&,
-      const std::vector<ClusterFocusDepth>&, std::size_t, std::size_t,
-      const std::string&) const;
   bool prepare_transaction(const SemanticDelta&, State&, std::vector<JournalEvent>&,
                            std::string&) const;
   std::string fingerprint(const SemanticDelta&) const;
