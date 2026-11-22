@@ -723,6 +723,8 @@ bool ContextGraph::replay(){
  if(have_meta) { ++version; }
  if(version!=journal_->state_version()){last_error_="GRAPH_REPLAY_VERSION_MISMATCH";return false;}
  state_=std::move(rebuilt);
+ spatial_position_index_valid_=false;
+ spatial_position_x_index_.clear();
  return true;
 }
 
@@ -754,6 +756,8 @@ DeltaResult ContextGraph::import_cluster_archive_payload(
   if (!committed.committed)
     return {false, false, state_version(), committed.error};
   state_ = std::move(candidate);
+  spatial_position_index_valid_ = false;
+  spatial_position_x_index_.clear();
   idempotency_[idempotency_key] = fingerprint;
   return {true, committed.duplicate, state_version(), {}};
 }
@@ -1184,6 +1188,10 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d){
  const auto committed=journal_->commit(d.delta_id,d.idempotency_key,d.expected_state_version,events);
  if(!committed.committed)return {false,false,state_version(),committed.error};
  state_=std::move(staged);idempotency_[d.idempotency_key]=fingerprint(d);
+ if(!d.cluster_position_updates.empty()){
+  spatial_position_index_valid_=false;
+  spatial_position_x_index_.clear();
+ }
  return {true,committed.duplicate,state_version(),{}};
 }
 
@@ -2093,16 +2101,37 @@ CognitionObservation ContextGraph::observe_focused_cognition() const {
 CognitionObservation ContextGraph::observe_focused_cognition(
     std::size_t max_nodes, std::size_t max_relations) const {
   if (!state_.focus_region) return observe_focused_cognition();
+
+  // Build the derived x-axis index lazily. Position updates, journal replay
+  // and archive/snapshot replacement invalidate it; unrelated graph writes do not.
+  if (!spatial_position_index_valid_) {
+    spatial_position_x_index_.clear();
+    for (const auto& item : state_.cluster_positions)
+      spatial_position_x_index_[item.second.x].push_back(item.first);
+    spatial_position_index_valid_ = true;
+  }
+
   std::vector<ClusterSpatialPosition> positions;
   std::vector<ClusterFocusDepth> depths;
-  positions.reserve(state_.cluster_positions.size());
+  const auto& region = *state_.focus_region;
+  if (std::isfinite(region.center.x) && std::isfinite(region.half_extents.x) &&
+      region.half_extents.x >= 0.0) {
+    const double min_x = region.center.x - region.half_extents.x;
+    const double max_x = region.center.x + region.half_extents.x;
+    for (auto it = spatial_position_x_index_.lower_bound(min_x),
+              last = spatial_position_x_index_.upper_bound(max_x);
+         it != last; ++it) {
+      for (const auto& cluster_id : it->second) {
+        const auto position = state_.cluster_positions.find(cluster_id);
+        if (position != state_.cluster_positions.end())
+          positions.push_back({cluster_id, position->second});
+      }
+    }
+  }
   depths.reserve(state_.cluster_focus_depths.size());
-  for (const auto& item : state_.cluster_positions)
-    positions.push_back({item.first,item.second});
   for (const auto& item : state_.cluster_focus_depths)
     depths.push_back({item.first,item.second});
-  return observe_focused_cognition(*state_.focus_region,positions,depths,
-                                   max_nodes,max_relations);
+  return observe_focused_cognition(region,positions,depths,max_nodes,max_relations);
 }
 
 CognitionObservation ContextGraph::observe_focused_cognition(
