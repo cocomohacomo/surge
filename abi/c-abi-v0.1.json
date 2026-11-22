@@ -278,9 +278,7 @@
       "tag": "SurgeProjectionSpatialPlacementInput",
       "fields": [
         "const char*cluster_id",
-        "double x",
-        "double y",
-        "double z"
+        "double x,y,z"
       ]
     }
   },
