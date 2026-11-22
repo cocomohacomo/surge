@@ -498,9 +498,10 @@ int main(){
     CHECK(durable_observation.logical_region_cluster_ids.size()==2);
     CHECK(durable_observation.processed_region_cluster_ids.size()==2);
     CHECK(durable_observation.deferred_region_cluster_ids.empty());
+  } // Close the journal writer before opening a second reader.
 
+  {
     // Restart replay restores all independent spatial state.
-    {
       ContextGraph replayed(path);CHECK(replayed.open());
       const auto replayed_view=replayed.observe_focused_cognition(20,20);
       CHECK(replayed_view.focus_region.has_value());
