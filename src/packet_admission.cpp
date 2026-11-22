@@ -257,6 +257,34 @@ std::uint64_t PacketAdmissionCoordinator::state_version() const {
 std::size_t PacketAdmissionCoordinator::packet_count() const {
   return packet_digests_.size();
 }
+std::size_t PacketAdmissionCoordinator::estimated_resident_bytes() const noexcept {
+  std::size_t total = 0;
+  const auto add = [&](std::size_t value) mutable {
+    if (value > std::numeric_limits<std::size_t>::max() - total) {
+      total = std::numeric_limits<std::size_t>::max();
+      return false;
+    }
+    total += value;
+    return true;
+  };
+  for (const auto& item : packet_digests_) {
+    if (!add(256) || !add(item.first.size()) || !add(item.second.size())) return total;
+  }
+  for (const auto& item : packet_encodings_) {
+    if (!add(256) || !add(item.first.size()) || !add(item.second.size())) return total;
+  }
+  for (const auto& item : idempotency_packets_) {
+    if (!add(256) || !add(item.first.size()) || !add(item.second.size())) return total;
+  }
+  for (const auto& stream : streams_) {
+    if (!add(256) || !add(stream.first.size())) return total;
+    for (const auto& item : stream.second.sequence_packets)
+      if (!add(96) || !add(sizeof(item.first)) || !add(item.second.size())) return total;
+    for (const auto& item : stream.second.range_latest_packets)
+      if (!add(128) || !add(item.first.size()) || !add(item.second.size())) return total;
+  }
+  return total;
+}
 bool PacketAdmissionCoordinator::contains_packet(const std::string& packet_id) const {
   return packet_digests_.find(packet_id) != packet_digests_.end();
 }
