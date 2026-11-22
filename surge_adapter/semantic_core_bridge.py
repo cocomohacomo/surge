@@ -1478,6 +1478,86 @@ class SemanticCoreBridge(CppCoreBridge):
 
 
 
+    def recall_cognition_candidates(self, input_member_id: str,
+                                    query_terms: list[str], max_candidates: int = 8) -> dict[str, Any]:
+        """Retrieve ranked cognition candidates without changing graph membership."""
+        if not isinstance(input_member_id, str) or not input_member_id:
+            raise PacketRejected("COGNITION_RECALL_INPUT_MEMBER_REQUIRED")
+        if (not isinstance(query_terms, list) or len(query_terms) > 4096
+                or any(not isinstance(term, str) for term in query_terms)):
+            raise PacketRejected("COGNITION_RECALL_TERMS_INVALID")
+        if not isinstance(max_candidates, int) or not 0 <= max_candidates <= 1024:
+            raise PacketRejected("COGNITION_RECALL_LIMIT_INVALID")
+        fn = self._lib.surge_context_graph_recall_candidates
+        fn.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t, ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        fn.restype = ctypes.c_int
+        encoded = [term.encode("utf-8") for term in query_terms]
+        keepalive = (ctypes.c_char_p * len(encoded))(*encoded) if encoded else None
+        required, error = ctypes.c_size_t(0), ctypes.create_string_buffer(512)
+        ok = fn(self._handle, input_member_id.encode("utf-8"), keepalive,
+                len(encoded), max_candidates, None, 0, ctypes.byref(required),
+                error, len(error))
+        detail = error.value.decode("utf-8", errors="replace")
+        if ok or detail != "COGNITION_RECALL_BUFFER_TOO_SMALL":
+            raise PacketRejected(detail or "COGNITION_RECALL_SIZE_QUERY_FAILED")
+        if required.value <= 1 or required.value > 8 * 1024 * 1024:
+            raise PacketRejected("COGNITION_RECALL_RESPONSE_TOO_LARGE")
+        output = ctypes.create_string_buffer(required.value)
+        error = ctypes.create_string_buffer(512)
+        ok = fn(self._handle, input_member_id.encode("utf-8"), keepalive,
+                len(encoded), max_candidates, output, len(output), ctypes.byref(required),
+                error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "COGNITION_RECALL_FAILED")
+        try:
+            value = json.loads(output.value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PacketRejected("COGNITION_RECALL_JSON_INVALID") from exc
+        if (not isinstance(value, dict) or set(value) != {"state_version", "candidates"}
+                or not isinstance(value["candidates"], list)):
+            raise PacketRejected("COGNITION_RECALL_RESPONSE_INVALID")
+        for candidate in value["candidates"]:
+            if (not isinstance(candidate, dict) or
+                set(candidate) != {"cluster_id", "recall_score", "memory_state_version",
+                                   "supporting_member_ids", "matched_terms"}):
+                raise PacketRejected("COGNITION_RECALL_CANDIDATE_INVALID")
+        return value
+
+    def record_cognition_feedback(self, *, feedback_id: str, candidate_cluster_id: str,
+                                  input_member_id: str, outcome: str, producer_id: str,
+                                  producer_version: str, policy_version: str,
+                                  recorded_at: str, feedback_node_id: str,
+                                  relation_id: str, notes: str = "",
+                                  expected_state_version: int | None = None) -> int:
+        """Persist external candidate evaluation; return the committed state version."""
+        values = (feedback_id, candidate_cluster_id, input_member_id, outcome,
+                  producer_id, producer_version, policy_version, recorded_at,
+                  feedback_node_id, relation_id, notes)
+        if any(not isinstance(value, str) for value in values):
+            raise PacketRejected("COGNITION_FEEDBACK_FIELDS_INVALID")
+        expected = self.state_version if expected_state_version is None else expected_state_version
+        fn = self._lib.surge_context_graph_record_cognition_feedback
+        fn.argtypes = [
+            ctypes.c_void_p, *([ctypes.c_char_p] * 10), ctypes.c_uint64,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
+        fn.restype = ctypes.c_int
+        version, error = ctypes.c_uint64(0), ctypes.create_string_buffer(512)
+        ok = fn(self._handle, feedback_id.encode(), candidate_cluster_id.encode(),
+                input_member_id.encode(), outcome.encode(), producer_id.encode(),
+                producer_version.encode(), policy_version.encode(), recorded_at.encode(),
+                notes.encode(), int(expected), feedback_node_id.encode(), relation_id.encode(),
+                ctypes.byref(version), error, len(error))
+        if not ok:
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "COGNITION_FEEDBACK_COMMIT_FAILED")
+        return int(version.value)
+
     def commit_retention_events(self, transaction_id: str, idempotency_key: str,
                                 expected_state_version: int,
                                 events: list[dict[str, str]]) -> dict[str, Any]:
