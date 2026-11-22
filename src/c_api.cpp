@@ -1472,6 +1472,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::RelationKind::Retracts: return "RETRACTS";
         case surge::RelationKind::Duplicates: return "DUPLICATES";
         case surge::RelationKind::Contains: return "CONTAINS";
+        case surge::RelationKind::DerivedFrom: return "DERIVED_FROM";
       }
       return "UNKNOWN";
     };
@@ -1757,6 +1758,7 @@ int surge_context_graph_observe_cognition(void* opaque, char* output,
         case surge::RelationKind::Retracts: return "RETRACTS";
         case surge::RelationKind::Duplicates: return "DUPLICATES";
         case surge::RelationKind::Contains: return "CONTAINS";
+        case surge::RelationKind::DerivedFrom: return "DERIVED_FROM";
       }
       return "UNKNOWN";
     };
