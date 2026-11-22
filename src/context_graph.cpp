@@ -2064,7 +2064,7 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     }
   focused.focus_work.nodes_processed = focused.nodes.size();
   focused.focus_work.relations_processed = focused.relations.size();
-  for (const auto& id : roots) {
+  for (const auto& id : expanded_clusters) {
     const auto depth = depth_by_cluster.find(id);
     focused.cluster_focus_depths.push_back(
         {id, depth == depth_by_cluster.end() ? 1 : depth->second});
