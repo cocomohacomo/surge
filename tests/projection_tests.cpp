@@ -153,6 +153,14 @@ int main() {
     CHECK(duplicate.admitted && duplicate.duplicate);
     CHECK(journal.state_version() == 1);
 
+    auto changed_projection = atomic_batch;
+    changed_projection.nodes[1].content = "meeting-date=Wednesday";
+    const auto changed = surge::apply_projection_batch(
+        packets, graph, changed_projection, packet, source);
+    CHECK(!changed.admitted);
+    CHECK(changed.error == "IDEMPOTENCY_KEY_REUSED");
+    CHECK(journal.state_version() == 1);
+
     auto second_packet = packet;
     second_packet.packet_id = "source-packet-2";
     second_packet.idempotency_key = "source-packet-idem-2";
