@@ -50,10 +50,13 @@ def make_batch(template: dict, text: str, index: int, global_start: int,
             "content": "会議日程" if index == 0 else "予算案",
             "references": [],
         })
+    claim_evidence_refs = [evidence_id]
+    if index > 0 and index not in (4,):
+        claim_evidence_refs.append(f"continuity-evidence-{index-1:03d}")
     nodes.extend([
         {"id": evidence_id, "kind": "EVIDENCE", "content": text, "references": []},
         {"id": claim_id, "kind": "CLAIM",
-         "content": f"block-{index}-claim", "references": [evidence_id]},
+         "content": f"block-{index}-claim", "references": claim_evidence_refs},
     ])
     relations = []
     if index > 0 and index not in (4,):
@@ -172,6 +175,7 @@ class ProjectionContinuitySimulation(unittest.TestCase):
                     "same_topic_memberships": 4,
                     "second_topic_memberships": 4,
                     "cross_block_dependency_edges": 6,
+                    "claims_with_prior_block_evidence": 6,
                     "interrupted_after": 4,
                     "resumed": 4,
                     "replay_duplicates": replay.duplicate_batches,
