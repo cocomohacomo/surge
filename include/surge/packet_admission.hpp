@@ -20,6 +20,12 @@ struct ValidatedRecognitionPacket {
   std::string source_id;
   std::string source_generation;
   std::string block_ref;
+  // Immutable document-wide stream identity and UTF-8 byte coordinates.
+  std::string document_ref;
+  std::string document_generation;
+  std::uint64_t document_sequence{};
+  std::uint64_t global_start_offset{};
+  std::uint64_t global_end_offset{};
   std::string offset_basis{"UTF8_BYTE_NFC"};
   std::uint64_t start_offset{};
   std::uint64_t end_offset{};
@@ -56,6 +62,12 @@ class PacketAdmissionCoordinator {
   bool contains_packet(const std::string& packet_id) const;
 
  private:
+  struct DocumentStreamState {
+    std::map<std::uint64_t, std::string> sequence_packets;
+    std::map<std::string, std::string> range_latest_packets;
+    std::uint64_t next_sequence{1};
+    std::uint64_t next_global_offset{0};
+  };
   struct StreamState {
     SourceSequencer sequencer;
     RangeLedger ranges;
@@ -64,12 +76,15 @@ class PacketAdmissionCoordinator {
   };
   static std::string stream_key(const ValidatedRecognitionPacket& packet);
   static std::string range_key(const ValidatedRecognitionPacket& packet);
+  static std::string document_stream_key(const ValidatedRecognitionPacket& packet);
+  static std::string document_range_key(const ValidatedRecognitionPacket& packet);
   static std::string encode(const ValidatedRecognitionPacket& packet);
   static bool decode(const std::string& payload, ValidatedRecognitionPacket& packet);
   bool apply_recovered(const ValidatedRecognitionPacket& packet);
 
   EventJournal& journal_;
   std::map<std::string, StreamState> streams_;
+  std::map<std::string, DocumentStreamState> document_streams_;
   std::map<std::string, std::string> packet_digests_;
   // Compare the complete durable packet envelope as well as the caller digest.
   // The digest is an optimization/integrity field, not an identity authority.
