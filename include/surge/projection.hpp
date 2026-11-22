@@ -108,7 +108,30 @@ inline bool build_projection_delta(const ProjectionBatch& batch,
   delta.delta_id = batch.projection_id;
   delta.idempotency_key = batch.idempotency_key;
   delta.expected_state_version = batch.base_state_version;
-  for (const auto& node : batch.nodes) delta.nodes.push_back({node});
+
+  // ContextGraph applies nodes in order and requires in-batch references to
+  // exist already. Preserve projector order where possible while emitting
+  // referenced nodes before their dependents.
+  std::set<std::string> pending_node_ids;
+  for (const auto& node : batch.nodes) pending_node_ids.insert(node.id);
+  while (!pending_node_ids.empty()) {
+    bool progressed = false;
+    for (const auto& node : batch.nodes) {
+      if (!pending_node_ids.count(node.id)) continue;
+      const bool dependencies_ready = std::none_of(
+          node.references.begin(), node.references.end(),
+          [&](const std::string& reference) { return pending_node_ids.count(reference) != 0; });
+      if (!dependencies_ready) continue;
+      delta.nodes.push_back({node});
+      pending_node_ids.erase(node.id);
+      progressed = true;
+    }
+    if (!progressed) {
+      error = "NODE_REFERENCE_CYCLE";
+      delta = SemanticDelta{};
+      return false;
+    }
+  }
   for (const auto& relation : batch.relations) delta.relations.push_back({relation});
   for (const auto& membership : batch.memberships) {
     GraphRelation relation;
