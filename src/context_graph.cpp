@@ -5,7 +5,7 @@
 #include "surge/dependency_engine.hpp"
 #include "surge/cluster_archive_store.hpp"
 #include <algorithm>
-#include <cctype
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
