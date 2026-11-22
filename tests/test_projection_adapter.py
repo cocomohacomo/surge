@@ -1,7 +1,9 @@
 import json
 import pathlib
+import tempfile
 import unittest
 
+from surge_adapter.packet_ingest import CppCoreBridge
 from surge_adapter.projection import ProjectionBatchAdapter, ProjectionRejected
 
 
@@ -53,6 +55,19 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
         batch["memberships"][0]["upstream_weight"] = 1.1
         with self.assertRaisesRegex(ProjectionRejected, "SCHEMA_INVALID"):
             self.adapter.validate(batch)
+
+    def test_json_to_c_abi_to_core_commit_for_all_source_formats(self):
+        for name in ("conversation", "document", "structured"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                batch = self.fixture(name)
+                with CppCoreBridge(pathlib.Path(tmp) / "projection.sgj") as core:
+                    committed = self.adapter.commit(batch, core)
+                    self.assertFalse(committed.duplicate)
+                    self.assertEqual(committed.state_version, 1)
+                    self.assertEqual(committed.packet_status, "COMMITTED")
+                    duplicate = self.adapter.commit(batch, core)
+                    self.assertTrue(duplicate.duplicate)
+                    self.assertEqual(duplicate.state_version, 1)
 
 
 if __name__ == "__main__":
