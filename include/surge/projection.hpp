@@ -181,7 +181,8 @@ inline bool estimate_projection_packet_resources(
     &packet.revision_of_packet_id
   };
   for (const auto* field : fields) {
-    if (!add(field->size() * 3, resident_bytes) ||
+    if (field->size() > std::numeric_limits<std::size_t>::max() / 3 ||
+        !add(field->size() * 3, resident_bytes) ||
         !add(field->size(), staging_bytes)) return false;
   }
   return add(resident_bytes, staging_bytes);
