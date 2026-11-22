@@ -770,6 +770,67 @@ int main(){
     CHECK(recovered.cluster_membership_reference_count("unclassified-note")==1);
     CHECK(recovered.relations().count(unresolved_edge_id)==0);
   }
+
+  // Candidate recall is retrieval-only: its score must never become a
+  // membership weight, and feedback must not rewrite existing memberships.
+  {
+    const auto recall_path=(root/"cognition-recall-feedback.sgj").string();
+    ContextGraph graph(recall_path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="cognition-seed";
+    seed.idempotency_key="cognition-seed";seed.expected_state_version=0;
+    seed.nodes={
+      {{"recall-cluster-low",NodeKind::Cluster,"CLASS=TOPIC;PARTITION=LOW",{}}},
+      {{"recall-cluster-high",NodeKind::Cluster,"CLASS=TOPIC;PARTITION=HIGH",{}}},
+      {{"recall-input",NodeKind::Entity,"incoming stream event",{}}},
+      {{"recall-member-low",NodeKind::Evidence,"agriculture field irrigation",{}}},
+      {{"recall-member-high",NodeKind::Evidence,"agriculture field irrigation crop",{}}}
+    };
+    seed.relations={
+      {{"recall-low-edge",RelationKind::Contains,"recall-cluster-low","recall-member-low",0.2}},
+      {{"recall-high-edge",RelationKind::Contains,"recall-cluster-high","recall-member-high",0.9}}
+    };
+    CHECK(graph.apply(seed).committed);
+    const auto memberships_before=graph.observe_cognition().memberships;
+    const auto candidates=graph.recall_cognition_candidates(
+        "recall-input",{"agriculture","irrigation"},8);
+    CHECK(candidates.size()==2);
+    CHECK(candidates.front().cluster_id=="recall-cluster-high");
+    CHECK(candidates.front().recall_score>candidates.back().recall_score);
+    CHECK(candidates.front().memory_state_version==graph.state_version());
+    CHECK(graph.relations().at("recall-high-edge").weight==0.9);
+    CHECK(graph.relations().at("recall-low-edge").weight==0.2);
+    const auto version_before_feedback=graph.state_version();
+    SemanticDelta feedback_delta;feedback_delta.delta_id="cognition-feedback";
+    feedback_delta.idempotency_key="cognition-feedback";
+    feedback_delta.expected_state_version=version_before_feedback;
+    CognitionFeedback feedback;
+    feedback.feedback_id="external-review-1";
+    feedback.candidate_cluster_id="recall-cluster-high";
+    feedback.input_member_id="recall-input";
+    feedback.outcome="CONFIRMED";
+    feedback.producer_id="external-model";
+    feedback.producer_version="1";
+    feedback.policy_version="review-policy-1";
+    feedback.recorded_at="2026-11-22T00:00:00Z";
+    feedback.notes="externally confirmed";
+    std::string feedback_error;
+    CHECK(graph.append_cognition_feedback(feedback_delta,feedback,
+        "feedback-evidence-1","feedback-about-1",feedback_error));
+    CHECK(graph.observe_cognition().memberships.size()==memberships_before.size());
+    CHECK(graph.apply(feedback_delta).committed);
+    const auto memberships_after=graph.observe_cognition().memberships;
+    CHECK(memberships_after.size()==memberships_before.size());
+    CHECK(graph.relations().at("recall-high-edge").weight==0.9);
+    CHECK(graph.relations().at("recall-low-edge").weight==0.2);
+    CHECK(graph.cluster_membership_reference_count("recall-member-low")==1);
+    CHECK(graph.cluster_membership_reference_count("recall-member-high")==1);
+    CognitionFeedback invalid=feedback;invalid.outcome="UNSUPPORTED";
+    SemanticDelta invalid_delta;
+    CHECK(!graph.append_cognition_feedback(invalid_delta,invalid,
+        "feedback-invalid","feedback-invalid-edge",feedback_error));
+    CHECK(invalid_delta.nodes.empty()&&invalid_delta.relations.empty());
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
