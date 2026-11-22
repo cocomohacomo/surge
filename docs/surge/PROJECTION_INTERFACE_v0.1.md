@@ -321,7 +321,7 @@ The atomic overload requires the batch context to match the source packet and re
 
 A retry first prepares the same SemanticDelta. If the graph recognizes its committed idempotency fingerprint, it produces no new semantic events; packet admission then resolves the retry as a duplicate. A conflicting packet envelope, stale base state, or reused semantic idempotency key with different content is rejected by the existing admission/graph invariants.
 
-The source event is the admitted RecognitionPacket. The projection's Evidence nodes are committed in the same journal transaction and retain references to the source packet. This first atomic adapter accepts one source packet per ProjectionBatch. A document or long stream is represented by successive source packets and batches, not by an artificial multi-source transaction.
+The source event is the admitted RecognitionPacket. The projection's Evidence nodes are committed in the same journal transaction. Source lineage is represented at the ProjectionBatch transaction boundary through `source_event_refs`; Evidence graph nodes retain their existing immutable Core shape and are not given synthetic graph references to packet records. This first atomic adapter accepts one source packet per ProjectionBatch. A document or long stream is represented by successive source packets and batches, not by an artificial multi-source transaction.
 
 ## 13. JSON contract and C ABI
 
