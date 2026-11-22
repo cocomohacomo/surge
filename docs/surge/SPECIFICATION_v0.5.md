@@ -5,8 +5,8 @@
 SURGE Coreの基本原理は、認知情報クラスターとフォーカスの二つである。すべての認知状態は、この二つの構造とその相互作用として表現する。用途固有の認知モデルをCoreへ固定しない。
 
 - **認知情報クラスター:** 経験・情報・関係・重みを保持する認知情報の単位。複数クラスターの共起によって新しい認識が成立した場合、その認識自体を新しいクラスターとして生成する。生成元クラスターとの由来関係を保持する。
-- **フォーカス:** 現在注目する認知情報クラスターを選択・遷移させる機構。フォーカスは認知の正誤を判定せず、クラスターのLifecycleも変更しない。
-- **外部観測:** 外部システムへ公開する中心対象はフォーカスされた認知情報クラスターである。外部システムがその観測結果を用いて用途固有の判断・行動を行う。
+- **フォーカス:** 認知情報空間上を移動・拡縮する三次元の計算境界であり、その内部を認知計算・観測する範囲を定める。フォーカス領域の形状・位置と、各クラスターに設定する認知展開深度は独立して管理する。フォーカスは単一クラスターの選択機構ではなく、認知の正誤を判定せず、クラスターのLifecycleも変更しない。
+- **外部観測:** 外部システムへ公開する対象は、フォーカスの論理領域に含まれる認知情報クラスター、ノード、Relationおよび所属情報である。計算予算により未処理となった範囲は論理領域から除外せず、処理済み・延期として区別する。外部システムが観測結果を用いて用途固有の判断・行動を行う。
 - **用途分離:** 会話理解、文書理解、ASR後処理、エージェント状況認識等は、二原理を利用する上位レイヤーに配置する。
 
 Coreの共通データ構造やAPIは用途非依存とし、認知の生成・想起・関係形成・フォーカス遷移をクラスター操作として表現する。新規認知の生成はProposalだけで終わらず、Commit対象のClusterとそのLineage Relationとして永続化できること。
@@ -25,41 +25,46 @@ Coreの共通データ構造やAPIは用途非依存とし、認知の生成・�
 # 1. 概要
 
 
-### 0.1 Spatial Focus Region (migration contract)
+### 0.1 Spatial Focus Region (current implementation contract)
 
-Focus is a spatial computation boundary, not a single selected Cluster. The legacy
-`FocusRecord` remains readable and writable for compatibility, but it is not the
-authoritative representation of spatial focus.
+Focus is the three-dimensional computation boundary over cognition information
+space, not a single selected Cluster. The legacy `FocusRecord` remains available
+for source and data compatibility; it is not the spatial boundary and does not
+replace `FocusRegion`.
 
-The spatial projection contract has four independent inputs:
+The durable spatial state consists of four independent dimensions:
 
 - `FocusRegion.center`: the region center in 3D graph coordinates.
-- `FocusRegion.half_extents`: non-negative extent along each axis. The initial
-  geometry is axis-aligned; this does not prescribe the eventual graph embedding.
-- `ClusterSpatialPosition`: the position of each Cluster or ChaosCluster.
-- `ClusterFocusDepth`: an independent traversal depth for each Cluster.
+- `FocusRegion.half_extents`: non-negative extent along each axis. The current
+  implementation uses an axis-aligned box as an initial geometry, not as a
+  permanent ontology for cognition space.
+- `ClusterSpatialPosition`: persisted position of each Cluster or ChaosCluster.
+- `ClusterFocusDepth`: independently persisted traversal depth for each Cluster.
 
-Changing region geometry MUST NOT implicitly modify per-cluster depth. Changing
-one Cluster's depth MUST NOT implicitly expand or contract the region. Coordinates
-may be negative; extents may not. Invalid or duplicate position records are ignored
-by the read projection and MUST be rejected by a future persistent write API.
+Region initialization/replacement, movement, resize, cluster-position updates and
+cluster-depth updates are separate journaled operations. Moving the region changes
+only its center; resizing changes only its half-extents. Neither operation changes
+cluster positions or per-cluster depth. A depth update changes only that Cluster's
+traversal depth.
+
+The durable state is restored from the EventJournal and CGS2 snapshots. CGS1
+snapshots remain readable for backward compatibility and contain no spatial state.
+The explicit C++ projection overload accepting region, positions and depths remains
+a read-only caller-supplied projection utility; normal persisted observation reads
+the durable spatial state from ContextGraph.
 
 Depth zero exposes the Cluster itself. Each positive depth permits one additional
 Contains-membership level. When traversal reaches a nested Cluster, its own
 configured depth applies independently; it does not inherit the parent's depth.
 This is a structural traversal rule, not a truth or relevance score.
 
-The observation reports clusters considered/in-region, nodes and relations
-processed, configured limits, and whether a work budget was exhausted. Budget
-exhaustion is an explicit partial observation, never a claim that the full region
-was processed. External observers may consume all nodes, memberships and relations
-inside the projection, not just the legacy focused Cluster.
-
-The current C++ overload accepts positions and depths as read inputs. Durable
-spatial-position storage, independently journaled region movement/resize and
-per-cluster depth updates, and transport/schema bindings remain migration work;
-they MUST NOT be represented as complete by this read-only projection.
-
+The logical focus region is determined from all persisted cluster positions before
+node/relation traversal budgets are applied. The observation reports the complete
+geometric membership separately from processed and deferred roots. Budget exhaustion
+is an explicit partial observation, never a claim that the full region was processed
+and never a reason to contract the logical region. External observers may consume all
+nodes, memberships and relations admitted by the projection, not just the legacy
+focused Cluster.
 ## 1.1 定義
 
 SURGEは、異なる形式・粒度・時間軸で逐次入力される情報を共通イベント形式に正規化し、意味認識、文脈統合、Focus管理、状態更新、履歴管理を継続的に実行するモデル非依存の汎用文脈認識フレームワークである。
@@ -215,7 +220,9 @@ Dependency状態: ACTIVE, INACTIVE, SUSPENDED, INVALIDATED。
 
 ## 4.8 Focus State
 
-Focusはscope_id、target_ref、level、role、status、activation_reason、previous_focus_refs、transition_event_refを持つ。Role: PRIMARY, SECONDARY, BACKGROUND, DORMANT。複数Focusを許容し、Scope PolicyがPRIMARYの一意性を定義する。Global/Local Scope間のPRIMARY重複は許容する。
+空間Focusの正本は `FocusRegion`、`ClusterSpatialPosition`、`ClusterFocusDepth` である。FocusRegionは認知情報空間上の計算境界を定め、位置情報により論理領域内のクラスターを決定する。ClusterFocusDepthは領域所属とは独立したクラスターごとの構造展開深度を定める。領域の拡張・縮小と深度変更は別々に行い、計算予算による処理範囲の縮小を論理領域の変更として扱わない。
+
+従来の `FocusRecord` とSchema上のscope/target/role形式は互換性および上位レイヤーの候補・遷移情報として保持する。これらのtarget選択情報を三次元Focus領域そのものと同一視しない。
 
 ## 4.9 Context State
 
