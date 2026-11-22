@@ -378,6 +378,21 @@ int main() {
     CHECK(result.next_index == 2);
     CHECK(result.state_version == 2);
     CHECK(packets.packet_count() == 2);
+    const auto retained_before_replay = budget.snapshot();
+    const auto replay = surge::apply_projection_stream(packets, budgeted, stream);
+    CHECK(replay.complete);
+    CHECK(replay.committed_packets == 2);
+    CHECK(replay.duplicate_packets == 2);
+    CHECK(replay.state_version == 2);
+    const auto retained_after_replay = budget.snapshot();
+    CHECK(retained_after_replay.used[static_cast<std::size_t>(
+        surge::ResourceKind::ResidentBytes)] ==
+        retained_before_replay.used[static_cast<std::size_t>(
+        surge::ResourceKind::ResidentBytes)]);
+    CHECK(retained_after_replay.used[static_cast<std::size_t>(
+        surge::ResourceKind::RetainedEvents)] ==
+        retained_before_replay.used[static_cast<std::size_t>(
+        surge::ResourceKind::RetainedEvents)]);
     CHECK(graph.nodes().count("stream-claim-one") == 1);
     CHECK(graph.nodes().count("stream-claim-two") == 1);
     const auto resident_before_reclaim = budget.snapshot().used[
