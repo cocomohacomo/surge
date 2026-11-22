@@ -172,11 +172,6 @@
         "const char*source_id",
         "const char*source_generation",
         "const char*block_ref",
-        "const char*document_ref",
-        "const char*document_generation",
-        "uint64_t document_sequence",
-        "uint64_t global_start_offset",
-        "uint64_t global_end_offset",
         "const char*offset_basis",
         "uint64_t start_offset",
         "uint64_t end_offset",
@@ -303,6 +298,16 @@
         "size_t decision_evidence_limit",
         "size_t total_byte_used",
         "size_t total_byte_limit"
+      ]
+    },
+    "SurgeDocumentStreamInput": {
+      "tag": "SurgeDocumentStreamInput",
+      "fields": [
+        "const char*document_ref",
+        "const char*document_generation",
+        "uint64_t document_sequence",
+        "uint64_t global_start_offset",
+        "uint64_t global_end_offset"
       ]
     }
   },
