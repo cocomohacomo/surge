@@ -781,22 +781,35 @@ int main(){
     seed.nodes={
       {{"recall-cluster-low",NodeKind::Cluster,"CLASS=TOPIC;PARTITION=LOW",{}}},
       {{"recall-cluster-high",NodeKind::Cluster,"CLASS=TOPIC;PARTITION=HIGH",{}}},
+      {{"recall-cluster-related",NodeKind::Cluster,"CLASS=RELATED",{}}},
       {{"recall-input",NodeKind::Entity,"incoming stream event",{}}},
       {{"recall-member-low",NodeKind::Evidence,"agriculture field irrigation",{}}},
-      {{"recall-member-high",NodeKind::Evidence,"agriculture field irrigation crop",{}}}
+      {{"recall-member-high",NodeKind::Evidence,"agriculture field irrigation crop",{}}},
+      {{"recall-member-related",NodeKind::Evidence,"urban planning transport",{}}}
     };
     seed.relations={
       {{"recall-low-edge",RelationKind::Contains,"recall-cluster-low","recall-member-low",0.2}},
       {{"recall-high-edge",RelationKind::Contains,"recall-cluster-high","recall-member-high",0.9}},
       {{"recall-cluster-association",RelationKind::AgreesWith,
-        "recall-cluster-low","recall-cluster-high",0.8}}
+        "recall-cluster-low","recall-cluster-high",0.8}},
+      {{"recall-cluster-synthesis",RelationKind::Supports,
+        "recall-cluster-low","recall-cluster-related",0.75}},
+      {{"recall-related-edge",RelationKind::Contains,
+        "recall-cluster-related","recall-member-related",0.7}}
     };
     CHECK(graph.apply(seed).committed);
     const auto memberships_before=graph.observe_cognition().memberships;
     const auto candidates=graph.recall_cognition_candidates(
         "recall-input",{"agriculture","irrigation"},8);
-    CHECK(candidates.size()==2);
+    CHECK(candidates.size()==3);
     CHECK(candidates.front().cluster_id=="recall-cluster-high");
+    CHECK(std::any_of(candidates.begin(), candidates.end(), [](const auto& candidate) {
+      return candidate.cluster_id=="recall-cluster-related" &&
+          candidate.recall_score > 0.0 &&
+          std::find(candidate.supporting_member_ids.begin(),
+              candidate.supporting_member_ids.end(), "recall-member-related") !=
+              candidate.supporting_member_ids.end();
+    }));
     CHECK(candidates.front().recall_score>candidates.back().recall_score);
     CHECK(candidates.front().memory_state_version==graph.state_version());
     CHECK(graph.relations().at("recall-high-edge").weight==0.9);
