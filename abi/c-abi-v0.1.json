@@ -1,7 +1,7 @@
 {
   "abi_version": {
     "major": 0,
-    "minor": 1,
+    "minor": 2,
     "patch": 0
   },
   "structs": {
@@ -336,6 +336,16 @@
       "name": "surge_context_graph_focus_set_chaos",
       "return_type": "int",
       "parameters": "void*handle,const char*delta_id,const char*idempotency_key,uint64_t expected_state_version,const char*chaos_cluster_id,const char*interest_id,int*duplicate,uint64_t*state_version,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_recall_candidates",
+      "return_type": "int",
+      "parameters": "void*handle,const char*input_member_id,const char*const*query_terms,size_t query_term_count,size_t max_candidates,char*output,size_t output_capacity,size_t*required_capacity,char*error,size_t error_capacity"
+    },
+    {
+      "name": "surge_context_graph_record_cognition_feedback",
+      "return_type": "int",
+      "parameters": "void*handle,const char*feedback_id,const char*candidate_cluster_id,const char*input_member_id,const char*outcome,const char*producer_id,const char*producer_version,const char*policy_version,const char*recorded_at,const char*notes,uint64_t expected_state_version,const char*feedback_node_id,const char*relation_id,uint64_t*state_version,char*error,size_t error_capacity"
     },
     {
       "name": "surge_context_graph_retrieve",
