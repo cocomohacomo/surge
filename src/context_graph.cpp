@@ -2220,7 +2220,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         const auto adjacency=contains_by_cluster.find(current.cluster_id);
         if(adjacency==contains_by_cluster.end())continue;
         for(const auto& relation:adjacency->second){
-          if(visible_relation_ids.count(relation.id))continue;
           visible_relation_ids.insert(relation.id);
           const bool inserted=visible_ids.insert(relation.to).second;
           if(inserted&&visible_ids.size()>max_nodes){
