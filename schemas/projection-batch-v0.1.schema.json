@@ -76,6 +76,11 @@
         "source_generation",
         "block_ref",
         "offset_basis",
+        "document_ref",
+        "document_generation",
+        "document_sequence",
+        "global_start_offset",
+        "global_end_offset",
         "start_offset",
         "end_offset",
         "source_sequence",
@@ -145,6 +150,26 @@
         "context_id": {
           "type": "string",
           "minLength": 1
+        },
+        "document_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_generation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "global_start_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "global_end_offset": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
