@@ -220,6 +220,15 @@ class RecognitionPacketAdapter:
         return admission
 
 
+class _ResourceSnapshot(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_size_t) for name in (
+        "resident_bytes_used", "transient_bytes_used", "retained_events_used",
+        "retained_clusters_used", "decision_candidates_used", "decision_evidence_used",
+        "resident_bytes_limit", "transient_bytes_limit", "retained_events_limit",
+        "retained_clusters_limit", "decision_candidates_limit", "decision_evidence_limit",
+        "total_byte_used", "total_byte_limit")]
+
+
 class CppCoreBridge:
     """ctypes bridge to the journal-backed C++ PacketAdmissionCoordinator."""
 
@@ -258,6 +267,9 @@ class CppCoreBridge:
         self._lib.surge_packet_core_state_version.restype = ctypes.c_uint64
         self._lib.surge_packet_core_packet_count.argtypes = [ctypes.c_void_p]
         self._lib.surge_packet_core_packet_count.restype = ctypes.c_size_t
+        self._lib.surge_packet_core_resource_snapshot.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(_ResourceSnapshot), charp, ctypes.c_size_t]
+        self._lib.surge_packet_core_resource_snapshot.restype = ctypes.c_int
         error = ctypes.create_string_buffer(1024)
         encoded_path = str(pathlib.Path(journal_path)).encode("utf-8")
         if resource_limits is None:
@@ -301,6 +313,17 @@ class CppCoreBridge:
     @property
     def packet_count(self) -> int:
         return int(self._lib.surge_packet_core_packet_count(self._handle))
+
+    @property
+    def resource_snapshot(self) -> dict[str, int]:
+        snapshot = _ResourceSnapshot()
+        error = ctypes.create_string_buffer(1024)
+        if not self._lib.surge_packet_core_resource_snapshot(
+                self._handle, ctypes.byref(snapshot), error, len(error)):
+            raise PacketRejected(error.value.decode("utf-8", errors="replace") or
+                                 "RESOURCE_SNAPSHOT_FAILED")
+        return {name: int(getattr(snapshot, name))
+                for name, _ in snapshot._fields_}
 
     def admit(self, packet: dict[str, Any], source: bytes,
               snapshot_digest: str, range_digest: str,
