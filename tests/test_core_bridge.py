@@ -105,7 +105,7 @@ class PythonCppRuntimeBridgeTests(unittest.TestCase):
                          "content": "streaming context recognition"},
                     ],
                     "relations": [{"id": "membership-a", "kind": "CONTAINS",
-                                   "from_id": "topic-a", "to_id": "member-a"}],
+                                   "from": "topic-a", "to": "member-a"}],
                 })
                 before = core.recall_cognition_candidates("input-a", ["streaming", "context"])
                 self.assertEqual(before["candidates"][0]["cluster_id"], "topic-a")
