@@ -269,6 +269,10 @@ class ContextGraph {
   std::unique_ptr<EventJournal> owned_journal_;
   EventJournal* journal_{nullptr};
   State state_;
+  // Derived Recall index: rebuilt on committed state-version changes and never journaled.
+  mutable std::uint64_t recall_index_state_version_{~std::uint64_t{0}};
+  mutable std::map<std::string, std::vector<std::pair<std::string, std::string, double>>> recall_term_postings_;
+  mutable std::map<std::string, std::vector<std::pair<std::string, std::string, double>>>> recall_member_postings_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
 };
