@@ -1977,8 +1977,10 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     std::string corpus = node.content;
     for (const auto& ref : node.references) { corpus.push_back(' '); corpus += ref; }
     std::vector<std::pair<std::size_t, std::size_t>> positions;
-    auto& candidate = by_cluster[membership.cluster_node_id];
-    candidate.cluster_id = membership.cluster_node_id;
+    const auto& posting_key = membership.first;
+    const auto& posting_cluster_id = posting_key.second;
+    auto& candidate = by_cluster[posting_cluster_id];
+    candidate.cluster_id = posting_cluster_id;
     candidate.memory_state_version = observation.state_version;
     for (const auto& term : hit.second) {
       const auto position = corpus.find(term);
