@@ -895,8 +895,8 @@ bool ContextGraph::append_cluster_membership(SemanticDelta& delta,
   }
   return true;
  };
- if(!validate_edge(parent_relation,parent_cluster_id,cluster_id,parent_edge_exists)||
-    !validate_edge(member_relation,cluster_id,member_node_id,member_edge_exists)){
+ if(!validate_edge(parent_relation,parent_cluster_id,cluster_id,1.0,parent_edge_exists)||
+    !validate_edge(member_relation,cluster_id,member_node_id,membership_weight,member_edge_exists)){
   error="CLUSTER_CLASSIFICATION_RELATION_ID_CONFLICT";return false;
  }
  // Commit all staged additions to the caller's delta only after every
