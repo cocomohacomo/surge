@@ -316,6 +316,8 @@ The repository now includes `include/surge/projection.hpp` with a typed `Project
 
 The adapter deliberately does not commit state itself. Callers must pass the resulting delta through the existing `ContextGraph::apply()` path so that the established journal, conflict, idempotency, and graph invariants remain authoritative.
 
-The initial executable test target is `surge_projection_tests`. It covers valid mapping, preservation of membership weight, missing evidence, non-finite weights, invalid spatial coordinates, and missing required metadata.
+The executable test target is `surge_projection_tests`. In addition to structural validation and mapping, it now exercises `apply_projection_batch()` against a real journal-backed `ContextGraph`: successful commit, idempotent duplicate submission, and journal replay are checked.
 
-**Scope limitation:** this first adapter does not yet provide a transport-level JSON parser, C ABI entry point, automatic source-event admission, or transactional orchestration across Event/Evidence creation and graph commit. Those remain subsequent integration tasks.
+`apply_projection_batch()` is the typed C++ commit entry point. It validates and translates the batch, then delegates the state transition to `ContextGraph::apply()`; the caller remains responsible for admitting source Events before projection. The adapter does not create Event records from `source_event_refs`.
+
+**Scope limitation:** this adapter does not yet provide a transport-level JSON parser, a ProjectionBatch-specific C ABI entry point, automatic source-event admission, or a single transaction spanning EventJournal admission and graph commit. The current executable integration test proves the graph commit, idempotency, and replay path only. Conversation/document/structured-data examples remain semantic fixture scenarios until dedicated format adapters and cross-format fixtures are added.
