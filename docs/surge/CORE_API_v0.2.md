@@ -503,3 +503,36 @@ The caller supplies the recognized content, a unique Cluster ID, and at least tw
 - The overload is read-only. The caller currently supplies positions and depths; durable spatial state and independent journaled updates are a subsequent migration stage.
 
 The no-argument legacy overload remains available and preserves its historical single-cluster behavior for source compatibility. New integrations SHOULD use the spatial overload.
+
+
+### 5.14 Durable spatial Focus updates
+
+The following update methods append independent commands to a caller-owned
+`SemanticDelta` and are committed through the normal ContextGraph journal:
+
+- `append_focus_region_update(delta, region, error)`
+- `append_cluster_spatial_position_update(delta, position, error)`
+- `append_cluster_focus_depth_update(delta, depth, error)`
+
+Journal event kinds are `FOCUS_REGION_SET_V1`,
+`CLUSTER_SPATIAL_POSITION_SET_V1`, and
+`CLUSTER_FOCUS_DEPTH_SET_V1`. They have independent validation and replay paths.
+A transaction may carry multiple position/depth updates, but a region update is
+never encoded as a depth update or vice versa.
+
+The `CGS2` ContextGraph snapshot stores the optional region, cluster positions and
+cluster depths. Restore accepts `CGS1` for backward compatibility and replays the
+three new event kinds in a journal tail.
+
+### 5.15 C ABI spatial Focus
+
+The additive C ABI is version 0.3 and exposes:
+
+- `surge_context_graph_set_focus_region`
+- `surge_context_graph_set_cluster_spatial_position`
+- `surge_context_graph_set_cluster_focus_depth`
+- `surge_context_graph_observe_focused_cognition`
+
+The observation API returns the logical region and its full geometric membership
+separately from processed/deferred cluster roots. Its work object includes operation
+counts, elapsed microseconds, configured limits and an explicit budget-exhausted flag.
