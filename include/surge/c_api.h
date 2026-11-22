@@ -6,7 +6,7 @@
 // Major changes may break ABI; minor changes are additive; patch changes
 // preserve ABI. Major zero denotes the pre-stability compatibility period.
 #define SURGE_ABI_VERSION_MAJOR 0u
-#define SURGE_ABI_VERSION_MINOR 2u
+#define SURGE_ABI_VERSION_MINOR 3u
 #define SURGE_ABI_VERSION_PATCH 0u
 #define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
@@ -15,6 +15,19 @@ extern "C" {
 // Returns SURGE_ABI_VERSION_ENCODE(major, minor, patch).
 uint32_t surge_abi_version(void);
 #endif
+
+typedef struct SurgeFocusRegionInput {
+  double center_x, center_y, center_z;
+  double half_extent_x, half_extent_y, half_extent_z;
+} SurgeFocusRegionInput;
+typedef struct SurgeClusterSpatialPositionInput {
+  const char* cluster_id;
+  double x, y, z;
+} SurgeClusterSpatialPositionInput;
+typedef struct SurgeClusterFocusDepthInput {
+  const char* cluster_id;
+  size_t depth;
+} SurgeClusterFocusDepthInput;
 
 typedef struct SurgeChaosProvenanceInput {
   const char* producer_id;
@@ -336,6 +349,28 @@ int surge_context_graph_dependency_evaluation(void* handle, const char* delta_id
 
 // Read-only detached snapshot of the committed SURGE cognition state as JSON.
 // On insufficient output capacity, required_capacity receives bytes including NUL.
+// Spatial Focus mutation events. Region geometry, cluster position and cluster depth
+// are separate durable events and each commits in its own SemanticDelta.
+int surge_context_graph_set_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionInput* region, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_set_cluster_spatial_position(void* handle,
+    const char* delta_id, const char* idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeClusterSpatialPositionInput* position, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_set_cluster_focus_depth(void* handle,
+    const char* delta_id, const char* idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeClusterFocusDepthInput* depth, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+// Read-only bounded projection of the persisted logical Focus Region.
+int surge_context_graph_observe_focused_cognition(void* handle,
+    size_t max_nodes, size_t max_relations, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
 int surge_context_graph_observe_cognition(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
