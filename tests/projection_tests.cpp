@@ -1,4 +1,5 @@
 #include "surge/projection.hpp"
+#include "surge/sha256.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -86,5 +87,77 @@ int main() {
     assert(replayed.relations().count("membership-1") == 1);
   }
   std::filesystem::remove(journal_path);
+
+  const auto atomic_path =
+      (std::filesystem::temp_directory_path() / "surge-projection-atomic.sgj").string();
+  std::filesystem::remove(atomic_path);
+  const std::string source = "会議日程は火曜日";
+  surge::ValidatedRecognitionPacket packet;
+  packet.packet_id = "source-packet-1";
+  packet.idempotency_key = "source-packet-idem-1";
+  packet.context_id = "context-atomic";
+  packet.source_id = "transcript-1";
+  packet.source_generation = "session-1";
+  packet.block_ref = "utterance-1";
+  packet.offset_basis = "UTF8_BYTE_NFC";
+  packet.start_offset = 0;
+  packet.end_offset = source.size();
+  packet.source_sequence = 1;
+  packet.source_snapshot_digest = surge::sha256_hex(source);
+  packet.source_range_digest = surge::sha256_hex(source);
+  packet.canonical_request_digest = surge::sha256_hex("canonical-source-packet-1");
+
+  auto atomic_batch = batch;
+  atomic_batch.projection_id = "atomic-projection-1";
+  atomic_batch.idempotency_key = "atomic-projection-idem-1";
+  atomic_batch.context_id = packet.context_id;
+  atomic_batch.base_state_version = 0;
+  atomic_batch.source_event_refs = {packet.packet_id};
+  atomic_batch.nodes[1].references = {"evidence-1"};
+  atomic_batch.nodes[2].references = {packet.packet_id};
+
+  {
+    surge::EventJournal journal(atomic_path);
+    assert(journal.open());
+    surge::PacketAdmissionCoordinator packets(journal);
+    assert(packets.recover());
+    surge::ContextGraph graph(journal);
+    assert(graph.open());
+
+    const auto admitted = surge::apply_projection_batch(
+        packets, graph, atomic_batch, packet, source);
+    assert(admitted.admitted && !admitted.duplicate);
+    assert(admitted.state_version == 1);
+    assert(packets.packet_count() == 1);
+    assert(graph.nodes().count("claim-1") == 1);
+    assert(graph.nodes().count("evidence-1") == 1);
+    assert(graph.relations().count("membership-1") == 1);
+
+    const auto duplicate = surge::apply_projection_batch(
+        packets, graph, atomic_batch, packet, source);
+    assert(duplicate.admitted && duplicate.duplicate);
+    assert(journal.state_version() == 1);
+
+    auto mismatched = atomic_batch;
+    mismatched.source_event_refs = {"another-packet"};
+    const auto rejected = surge::apply_projection_batch(
+        packets, graph, mismatched, packet, source);
+    assert(!rejected.admitted);
+    assert(rejected.error == "PROJECTION_SOURCE_PACKET_MISMATCH");
+    assert(journal.state_version() == 1);
+  }
+  {
+    surge::EventJournal journal(atomic_path);
+    assert(journal.open());
+    surge::PacketAdmissionCoordinator packets(journal);
+    assert(packets.recover());
+    surge::ContextGraph graph(journal);
+    assert(graph.open());
+    assert(packets.packet_count() == 1);
+    assert(graph.state_version() == 1);
+    assert(graph.nodes().count("claim-1") == 1);
+    assert(graph.relations().count("membership-1") == 1);
+  }
+  std::filesystem::remove(atomic_path);
   return 0;
 }
