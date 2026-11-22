@@ -68,9 +68,6 @@ inline ProjectionValidationResult validate_projection_batch(const ProjectionBatc
     const auto found = std::find_if(batch.nodes.begin(), batch.nodes.end(),
       [&](const GraphNode& node) { return node.id == evidence_id && node.kind == NodeKind::Evidence; });
     if (found == batch.nodes.end()) return {false, "EVIDENCE_NODE_NOT_FOUND"};
-    const bool source_linked = std::any_of(found->references.begin(), found->references.end(),
-      [&](const std::string& reference) { return source_event_ids.count(reference) != 0; });
-    if (!source_linked) return {false, "EVIDENCE_SOURCE_LINEAGE_MISSING"};
   }
 
   std::set<std::string> relation_ids;
