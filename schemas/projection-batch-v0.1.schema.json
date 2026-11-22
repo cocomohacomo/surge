@@ -81,7 +81,8 @@
         "source_sequence",
         "source_snapshot_digest",
         "source_range_digest",
-        "canonical_request_digest"
+        "canonical_request_digest",
+        "context_id"
       ],
       "properties": {
         "packet_id": {
@@ -140,6 +141,10 @@
         "revision_sequence": {
           "type": "integer",
           "minimum": 0
+        },
+        "context_id": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
