@@ -1822,10 +1822,10 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
       return "UNKNOWN";
     };
     std::ostringstream json;
-    json<<"{\"state_version\":"<<observation.state_version<<",\"focus_region\":";
+    json<<"{\"schema_version\":\"0.5.0\",\"state_version\":"<<observation.state_version<<",\"focus_region\":";
     if(observation.focus_region){
       const auto& r=*observation.focus_region;
-      json<<"{\"center\":["<<std::setprecision(17)<<r.center.x<<','<<r.center.y<<','<<r.center.z
+      json<<"{\"schema_version\":\"0.5.0\",\"geometry\":\"AXIS_ALIGNED_3D\",\"center\":["<<std::setprecision(17)<<r.center.x<<','<<r.center.y<<','<<r.center.z
           <<"],\"half_extents\":["<<r.half_extents.x<<','<<r.half_extents.y<<','<<r.half_extents.z<<"]}";
     }else json<<"null";
     auto write_ids=[&](const char* key,const std::vector<std::string>& ids){
