@@ -338,6 +338,9 @@ class ContextGraph {
   // rebuilt only when position state is replaced and is never journaled.
   mutable bool spatial_position_index_valid_{false};
   mutable std::map<double, std::vector<std::string>> spatial_position_x_index_;
+  // Derived outgoing adjacency stores IDs, never pointers into mutable graph state.
+  mutable bool spatial_relation_index_valid_{false};
+  mutable std::map<std::string, std::vector<std::string>> spatial_outgoing_relation_ids_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
 };
