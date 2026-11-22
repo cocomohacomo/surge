@@ -483,3 +483,23 @@ This operation is read-only. If no Focus exists, it returns an empty focused pro
 
 The caller supplies the recognized content, a unique Cluster ID, and at least two existing or same-Delta source Cluster IDs. The Core validates source types and identifiers, adds the new Cluster, and records `DERIVED_FROM` relations from the new Cluster to each source Cluster in the same SemanticDelta. The operation does not judge whether the recognition is true. Focus selection is a separate operation and may target the new Cluster in the same transaction.
 
+
+
+### 5.13 observe_focused_cognition (spatial overload, C++ library)
+
+**Purpose:** Return the cognition information inside a 3D focus region.
+
+**Inputs**
+- `FocusRegion`: center and non-negative axis half-extents.
+- `ClusterSpatialPosition[]`: cluster coordinates in the same graph coordinate space.
+- `ClusterFocusDepth[]`: independent traversal depth per cluster.
+- `max_nodes`, `max_relations`: deterministic work limits.
+
+**Semantics**
+- Region membership is evaluated against the 3D axis-aligned extent.
+- Depth zero returns the cluster only; positive depth traverses Contains edges.
+- A nested cluster uses its own depth setting, independently of its parent.
+- The response contains every node and relation admitted by the region/depth/budget projection, plus work metrics and an explicit budget-exhausted flag.
+- The overload is read-only. The caller currently supplies positions and depths; durable spatial state and independent journaled updates are a subsequent migration stage.
+
+The no-argument legacy overload remains available and preserves its historical single-cluster behavior for source compatibility. New integrations SHOULD use the spatial overload.
