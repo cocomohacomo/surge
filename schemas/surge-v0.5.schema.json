@@ -2091,6 +2091,10 @@
             },
             "budget_exhausted": {
               "type": "boolean"
+            },
+            "relations_examined": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
@@ -2105,7 +2109,8 @@
             "elapsed_microseconds",
             "max_nodes",
             "max_relations",
-            "budget_exhausted"
+            "budget_exhausted",
+            "relations_examined"
           ],
           "additionalProperties": false
         },
