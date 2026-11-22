@@ -2239,9 +2239,9 @@ CognitionObservation ContextGraph::observe_focused_cognition(
           const auto child=state_.nodes.find(relation->to);
           if(child!=state_.nodes.end()&&
              (child->second.kind==NodeKind::Cluster||child->second.kind==NodeKind::ChaosCluster)){
-            frontier.push_back({relation.to,current.level+1,current.origin_cluster_id});
-            if(depth_by_cluster.count(relation.to))
-              frontier.push_back({relation.to,0,relation.to});
+            frontier.push_back({relation->to,current.level+1,current.origin_cluster_id});
+            if(depth_by_cluster.count(relation->to))
+              frontier.push_back({relation->to,0,relation->to});
           }
         }
       }
