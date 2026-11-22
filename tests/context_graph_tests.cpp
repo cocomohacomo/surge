@@ -439,6 +439,66 @@ int main(){
     const auto bounded=graph.observe_focused_cognition(expanded,positions,deeper,2,20);
     CHECK(bounded.focus_work.budget_exhausted);
     CHECK(bounded.nodes.size()<=2);
+
+    // Persist region, positions and depths as independent journal event families.
+    SemanticDelta region_delta;region_delta.delta_id="spatial-region-update";
+    region_delta.idempotency_key="spatial-region-update";
+    region_delta.expected_state_version=graph.state_version();
+    std::string spatial_error;
+    const FocusRegion durable_region{{0.0,0.0,0.0},{2.0,2.0,2.0}};
+    CHECK(graph.append_focus_region_update(region_delta,durable_region,spatial_error));
+    CHECK(graph.apply(region_delta).committed);
+
+    SemanticDelta position_delta;position_delta.delta_id="spatial-position-update";
+    position_delta.idempotency_key="spatial-position-update";
+    position_delta.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_spatial_position_update(position_delta,{"spatial-a",{-0.5,0.0,0.0}},spatial_error));
+    CHECK(graph.append_cluster_spatial_position_update(position_delta,{"spatial-b",{0.5,0.0,0.0}},spatial_error));
+    CHECK(graph.append_cluster_spatial_position_update(position_delta,{"spatial-c",{5.0,0.0,0.0}},spatial_error));
+    CHECK(graph.apply(position_delta).committed);
+
+    SemanticDelta depth_delta;depth_delta.delta_id="spatial-depth-update";
+    depth_delta.idempotency_key="spatial-depth-update";
+    depth_delta.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_focus_depth_update(depth_delta,{"spatial-a",1},spatial_error));
+    CHECK(graph.append_cluster_focus_depth_update(depth_delta,{"spatial-b",0},spatial_error));
+    CHECK(graph.append_cluster_focus_depth_update(depth_delta,{"spatial-nested",1},spatial_error));
+    CHECK(graph.apply(depth_delta).committed);
+    const auto durable_observation=graph.observe_focused_cognition(20,20);
+    CHECK(durable_observation.focus_region.has_value());
+    CHECK(durable_observation.cluster_spatial_positions.size()==3);
+    CHECK(durable_observation.cluster_focus_depths.size()==3);
+    CHECK(durable_observation.logical_region_cluster_ids.size()==2);
+    CHECK(durable_observation.processed_region_cluster_ids.size()==2);
+    CHECK(durable_observation.deferred_region_cluster_ids.empty());
+
+    // Restart replay restores all independent spatial state.
+    {
+      ContextGraph replayed(path);CHECK(replayed.open());
+      const auto replayed_view=replayed.observe_focused_cognition(20,20);
+      CHECK(replayed_view.focus_region.has_value());
+      CHECK(replayed_view.focus_region->half_extents.x==2.0);
+      CHECK(replayed_view.cluster_spatial_positions.size()==3);
+      CHECK(replayed_view.cluster_focus_depths.size()==3);
+      CHECK(replayed_view.logical_region_cluster_ids.size()==2);
+
+      // CGS2 snapshot restore retains the same state and accepts legacy CGS1.
+      ContextGraphSnapshotDomain domain(replayed);
+      std::string snapshot_payload;
+      CHECK(domain.capture(&snapshot_payload,&spatial_error));
+      CHECK(snapshot_payload.rfind("CGS2 ",0)==0);
+      const auto restore_path=(root/"spatial-focus-restore.sgj").string();
+      ContextGraph restored(restore_path);CHECK(restored.open());
+      ContextGraphSnapshotDomain restored_domain(restored);
+      auto prepared=restored_domain.prepare_restore(snapshot_payload,&spatial_error);
+      CHECK(prepared!=nullptr);
+      CHECK(prepared->commit());
+      const auto restored_view=restored.observe_focused_cognition(20,20);
+      CHECK(restored_view.focus_region.has_value());
+      CHECK(restored_view.cluster_spatial_positions.size()==3);
+      CHECK(restored_view.cluster_focus_depths.size()==3);
+      CHECK(restored_view.logical_region_cluster_ids.size()==2);
+    }
   }
 
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
