@@ -98,7 +98,9 @@ bool PacketAdmissionCoordinator::apply_recovered(
   auto& state = streams_[skey];
   if (!p.document_ref.empty()) {
     if (p.document_generation.empty() || p.document_sequence == 0 ||
-        p.global_end_offset <= p.global_start_offset) return false;
+        p.global_end_offset <= p.global_start_offset ||
+        p.global_end_offset - p.global_start_offset != p.end_offset - p.start_offset)
+      return false;
     auto& document = document_streams_[document_stream_key(p)];
     const auto drange = document_range_key(p);
     const auto prior = document.sequence_packets.find(p.document_sequence);
@@ -184,7 +186,8 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
       (!p.revision && (p.revision_sequence != 0 || !p.revision_of_packet_id.empty())) ||
       (!p.document_ref.empty() &&
        (p.document_generation.empty() || p.document_sequence == 0 ||
-        p.global_end_offset <= p.global_start_offset)) ||
+        p.global_end_offset <= p.global_start_offset ||
+        p.global_end_offset - p.global_start_offset != p.end_offset - p.start_offset)) ||
       (p.document_ref.empty() &&
        (!p.document_generation.empty() || p.document_sequence != 0 ||
         p.global_start_offset != 0 || p.global_end_offset != 0))) {
