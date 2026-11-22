@@ -1,4 +1,3 @@
-import copy
 import hashlib
 import json
 import pathlib
@@ -70,6 +69,10 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                     duplicate = self.adapter.commit(batch, core)
                     self.assertTrue(duplicate.duplicate)
                     self.assertEqual(duplicate.state_version, 1)
+                metrics = core.resource_snapshot
+                self.assertGreater(metrics["resident_bytes_used"], 0)
+                self.assertGreater(metrics["retained_events_used"], 0)
+                self.assertEqual(metrics["transient_bytes_used"], 0)
 
     def test_budget_rejection_happens_before_packet_or_graph_commit(self):
         batch = self.fixture("conversation")
@@ -87,6 +90,7 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                     self.adapter.commit(batch, core)
                 self.assertEqual(core.state_version, 0)
                 self.assertEqual(core.packet_count, 0)
+                self.assertEqual(core.resource_snapshot["transient_bytes_used"], 0)
 
     def test_multi_packet_stream_commits_in_order(self):
         first = self.fixture("conversation")
@@ -142,6 +146,8 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                 self.assertEqual(result.next_index, 2)
                 self.assertEqual(result.state_version, 2)
                 self.assertEqual(core.packet_count, 2)
+                self.assertGreater(core.resource_snapshot["resident_bytes_used"], 0)
+                self.assertEqual(core.resource_snapshot["transient_bytes_used"], 0)
 
 
 if __name__ == "__main__":
