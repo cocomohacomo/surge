@@ -2052,10 +2052,35 @@ bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
     error = "invalid cognition feedback fields";
     return false;
   }
-  if (!state_.nodes.count(feedback.candidate_cluster_id) ||
+  const auto candidate = state_.nodes.find(feedback.candidate_cluster_id);
+  if (candidate == state_.nodes.end() ||
+      (candidate->second.kind != NodeKind::Cluster &&
+       candidate->second.kind != NodeKind::ChaosCluster) ||
       !state_.nodes.count(feedback.input_member_id)) {
     error = "cognition feedback references missing cluster or input member";
     return false;
+  }
+  if (state_.nodes.count(feedback_node_id) ||
+      state_.relations.count(relation_id) ||
+      std::any_of(delta.nodes.begin(), delta.nodes.end(),
+          [&](const AddNode& item) { return item.node.id == feedback_node_id; }) ||
+      std::any_of(delta.relations.begin(), delta.relations.end(),
+          [&](const AddRelation& item) { return item.relation.id == relation_id; })) {
+    error = "cognition feedback identity conflict";
+    return false;
+  }
+  for (const auto& item : state_.nodes) {
+    if (item.second.kind != NodeKind::Evidence ||
+        item.second.content.rfind("SURGE_COGNITION_FEEDBACK_V1 ", 0) != 0) continue;
+    std::istringstream input(item.second.content.substr(
+        std::string("SURGE_COGNITION_FEEDBACK_V1 ").size()));
+    std::string existing_feedback_id;
+    if (input >> std::quoted(existing_feedback_id)) {
+      if (existing_feedback_id == feedback.feedback_id) {
+        error = "cognition feedback identifier already exists";
+        return false;
+      }
+    }
   }
   std::ostringstream content;
   content << "SURGE_COGNITION_FEEDBACK_V1 "
