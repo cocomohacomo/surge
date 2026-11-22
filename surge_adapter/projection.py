@@ -11,6 +11,7 @@ import json
 import math
 import pathlib
 import unicodedata
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -30,6 +31,12 @@ class ProjectionCommit:
     state_version: int
     duplicate: bool
     packet_status: str
+    input_bytes: int = 0
+    nodes_processed: int = 0
+    relations_processed: int = 0
+    memberships_processed: int = 0
+    spatial_placements_processed: int = 0
+    elapsed_microseconds: int = 0
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,12 @@ class ProjectionStreamCommit:
     next_index: int
     state_version: int
     error: str = ""
+    input_bytes: int = 0
+    nodes_processed: int = 0
+    relations_processed: int = 0
+    memberships_processed: int = 0
+    spatial_placements_processed: int = 0
+    elapsed_microseconds: int = 0
 
 
 class _Packet(ctypes.Structure):
@@ -193,6 +206,7 @@ class ProjectionBatchAdapter:
         lib.surge_projection_batch_admit_and_apply.restype = ctypes.c_int
 
     def commit(self, batch: dict[str, Any], core: Any) -> ProjectionCommit:
+        started_ns = time.perf_counter_ns()
         source = self.validate(batch)
         self._bind(core)
         packet_data = batch["source_packet"]
@@ -269,12 +283,20 @@ class ProjectionBatchAdapter:
             state_version=int(state_version.value),
             duplicate=bool(duplicate.value),
             packet_status=status.value.decode("utf-8", errors="replace"),
+            input_bytes=len(source),
+            nodes_processed=len(batch["nodes"]),
+            relations_processed=len(batch["relations"]),
+            memberships_processed=len(batch["memberships"]),
+            spatial_placements_processed=len(batch["spatial_placements"]),
+            elapsed_microseconds=(time.perf_counter_ns() - started_ns) // 1000,
         )
 
     def commit_stream(self, batches: list[dict[str, Any]], core: Any) -> ProjectionStreamCommit:
         """Commit ordered source packets as resumable, individually atomic transactions."""
+        started_ns = time.perf_counter_ns()
         committed = 0
         duplicates = 0
+        input_bytes = nodes = relations = memberships = placements = 0
         state_version = core.state_version
         for index, batch in enumerate(batches):
             try:
@@ -283,11 +305,23 @@ class ProjectionBatchAdapter:
                 return ProjectionStreamCommit(
                     complete=False, committed_batches=committed,
                     duplicate_batches=duplicates, next_index=index,
-                    state_version=core.state_version, error=str(exc))
+                    state_version=core.state_version, error=str(exc),
+                    input_bytes=input_bytes, nodes_processed=nodes,
+                    relations_processed=relations, memberships_processed=memberships,
+                    spatial_placements_processed=placements,
+                    elapsed_microseconds=(time.perf_counter_ns() - started_ns) // 1000)
             committed += 1
             duplicates += int(result.duplicate)
+            input_bytes += result.input_bytes
+            nodes += result.nodes_processed
+            relations += result.relations_processed
+            memberships += result.memberships_processed
+            placements += result.spatial_placements_processed
             state_version = result.state_version
         return ProjectionStreamCommit(
             complete=True, committed_batches=committed,
             duplicate_batches=duplicates, next_index=len(batches),
-            state_version=state_version)
+            state_version=state_version, input_bytes=input_bytes,
+            nodes_processed=nodes, relations_processed=relations,
+            memberships_processed=memberships, spatial_placements_processed=placements,
+            elapsed_microseconds=(time.perf_counter_ns() - started_ns) // 1000)
