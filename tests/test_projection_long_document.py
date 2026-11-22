@@ -28,7 +28,8 @@ def make_text_block() -> str:
 
 
 def make_batch(template: dict, source: str, *, packet_id: str,
-               projection_id: str, sequence: int, block_ref: str) -> dict:
+               projection_id: str, sequence: int, block_ref: str,
+               global_start: int) -> dict:
     batch = copy.deepcopy(template)
     source_bytes = source.encode("utf-8")
     digest = hashlib.sha256(source_bytes).hexdigest()
@@ -51,6 +52,11 @@ def make_batch(template: dict, source: str, *, packet_id: str,
             "source_id": "long-document-source",
             "source_generation": "long-document-generation-1",
             "block_ref": block_ref,
+            "document_ref": "long-document-identity",
+            "document_generation": "long-document-generation-1",
+            "document_sequence": sequence,
+            "global_start_offset": global_start,
+            "global_end_offset": global_start + len(source_bytes),
             "offset_basis": "UTF8_BYTE_NFC",
             "start_offset": 0,
             "end_offset": len(source_bytes),
@@ -92,13 +98,14 @@ class LongDocumentProjectionSimulation(unittest.TestCase):
         single_batch = make_batch(
             template, document, packet_id="long-single-packet",
             projection_id="long-single-projection", sequence=1,
-            block_ref="whole-document",
+            block_ref="whole-document", global_start=0,
         )
         chunk_batches = [
             make_batch(
                 template, text, packet_id=f"long-block-packet-{index:03d}",
                 projection_id=f"long-block-projection-{index:03d}",
                 sequence=index + 1, block_ref=f"document-block-{index:03d}",
+                global_start=index * len(block.encode("utf-8")),
             )
             for index, text in enumerate(blocks)
         ]
@@ -197,7 +204,7 @@ class LongDocumentProjectionSimulation(unittest.TestCase):
                 "notes": [
                     "One multi-megabyte source snapshot was admitted as one ProjectionBatch.",
                     "The same document text was admitted as 64 ordered block-local UTF-8/NFC snapshots.",
-                    "Each block uses its own block_ref and byte offsets; this is not a global-document offset map.",
+                    "Each block has block-local offsets and a Core-persisted contiguous document-global range.",
                     "Duplicate replay did not increase resident-byte or retained-event reservations.",
                     "Journal recovery verified durable packet and state counts, not a byte-for-byte graph export.",
                     "No external LLM inference and no Focus mutation were part of this test.",
@@ -219,7 +226,7 @@ class LongDocumentProjectionSimulation(unittest.TestCase):
                     summary.write(f"- Chunked replay: {stream_metrics['replay_duplicates']} duplicates / "
                                   f"{stream_metrics['replay_resource_delta_bytes']} additional resident bytes\n")
                     summary.write("- Recovery: both journals reopened with expected packet counts\n\n")
-                    summary.write("**Result: PASS**. Block-local UTF-8 offsets; no global-document offset map. "
+                    summary.write("**Result: PASS**. Core-persisted document-global UTF-8 ranges. "
                                   "No external model inference or Focus mutation.\n")
 
         self.assertEqual(stream_metrics["input_bytes"], document_bytes)
