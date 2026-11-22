@@ -1956,9 +1956,6 @@
         "schema_version": {
           "const": "0.5.0"
         },
-        "region_id": {
-          "$ref": "#/$defs/id"
-        },
         "center": {
           "type": "array",
           "items": {
@@ -1982,7 +1979,6 @@
       },
       "required": [
         "schema_version",
-        "region_id",
         "center",
         "half_extents",
         "geometry"
@@ -2045,24 +2041,6 @@
         "state_version": {
           "type": "integer",
           "minimum": 0
-        },
-        "logical_region_cluster_refs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "processed_region_cluster_refs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "deferred_region_cluster_refs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
         },
         "work": {
           "type": "object",
@@ -2146,7 +2124,7 @@
         "focus_region": {
           "oneOf": [
             {
-              "$ref": "#/$defs/spatialFocusRegion"
+              "$ref": "#/$defs/focusRegionDescriptor"
             },
             {
               "type": "null"
@@ -2156,21 +2134,46 @@
         "cluster_spatial_positions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/clusterSpatialPosition"
+            "$ref": "#/$defs/observedClusterPosition"
+          }
+        },
+        "cluster_focus_depths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observedClusterDepth"
+          }
+        },
+        "logical_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "processed_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "deferred_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
           }
         }
       },
       "required": [
         "schema_version",
         "state_version",
-        "logical_region_cluster_refs",
-        "processed_region_cluster_refs",
-        "deferred_region_cluster_refs",
         "work",
         "nodes",
         "relations",
         "focus_region",
-        "cluster_spatial_positions"
+        "cluster_spatial_positions",
+        "logical_region_cluster_ids",
+        "processed_region_cluster_ids",
+        "deferred_region_cluster_ids",
+        "cluster_focus_depths"
       ],
       "additionalProperties": false
     },
@@ -2197,19 +2200,12 @@
         },
         "content": {
           "type": "string"
-        },
-        "references": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
         }
       },
       "required": [
         "id",
         "kind",
-        "content",
-        "references"
+        "content"
       ],
       "additionalProperties": false
     },
@@ -2308,6 +2304,72 @@
           ]
         }
       ]
+    },
+    "focusRegionDescriptor": {
+      "type": "object",
+      "properties": {
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "half_extents": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "center",
+        "half_extents"
+      ],
+      "additionalProperties": false
+    },
+    "observedClusterPosition": {
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "$ref": "#/$defs/id"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "cluster_id",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "observedClusterDepth": {
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "$ref": "#/$defs/id"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "cluster_id",
+        "depth"
+      ],
+      "additionalProperties": false
     }
   }
 }
