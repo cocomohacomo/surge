@@ -206,6 +206,48 @@ inline PacketAdmissionResult apply_projection_batch(
   return packet_result;
 }
 
+struct ProjectionStreamItem {
+  ProjectionBatch batch;
+  ValidatedRecognitionPacket packet;
+  std::string normalized_source_snapshot;
+};
+
+struct ProjectionStreamResult {
+  bool complete{false};
+  std::size_t committed_packets{0};
+  std::size_t duplicate_packets{0};
+  std::size_t next_index{0};
+  std::uint64_t state_version{0};
+  std::string error;
+};
+
+// A stream is a resumable sequence of independently atomic source-packet
+// transactions. It deliberately does not invent a cross-packet transaction.
+inline ProjectionStreamResult apply_projection_stream(
+    PacketAdmissionCoordinator& packets, BudgetedContextGraph& graph,
+    const std::vector<ProjectionStreamItem>& items) {
+  ProjectionStreamResult result;
+  result.state_version = graph.state_version();
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    const auto& item = items[i];
+    const auto committed = apply_projection_batch(
+        packets, graph, item.batch, item.packet, item.normalized_source_snapshot);
+    if (!committed.admitted) {
+      result.next_index = i;
+      result.state_version = graph.state_version();
+      result.error = committed.error;
+      return result;
+    }
+    ++result.committed_packets;
+    if (committed.duplicate) ++result.duplicate_packets;
+    result.next_index = i + 1;
+    result.state_version = committed.state_version;
+  }
+  result.complete = true;
+  result.error.clear();
+  return result;
+}
+
 // Atomic source-packet + projection commit. Packet admission and the prepared
 // SemanticDelta are written by PacketAdmissionCoordinator in one EventJournal
 // transaction. The source packet is the single source event represented here;
