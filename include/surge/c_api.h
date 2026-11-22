@@ -6,7 +6,7 @@
 // Major changes may break ABI; minor changes are additive; patch changes
 // preserve ABI. Major zero denotes the pre-stability compatibility period.
 #define SURGE_ABI_VERSION_MAJOR 0u
-#define SURGE_ABI_VERSION_MINOR 5u
+#define SURGE_ABI_VERSION_MINOR 6u
 #define SURGE_ABI_VERSION_PATCH 0u
 #define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
@@ -92,6 +92,11 @@ typedef struct SurgeRecognitionPacketInput {
   const char* source_id;
   const char* source_generation;
   const char* block_ref;
+  const char* document_ref;
+  const char* document_generation;
+  uint64_t document_sequence;
+  uint64_t global_start_offset;
+  uint64_t global_end_offset;
   const char* offset_basis;
   uint64_t start_offset;
   uint64_t end_offset;
