@@ -276,7 +276,9 @@
           "minLength": 1
         },
         "weight": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     },
@@ -303,7 +305,9 @@
           "minLength": 1
         },
         "upstream_weight": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     },
