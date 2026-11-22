@@ -158,7 +158,7 @@ class ContextGraph {
       const std::string& parent_cluster_id, const std::string& classification,
       const std::string& partition_key, const std::string& member_node_id,
       const std::string& relation_prefix, std::string& assigned_cluster_id,
-      std::string& error) const;
+      std::string& error, double membership_weight = 1.0) const;
   bool reassess_claim(const std::string& claim_id, const std::string& reference_at,
                       std::uint64_t expected_state_version,
                       TemporalReassessmentRecord& result, std::string& error);
