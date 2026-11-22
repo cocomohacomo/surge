@@ -455,6 +455,17 @@ int main(){
     CHECK(relation_bounded.processed_region_cluster_ids.empty());
     CHECK(relation_bounded.deferred_region_cluster_ids.size()==3);
 
+    // A zero node budget defers all work without hiding any cluster from the
+    // logical region. The geometric region is not a budget-sized prefix.
+    const auto no_node_budget =
+        graph.observe_focused_cognition(expanded,positions,deeper,0,20);
+    CHECK(no_node_budget.focus_work.budget_exhausted);
+    CHECK(no_node_budget.nodes.empty());
+    CHECK(no_node_budget.focus_work.nodes_processed==0);
+    CHECK(no_node_budget.logical_region_cluster_ids.size()==3);
+    CHECK(no_node_budget.processed_region_cluster_ids.empty());
+    CHECK(no_node_budget.deferred_region_cluster_ids.size()==3);
+
     // Persist region, positions and depths as independent journal event families.
     SemanticDelta region_delta;region_delta.delta_id="spatial-region-update";
     region_delta.idempotency_key="spatial-region-update";
