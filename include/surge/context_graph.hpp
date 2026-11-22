@@ -38,6 +38,8 @@ struct FocusRegion { SpatialVector3 center; SpatialVector3 half_extents; };
 struct ClusterSpatialPosition { std::string cluster_id; SpatialVector3 position; };
 struct ClusterFocusDepth { std::string cluster_id; std::size_t depth{0}; };
 struct SetFocusRegion { FocusRegion region; };
+struct MoveFocusRegion { SpatialVector3 center; };
+struct ResizeFocusRegion { SpatialVector3 half_extents; };
 struct SetClusterSpatialPosition { ClusterSpatialPosition position; };
 struct SetClusterFocusDepth { ClusterFocusDepth focus_depth; };
 struct FocusWorkMetrics {
@@ -86,6 +88,8 @@ struct SemanticDelta {
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
   std::optional<SetFocusRegion> focus_region;
+  std::optional<MoveFocusRegion> focus_region_move;
+  std::optional<ResizeFocusRegion> focus_region_resize;
   std::vector<SetClusterSpatialPosition> cluster_position_updates;
   std::vector<SetClusterFocusDepth> cluster_focus_depth_updates;
   std::vector<ClaimValidity> claim_validity_updates;
@@ -199,6 +203,8 @@ class ContextGraph {
   CognitionObservation observe_focused_cognition() const;
   CognitionObservation observe_focused_cognition(std::size_t max_nodes, std::size_t max_relations) const;
   bool append_focus_region_update(SemanticDelta& delta, const FocusRegion& region, std::string& error) const;
+  bool append_focus_region_move(SemanticDelta& delta, const SpatialVector3& center, std::string& error) const;
+  bool append_focus_region_resize(SemanticDelta& delta, const SpatialVector3& half_extents, std::string& error) const;
   bool append_cluster_spatial_position_update(SemanticDelta& delta, const ClusterSpatialPosition& position, std::string& error) const;
   bool append_cluster_focus_depth_update(SemanticDelta& delta, const ClusterFocusDepth& depth, std::string& error) const;
   // Spatial projection with independent region geometry and per-cluster depth.
