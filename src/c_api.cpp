@@ -10,6 +10,7 @@
 #include "surge/temporal_boundary_ledger.hpp"
 #include "surge/temporal_question_ledger.hpp"
 #include "surge/question_router.hpp"
+#include "surge/projection.hpp"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -302,6 +303,158 @@ int surge_packet_core_admit(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_CORE_EXCEPTION");return 0;}
 }
+int surge_projection_batch_admit_and_apply(
+    void* opaque, const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_cap,
+    char* error, size_t error_cap) {
+  try {
+    if (!opaque || !input || !metadata ||
+        !input->packet_id || !input->idempotency_key || !input->context_id ||
+        !input->source_id || !input->source_generation || !input->block_ref ||
+        !input->offset_basis || !input->source_snapshot_digest ||
+        !input->source_range_digest || !input->canonical_request_digest ||
+        !metadata->projection_id || !metadata->idempotency_key ||
+        !metadata->context_id || !metadata->producer_id ||
+        !metadata->producer_version || !metadata->policy_version ||
+        (!snapshot && snapshot_size) || (evidence_count && !evidence_refs) ||
+        (node_count && !nodes) || (relation_count && !relations) ||
+        (membership_count && !memberships) || (placement_count && !placements) ||
+        (input->revision != 0 && input->revision != 1) ||
+        evidence_count == 0 || evidence_count > 4096 ||
+        node_count == 0 || node_count > 4096 || relation_count > 8192 ||
+        membership_count > 8192 || placement_count > 4096) {
+      copy_text(error, error_cap, "PROJECTION_C_API_ARGUMENT_INVALID");
+      return 0;
+    }
+    auto* handle = static_cast<Handle*>(opaque);
+    surge::ValidatedRecognitionPacket packet;
+    packet.packet_id = input->packet_id;
+    packet.idempotency_key = input->idempotency_key;
+    packet.context_id = input->context_id;
+    packet.source_id = input->source_id;
+    packet.source_generation = input->source_generation;
+    packet.block_ref = input->block_ref;
+    packet.offset_basis = input->offset_basis;
+    packet.start_offset = input->start_offset;
+    packet.end_offset = input->end_offset;
+    packet.source_sequence = input->source_sequence;
+    packet.source_snapshot_digest = input->source_snapshot_digest;
+    packet.source_range_digest = input->source_range_digest;
+    packet.canonical_request_digest = input->canonical_request_digest;
+    packet.revision_of_packet_id = input->revision_of_packet_id ? input->revision_of_packet_id : "";
+    packet.revision = input->revision == 1;
+    packet.revision_sequence = input->revision_sequence;
+    const std::string source = snapshot_size
+        ? std::string(reinterpret_cast<const char*>(snapshot), snapshot_size)
+        : std::string();
+
+    surge::ProjectionBatch batch;
+    batch.projection_id = metadata->projection_id;
+    batch.idempotency_key = metadata->idempotency_key;
+    batch.context_id = metadata->context_id;
+    batch.producer_id = metadata->producer_id;
+    batch.producer_version = metadata->producer_version;
+    batch.policy_version = metadata->policy_version;
+    batch.base_state_version = metadata->base_state_version;
+    batch.source_event_refs = {packet.packet_id};
+    for (size_t i = 0; i < evidence_count; ++i) {
+      if (!evidence_refs[i] || !*evidence_refs[i]) {
+        copy_text(error, error_cap, "PROJECTION_EVIDENCE_REF_INVALID");
+        return 0;
+      }
+      batch.evidence_refs.emplace_back(evidence_refs[i]);
+    }
+    for (size_t i = 0; i < node_count; ++i) {
+      if (!nodes[i].id || !nodes[i].kind || !nodes[i].content ||
+          (nodes[i].reference_count && !nodes[i].references) ||
+          nodes[i].reference_count > 1024) {
+        copy_text(error, error_cap, "PROJECTION_NODE_ARGUMENT_INVALID");
+        return 0;
+      }
+      surge::GraphNode node;
+      node.id = nodes[i].id;
+      node.content = nodes[i].content;
+      if (!node_kind(nodes[i].kind, node.kind)) {
+        copy_text(error, error_cap, "PROJECTION_NODE_KIND_INVALID");
+        return 0;
+      }
+      for (size_t j = 0; j < nodes[i].reference_count; ++j) {
+        if (!nodes[i].references[j]) {
+          copy_text(error, error_cap, "PROJECTION_NODE_REFERENCE_INVALID");
+          return 0;
+        }
+        node.references.emplace_back(nodes[i].references[j]);
+      }
+      batch.nodes.push_back(std::move(node));
+    }
+    for (size_t i = 0; i < relation_count; ++i) {
+      if (!relations[i].id || !relations[i].kind ||
+          !relations[i].from_id || !relations[i].to_id) {
+        copy_text(error, error_cap, "PROJECTION_RELATION_ARGUMENT_INVALID");
+        return 0;
+      }
+      surge::GraphRelation relation;
+      relation.id = relations[i].id;
+      relation.from = relations[i].from_id;
+      relation.to = relations[i].to_id;
+      relation.weight = relations[i].weight;
+      if (!relation_kind(relations[i].kind, relation.kind)) {
+        copy_text(error, error_cap, "PROJECTION_RELATION_KIND_INVALID");
+        return 0;
+      }
+      batch.relations.push_back(std::move(relation));
+    }
+    for (size_t i = 0; i < membership_count; ++i) {
+      if (!memberships[i].relation_id || !memberships[i].member_ref ||
+          !memberships[i].cluster_ref) {
+        copy_text(error, error_cap, "PROJECTION_MEMBERSHIP_ARGUMENT_INVALID");
+        return 0;
+      }
+      batch.memberships.push_back({memberships[i].relation_id,
+          memberships[i].member_ref, memberships[i].cluster_ref,
+          memberships[i].upstream_weight});
+    }
+    for (size_t i = 0; i < placement_count; ++i) {
+      if (!placements[i].cluster_id) {
+        copy_text(error, error_cap, "PROJECTION_SPATIAL_ARGUMENT_INVALID");
+        return 0;
+      }
+      batch.spatial_placements.push_back({placements[i].cluster_id,
+          {placements[i].x, placements[i].y, placements[i].z}});
+    }
+
+    const auto admitted = surge::apply_projection_batch(
+        handle->coordinator, handle->graph, batch, packet, source);
+    if (!admitted.admitted) {
+      copy_text(error, error_cap, admitted.error);
+      if (state_version) *state_version = admitted.state_version;
+      return 0;
+    }
+    if (!handle->graph.open()) {
+      copy_text(error, error_cap, "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED");
+      return 0;
+    }
+    if (duplicate) *duplicate = admitted.duplicate ? 1 : 0;
+    if (state_version) *state_version = admitted.state_version;
+    copy_text(status, status_cap, admitted.packet_status);
+    copy_text(error, error_cap, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_cap, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_cap, "UNKNOWN_PROJECTION_C_API_EXCEPTION");
+    return 0;
+  }
+}
+
 int surge_context_graph_apply(
     void* opaque,const char* delta_id,const char* idempotency_key,uint64_t expected,
     const SurgeGraphNodeInput* nodes,size_t node_count,
