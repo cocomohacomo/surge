@@ -956,7 +956,7 @@ int main(){
       {{"recall-high-edge",RelationKind::Contains,"recall-cluster-high","recall-member-high",0.9}},
       {{"recall-cluster-association",RelationKind::AgreesWith,
         "recall-cluster-low","recall-cluster-high",0.8}},
-      {{"recall-cluster-synthesis",RelationKind::Supports,
+      {{"recall-cluster-synthesis",RelationKind::DerivedFrom,
         "recall-cluster-low","recall-cluster-related",0.75}},
       {{"recall-related-edge",RelationKind::Contains,
         "recall-cluster-related","recall-member-related",0.7}}
