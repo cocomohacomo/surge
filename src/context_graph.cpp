@@ -1985,14 +1985,14 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
         feedback_node.references.size() < 2) continue;
     std::istringstream input(feedback_node.content.substr(
         std::string("SURGE_COGNITION_FEEDBACK_V1 ").size()));
-    std::string feedback_id, outcome, producer_id, producer_version,
-        policy_version, recorded_at, notes;
-    if (!(input >> std::quoted(feedback_id) >> std::quoted(outcome) >>
+    std::string feedback_id, candidate_cluster, evaluated_input, outcome,
+        producer_id, producer_version, policy_version, recorded_at, notes;
+    if (!(input >> std::quoted(feedback_id) >> std::quoted(candidate_cluster) >>
+          std::quoted(evaluated_input) >> std::quoted(outcome) >>
           std::quoted(producer_id) >> std::quoted(producer_version) >>
           std::quoted(policy_version) >> std::quoted(recorded_at) >>
           std::quoted(notes))) continue;
-    if (feedback_node.references[1] != input_member_id) continue;
-    const auto& candidate_cluster = feedback_node.references[0];
+    if (evaluated_input != input_member_id) continue;
     if (outcome == "CONFIRMED") feedback_adjustment[candidate_cluster] += 0.20;
     else if (outcome == "REJECTED") feedback_adjustment[candidate_cluster] -= 0.30;
     else if (outcome == "REVISED") feedback_adjustment[candidate_cluster] -= 0.10;
@@ -2077,8 +2077,9 @@ bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
         item.second.content.rfind("SURGE_COGNITION_FEEDBACK_V1 ", 0) != 0) continue;
     std::istringstream input(item.second.content.substr(
         std::string("SURGE_COGNITION_FEEDBACK_V1 ").size()));
-    std::string existing_feedback_id;
-    if (input >> std::quoted(existing_feedback_id)) {
+    std::string existing_feedback_id, existing_candidate_cluster, existing_input;
+    if (input >> std::quoted(existing_feedback_id) >>
+        std::quoted(existing_candidate_cluster) >> std::quoted(existing_input)) {
       if (existing_feedback_id == feedback.feedback_id) {
         error = "cognition feedback identifier already exists";
         return false;
@@ -2087,13 +2088,15 @@ bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
   }
   std::ostringstream content;
   content << "SURGE_COGNITION_FEEDBACK_V1 "
-      << std::quoted(feedback.feedback_id) << ' ' << std::quoted(outcome) << ' '
-      << std::quoted(feedback.producer_id) << ' '
+      << std::quoted(feedback.feedback_id) << ' '
+      << std::quoted(feedback.candidate_cluster_id) << ' '
+      << std::quoted(feedback.input_member_id) << ' '
+      << std::quoted(outcome) << ' ' << std::quoted(feedback.producer_id) << ' '
       << std::quoted(feedback.producer_version) << ' '
       << std::quoted(feedback.policy_version) << ' '
       << std::quoted(feedback.recorded_at) << ' ' << std::quoted(feedback.notes);
   delta.nodes.push_back({GraphNode{feedback_node_id, NodeKind::Evidence,
-      content.str(), {feedback.candidate_cluster_id, feedback.input_member_id}}});
+      content.str(), {}}});
   delta.relations.push_back({GraphRelation{relation_id, RelationKind::About,
       feedback_node_id, feedback.candidate_cluster_id, 1.0}});
   error.clear();
