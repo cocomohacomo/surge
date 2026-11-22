@@ -23,7 +23,8 @@
     "source_range_digest": "2dc4bd4ef4db7a2fb4fe34a050323546249b88a07608d2c49313f1aba9d40c00",
     "canonical_request_digest": "fixture-document",
     "revision": false,
-    "revision_sequence": 0
+    "revision_sequence": 0,
+    "context_id": "context-document"
   },
   "normalized_source_snapshot": "第3条 申請期限は毎年3月末日とする。",
   "source_event_refs": [
