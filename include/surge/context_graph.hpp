@@ -334,6 +334,10 @@ class ContextGraph {
   mutable std::uint64_t recall_index_state_version_{~std::uint64_t{0}};
   mutable std::map<std::string, std::vector<std::pair<std::pair<std::string, std::string>, double>>> recall_term_postings_;
   mutable std::map<std::string, std::vector<std::pair<std::pair<std::string, std::string>, double>>> recall_member_postings_;
+  // Derived one-axis spatial index over persisted Cluster positions. It is
+  // rebuilt only when position state is replaced and is never journaled.
+  mutable bool spatial_position_index_valid_{false};
+  mutable std::map<double, std::vector<std::string>> spatial_position_x_index_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
 };
