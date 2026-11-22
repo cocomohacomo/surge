@@ -340,6 +340,21 @@ int surge_context_graph_observe_cognition(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+/* Read-only cognition candidate recall. Query terms are producer supplied.
+ * Output JSON includes retrieval-only scores and the memory state version. */
+int surge_context_graph_recall_candidates(void* handle, const char* input_member_id,
+    const char* const* query_terms, size_t query_term_count, size_t max_candidates,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+/* Append external candidate evaluation as Evidence in one budgeted transaction. */
+int surge_context_graph_record_cognition_feedback(void* handle,
+    const char* feedback_id, const char* candidate_cluster_id,
+    const char* input_member_id, const char* outcome, const char* producer_id,
+    const char* producer_version, const char* policy_version,
+    const char* recorded_at, const char* notes, uint64_t expected_state_version,
+    const char* feedback_node_id, const char* relation_id,
+    uint64_t* state_version, char* error, size_t error_capacity);
+
 // Durable RetrievalTicket issue/resolve operations share the Core EventJournal.
 int surge_retrieval_ticket_issue(void* handle, const SurgeRetrievalTicketInput* ticket,
     char* error, size_t error_capacity);
