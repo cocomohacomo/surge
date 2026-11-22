@@ -92,11 +92,6 @@ typedef struct SurgeRecognitionPacketInput {
   const char* source_id;
   const char* source_generation;
   const char* block_ref;
-  const char* document_ref;
-  const char* document_generation;
-  uint64_t document_sequence;
-  uint64_t global_start_offset;
-  uint64_t global_end_offset;
   const char* offset_basis;
   uint64_t start_offset;
   uint64_t end_offset;
@@ -108,6 +103,14 @@ typedef struct SurgeRecognitionPacketInput {
   int revision;
   uint64_t revision_sequence;
 } SurgeRecognitionPacketInput;
+
+typedef struct SurgeDocumentStreamInput {
+  const char* document_ref;
+  const char* document_generation;
+  uint64_t document_sequence;
+  uint64_t global_start_offset;
+  uint64_t global_end_offset;
+} SurgeDocumentStreamInput;
 
 typedef struct SurgeGraphNodeInput {
   const char* id;
@@ -278,6 +281,19 @@ int surge_packet_core_admit(
 
 // Atomically validates and commits a typed SemanticDelta to the shared ContextGraph/EventJournal.
 // Atomically admit one source packet and its transport-neutral projection batch.
+int surge_projection_batch_admit_and_apply_v2(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const SurgeDocumentStreamInput* document_stream,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_capacity,
+    char* error, size_t error_capacity);
+
 int surge_projection_batch_admit_and_apply(
     void* handle, const SurgeRecognitionPacketInput* packet,
     const unsigned char* normalized_source_snapshot, size_t snapshot_size,
