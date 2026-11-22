@@ -2220,6 +2220,13 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         const auto adjacency=contains_by_cluster.find(current.cluster_id);
         if(adjacency==contains_by_cluster.end())continue;
         for(const auto& relation:adjacency->second){
+          if(focused.focus_work.relations_examined+
+             focused.focus_work.relations_traversed>=max_relations){
+            complete=false;
+            focused.focus_work.budget_exhausted=true;
+            break;
+          }
+          ++focused.focus_work.relations_traversed;
           visible_relation_ids.insert(relation.id);
           const bool inserted=visible_ids.insert(relation.to).second;
           if(inserted&&visible_ids.size()>max_nodes){
@@ -2269,7 +2276,8 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   focused.focus_work.relations_processed=focused.relations.size();
   focused.focus_work.clusters_deferred=focused.deferred_region_cluster_ids.size();
   focused.focus_work.work_units=focused.focus_work.position_checks+
-      focused.focus_work.relations_examined+focused.focus_work.nodes_processed;
+      focused.focus_work.relations_examined+focused.focus_work.relations_traversed+
+      focused.focus_work.nodes_processed;
   std::set<std::string> root_ids(roots.begin(),roots.end());
   for(const auto& id:roots){
     const auto depth=depth_by_cluster.find(id);
