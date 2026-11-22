@@ -310,14 +310,37 @@ Result: PASS against the existing Core API contract. Runtime behavior still requ
 9. Focus budget exhaustion never changes logical Focus membership.
 10. Conversation, document, and structured-data tests pass through the same Core path.
 
-## 12. Initial C++ adapter implementation
+## 12. Unified source-packet and projection commit
 
-The repository now includes `include/surge/projection.hpp` with a typed `ProjectionBatch`, deterministic structural validation, and `build_projection_delta()`. The adapter maps information nodes, explicit relations, upstream membership weights (as `Contains` edges), and spatial placements into the existing `SemanticDelta` representation. It preserves the caller's base state version and idempotency key.
+The typed C++ entry point now has two commit modes:
 
-The adapter deliberately does not commit state itself. Callers must pass the resulting delta through the existing `ContextGraph::apply()` path so that the established journal, conflict, idempotency, and graph invariants remain authoritative.
+- `apply_projection_batch(ContextGraph&, batch)` for a source packet that has already been admitted.
+- `apply_projection_batch(PacketAdmissionCoordinator&, ContextGraph&, batch, packet, source_snapshot)` for atomic source admission and projection commit.
 
-The executable test target is `surge_projection_tests`. In addition to structural validation and mapping, it now exercises `apply_projection_batch()` against a real journal-backed `ContextGraph`: successful commit, idempotent duplicate submission, and journal replay are checked.
+The atomic overload requires the batch context to match the source packet and requires the batch's single `source_event_ref` to equal that packet ID. It prepares the SemanticDelta through `ContextGraph::prepare_events()` and passes the resulting semantic journal events to `PacketAdmissionCoordinator::admit()`. The source packet record and all projection graph mutations are therefore committed by one `EventJournal` transaction. It does not split packet admission and graph mutation into separate commits.
 
-`apply_projection_batch()` is the typed C++ commit entry point. It validates and translates the batch, then delegates the state transition to `ContextGraph::apply()`; the caller remains responsible for admitting source Events before projection. The adapter does not create Event records from `source_event_refs`.
+A retry first prepares the same SemanticDelta. If the graph recognizes its committed idempotency fingerprint, it produces no new semantic events; packet admission then resolves the retry as a duplicate. A conflicting packet envelope, stale base state, or reused semantic idempotency key with different content is rejected by the existing admission/graph invariants.
 
-**Scope limitation:** this adapter does not yet provide a transport-level JSON parser, a ProjectionBatch-specific C ABI entry point, automatic source-event admission, or a single transaction spanning EventJournal admission and graph commit. The current executable integration test proves the graph commit, idempotency, and replay path only. Conversation/document/structured-data examples remain semantic fixture scenarios until dedicated format adapters and cross-format fixtures are added.
+The source event is the admitted RecognitionPacket. The projection's Evidence nodes are committed in the same journal transaction and retain references to the source packet. This first atomic adapter accepts one source packet per ProjectionBatch. A document or long stream is represented by successive source packets and batches, not by an artificial multi-source transaction.
+
+## 13. JSON contract and C ABI
+
+`schemas/projection-batch-v0.1.schema.json` defines the transport-neutral JSON shape. The fixture set includes conversation, document, and structured-record examples under `tests/fixtures/projection/`. The schema validation tool checks all three, verifies UTF-8 byte offsets and SHA-256 source digests, checks the source-event reference against the packet ID, and ensures referenced Evidence IDs are represented by Evidence nodes.
+
+The C ABI adds `surge_projection_batch_admit_and_apply()` and the associated `SurgeProjection*Input` structures. It accepts the RecognitionPacket envelope, normalized source bytes, producer/policy metadata, Evidence references, graph nodes, weighted relations, cluster memberships, and spatial placements. It routes these through the same typed `ProjectionBatch` validator and atomic C++ commit function. The ABI version is now 0.4.0.
+
+The C ABI test covers commit, exact duplicate retry, invalid non-finite membership weight, and replay from the same journal. Struct layouts are included in the ABI layout conformance test.
+
+**Current boundary:** the JSON Schema is the normative JSON contract, but the native library does not yet include a JSON text parser that turns raw JSON directly into `ProjectionBatch`. Applications validate/decode JSON with their chosen parser and pass the typed values through the C ABI or C++ API. The current C ABI's atomic entry point supports one RecognitionPacket per batch. A multi-packet batch, a built-in JSON decoder, and format-specific semantic projectors remain separate follow-up work.
+
+## 14. SURGE principle invariants
+
+The projection adapter is intentionally a transport and commit boundary, not a new cognition mechanism:
+
+1. The projector proposes information units, relations, membership weights, and spatial placements. The Core does not select the true interpretation or recalibrate upstream weights.
+2. Unknown or competing interpretations remain representable as separate nodes and relations. The adapter does not collapse them into a single answer.
+3. Membership is represented by graph relations. Focus is not a target-cluster selector and is not changed implicitly by projection.
+4. Spatial placement updates only locate clusters in cognition space. Focus region geometry and each cluster's traversal depth remain independent persisted state.
+5. External applications observe the focused cognition region and decide what action, truth or relevance policy to apply.
+
+These constraints keep the two fundamentals unchanged: cognition information clusters and the spatial Focus region operating over them.
