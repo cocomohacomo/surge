@@ -512,6 +512,9 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& v:d.claim_validity_updates)o<<"V "<<std::quoted(v.claim_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  for(const auto& v:d.evidence_validity_updates)o<<"EV "<<std::quoted(v.evidence_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  if(d.focus) { o<<"F "<<encode_focus(d.focus->focus)<<'\n'; }
+ if(d.focus_region){const auto& r=d.focus_region->region;o<<"FR "<<std::setprecision(17)<<r.center.x<<' '<<r.center.y<<' '<<r.center.z<<' '<<r.half_extents.x<<' '<<r.half_extents.y<<' '<<r.half_extents.z<<'\n';}
+ for(const auto& p:d.cluster_position_updates)o<<"CP "<<std::quoted(p.position.cluster_id)<<' '<<std::setprecision(17)<<p.position.position.x<<' '<<p.position.position.y<<' '<<p.position.position.z<<'\n';
+ for(const auto& p:d.cluster_focus_depth_updates)o<<"CD "<<std::quoted(p.focus_depth.cluster_id)<<' '<<p.focus_depth.depth<<'\n';
  return hash_text(o.str());
 }
 std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std::string& fp)const{
@@ -523,6 +526,9 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  i=0;for(const auto& id:d.reclaim_entity_node_ids){std::ostringstream payload;payload<<std::quoted(id);out.push_back({d.delta_id+"/entity-reclaim/"+std::to_string(i++),"ENTITY_RECLAIMED",payload.str()});}
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
+ if(d.focus_region){const auto& r=d.focus_region->region;std::ostringstream p;p<<std::setprecision(17)<<r.center.x<<' '<<r.center.y<<' '<<r.center.z<<' '<<r.half_extents.x<<' '<<r.half_extents.y<<' '<<r.half_extents.z;out.push_back({d.delta_id+"/focus-region","FOCUS_REGION_SET_V1",p.str()});}
+ i=0;for(const auto& item:d.cluster_position_updates){const auto& p=item.position;std::ostringstream payload;payload<<std::quoted(p.cluster_id)<<' '<<std::setprecision(17)<<p.position.x<<' '<<p.position.y<<' '<<p.position.z;out.push_back({d.delta_id+"/cluster-position/"+std::to_string(i++),"CLUSTER_SPATIAL_POSITION_SET_V1",payload.str()});}
+ i=0;for(const auto& item:d.cluster_focus_depth_updates){const auto& p=item.focus_depth;std::ostringstream payload;payload<<std::quoted(p.cluster_id)<<' '<<p.depth;out.push_back({d.delta_id+"/cluster-depth/"+std::to_string(i++),"CLUSTER_FOCUS_DEPTH_SET_V1",payload.str()});}
  i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record)});}
  i=0;for(const auto& v:d.evidence_validity_updates){EvidenceValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/evidence-validity/"+std::to_string(i++),"EVIDENCE_VALIDITY_SET",encode_evidence_validity(record)});}
  return out;
@@ -548,6 +554,9 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="ENTITY_RECLAIMED"){std::istringstream in(e.payload);std::string id,extra;if(!(in>>std::quoted(id))||(in>>extra)){error="JOURNAL_ENTITY_RECLAMATION_DECODE_FAILED";return false;}return apply_entity_reclamation(s,id,error);}
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
+ if(e.kind=="FOCUS_REGION_SET_V1"){std::istringstream in(e.payload);FocusRegion r;std::string extra;if(!(in>>r.center.x>>r.center.y>>r.center.z>>r.half_extents.x>>r.half_extents.y>>r.half_extents.z)||(in>>extra)){error="JOURNAL_FOCUS_REGION_DECODE_FAILED";return false;}return apply_focus_region(s,r,error);}
+ if(e.kind=="CLUSTER_SPATIAL_POSITION_SET_V1"){std::istringstream in(e.payload);ClusterSpatialPosition p;std::string extra;if(!(in>>std::quoted(p.cluster_id)>>p.position.x>>p.position.y>>p.position.z)||(in>>extra)){error="JOURNAL_CLUSTER_POSITION_DECODE_FAILED";return false;}return apply_cluster_position(s,p,error);}
+ if(e.kind=="CLUSTER_FOCUS_DEPTH_SET_V1"){std::istringstream in(e.payload);ClusterFocusDepth d;std::string extra;if(!(in>>std::quoted(d.cluster_id)>>d.depth)||(in>>extra)){error="JOURNAL_CLUSTER_DEPTH_DECODE_FAILED";return false;}return apply_cluster_depth(s,d,error);}
  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
  if(e.kind=="EVIDENCE_VALIDITY_SET"){EvidenceValidityRecord record;if(!decode_evidence_validity(e.payload,record)){error="JOURNAL_EVIDENCE_VALIDITY_DECODE_FAILED";return false;}return apply_evidence_validity(s,record.validity,record.recorded_state_version,error);}
  if(e.kind=="TEMPORAL_REASSESSMENT_V1"){TemporalReassessmentRecord record;if(!decode_reassessment(e.payload,record)){error="JOURNAL_REASSESSMENT_DECODE_FAILED";return false;}return apply_reassessment(s,record,error);}
