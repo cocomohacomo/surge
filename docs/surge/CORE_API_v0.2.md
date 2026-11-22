@@ -504,6 +504,8 @@ The caller supplies the recognized content, a unique Cluster ID, and at least tw
 - The persisted overload `observe_focused_cognition(max_nodes, max_relations)` reads the journaled FocusRegion, cluster positions and per-cluster depths from ContextGraph. It does not require the caller to reconstruct those inputs.
 - The no-argument overload uses persisted spatial Focus when a region exists. If no spatial region has been configured, it falls back to the legacy single-cluster projection for source compatibility.
 - The logical region membership is computed independently of node/relation traversal budgets. `logical_region_cluster_ids` remains complete while `processed_region_cluster_ids` and `deferred_region_cluster_ids` report actual execution. Budget exhaustion never silently contracts the logical region.
+- `max_nodes` caps admitted graph nodes. `max_relations` caps combined relation inspection and traversal. The current implementation scans all persisted cluster positions to determine exact logical membership; `position_checks` and `work_units` measure this pass, but the coordinate scan is not independently capped.
+- Deferred roots are deterministic, but the current API does not expose a durable continuation cursor. A subsequent observation recomputes the projection from the beginning. These limits mean this API does not claim a strict total-CPU, wall-clock or process-RSS ceiling.
 
 
 ### 5.14 Durable spatial Focus updates
