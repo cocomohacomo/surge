@@ -2192,6 +2192,12 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     if (visible_ids.count(relation.from) && visible_ids.count(relation.to)) {
       if (focused.relations.size() >= max_relations) {
         focused.focus_work.budget_exhausted = true;
+        for (const auto& completed : focused.processed_region_cluster_ids)
+          if (std::find(focused.deferred_region_cluster_ids.begin(),
+                        focused.deferred_region_cluster_ids.end(),completed)==
+              focused.deferred_region_cluster_ids.end())
+            focused.deferred_region_cluster_ids.push_back(completed);
+        focused.processed_region_cluster_ids.clear();
         break;
       }
       focused.relations.push_back(relation);
