@@ -1,0 +1,114 @@
+#pragma once
+
+#include "surge/context_graph.hpp"
+
+#include <cmath>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace surge {
+
+struct ProjectionMembership {
+  std::string relation_id;
+  std::string member_ref;
+  std::string cluster_ref;
+  double upstream_weight{1.0};
+};
+
+struct ProjectionBatch {
+  std::string projection_id;
+  std::string idempotency_key;
+  std::string context_id;
+  std::string producer_id;
+  std::string producer_version;
+  std::string policy_version;
+  std::uint64_t base_state_version{0};
+  std::vector<std::string> source_event_refs;
+  std::vector<std::string> evidence_refs;
+  std::vector<GraphNode> nodes;
+  std::vector<GraphRelation> relations;
+  std::vector<ProjectionMembership> memberships;
+  std::vector<ClusterSpatialPosition> spatial_placements;
+};
+
+struct ProjectionValidationResult {
+  bool valid{false};
+  std::string error;
+};
+
+inline ProjectionValidationResult validate_projection_batch(const ProjectionBatch& batch) {
+  const auto required = [](const std::string& value) { return !value.empty(); };
+  if (!required(batch.projection_id) || !required(batch.idempotency_key) ||
+      !required(batch.context_id) || !required(batch.producer_id) ||
+      !required(batch.producer_version) || !required(batch.policy_version))
+    return {false, "MISSING_REQUIRED_METADATA"};
+  if (batch.source_event_refs.empty() || batch.evidence_refs.empty())
+    return {false, "MISSING_SOURCE_OR_EVIDENCE"};
+
+  std::set<std::string> node_ids;
+  for (const auto& node : batch.nodes) {
+    if (!required(node.id) || !node_ids.insert(node.id).second)
+      return {false, "EMPTY_OR_DUPLICATE_NODE_ID"};
+  }
+  for (const auto& evidence_id : batch.evidence_refs) {
+    if (!required(evidence_id)) return {false, "EMPTY_EVIDENCE_REF"};
+    const auto found = std::find_if(batch.nodes.begin(), batch.nodes.end(),
+      [&](const GraphNode& node) { return node.id == evidence_id && node.kind == NodeKind::Evidence; });
+    if (found == batch.nodes.end()) return {false, "EVIDENCE_NODE_NOT_FOUND"};
+  }
+
+  std::set<std::string> relation_ids;
+  for (const auto& relation : batch.relations) {
+    if (!required(relation.id) || !relation_ids.insert(relation.id).second)
+      return {false, "EMPTY_OR_DUPLICATE_RELATION_ID"};
+    if (!std::isfinite(relation.weight)) return {false, "NON_FINITE_RELATION_WEIGHT"};
+  }
+  for (const auto& membership : batch.memberships) {
+    if (!required(membership.relation_id) || !relation_ids.insert(membership.relation_id).second)
+      return {false, "EMPTY_OR_DUPLICATE_MEMBERSHIP_ID"};
+    if (!required(membership.member_ref) || !required(membership.cluster_ref))
+      return {false, "MISSING_MEMBERSHIP_ENDPOINT"};
+    if (!std::isfinite(membership.upstream_weight))
+      return {false, "NON_FINITE_MEMBERSHIP_WEIGHT"};
+  }
+  for (const auto& placement : batch.spatial_placements) {
+    if (!required(placement.cluster_id) ||
+        !std::isfinite(placement.position.x) ||
+        !std::isfinite(placement.position.y) ||
+        !std::isfinite(placement.position.z))
+      return {false, "INVALID_SPATIAL_PLACEMENT"};
+  }
+  return {true, {}};
+}
+
+// Translate a validated, transport-neutral batch into the existing atomic
+// SemanticDelta path. The caller still applies it through ContextGraph::apply.
+inline bool build_projection_delta(const ProjectionBatch& batch,
+                                   SemanticDelta& delta,
+                                   std::string& error) {
+  const auto validation = validate_projection_batch(batch);
+  if (!validation.valid) { error = validation.error; return false; }
+
+  delta = SemanticDelta{};
+  delta.delta_id = batch.projection_id;
+  delta.idempotency_key = batch.idempotency_key;
+  delta.expected_state_version = batch.base_state_version;
+  for (const auto& node : batch.nodes) delta.nodes.push_back({node});
+  for (const auto& relation : batch.relations) delta.relations.push_back({relation});
+  for (const auto& membership : batch.memberships) {
+    GraphRelation relation;
+    relation.id = membership.relation_id;
+    relation.kind = RelationKind::Contains;
+    relation.from = membership.cluster_ref;
+    relation.to = membership.member_ref;
+    relation.weight = membership.upstream_weight;
+    delta.relations.push_back({relation});
+  }
+  for (const auto& placement : batch.spatial_placements)
+    delta.cluster_position_updates.push_back({placement});
+  error.clear();
+  return true;
+}
+
+} // namespace surge
