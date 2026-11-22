@@ -127,6 +127,7 @@ class ProjectionBatchAdapter:
             packet["context_id"], packet["source_id"], packet["source_generation"],
             packet["block_ref"], packet["offset_basis"], packet["source_snapshot_digest"],
             packet["source_range_digest"], packet["canonical_request_digest"],
+            packet.get("revision_of_packet_id", ""),
             *batch["source_event_refs"], *batch["evidence_refs"],
         ]
         for node in batch["nodes"]:
