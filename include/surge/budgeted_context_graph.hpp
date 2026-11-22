@@ -131,8 +131,10 @@ class BudgetedContextGraph {
   std::size_t accounted_resident_bytes_{0};
   bool recovered_{false};
   std::vector<ResourceLease> resident_leases_;
+  std::vector<ResourceLease> external_resident_leases_;
   std::vector<ResourceLease> cluster_leases_;
   std::vector<ResourceLease> recovery_event_leases_;
+  std::vector<ResourceLease> external_event_leases_;
   std::vector<ResourceLease> mutation_resident_leases_;
   std::vector<ResourceLease> mutation_event_leases_;
 };
