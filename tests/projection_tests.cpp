@@ -35,6 +35,8 @@ int main() {
   CHECK(delta.delta_id == "projection-1");
   CHECK(delta.expected_state_version == 7);
   CHECK(delta.nodes.size() == 3);
+  CHECK(delta.nodes[1].node.kind == surge::NodeKind::Evidence);
+  CHECK(delta.nodes[2].node.kind == surge::NodeKind::Claim);
   CHECK(delta.relations.size() == 1);
   CHECK(delta.relations.front().relation.kind == surge::RelationKind::Contains);
   CHECK(std::abs(delta.relations.front().relation.weight - 0.82) < 1e-12);
@@ -59,6 +61,14 @@ int main() {
   invalid.source_event_refs.clear();
   validation = surge::validate_projection_batch(invalid);
   CHECK(!validation.valid && validation.error == "MISSING_SOURCE_OR_EVIDENCE");
+
+  invalid = batch;
+  invalid.nodes[0].references = {"claim-1"};
+  invalid.nodes[1].references = {"cluster-1"};
+  validation = surge::validate_projection_batch(invalid);
+  CHECK(validation.valid);
+  CHECK(!surge::build_projection_delta(invalid, delta, error));
+  CHECK(error == "NODE_REFERENCE_CYCLE");
 
   invalid = batch;
   invalid.idempotency_key.clear();
