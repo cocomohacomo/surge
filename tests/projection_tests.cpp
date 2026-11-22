@@ -380,6 +380,29 @@ int main() {
     CHECK(packets.packet_count() == 2);
     CHECK(graph.nodes().count("stream-claim-one") == 1);
     CHECK(graph.nodes().count("stream-claim-two") == 1);
+    const auto resident_before_reclaim = budget.snapshot().used[
+        static_cast<std::size_t>(surge::ResourceKind::ResidentBytes)];
+    surge::SemanticDelta add_entity;
+    add_entity.delta_id = "projection-stream-add-entity";
+    add_entity.idempotency_key = add_entity.delta_id;
+    add_entity.expected_state_version = 2;
+    add_entity.nodes.push_back({{"stream-entity-reclaim", surge::NodeKind::Entity,
+        "temporary entity", {}}});
+    const auto entity_added = budgeted.apply(add_entity);
+    CHECK(entity_added.committed);
+    surge::SemanticDelta reclaim_entity;
+    reclaim_entity.delta_id = "projection-stream-reclaim-entity";
+    reclaim_entity.idempotency_key = reclaim_entity.delta_id;
+    reclaim_entity.expected_state_version = 3;
+    reclaim_entity.reclaim_entity_node_ids = {"stream-entity-reclaim"};
+    const auto entity_reclaimed = budgeted.apply(reclaim_entity);
+    CHECK(entity_reclaimed.committed);
+    CHECK(!graph.nodes().count("stream-entity-reclaim"));
+    CHECK(budget.snapshot().used[static_cast<std::size_t>(
+        surge::ResourceKind::ResidentBytes)] < resident_before_reclaim +
+        1024 * 1024);
+    CHECK(budget.snapshot().used[static_cast<std::size_t>(
+        surge::ResourceKind::ResidentBytes)] > 0);
   }
   std::filesystem::remove(stream_path);
 
