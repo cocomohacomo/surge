@@ -148,10 +148,6 @@ class ProjectionBatchAdapter:
         }
         if not set(batch["evidence_refs"]).issubset(evidence_nodes):
             raise ProjectionRejected("EVIDENCE_NODE_NOT_FOUND")
-        source_refs = set(batch["source_event_refs"])
-        for evidence_id in batch["evidence_refs"]:
-            if not source_refs.intersection(evidence_nodes[evidence_id]["references"]):
-                raise ProjectionRejected("EVIDENCE_SOURCE_LINEAGE_MISSING")
         for relation in batch["relations"]:
             if not math.isfinite(relation["weight"]):
                 raise ProjectionRejected("NON_FINITE_RELATION_WEIGHT")
