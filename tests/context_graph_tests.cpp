@@ -787,7 +787,9 @@ int main(){
     };
     seed.relations={
       {{"recall-low-edge",RelationKind::Contains,"recall-cluster-low","recall-member-low",0.2}},
-      {{"recall-high-edge",RelationKind::Contains,"recall-cluster-high","recall-member-high",0.9}}
+      {{"recall-high-edge",RelationKind::Contains,"recall-cluster-high","recall-member-high",0.9}},
+      {{"recall-cluster-association",RelationKind::AgreesWith,
+        "recall-cluster-low","recall-cluster-high",0.8}}
     };
     CHECK(graph.apply(seed).committed);
     const auto memberships_before=graph.observe_cognition().memberships;
