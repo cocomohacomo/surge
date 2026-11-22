@@ -135,9 +135,6 @@ int main(int argc, char** argv) {
   recall_latency_us.reserve(std::min<std::size_t>(
       (events + recall_interval - 1) / recall_interval, 200000));
   std::size_t candidate_total = 0, candidate_max = 0, recall_samples = 0, completed = 0;
-  recall_latency_us.reserve(std::min<std::size_t>(
-      (events + recall_interval - 1) / recall_interval, 200000));
-  std::size_t candidate_total = 0, candidate_max = 0, recall_samples = 0, completed = 0;
   std::size_t peak_logical_resident = bounded.accounted_resident_bytes();
 
   for (std::size_t i = 0; i < events; ++i) {
