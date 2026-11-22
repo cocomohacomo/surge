@@ -1988,6 +1988,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
           std::quoted(producer_id) >> std::quoted(producer_version) >>
           std::quoted(policy_version) >> std::quoted(recorded_at) >>
           std::quoted(notes))) continue;
+    if (feedback_node.references[1] != input_member_id) continue;
     const auto& candidate_cluster = feedback_node.references[0];
     if (outcome == "CONFIRMED") feedback_adjustment[candidate_cluster] += 0.20;
     else if (outcome == "REJECTED") feedback_adjustment[candidate_cluster] -= 0.30;
