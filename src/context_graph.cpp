@@ -2166,17 +2166,21 @@ CognitionObservation ContextGraph::observe_focused_cognition(
 
   // Inspect relation records once, under the relation budget. The full logical
   // region is already known from coordinates and is never reduced by this cap.
-  std::vector<GraphRelation> inspected_relations;
-  std::map<std::string,std::vector<GraphRelation>> contains_by_cluster;
+  // Keep stable pointers into the immutable graph state for this const
+  // observation. Copying every inspected Relation into both a flat vector and
+  // an adjacency map doubled relation payload storage on the hot path.
+  std::vector<const GraphRelation*> inspected_relations;
+  std::map<std::string,std::vector<const GraphRelation*>> contains_by_cluster;
   bool relation_scan_complete=true;
   for(const auto& item:state_.relations){
     if(inspected_relations.size()>=max_relations){
       relation_scan_complete=false;
       break;
     }
-    inspected_relations.push_back(item.second);
-    if(item.second.kind==RelationKind::Contains)
-      contains_by_cluster[item.second.from].push_back(item.second);
+    const auto* relation=&item.second;
+    inspected_relations.push_back(relation);
+    if(relation->kind==RelationKind::Contains)
+      contains_by_cluster[relation->from].push_back(relation);
   }
   focused.focus_work.relations_examined=inspected_relations.size();
 
@@ -2218,7 +2222,7 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         if(current.level>=origin_depth)continue;
         const auto adjacency=contains_by_cluster.find(current.cluster_id);
         if(adjacency==contains_by_cluster.end())continue;
-        for(const auto& relation:adjacency->second){
+        for(const auto* relation:adjacency->second){
           if(focused.focus_work.relations_examined+
              focused.focus_work.relations_traversed>=max_relations){
             complete=false;
@@ -2226,13 +2230,13 @@ CognitionObservation ContextGraph::observe_focused_cognition(
             break;
           }
           ++focused.focus_work.relations_traversed;
-          const bool inserted=visible_ids.insert(relation.to).second;
+          const bool inserted=visible_ids.insert(relation->to).second;
           if(inserted&&visible_ids.size()>max_nodes){
-            visible_ids.erase(relation.to);
+            visible_ids.erase(relation->to);
             complete=false;
             break;
           }
-          const auto child=state_.nodes.find(relation.to);
+          const auto child=state_.nodes.find(relation->to);
           if(child!=state_.nodes.end()&&
              (child->second.kind==NodeKind::Cluster||child->second.kind==NodeKind::ChaosCluster)){
             frontier.push_back({relation.to,current.level+1,current.origin_cluster_id});
@@ -2258,14 +2262,14 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     const auto node=state_.nodes.find(id);
     if(node!=state_.nodes.end())focused.nodes.push_back(node->second);
   }
-  for(const auto& relation:inspected_relations){
-    if(!visible_ids.count(relation.from)||!visible_ids.count(relation.to))continue;
-    focused.relations.push_back(relation);
-    if(relation.kind==RelationKind::Contains){
-      focused.memberships.push_back({relation.to,relation.from,relation.weight});
-      const auto parent=state_.nodes.find(relation.from);
+  for(const auto* relation:inspected_relations){
+    if(!visible_ids.count(relation->from)||!visible_ids.count(relation->to))continue;
+    focused.relations.push_back(*relation);
+    if(relation->kind==RelationKind::Contains){
+      focused.memberships.push_back({relation->to,relation->from,relation->weight});
+      const auto parent=state_.nodes.find(relation->from);
       if(parent!=state_.nodes.end()&&parent->second.kind==NodeKind::ChaosCluster)
-        focused.unresolved_member_ids.push_back(relation.to);
+        focused.unresolved_member_ids.push_back(relation->to);
     }
   }
 
