@@ -65,6 +65,21 @@ is an explicit partial observation, never a claim that the full region was proce
 and never a reason to contract the logical region. External observers may consume all
 nodes, memberships and relations admitted by the projection, not just the legacy
 focused Cluster.
+
+### 0.2 Bounded observation implementation status
+
+The current `max_nodes` limit caps admitted graph nodes. `max_relations` caps the
+combined relation-inspection and relation-traversal work. To preserve exact logical
+region membership, the current implementation scans all persisted cluster positions
+before applying those graph-expansion limits. `position_checks` and `work_units`
+measure that coordinate pass, but it is not independently capped by either limit.
+
+Deferred roots are reported in deterministic order. A durable continuation cursor
+that resumes from the deferred root without recomputing the completed prefix is not
+yet implemented. Therefore this is a bounded graph-expansion projection, not a
+strict total-CPU, wall-clock or process-RSS limit. These are explicit remaining
+implementation tasks, not guarantees inferred from the current node/relation limits.
+
 ## 1.1 定義
 
 SURGEは、異なる形式・粒度・時間軸で逐次入力される情報を共通イベント形式に正規化し、意味認識、文脈統合、Focus管理、状態更新、履歴管理を継続的に実行するモデル非依存の汎用文脈認識フレームワークである。
