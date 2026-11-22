@@ -179,6 +179,26 @@ jobs:
         run: ./build-edge/surge_journal_bench 10000 128 10000 8388608 > "$RUNNER_TEMP/surge-edge-profile.json"
       - name: Validate profile and publish measurements
         run: python tools/validate_edge_benchmark.py --report "$RUNNER_TEMP/surge-edge-profile.json" --transactions 10000 --summary "$GITHUB_STEP_SUMMARY"
+      - name: Build ContextGraph streaming benchmark
+        run: cmake --build build-edge --target surge_context_graph_stream_bench --config Release --parallel 2
+      - name: Measure bounded ContextGraph stream and publish RSS/latency split
+        run: |
+          ./build-edge/surge_context_graph_stream_bench 1000 > "$RUNNER_TEMP/surge-context-stream.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path(os.environ["RUNNER_TEMP"] + "/surge-context-stream.json").read_text())
+          assert report["events_committed"] == 1000, report
+          assert report["logical_vs_rss_are_distinct_metrics"] is True
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### ContextGraph streaming profile (1,000 events)\\n\\n")
+              summary.write("| Metric | Value |\\n|---|---:|\\n")
+              for key in ("peak_rss_bytes", "rss_growth_bytes_per_1000_events",
+                          "logical_resident_peak_accounted_bytes", "logical_resident_limit_bytes",
+                          "candidate_total", "candidate_max_per_event",
+                          "operation_p50_us", "operation_p95_us", "operation_p99_us"):
+                  summary.write(f"| {key} | {report[key]} |\\n")
+          PY
 
   journal-benchmark-smoke:
     runs-on: ubuntu-latest
