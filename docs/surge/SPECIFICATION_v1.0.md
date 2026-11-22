@@ -801,3 +801,14 @@ persistence foundations. Native semantic candidate generation, candidate
 history querying/serialization through the cognition observation API,
 feedback-driven recall adaptation, C ABI/Python exposure, and automated
 quality benchmarks remain follow-up integration tasks.
+
+
+## Cognition recall and feedback regression contract (2026-11-22)
+- Candidate recall remains a read-only projection over the committed graph. Query terms are supplied by an external producer; Core does not infer the classification of the incoming input.
+- Recall ranking combines matched member content/references, upstream membership weights, bounded within-member term proximity, cluster classification/partition labels, and one-hop existing inter-cluster relations (agreement, support, dependency, contradiction and conflict).
+- Inter-cluster propagation is bounded to one hop and is not recursively amplified. Relation coefficients are retrieval heuristics, not semantic truth or membership weights.
+- Recall scores are ranking-only. They are never persisted as Contains weights, never alter graph state, and never authorize cluster admission.
+- External feedback is appended as Evidence in a caller-owned transaction. It preserves the producer, producer version, policy version, timestamp, outcome and notes. Feedback does not directly modify existing membership or automatically train recall weights.
+- Regression coverage verifies candidate ranking with distinct upstream weights, snapshot version, unchanged Contains weights, append-only feedback, invalid outcome rejection and unchanged membership counts.
+- The current baseline is still lexical and graph-structural, not embedding-based. Feedback history querying/adaptive learning, C ABI/Python exposure, and independently annotated recall-quality benchmarks remain future work.
+- GitHub Actions can measure CI-runner resource use, but it cannot substitute for target-device RSS/latency measurements. Target qualification requires running the benchmark harness on the intended hardware with fixed input stream, warm-up, duration, RSS sampling and p50/p95/p99 latency capture.
