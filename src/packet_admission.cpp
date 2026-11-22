@@ -257,4 +257,7 @@ std::uint64_t PacketAdmissionCoordinator::state_version() const {
 std::size_t PacketAdmissionCoordinator::packet_count() const {
   return packet_digests_.size();
 }
+bool PacketAdmissionCoordinator::contains_packet(const std::string& packet_id) const {
+  return packet_digests_.find(packet_id) != packet_digests_.end();
+}
 }  // namespace surge
