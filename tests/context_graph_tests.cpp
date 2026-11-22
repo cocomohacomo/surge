@@ -367,6 +367,32 @@ int main(){
     CHECK(error=="ENTITY_RECLAMATION_RELATION_REFERENCES_REMAIN");
     CHECK(graph.nodes().count("guard-entity")==1);
   }
+  // A composed recognition is persisted as a new cluster and can become the focused observation.
+  {
+    const auto path=(root/"derived-cognition-cluster.sgj").string();
+    ContextGraph graph(path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="derived-seed";seed.idempotency_key="derived-seed";
+    seed.expected_state_version=0;
+    seed.nodes={{{"source-cluster-a",NodeKind::Cluster,"experience A",{}}},
+                {{"source-cluster-b",NodeKind::Cluster,"experience B",{}}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta composed;composed.delta_id="derived-compose";
+    composed.idempotency_key="derived-compose";composed.expected_state_version=graph.state_version();
+    std::string error;
+    CHECK(graph.append_derived_cognition_cluster(composed,"new-cognition",
+        "A+B newly recognized state",{"source-cluster-a","source-cluster-b"},
+        "derived-lineage",error));
+    composed.focus=SetFocus{{"new-cognition","",false}};
+    CHECK(graph.apply(composed).committed);
+    const auto focused=graph.observe_focused_cognition();
+    CHECK(focused.current_focus && focused.current_focus->cluster_id=="new-cognition");
+    CHECK(focused.nodes.size()==1 && focused.nodes.front().id=="new-cognition");
+    CHECK(std::count_if(graph.relations().begin(),graph.relations().end(),
+        [](const auto& item){return item.second.kind==RelationKind::DerivedFrom &&
+          item.second.from=="new-cognition";})==2);
+    CHECK(graph.observe_cognition().nodes.size()==3);
+  }
+
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);CHECK(graph.open());
