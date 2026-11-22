@@ -511,3 +511,43 @@ Schema検証に加え、詳細設計v0.2のCross-record/意味検証と追加テ
 - Core API: CORE_API_v0.2.md
 
 v0.4文書は履歴として保持し、既存データは明示的Schema Migrationなしにv0.5として読み替えない。
+
+
+### 0.2 Durable spatial focus state and bounded execution
+
+Spatial focus state is durable ContextGraph state. It consists of an optional logical
+region, persisted 3D positions for clusters, and independent per-cluster focus depths.
+These are three different state dimensions and are updated by different journal event
+families:
+
+- `FOCUS_REGION_SET_V1`: move, expand or contract the region by replacing its center
+  and half-extents. This event never changes cluster depth or cluster coordinates.
+- `CLUSTER_SPATIAL_POSITION_SET_V1`: update one cluster's position. It never moves
+  or resizes the focus region.
+- `CLUSTER_FOCUS_DEPTH_SET_V1`: update one cluster's depth. It never changes region
+  geometry or cluster position.
+
+Each event participates in SemanticDelta idempotency, optimistic state-version
+checking, journal replay and the graph snapshot. New snapshots use `CGS2`; the
+restorer continues to accept existing `CGS1` snapshots without spatial state.
+Malformed spatial state, non-finite coordinates, negative extents, references to
+non-cluster nodes, and excessive depth are rejected during apply or restore.
+
+The logical region and its membership are distinct from bounded execution:
+
+- `logical_region_cluster_ids` records every positioned cluster geometrically inside
+  the region, regardless of whether the execution budget permits processing it.
+- `processed_region_cluster_ids` records roots whose configured traversal completed.
+- `deferred_region_cluster_ids` records roots not fully processed due to budget.
+- The region descriptor and logical membership are never contracted to hide work
+  omitted by a budget limit.
+
+The observation reports position checks, clusters considered/in-region/scheduled/
+deferred, nodes and relations processed, work units, elapsed microseconds, configured
+limits and `budget_exhausted`. Work units are an operation-count estimate
+(position checks + emitted nodes + emitted relations); elapsed microseconds are
+measured wall-clock time for the projection. Neither metric is a correctness score.
+
+The current geometry is an axis-aligned 3D box. Graph topology and Euclidean
+coordinates remain separate: Contains traversal is controlled by per-cluster depth,
+not inferred from geometric distance.
