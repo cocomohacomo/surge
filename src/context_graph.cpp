@@ -283,7 +283,10 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
   }
   break;
  }
- case RelationKind::About:if((a!=NodeKind::Claim&&a!=NodeKind::Question&&a!=NodeKind::QuestionAspect)||(b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::About:if(!((a==NodeKind::Claim||a==NodeKind::Question||a==NodeKind::QuestionAspect||
+      (a==NodeKind::Evidence&&b==NodeKind::Cluster))||
+      (a==NodeKind::Evidence&&b==NodeKind::Entity))||
+      (b!=NodeKind::Entity&&b!=NodeKind::Cluster)){e="ABOUT_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::DependsOn:if(a==NodeKind::Question&&b==NodeKind::Question){
    std::vector<std::string> pending{r.to};std::set<std::string> visited;
    while(!pending.empty()){auto current=pending.back();pending.pop_back();if(current==r.from){e="QUESTION_DEPENDENCY_CYCLE";return false;}if(!visited.insert(current).second)continue;if(visited.size()>4096){e="QUESTION_DEPENDENCY_TRAVERSAL_LIMIT";return false;}for(const auto& edge:s.relations)if(edge.second.kind==RelationKind::DependsOn&&edge.second.from==current){const auto target=s.nodes.find(edge.second.to);if(target!=s.nodes.end()&&target->second.kind==NodeKind::Question)pending.push_back(edge.second.to);}}
