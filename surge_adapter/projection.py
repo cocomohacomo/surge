@@ -8,6 +8,7 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import json
+import math
 import pathlib
 import unicodedata
 from dataclasses import dataclass
@@ -131,6 +132,15 @@ class ProjectionBatchAdapter:
         for evidence_id in batch["evidence_refs"]:
             if not source_refs.intersection(evidence_nodes[evidence_id]["references"]):
                 raise ProjectionRejected("EVIDENCE_SOURCE_LINEAGE_MISSING")
+        for relation in batch["relations"]:
+            if not math.isfinite(relation["weight"]):
+                raise ProjectionRejected("NON_FINITE_RELATION_WEIGHT")
+        for membership in batch["memberships"]:
+            if not math.isfinite(membership["upstream_weight"]):
+                raise ProjectionRejected("NON_FINITE_MEMBERSHIP_WEIGHT")
+        for placement in batch["spatial_placements"]:
+            if not all(math.isfinite(placement["position"][axis]) for axis in ("x", "y", "z")):
+                raise ProjectionRejected("INVALID_SPATIAL_PLACEMENT")
         return source
 
     @staticmethod
@@ -194,22 +204,19 @@ class ProjectionBatchAdapter:
                       item["to"].encode(), item["weight"])
             for item in batch["relations"]
         ]
-        relation_array = (ctypes.POINTER(_Relation) if not relation_values else
-                          (_Relation * len(relation_values))(*relation_values))
+        relation_array = None if not relation_values else (_Relation * len(relation_values))(*relation_values)
         membership_values = [
             _Membership(item["relation_id"].encode(), item["member_ref"].encode(),
                         item["cluster_ref"].encode(), item["upstream_weight"])
             for item in batch["memberships"]
         ]
-        membership_array = (ctypes.POINTER(_Membership) if not membership_values else
-                            (_Membership * len(membership_values))(*membership_values))
+        membership_array = None if not membership_values else (_Membership * len(membership_values))(*membership_values)
         placement_values = [
             _Placement(item["cluster_id"].encode(), item["position"]["x"],
                        item["position"]["y"], item["position"]["z"])
             for item in batch["spatial_placements"]
         ]
-        placement_array = (ctypes.POINTER(_Placement) if not placement_values else
-                           (_Placement * len(placement_values))(*placement_values))
+        placement_array = None if not placement_values else (_Placement * len(placement_values))(*placement_values)
 
         snapshot_array = (ctypes.c_ubyte * len(source)).from_buffer_copy(source)
         duplicate = ctypes.c_int(0)
