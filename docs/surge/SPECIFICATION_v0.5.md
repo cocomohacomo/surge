@@ -77,6 +77,16 @@ journal replay, archive import, and snapshot publication/rollback. It is not jou
 or serialized because it is a deterministic derivative of the durable position map.
 `position_checks` counts exact 3D checks after broad-phase filtering, not the number
 of all persisted positions.
+Persisted spatial observation also maintains a derived outgoing-Relation adjacency
+index keyed by source cluster ID. It stores Relation IDs, is rebuilt lazily from
+committed Relations, and is invalidated by topology mutations, replay, archive
+import, and snapshot publication/rollback. Each projection inspects outgoing
+Relations only for clusters reached from the logical Focus roots, so unrelated
+graph Relations do not consume that projection's relation budget.
+`relations_examined` counts newly inspected outgoing Relation records;
+`relations_traversed` counts Contains traversal steps. The first index build
+after invalidation remains O(E) in total Relations and uses O(E) derived memory;
+this is amortized acceleration, not a hard bound on index-build CPU or RSS.
 
 This is an initial one-axis index, not a balanced 3D spatial tree. Queries with a wide
 x extent can still inspect most positions, and the initial index build is O(N).
