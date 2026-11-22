@@ -1,3 +1,5 @@
+import copy
+import hashlib
 import json
 import pathlib
 import tempfile
@@ -68,6 +70,78 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                     duplicate = self.adapter.commit(batch, core)
                     self.assertTrue(duplicate.duplicate)
                     self.assertEqual(duplicate.state_version, 1)
+
+    def test_budget_rejection_happens_before_packet_or_graph_commit(self):
+        batch = self.fixture("conversation")
+        limits = {
+            "resident_bytes": 1024 * 1024,
+            "transient_bytes": 1,
+            "retained_events": 1000,
+            "retained_clusters": 100,
+            "decision_candidates": 100,
+            "decision_evidence": 100,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with CppCoreBridge(pathlib.Path(tmp) / "budget.sgj", resource_limits=limits) as core:
+                with self.assertRaisesRegex(ProjectionRejected, "RESOURCE_BUDGET_EXCEEDED"):
+                    self.adapter.commit(batch, core)
+                self.assertEqual(core.state_version, 0)
+                self.assertEqual(core.packet_count, 0)
+
+    def test_multi_packet_stream_commits_in_order(self):
+        first = self.fixture("conversation")
+        second = self.fixture("document")
+        def rewrite(value, mapping):
+            if isinstance(value, dict):
+                return {key: rewrite(item, mapping) for key, item in value.items()}
+            if isinstance(value, list):
+                return [rewrite(item, mapping) for item in value]
+            if isinstance(value, str):
+                for old, new in mapping.items():
+                    value = value.replace(old, new)
+            return value
+
+        common = {
+            "context-conversation": "context-stream",
+            "source-conversation": "source-stream",
+            "generation-1": "generation-stream",
+            "packet-conversation": "packet-stream-1",
+            "packet-document": "packet-stream-2",
+            "packet-idem-conversation": "packet-idem-stream-1",
+            "packet-idem-document": "packet-idem-stream-2",
+        }
+        first = rewrite(first, common)
+        second = rewrite(second, {
+            **common,
+            "context-document": "context-stream",
+            "source-document": "source-stream",
+        })
+        first["source_packet"]["block_ref"] = "block-stream-1"
+        second["source_packet"]["block_ref"] = "block-stream-2"
+        first["source_packet"]["source_sequence"] = 1
+        second["source_packet"]["source_sequence"] = 2
+        first["base_state_version"] = 0
+        second["base_state_version"] = 1
+        for batch in (first, second):
+            snapshot = batch["normalized_source_snapshot"].encode("utf-8")
+            digest = hashlib.sha256(snapshot).hexdigest()
+            packet = batch["source_packet"]
+            packet["source_snapshot_digest"] = digest
+            packet["source_range_digest"] = hashlib.sha256(
+                snapshot[packet["start_offset"]:packet["end_offset"]]).hexdigest()
+            packet["canonical_request_digest"] = hashlib.sha256(
+                packet["packet_id"].encode()).hexdigest()
+            batch["source_event_refs"] = [packet["packet_id"]]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with CppCoreBridge(pathlib.Path(tmp) / "stream.sgj") as core:
+                result = self.adapter.commit_stream([first, second], core)
+                self.assertTrue(result.complete)
+                self.assertEqual(result.committed_batches, 2)
+                self.assertEqual(result.duplicate_batches, 0)
+                self.assertEqual(result.next_index, 2)
+                self.assertEqual(result.state_version, 2)
+                self.assertEqual(core.packet_count, 2)
 
 
 if __name__ == "__main__":
