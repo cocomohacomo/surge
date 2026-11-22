@@ -135,6 +135,10 @@ class ProjectionBatchAdapter:
         start, end = packet["start_offset"], packet["end_offset"]
         if start < 0 or end <= start or end > len(source):
             raise ProjectionRejected("SOURCE_RANGE_OUT_OF_BOUNDS")
+        if packet["global_end_offset"] <= packet["global_start_offset"]:
+            raise ProjectionRejected("DOCUMENT_GLOBAL_RANGE_INVALID")
+        if packet["global_end_offset"] - packet["global_start_offset"] != end - start:
+            raise ProjectionRejected("DOCUMENT_GLOBAL_RANGE_LENGTH_MISMATCH")
         digest = hashlib.sha256(source).hexdigest()
         range_digest = hashlib.sha256(source[start:end]).hexdigest()
         if packet["source_snapshot_digest"] != digest:
