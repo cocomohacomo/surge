@@ -1543,7 +1543,7 @@ class SemanticCoreBridge(CppCoreBridge):
         expected = self.state_version if expected_state_version is None else expected_state_version
         fn = self._lib.surge_context_graph_record_cognition_feedback
         fn.argtypes = [
-            ctypes.c_void_p, *([ctypes.c_char_p] * 10), ctypes.c_uint64,
+            ctypes.c_void_p, *([ctypes.c_char_p] * 9), ctypes.c_uint64,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char), ctypes.c_size_t]
         fn.restype = ctypes.c_int
