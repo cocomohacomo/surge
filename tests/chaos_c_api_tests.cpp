@@ -63,6 +63,7 @@ int main(){
  CHECK(std::string(cognition).find("\"memberships\"")!=std::string::npos);
  CHECK(std::string(cognition).find("\"current_focus\"")!=std::string::npos);
  CHECK(required>1);
+ const size_t cognition_required = required;
 
  // Shared C ABI path for cognition recall and append-only external feedback.
  SurgeGraphNodeInput cognition_nodes[] = {
@@ -101,7 +102,7 @@ int main(){
  char too_small[2]{};size_t required_full=0;
  CHECK(surge_context_graph_observe_cognition(h,too_small,sizeof(too_small),
    &required_full,error,sizeof(error))==0);
- CHECK(required_full==required);
+ CHECK(required_full==cognition_required);
  surge_packet_core_close(h);
  h=surge_packet_core_open(path.c_str(),error,sizeof(error));CHECK(h!=nullptr);
  CHECK(surge_chaos_cluster_get(h,"chaos-c-api",output,sizeof(output),&required,error,sizeof(error))==1);
