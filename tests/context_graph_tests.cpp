@@ -443,6 +443,12 @@ int main(){
     CHECK(bounded.processed_region_cluster_ids.empty());
     CHECK(bounded.deferred_region_cluster_ids.size()==3);
     CHECK(bounded.focus_work.clusters_in_region==3);
+    const auto relation_bounded=graph.observe_focused_cognition(expanded,positions,deeper,20,1);
+    CHECK(relation_bounded.focus_work.budget_exhausted);
+    CHECK(relation_bounded.focus_work.relations_examined==1);
+    CHECK(relation_bounded.logical_region_cluster_ids.size()==3);
+    CHECK(relation_bounded.processed_region_cluster_ids.empty());
+    CHECK(relation_bounded.deferred_region_cluster_ids.size()==3);
 
     // Persist region, positions and depths as independent journal event families.
     SemanticDelta region_delta;region_delta.delta_id="spatial-region-update";
