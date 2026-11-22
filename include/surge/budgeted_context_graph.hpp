@@ -27,7 +27,10 @@ class BudgetedContextGraph {
   // The callback must atomically commit the supplied prepared semantic events.
   DeltaResult apply_with_external_commit(
       const SemanticDelta& delta,
-      const std::function<DeltaResult(const std::vector<JournalEvent>&)>& commit);
+      const std::function<DeltaResult(const std::vector<JournalEvent>&)>& commit,
+      std::size_t external_resident_bytes = 0,
+      std::size_t external_retained_events = 0,
+      std::size_t external_staging_bytes = 0);
   // Read-only, detached observation of committed cognition; consumes no mutation budget.
   CognitionObservation observe_cognition() const {
     return graph_.observe_cognition();
