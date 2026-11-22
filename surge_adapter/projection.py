@@ -111,9 +111,9 @@ class ProjectionBatchAdapter:
             raise ProjectionRejected("SOURCE_RANGE_OUT_OF_BOUNDS")
         digest = hashlib.sha256(source).hexdigest()
         range_digest = hashlib.sha256(source[start:end]).hexdigest()
-        if packet["source_snapshot_digest"].lower() != digest:
+        if packet["source_snapshot_digest"] != digest:
             raise ProjectionRejected("SOURCE_SNAPSHOT_DIGEST_MISMATCH")
-        if packet["source_range_digest"].lower() != range_digest:
+        if packet["source_range_digest"] != range_digest:
             raise ProjectionRejected("SOURCE_RANGE_DIGEST_MISMATCH")
         if packet["context_id"] != batch["context_id"]:
             raise ProjectionRejected("PROJECTION_CONTEXT_PACKET_MISMATCH")
