@@ -60,14 +60,19 @@ class _Packet(ctypes.Structure):
         ("packet_id", ctypes.c_char_p), ("idempotency_key", ctypes.c_char_p),
         ("context_id", ctypes.c_char_p), ("source_id", ctypes.c_char_p),
         ("source_generation", ctypes.c_char_p), ("block_ref", ctypes.c_char_p),
-        ("document_ref", ctypes.c_char_p), ("document_generation", ctypes.c_char_p),
-        ("document_sequence", ctypes.c_uint64), ("global_start_offset", ctypes.c_uint64),
-        ("global_end_offset", ctypes.c_uint64),
         ("offset_basis", ctypes.c_char_p), ("start_offset", ctypes.c_uint64),
         ("end_offset", ctypes.c_uint64), ("source_sequence", ctypes.c_uint64),
         ("source_snapshot_digest", ctypes.c_char_p), ("source_range_digest", ctypes.c_char_p),
         ("canonical_request_digest", ctypes.c_char_p), ("revision_of_packet_id", ctypes.c_char_p),
         ("revision", ctypes.c_int), ("revision_sequence", ctypes.c_uint64),
+    ]
+
+
+class _DocumentStream(ctypes.Structure):
+    _fields_ = [
+        ("document_ref", ctypes.c_char_p), ("document_generation", ctypes.c_char_p),
+        ("document_sequence", ctypes.c_uint64), ("global_start_offset", ctypes.c_uint64),
+        ("global_end_offset", ctypes.c_uint64),
     ]
 
 
@@ -155,8 +160,7 @@ class ProjectionBatchAdapter:
             batch["producer"]["producer_id"], batch["producer"]["producer_version"],
             batch["policy_version"], packet["packet_id"], packet["idempotency_key"],
             packet["context_id"], packet["source_id"], packet["source_generation"],
-            packet["block_ref"], packet["document_ref"], packet["document_generation"],
-            packet["offset_basis"], packet["source_snapshot_digest"],
+            packet["block_ref"], packet["offset_basis"], packet["source_snapshot_digest"],
             packet["source_range_digest"], packet["canonical_request_digest"],
             packet.get("revision_of_packet_id", ""),
             *batch["source_event_refs"], *batch["evidence_refs"],
@@ -199,8 +203,8 @@ class ProjectionBatchAdapter:
     def _bind(core: Any) -> None:
         lib = core._lib
         charp = ctypes.POINTER(ctypes.c_char)
-        lib.surge_projection_batch_admit_and_apply.argtypes = [
-            ctypes.c_void_p, ctypes.POINTER(_Packet),
+        lib.surge_projection_batch_admit_and_apply_v2.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(_Packet), ctypes.POINTER(_DocumentStream),
             ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
             ctypes.POINTER(_Metadata),
             ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t,
@@ -211,7 +215,7 @@ class ProjectionBatchAdapter:
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
             charp, ctypes.c_size_t, charp, ctypes.c_size_t,
         ]
-        lib.surge_projection_batch_admit_and_apply.restype = ctypes.c_int
+        lib.surge_projection_batch_admit_and_apply_v2.restype = ctypes.c_int
 
     def commit(self, batch: dict[str, Any], core: Any) -> ProjectionCommit:
         started_ns = time.perf_counter_ns()
@@ -223,15 +227,20 @@ class ProjectionBatchAdapter:
             packet_data["packet_id"].encode(), packet_data["idempotency_key"].encode(),
             packet_data["context_id"].encode(), packet_data["source_id"].encode(),
             packet_data["source_generation"].encode(), packet_data["block_ref"].encode(),
-            packet_data["document_ref"].encode(), packet_data["document_generation"].encode(),
-            packet_data["document_sequence"], packet_data["global_start_offset"],
-            packet_data["global_end_offset"], packet_data["offset_basis"].encode(), packet_data["start_offset"],
+            packet_data["offset_basis"].encode(), packet_data["start_offset"],
             packet_data["end_offset"], packet_data["source_sequence"],
             packet_data["source_snapshot_digest"].encode(),
             packet_data["source_range_digest"].encode(),
             packet_data["canonical_request_digest"].encode(),
             packet_data.get("revision_of_packet_id", "").encode(),
             int(packet_data.get("revision", False)), packet_data.get("revision_sequence", 0),
+        )
+        document_stream = _DocumentStream(
+            packet_data.get("document_ref", "").encode(),
+            packet_data.get("document_generation", "").encode(),
+            packet_data.get("document_sequence", 0),
+            packet_data.get("global_start_offset", 0),
+            packet_data.get("global_end_offset", 0),
         )
         metadata = _Metadata(
             batch["projection_id"].encode(), batch["idempotency_key"].encode(),
@@ -278,8 +287,9 @@ class ProjectionBatchAdapter:
         state_version = ctypes.c_uint64(0)
         status = ctypes.create_string_buffer(128)
         error = ctypes.create_string_buffer(1024)
-        result = core._lib.surge_projection_batch_admit_and_apply(
-            core._handle, ctypes.byref(packet), snapshot_array, len(source),
+        result = core._lib.surge_projection_batch_admit_and_apply_v2(
+            core._handle, ctypes.byref(packet), ctypes.byref(document_stream),
+            snapshot_array, len(source),
             ctypes.byref(metadata), evidence_array, len(evidence_values),
             node_array, len(node_values), relation_array, len(relation_values),
             membership_array, len(membership_values), placement_array, len(placement_values),
