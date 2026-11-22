@@ -2270,12 +2270,15 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   focused.focus_work.clusters_deferred=focused.deferred_region_cluster_ids.size();
   focused.focus_work.work_units=focused.focus_work.position_checks+
       focused.focus_work.relations_examined+focused.focus_work.nodes_processed;
+  std::set<std::string> root_ids(roots.begin(),roots.end());
+  for(const auto& id:roots){
+    const auto depth=depth_by_cluster.find(id);
+    focused.cluster_focus_depths.push_back(
+        {id,depth==depth_by_cluster.end()?1:depth->second});
+  }
   for(const auto& item:depth_by_cluster)
-    if(visible_ids.count(item.first))
+    if(visible_ids.count(item.first)&&!root_ids.count(item.first))
       focused.cluster_focus_depths.push_back({item.first,item.second});
-  for(const auto& id:roots)
-    if(visible_ids.count(id)&&!depth_by_cluster.count(id))
-      focused.cluster_focus_depths.push_back({id,1});
   focused.focus_work.elapsed_microseconds=static_cast<std::size_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::steady_clock::now()-focus_started).count());
