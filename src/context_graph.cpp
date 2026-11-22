@@ -1997,29 +1997,34 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     roots.push_back(item.first);
   }
 
-  struct FrontierItem { std::string cluster_id; std::size_t level; };
+  struct FrontierItem {
+    std::string cluster_id;
+    std::size_t level;
+    std::string origin_cluster_id;
+  };
   std::vector<FrontierItem> frontier;
+  std::set<std::string> expanded_paths;
   for (const auto& id : roots) {
     if (visible_ids.size() >= max_nodes) {
       focused.focus_work.budget_exhausted = true;
       break;
     }
     visible_ids.insert(id);
-    frontier.push_back({id, 0});
+    frontier.push_back({id, 0, id});
   }
 
-  // Depth is local to each cluster. A nested cluster starts at its own depth
-  // zero rather than inheriting the parent's remaining depth.
-  std::set<std::string> expanded_clusters;
+  // A region root's depth controls its traversal radius. A nested Cluster with
+  // an explicit depth also starts an independent traversal of its own.
   std::set<std::string> visible_relation_ids;
   std::size_t cursor = 0;
   while (cursor < frontier.size() && !focused.focus_work.budget_exhausted) {
     const auto current = frontier[cursor++];
-    if (!expanded_clusters.insert(current.cluster_id).second) continue;
-    const auto configured = depth_by_cluster.find(current.cluster_id);
-    const std::size_t cluster_depth =
+    const std::string path_key = current.origin_cluster_id + "\n" + current.cluster_id;
+    if (!expanded_paths.insert(path_key).second) continue;
+    const auto configured = depth_by_cluster.find(current.origin_cluster_id);
+    const std::size_t origin_depth =
         configured == depth_by_cluster.end() ? 1 : configured->second;
-    if (current.level >= cluster_depth) continue;
+    if (current.level >= origin_depth) continue;
 
     for (const auto& relation : full.relations) {
       if (relation.kind != RelationKind::Contains ||
@@ -2036,11 +2041,15 @@ CognitionObservation ContextGraph::observe_focused_cognition(
           focused.focus_work.budget_exhausted = true;
           break;
         }
-        const auto child = state_.nodes.find(relation.to);
-        if (child != state_.nodes.end() &&
-            (child->second.kind == NodeKind::Cluster ||
-             child->second.kind == NodeKind::ChaosCluster))
-          frontier.push_back({relation.to, 0});
+      }
+      const auto child = state_.nodes.find(relation.to);
+      if (child != state_.nodes.end() &&
+          (child->second.kind == NodeKind::Cluster ||
+           child->second.kind == NodeKind::ChaosCluster)) {
+        frontier.push_back({relation.to, current.level + 1,
+                            current.origin_cluster_id});
+        if (depth_by_cluster.count(relation.to))
+          frontier.push_back({relation.to, 0, relation.to});
       }
     }
   }
@@ -2064,11 +2073,12 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     }
   focused.focus_work.nodes_processed = focused.nodes.size();
   focused.focus_work.relations_processed = focused.relations.size();
-  for (const auto& id : expanded_clusters) {
-    const auto depth = depth_by_cluster.find(id);
-    focused.cluster_focus_depths.push_back(
-        {id, depth == depth_by_cluster.end() ? 1 : depth->second});
-  }
+  for (const auto& item : depth_by_cluster)
+    if (visible_ids.count(item.first))
+      focused.cluster_focus_depths.push_back({item.first, item.second});
+  for (const auto& id : roots)
+    if (!depth_by_cluster.count(id))
+      focused.cluster_focus_depths.push_back({id, 1});
   return focused;
 }
 
