@@ -19,7 +19,8 @@ class BudgetedContextGraph {
  public:
   BudgetedContextGraph(ContextGraph& graph, ResourceBudget& budget,
                        std::size_t max_staging_bytes = 0);
-  bool recover(std::string& error);
+  bool recover(std::string& error, std::size_t external_resident_bytes = 0,
+               std::size_t external_retained_events = 0);
   DeltaResult apply(const SemanticDelta& delta);
   std::uint64_t state_version() const noexcept { return graph_.state_version(); }
   // Reserve all graph mutation resources before an external journal transaction.
