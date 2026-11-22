@@ -69,10 +69,19 @@ focused Cluster.
 ### 0.2 Bounded observation implementation status
 
 The current `max_nodes` limit caps admitted graph nodes. `max_relations` caps the
-combined relation-inspection and relation-traversal work. To preserve exact logical
-region membership, the current implementation scans all persisted cluster positions
-before applying those graph-expansion limits. `position_checks` and `work_units`
-measure that coordinate pass, but it is not independently capped by either limit.
+combined relation-inspection and relation-traversal work. Persisted spatial positions
+use a derived, in-memory x-axis ordered index as a broad phase. The query retrieves
+only positions whose x coordinate intersects the region, then performs exact 3D
+membership checks. The index is rebuilt lazily and invalidated by position updates,
+journal replay, archive import, and snapshot publication/rollback. It is not journaled
+or serialized because it is a deterministic derivative of the durable position map.
+`position_checks` counts exact 3D checks after broad-phase filtering, not the number
+of all persisted positions.
+
+This is an initial one-axis index, not a balanced 3D spatial tree. Queries with a wide
+x extent can still inspect most positions, and the initial index build is O(N).
+The caller-supplied C++ projection overload continues to evaluate the supplied
+position array directly.
 
 Deferred roots are reported in deterministic order. A durable continuation cursor
 that resumes from the deferred root without recomputing the completed prefix is not
