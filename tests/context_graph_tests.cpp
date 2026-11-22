@@ -455,6 +455,26 @@ int main(){
     CHECK(relation_bounded.processed_region_cluster_ids.empty());
     CHECK(relation_bounded.deferred_region_cluster_ids.size()==3);
 
+    // Unrelated outgoing Relations must not consume this Focus projection's budget.
+    SemanticDelta unrelated_edges;
+    unrelated_edges.delta_id="spatial-unrelated-edges";
+    unrelated_edges.idempotency_key="spatial-unrelated-edges";
+    unrelated_edges.expected_state_version=graph.state_version();
+    for (std::size_t i=0;i<32;++i) {
+      GraphRelation edge;
+      edge.id="spatial-unrelated-edge-"+std::to_string(i);
+      edge.kind=RelationKind::DerivedFrom;
+      edge.from="spatial-c";
+      edge.to="spatial-a";
+      unrelated_edges.relations.push_back({edge});
+    }
+    CHECK(graph.apply(unrelated_edges).committed);
+    const auto local_budget=graph.observe_focused_cognition(
+        compact,positions,deeper,20,20);
+    CHECK(local_budget.logical_region_cluster_ids.size()==2);
+    CHECK(!local_budget.focus_work.budget_exhausted);
+    CHECK(local_budget.focus_work.relations_examined<10);
+
     // A zero node budget defers all work without hiding any cluster from the
     // logical region. The geometric region is not a budget-sized prefix.
     const auto no_node_budget =
