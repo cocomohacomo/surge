@@ -75,9 +75,10 @@ int main(){
    {"cognition-membership","CONTAINS","cognition-cluster","cognition-member"}
  };
  const auto cognition_version = surge_packet_core_state_version(h);
+ int cognition_duplicate = 0;
  CHECK(surge_context_graph_apply(h,"cognition-seed","cognition-seed-key",
    cognition_version,cognition_nodes,3,cognition_edges,1,nullptr,nullptr,
-   &duplicate,&version,error,sizeof(error))==1);
+   &cognition_duplicate,&version,error,sizeof(error))==1);
  const char* cognition_terms[] = {"alpha","beta"};
  required=0;
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
@@ -90,8 +91,8 @@ int main(){
  const auto feedback_expected = surge_packet_core_state_version(h);
  CHECK(surge_context_graph_record_cognition_feedback(h,"api-feedback-1",
    "cognition-cluster","cognition-input","CONFIRMED","external-reviewer","2",
-   "policy-api-1","2026-11-22T00:00:00Z","api-feedback-node-1",
-   "api-feedback-edge-1",feedback_expected,&version,error,sizeof(error))==1);
+   "policy-api-1","2026-11-22T00:00:00Z","externally confirmed",
+   feedback_expected,"api-feedback-node-1","api-feedback-edge-1",&version,error,sizeof(error))==1);
  required=0;
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    nullptr,0,&required,error,sizeof(error))==0);
