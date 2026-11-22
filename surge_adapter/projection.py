@@ -32,6 +32,16 @@ class ProjectionCommit:
     packet_status: str
 
 
+@dataclass(frozen=True)
+class ProjectionStreamCommit:
+    complete: bool
+    committed_batches: int
+    duplicate_batches: int
+    next_index: int
+    state_version: int
+    error: str = ""
+
+
 class _Packet(ctypes.Structure):
     _fields_ = [
         ("packet_id", ctypes.c_char_p), ("idempotency_key", ctypes.c_char_p),
@@ -260,3 +270,24 @@ class ProjectionBatchAdapter:
             duplicate=bool(duplicate.value),
             packet_status=status.value.decode("utf-8", errors="replace"),
         )
+
+    def commit_stream(self, batches: list[dict[str, Any]], core: Any) -> ProjectionStreamCommit:
+        """Commit ordered source packets as resumable, individually atomic transactions."""
+        committed = 0
+        duplicates = 0
+        state_version = core.state_version
+        for index, batch in enumerate(batches):
+            try:
+                result = self.commit(batch, core)
+            except ProjectionRejected as exc:
+                return ProjectionStreamCommit(
+                    complete=False, committed_batches=committed,
+                    duplicate_batches=duplicates, next_index=index,
+                    state_version=core.state_version, error=str(exc))
+            committed += 1
+            duplicates += int(result.duplicate)
+            state_version = result.state_version
+        return ProjectionStreamCommit(
+            complete=True, committed_batches=committed,
+            duplicate_batches=duplicates, next_index=len(batches),
+            state_version=state_version)
