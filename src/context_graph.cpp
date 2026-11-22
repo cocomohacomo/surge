@@ -2220,6 +2220,11 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   for (const auto& id : roots)
     if (!depth_by_cluster.count(id))
       focused.cluster_focus_depths.push_back({id, 1});
+  for (const auto& id : roots) {
+    const auto position=position_by_cluster.find(id);
+    if(position!=position_by_cluster.end())
+      focused.cluster_spatial_positions.push_back({id,position->second});
+  }
   focused.focus_work.elapsed_microseconds = static_cast<std::size_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::steady_clock::now()-focus_started).count());
