@@ -265,6 +265,38 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
   return surge_packet_core_open_with_limits(path, &c_limits, error, cap);
 }
 void surge_packet_core_close(void* opaque) { try { delete static_cast<Handle*>(opaque); } catch (...) {} }
+int surge_packet_core_resource_snapshot(void* opaque,
+    SurgeResourceBudgetSnapshot* output, char* error, size_t error_cap) {
+  try {
+    if (!opaque || !output) {
+      copy_text(error, error_cap, "RESOURCE_SNAPSHOT_ARGUMENT_INVALID");
+      return 0;
+    }
+    const auto snapshot = static_cast<Handle*>(opaque)->graph_budget.snapshot();
+    output->resident_bytes_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::ResidentBytes)];
+    output->transient_bytes_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::TransientBytes)];
+    output->retained_events_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::RetainedEvents)];
+    output->retained_clusters_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::RetainedClusters)];
+    output->decision_candidates_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::DecisionCandidates)];
+    output->decision_evidence_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::DecisionEvidence)];
+    output->resident_bytes_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::ResidentBytes)];
+    output->transient_bytes_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::TransientBytes)];
+    output->retained_events_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::RetainedEvents)];
+    output->retained_clusters_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::RetainedClusters)];
+    output->decision_candidates_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::DecisionCandidates)];
+    output->decision_evidence_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::DecisionEvidence)];
+    output->total_byte_used = snapshot.total_byte_used;
+    output->total_byte_limit = snapshot.total_byte_limit;
+    copy_text(error, error_cap, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_cap, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_cap, "UNKNOWN_RESOURCE_SNAPSHOT_EXCEPTION");
+    return 0;
+  }
+}
 int surge_packet_core_admit(
     void* opaque, const char* packet_id, const char* idempotency_key,
     const char* context_id, const char* source_id, const char* source_generation,
