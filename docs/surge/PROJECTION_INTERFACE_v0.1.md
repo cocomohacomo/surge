@@ -362,3 +362,26 @@ The C ABI `surge_packet_core_resource_snapshot()` and Python `CppCoreBridge.reso
 `apply_projection_stream()` and `ProjectionBatchAdapter.commit_stream()` accept ordered sequences of source-packet/batch pairs. Each pair is committed independently using the same atomic packet-plus-projection path. The result reports committed count, duplicate count, next index, current state version, and an error if processing stops. A caller can resume from `next_index`; previously committed items remain safe to replay through idempotency. This is deliberately a sequence of atomic commits, not a synthetic multi-packet transaction, so a later failure does not roll back earlier valid packets.
 
 The stream contract preserves the SURGE boundary: Projectors supply candidate information and weights; Core validates and stores it. No Focus movement, Focus-region resizing, cluster-depth update, truth selection, or relevance decision is implied by stream ingestion.
+
+
+## 10. Long-document stream boundary semantics
+
+The current ProjectionBatch v0.1 adapter admits one normalized source snapshot per RecognitionPacket. Its `block_ref`, `start_offset`, and `end_offset` describe that packet's source block. A sequence of packets may be associated with the same higher-level document by the producer, but v0.1 does not persist a document-global byte coordinate or a durable block-to-document offset map.
+
+Consequently:
+
+- Each independently hashed block MUST use a distinct `block_ref` unless it is an explicit revision of the same immutable block range. Reusing one block reference and the same range for different block contents is correctly rejected as `RANGE_CONTENT_CONFLICT`.
+- The producer MAY calculate contiguous global UTF-8 byte ranges, but this is producer-side metadata until a versioned packet contract persists it.
+- Cross-block cluster continuity is represented by stable cluster references and explicit relations supplied by the projector. Core validates and persists those references; it does not infer topic continuity from adjacent blocks.
+- A relation from a previously committed claim to a claim in a later batch is valid only when the referenced prior node already exists in the committed graph.
+- Evidence remains block-anchored in v0.1. A single Evidence span that crosses two blocks is not representable as one canonical source range.
+
+### 10.1 Required follow-up contract
+
+A future packet contract version should add an immutable document identity and document-global coordinate envelope, for example `document_ref`, `document_generation`, `global_start_offset`, and `global_end_offset`. These fields must be distinct from the block-local packet offsets. Validation must bind the global range to the ordered block manifest and reject gaps, overlaps, generation mixing, and digest mismatch. This is a schema/API evolution task, not something that can safely be simulated by overloading the existing block-local offsets.
+
+A cross-block Evidence representation should then reference an ordered list of block-local spans plus the document-global range and source digest. It must preserve the original per-block evidence anchors and must not synthesize a contiguous byte span where the source blocks are not contiguous.
+
+### 10.2 Focus isolation
+
+ProjectionBatch does not mutate the logical Focus region, its geometry, or per-cluster depth. Spatial placement updates are cluster-position metadata only. Long-document load tests must measure Focus observation separately, including logical-region preservation under budget exhaustion, progressive work/cursor behavior, and independent depth limits.
