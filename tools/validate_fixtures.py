@@ -22,6 +22,31 @@ def main():
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema, format_checker=FormatChecker())
 
+    projection_schema = load(ROOT / "schemas/projection-batch-v0.1.schema.json")
+    Draft202012Validator.check_schema(projection_schema)
+    projection_validator = Draft202012Validator(projection_schema, format_checker=FormatChecker())
+    projection_fixtures = sorted((ROOT / "tests/fixtures/projection").glob("*.json"))
+    if {path.stem for path in projection_fixtures} != {"conversation", "document", "structured"}:
+        raise AssertionError("ProjectionBatch requires conversation/document/structured fixtures")
+    for fixture_path in projection_fixtures:
+        batch = load(fixture_path)
+        errors = list(projection_validator.iter_errors(batch))
+        if errors:
+            raise AssertionError(f"invalid ProjectionBatch fixture {fixture_path}: {errors}")
+        source = unicodedata.normalize("NFC", batch["normalized_source_snapshot"])
+        source_bytes = source.encode("utf-8")
+        packet = batch["source_packet"]
+        digest = hashlib.sha256(source_bytes).hexdigest()
+        if (source != batch["normalized_source_snapshot"] or
+            packet["end_offset"] != len(source_bytes) or
+            packet["source_snapshot_digest"] != digest or
+            packet["source_range_digest"] != digest or
+            batch["source_event_refs"] != [packet["packet_id"]]):
+            raise AssertionError(f"ProjectionBatch source lineage mismatch: {fixture_path}")
+        evidence_ids = {node["id"] for node in batch["nodes"] if node["kind"] == "EVIDENCE"}
+        if not set(batch["evidence_refs"]).issubset(evidence_ids):
+            raise AssertionError(f"ProjectionBatch Evidence refs are not represented: {fixture_path}")
+
     language_schema = load(ROOT / "schemas/surge-language-pack-v1.0.schema.json")
     Draft202012Validator.check_schema(language_schema)
     language_validator = Draft202012Validator(language_schema, format_checker=FormatChecker())
@@ -121,6 +146,7 @@ def main():
         raise AssertionError("D19 zero denominator must be inconclusive")
     if by_id["D20"]["expected"]["error"] != "BENCHMARK_PROFILE_IMMUTABLE":
         raise AssertionError("D20 profile immutability expectation missing")
+    print("ProjectionBatch v0.1 JSON Schema and 3 cross-format fixtures: valid")
     print("JSON Schema Draft 2020-12: 5/5 v0.9 schemas + Chaos Cluster v1.0 + Language Set v1.0 valid")
     print(f"Language Set manifest fixtures: {len(language_manifests)} valid; ja/en coverage passed")
     print("Chaos Cluster semantic conformance inventory: 20/20 cases valid")
