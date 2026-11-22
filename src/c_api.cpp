@@ -1745,6 +1745,50 @@ int surge_context_graph_set_focus_region(void* opaque,const char* delta_id,
    catch(...){copy_text(error,error_capacity,"FOCUS_REGION_UNKNOWN_EXCEPTION");return 0;}
 }
 
+int surge_context_graph_move_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionCenterInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_MOVE_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_focus_region_move(delta,{input->x,input->y,input->z},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_MOVE_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_resize_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionExtentInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_RESIZE_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_focus_region_resize(delta,{input->x,input->y,input->z},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_RESIZE_UNKNOWN_EXCEPTION");return 0;}
+}
+
 int surge_context_graph_set_cluster_spatial_position(void* opaque,const char* delta_id,
     const char* idempotency_key,uint64_t expected,
     const SurgeClusterSpatialPositionInput* input,int* duplicate,
