@@ -121,7 +121,7 @@ def extract_json(text: str):
 def run_case(model_path: Path, model: dict, case: dict) -> dict:
     prompt = make_prompt(model["format"], case)
     command = [
-        LLAMA_CLI, "-m", str(model_path), "-p", prompt,
+        "/usr/bin/time", "-v", LLAMA_CLI, "-m", str(model_path), "-p", prompt,
         "-n", "192", "--temp", "0", "--top-k", "1",
         "--threads", str(THREADS), "--no-display-prompt", "--simple-io",
     ]
@@ -136,8 +136,8 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
     combined = json.dumps(parsed, ensure_ascii=False) if parsed else output
     expected_hits = sum(token in combined for token in case["must_contain"])
     perf_text = proc.stderr + "\n" + proc.stdout
-    speed_matches = re.findall(r"([0-9]+(?:\\.[0-9]+)?)\\s*tokens per second", perf_text)
-    rss_matches = re.findall(r"Maximum resident set size \\(kbytes\\):\\s*(\\d+)", perf_text)
+    speed_matches = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*tokens per second", perf_text)
+    rss_matches = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", perf_text)
     return {
         "case_id": case["id"],
         "return_code": proc.returncode,
@@ -182,6 +182,8 @@ def main() -> int:
                 result = run_case(model_path, model, case)
             except subprocess.TimeoutExpired:
                 result = {"case_id": case["id"], "timeout": True}
+            if result.get("return_code", 0) != 0:
+                raise RuntimeError(f"{model['name']} failed on {case['id']}: {result.get('stderr_excerpt', '')}")
             model_result["results"].append(result)
         valid = [r for r in model_result["results"] if r.get("json_valid")]
         model_result["json_valid_cases"] = len(valid)
