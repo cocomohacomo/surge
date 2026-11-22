@@ -129,9 +129,11 @@ int main(int argc, char** argv) {
   }
 
   const long long rss_start = current_rss_bytes();
-  std::vector<double> latency_us;
+  std::vector<double> latency_us, recall_latency_us;
   latency_us.reserve(std::min<std::size_t>(events, 200000));
-  std::size_t candidate_total = 0, candidate_max = 0, completed = 0;
+  recall_latency_us.reserve(std::min<std::size_t>(
+      (events + recall_interval - 1) / recall_interval, 200000));
+  std::size_t candidate_total = 0, candidate_max = 0, recall_samples = 0, completed = 0;
   std::size_t peak_logical_resident = bounded.accounted_resident_bytes();
 
   for (std::size_t i = 0; i < events; ++i) {
@@ -157,10 +159,17 @@ int main(int argc, char** argv) {
       return 5;
     }
 
-    const auto candidates = bounded.recall_cognition_candidates(
-        "stream-query", {"stream", "cognition", "context"}, 16);
-    candidate_total += candidates.size();
-    candidate_max = std::max(candidate_max, candidates.size());
+    if (i % recall_interval == 0) {
+      const auto recall_started = Clock::now();
+      const auto candidates = bounded.recall_cognition_candidates(
+          "stream-query", {"stream", "cognition", "context"}, 16);
+      const auto recall_stopped = Clock::now();
+      candidate_total += candidates.size();
+      candidate_max = std::max(candidate_max, candidates.size());
+      ++recall_samples;
+      recall_latency_us.push_back(std::chrono::duration<double, std::micro>(
+          recall_stopped - recall_started).count());
+    }
     peak_logical_resident = std::max(peak_logical_resident,
                                       bounded.accounted_resident_bytes());
     ++completed;
