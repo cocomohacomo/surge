@@ -48,16 +48,29 @@ inline ProjectionValidationResult validate_projection_batch(const ProjectionBatc
   if (batch.source_event_refs.empty() || batch.evidence_refs.empty())
     return {false, "MISSING_SOURCE_OR_EVIDENCE"};
 
+  std::set<std::string> source_event_ids;
+  for (const auto& event_id : batch.source_event_refs) {
+    if (!required(event_id) || !source_event_ids.insert(event_id).second)
+      return {false, "EMPTY_OR_DUPLICATE_SOURCE_EVENT_REF"};
+  }
+
   std::set<std::string> node_ids;
   for (const auto& node : batch.nodes) {
     if (!required(node.id) || !node_ids.insert(node.id).second)
       return {false, "EMPTY_OR_DUPLICATE_NODE_ID"};
+    for (const auto& reference : node.references)
+      if (!required(reference)) return {false, "EMPTY_NODE_REFERENCE"};
   }
+  std::set<std::string> evidence_ids;
   for (const auto& evidence_id : batch.evidence_refs) {
-    if (!required(evidence_id)) return {false, "EMPTY_EVIDENCE_REF"};
+    if (!required(evidence_id) || !evidence_ids.insert(evidence_id).second)
+      return {false, "EMPTY_OR_DUPLICATE_EVIDENCE_REF"};
     const auto found = std::find_if(batch.nodes.begin(), batch.nodes.end(),
       [&](const GraphNode& node) { return node.id == evidence_id && node.kind == NodeKind::Evidence; });
     if (found == batch.nodes.end()) return {false, "EVIDENCE_NODE_NOT_FOUND"};
+    const bool source_linked = std::any_of(found->references.begin(), found->references.end(),
+      [&](const std::string& reference) { return source_event_ids.count(reference) != 0; });
+    if (!source_linked) return {false, "EVIDENCE_SOURCE_LINEAGE_MISSING"};
   }
 
   std::set<std::string> relation_ids;
@@ -74,12 +87,14 @@ inline ProjectionValidationResult validate_projection_batch(const ProjectionBatc
     if (!std::isfinite(membership.upstream_weight))
       return {false, "NON_FINITE_MEMBERSHIP_WEIGHT"};
   }
+  std::set<std::string> placed_cluster_ids;
   for (const auto& placement : batch.spatial_placements) {
     if (!required(placement.cluster_id) ||
+        !placed_cluster_ids.insert(placement.cluster_id).second ||
         !std::isfinite(placement.position.x) ||
         !std::isfinite(placement.position.y) ||
         !std::isfinite(placement.position.z))
-      return {false, "INVALID_SPATIAL_PLACEMENT"};
+      return {false, "INVALID_OR_DUPLICATE_SPATIAL_PLACEMENT"};
   }
   return {true, {}};
 }
