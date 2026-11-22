@@ -455,6 +455,53 @@ bool ContextGraph::apply_focus(State& s,const FocusRecord& f,std::string& e)cons
  }
  s.focus=f;s.focus_history.push_back(f);return true;
 }
+bool ContextGraph::apply_focus_region(State& s,const FocusRegion& region,std::string& error)const{
+ const auto finite=[](double v){return std::isfinite(v);};
+ const auto nonnegative=[&](double v){return finite(v)&&v>=0.0;};
+ if(!finite(region.center.x)||!finite(region.center.y)||!finite(region.center.z)||
+    !nonnegative(region.half_extents.x)||!nonnegative(region.half_extents.y)||!nonnegative(region.half_extents.z)){
+  error="FOCUS_REGION_GEOMETRY_INVALID";return false;
+ }
+ s.focus_region=region;return true;
+}
+bool ContextGraph::apply_cluster_position(State& s,const ClusterSpatialPosition& p,std::string& error)const{
+ const auto node=s.nodes.find(p.cluster_id);
+ if(p.cluster_id.empty()||node==s.nodes.end()||
+    (node->second.kind!=NodeKind::Cluster&&node->second.kind!=NodeKind::ChaosCluster)||
+    !std::isfinite(p.position.x)||!std::isfinite(p.position.y)||!std::isfinite(p.position.z)){
+  error="CLUSTER_SPATIAL_POSITION_INVALID";return false;
+ }
+ s.cluster_positions[p.cluster_id]=p.position;return true;
+}
+bool ContextGraph::apply_cluster_depth(State& s,const ClusterFocusDepth& d,std::string& error)const{
+ const auto node=s.nodes.find(d.cluster_id);
+ if(d.cluster_id.empty()||node==s.nodes.end()||
+    (node->second.kind!=NodeKind::Cluster&&node->second.kind!=NodeKind::ChaosCluster)||d.depth>1000000){
+  error="CLUSTER_FOCUS_DEPTH_INVALID";return false;
+ }
+ s.cluster_focus_depths[d.cluster_id]=d.depth;return true;
+}
+bool ContextGraph::append_focus_region_update(SemanticDelta& delta,const FocusRegion& region,std::string& error)const{
+ if(delta.focus_region){error="FOCUS_REGION_UPDATE_DUPLICATE";return false;}
+ State staged=state_;if(!apply_focus_region(staged,region,error))return false;
+ delta.focus_region=SetFocusRegion{region};error.clear();return true;
+}
+bool ContextGraph::append_cluster_spatial_position_update(SemanticDelta& delta,const ClusterSpatialPosition& p,std::string& error)const{
+ if(std::any_of(delta.cluster_position_updates.begin(),delta.cluster_position_updates.end(),[&](const auto& x){return x.position.cluster_id==p.cluster_id;})){
+  error="CLUSTER_SPATIAL_POSITION_UPDATE_DUPLICATE";return false;
+ }
+ State staged=state_;for(const auto& n:delta.nodes)if(!apply_node(staged,n.node,error))return false;
+ if(!apply_cluster_position(staged,p,error))return false;
+ delta.cluster_position_updates.push_back({p});error.clear();return true;
+}
+bool ContextGraph::append_cluster_focus_depth_update(SemanticDelta& delta,const ClusterFocusDepth& d,std::string& error)const{
+ if(std::any_of(delta.cluster_focus_depth_updates.begin(),delta.cluster_focus_depth_updates.end(),[&](const auto& x){return x.focus_depth.cluster_id==d.cluster_id;})){
+  error="CLUSTER_FOCUS_DEPTH_UPDATE_DUPLICATE";return false;
+ }
+ State staged=state_;for(const auto& n:delta.nodes)if(!apply_node(staged,n.node,error))return false;
+ if(!apply_cluster_depth(staged,d,error))return false;
+ delta.cluster_focus_depth_updates.push_back({d});error.clear();return true;
+}
 std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  std::ostringstream o;o<<std::quoted(d.delta_id)<<' '<<d.expected_state_version<<' ';
  for(const auto& n:d.nodes)o<<"N "<<encode_node(n.node)<<'\n';
