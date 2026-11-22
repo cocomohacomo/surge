@@ -2095,7 +2095,7 @@ bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
   delta.nodes.push_back({GraphNode{feedback_node_id, NodeKind::Evidence,
       content.str(), {feedback.candidate_cluster_id, feedback.input_member_id}}});
   delta.relations.push_back({GraphRelation{relation_id, RelationKind::About,
-      feedback.candidate_cluster_id, feedback_node_id, 1.0}});
+      feedback_node_id, feedback.candidate_cluster_id, 1.0}});
   error.clear();
   return true;
 }
