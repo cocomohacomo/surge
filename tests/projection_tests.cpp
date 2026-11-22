@@ -165,5 +165,64 @@ int main() {
     CHECK(graph.relations().count("membership-1") == 1);
   }
   std::filesystem::remove(atomic_path);
+
+  struct FormatCase { const char* id; const char* source; const char* claim; };
+  const FormatCase formats[] = {
+    {"conversation", "会議日程は火曜日", "meeting-date=Tuesday"},
+    {"document", "第3条 申請期限は毎年3月末日とする。", "application-deadline=March-end"},
+    {"structured", "{\\"asset\\":\\"A-17\\",\\"status\\":\\"inspection_due\\"}", "asset:A-17/status=inspection_due"}
+  };
+  for (const auto& format : formats) {
+    const std::string format_source = format.source;
+    const std::string suffix = format.id;
+    const auto format_path = (std::filesystem::temp_directory_path() /
+        ("surge-projection-format-" + suffix + ".sgj")).string();
+    std::filesystem::remove(format_path);
+    auto format_packet = packet;
+    format_packet.packet_id = "packet-" + suffix;
+    format_packet.idempotency_key = "packet-idem-" + suffix;
+    format_packet.context_id = "context-" + suffix;
+    format_packet.source_id = "source-" + suffix;
+    format_packet.block_ref = "block-" + suffix;
+    format_packet.end_offset = format_source.size();
+    format_packet.source_snapshot_digest = surge::sha256_hex(format_source);
+    format_packet.source_range_digest = format_packet.source_snapshot_digest;
+    format_packet.canonical_request_digest = surge::sha256_hex("canonical-" + suffix);
+
+    auto format_batch = atomic_batch;
+    format_batch.projection_id = "projection-" + suffix;
+    format_batch.idempotency_key = "projection-idem-" + suffix;
+    format_batch.context_id = format_packet.context_id;
+    format_batch.base_state_version = 0;
+    format_batch.source_event_refs = {format_packet.packet_id};
+    format_batch.evidence_refs = {"evidence-" + suffix};
+    format_batch.nodes = {
+      {"cluster-" + suffix, surge::NodeKind::Cluster, "projected topic", {}},
+      {"claim-" + suffix, surge::NodeKind::Claim, format.claim, {"evidence-" + suffix}},
+      {"evidence-" + suffix, surge::NodeKind::Evidence, "source evidence", {format_packet.packet_id}}
+    };
+    format_batch.memberships = {
+      {"membership-" + suffix, "claim-" + suffix, "cluster-" + suffix, 0.82}
+    };
+    format_batch.spatial_placements = {
+      {"cluster-" + suffix, {1.0, 2.0, 3.0}}
+    };
+    {
+      surge::EventJournal journal(format_path);
+      CHECK(journal.open());
+      surge::PacketAdmissionCoordinator packets(journal);
+      CHECK(packets.recover());
+      surge::ContextGraph graph(journal);
+      CHECK(graph.open());
+      const auto result = surge::apply_projection_batch(
+          packets, graph, format_batch, format_packet, format_source);
+      CHECK(result.admitted && !result.duplicate);
+      CHECK(result.state_version == 1);
+      CHECK(graph.nodes().count("claim-" + suffix) == 1);
+      CHECK(graph.nodes().count("evidence-" + suffix) == 1);
+      CHECK(graph.relations().count("membership-" + suffix) == 1);
+    }
+    std::filesystem::remove(format_path);
+  }
   return 0;
 }
