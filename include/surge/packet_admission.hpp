@@ -52,6 +52,7 @@ class PacketAdmissionCoordinator {
                               const std::vector<JournalEvent>& semantic_events = {});
   std::uint64_t state_version() const;
   std::size_t packet_count() const;
+  std::size_t estimated_resident_bytes() const noexcept;
   bool contains_packet(const std::string& packet_id) const;
 
  private:
