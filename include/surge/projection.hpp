@@ -75,6 +75,8 @@ inline ProjectionValidationResult validate_projection_batch(const ProjectionBatc
     if (!required(relation.id) || !relation_ids.insert(relation.id).second)
       return {false, "EMPTY_OR_DUPLICATE_RELATION_ID"};
     if (!std::isfinite(relation.weight)) return {false, "NON_FINITE_RELATION_WEIGHT"};
+    if (relation.weight < 0.0 || relation.weight > 1.0)
+      return {false, "RELATION_WEIGHT_OUT_OF_RANGE"};
   }
   for (const auto& membership : batch.memberships) {
     if (!required(membership.relation_id) || !relation_ids.insert(membership.relation_id).second)
@@ -83,6 +85,8 @@ inline ProjectionValidationResult validate_projection_batch(const ProjectionBatc
       return {false, "MISSING_MEMBERSHIP_ENDPOINT"};
     if (!std::isfinite(membership.upstream_weight))
       return {false, "NON_FINITE_MEMBERSHIP_WEIGHT"};
+    if (membership.upstream_weight < 0.0 || membership.upstream_weight > 1.0)
+      return {false, "MEMBERSHIP_WEIGHT_OUT_OF_RANGE"};
   }
   std::set<std::string> placed_cluster_ids;
   for (const auto& placement : batch.spatial_placements) {
