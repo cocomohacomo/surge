@@ -88,13 +88,14 @@ long long peak_rss_bytes() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc > 2) {
-    std::cerr << "usage: surge_context_graph_stream_bench [events]\n";
+  if (argc > 3) {
+    std::cerr << "usage: surge_context_graph_stream_bench [events] [recall_interval]\n";
     return 1;
   }
-  std::size_t events = 0;
-  if (!parse_count(argc > 1 ? argv[1] : nullptr, events)) {
-    std::cerr << "invalid event count (1..2000000)\n";
+  std::size_t events = 0, recall_interval = 100;
+  if (!parse_count(argc > 1 ? argv[1] : nullptr, events) ||
+      !parse_count(argc > 2 ? argv[2] : nullptr, recall_interval)) {
+    std::cerr << "invalid event count or recall interval (1..2000000)\n";
     return 1;
   }
 
@@ -131,6 +132,9 @@ int main(int argc, char** argv) {
   const long long rss_start = current_rss_bytes();
   std::vector<double> latency_us, recall_latency_us;
   latency_us.reserve(std::min<std::size_t>(events, 200000));
+  recall_latency_us.reserve(std::min<std::size_t>(
+      (events + recall_interval - 1) / recall_interval, 200000));
+  std::size_t candidate_total = 0, candidate_max = 0, recall_samples = 0, completed = 0;
   recall_latency_us.reserve(std::min<std::size_t>(
       (events + recall_interval - 1) / recall_interval, 200000));
   std::size_t candidate_total = 0, candidate_max = 0, recall_samples = 0, completed = 0;
@@ -189,9 +193,14 @@ int main(int argc, char** argv) {
             << "  \"events_requested\": " << events << ",\n"
             << "  \"events_committed\": " << completed << ",\n"
             << "  \"state_version\": " << graph.state_version() << ",\n"
+            << "  \"recall_interval_events\": " << recall_interval << ",\n"
+            << "  \"recall_samples\": " << recall_samples << ",\n"
             << "  \"candidate_total\": " << candidate_total << ",\n"
-            << "  \"candidate_max_per_event\": " << candidate_max << ",\n"
+            << "  \"candidate_max_per_recall\": " << candidate_max << ",\n"
             << "  \"operation_p50_us\": " << percentile(latency_us, 0.50) << ",\n"
+            << "  \"recall_p50_us\": " << percentile(recall_latency_us, 0.50) << ",\n"
+            << "  \"recall_p95_us\": " << percentile(recall_latency_us, 0.95) << ",\n"
+            << "  \"recall_p99_us\": " << percentile(recall_latency_us, 0.99) << ",\n"
             << "  \"operation_p95_us\": " << percentile(latency_us, 0.95) << ",\n"
             << "  \"operation_p99_us\": " << percentile(latency_us, 0.99) << ",\n"
             << "  \"rss_start_bytes\": " << rss_start << ",\n"
