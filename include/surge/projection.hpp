@@ -176,7 +176,7 @@ inline bool estimate_projection_packet_resources(
   const std::string* fields[] = {
     &packet.packet_id, &packet.idempotency_key, &packet.context_id,
     &packet.source_id, &packet.source_generation, &packet.block_ref,
-    &packet.offset_basis, &packet.source_snapshot_digest,
+    &packet.document_ref, &packet.document_generation, &packet.offset_basis, &packet.source_snapshot_digest,
     &packet.source_range_digest, &packet.canonical_request_digest,
     &packet.revision_of_packet_id
   };
