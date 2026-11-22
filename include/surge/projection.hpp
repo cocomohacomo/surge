@@ -1,6 +1,7 @@
 #pragma once
 
 #include "surge/context_graph.hpp"
+#include "surge/packet_admission.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -112,15 +113,48 @@ inline bool build_projection_delta(const ProjectionBatch& batch,
   return true;
 }
 
-// Validate, translate, and commit through the graph's existing journal-backed
-// transaction path. This does not admit source Events; those must already exist
-// in the caller's event pipeline and be referenced by the batch.
+// Direct graph-only commit for callers whose source Event has already been admitted.
 inline DeltaResult apply_projection_batch(ContextGraph& graph, const ProjectionBatch& batch) {
   SemanticDelta delta;
   std::string error;
   if (!build_projection_delta(batch, delta, error))
     return {false, false, graph.state_version(), error};
   return graph.apply(delta);
+}
+
+// Atomic source-packet + projection commit. Packet admission and the prepared
+// SemanticDelta are written by PacketAdmissionCoordinator in one EventJournal
+// transaction. The source packet is the single source event represented here;
+// multi-event projections are submitted as successive source packets.
+inline PacketAdmissionResult apply_projection_batch(
+    PacketAdmissionCoordinator& packets, ContextGraph& graph,
+    const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
+    const std::string& normalized_source_snapshot) {
+  PacketAdmissionResult rejected;
+  rejected.state_version = graph.state_version();
+  const auto validation = validate_projection_batch(batch);
+  if (!validation.valid) {
+    rejected.error = validation.error;
+    return rejected;
+  }
+  if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
+      batch.source_event_refs.front() != packet.packet_id) {
+    rejected.error = "PROJECTION_SOURCE_PACKET_MISMATCH";
+    return rejected;
+  }
+
+  SemanticDelta delta;
+  std::string error;
+  if (!build_projection_delta(batch, delta, error)) {
+    rejected.error = error;
+    return rejected;
+  }
+  std::vector<JournalEvent> semantic_events;
+  if (!graph.prepare_events(delta, semantic_events, error)) {
+    rejected.error = error;
+    return rejected;
+  }
+  return packets.admit(packet, normalized_source_snapshot, semantic_events);
 }
 
 } // namespace surge
