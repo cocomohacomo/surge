@@ -254,13 +254,19 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
   return true;
 }
 
-bool BudgetedContextGraph::recover(std::string& error) {
+bool BudgetedContextGraph::recover(std::string& error,
+    std::size_t external_resident_bytes, std::size_t external_retained_events) {
   error.clear();
   if (recovered_) {
     error = "CONTEXT_GRAPH_BUDGET_ALREADY_RECOVERED"; return false;
   }
   std::size_t bytes = 0, clusters = 0, retained_events = 0;
   if (!estimate_graph(graph_, bytes, clusters, retained_events, error)) return false;
+  if (!add(external_resident_bytes, bytes) ||
+      !add(external_retained_events, retained_events)) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW";
+    return false;
+  }
   ResourceLease resident, retained_clusters, retained;
   try {
     if (bytes) resident_leases_.reserve(resident_leases_.size() + 1);
