@@ -24,7 +24,12 @@
     "canonical_request_digest": "fixture-document",
     "revision": false,
     "revision_sequence": 0,
-    "context_id": "context-document"
+    "context_id": "context-document",
+    "document_ref": "document-document",
+    "document_generation": "document-generation-1",
+    "document_sequence": 1,
+    "global_start_offset": 0,
+    "global_end_offset": 51
   },
   "normalized_source_snapshot": "第3条 申請期限は毎年3月末日とする。",
   "source_event_refs": [
