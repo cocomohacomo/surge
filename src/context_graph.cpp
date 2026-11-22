@@ -725,6 +725,8 @@ bool ContextGraph::replay(){
  state_=std::move(rebuilt);
  spatial_position_index_valid_=false;
  spatial_position_x_index_.clear();
+ spatial_relation_index_valid_=false;
+ spatial_outgoing_relation_ids_.clear();
  return true;
 }
 
@@ -758,6 +760,8 @@ DeltaResult ContextGraph::import_cluster_archive_payload(
   state_ = std::move(candidate);
   spatial_position_index_valid_ = false;
   spatial_position_x_index_.clear();
+  spatial_relation_index_valid_ = false;
+  spatial_outgoing_relation_ids_.clear();
   idempotency_[idempotency_key] = fingerprint;
   return {true, committed.duplicate, state_version(), {}};
 }
@@ -1192,6 +1196,11 @@ DeltaResult ContextGraph::apply(const SemanticDelta& d){
   spatial_position_index_valid_=false;
   spatial_position_x_index_.clear();
  }
+ if(!d.nodes.empty()||!d.relations.empty()||!d.remove_relation_ids.empty()||
+    !d.reclaim_entity_node_ids.empty()){
+  spatial_relation_index_valid_=false;
+  spatial_outgoing_relation_ids_.clear();
+ }
  return {true,committed.duplicate,state_version(),{}};
 }
 
@@ -1531,6 +1540,8 @@ class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore
     owner_->idempotency_.swap(idempotency_);
     owner_->spatial_position_index_valid_ = false;
     owner_->spatial_position_x_index_.clear();
+    owner_->spatial_relation_index_valid_ = false;
+    owner_->spatial_outgoing_relation_ids_.clear();
     committed_ = true;
     return true;
   }
@@ -1541,6 +1552,8 @@ class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore
     owner_->idempotency_.swap(idempotency_);
     owner_->spatial_position_index_valid_ = false;
     owner_->spatial_position_x_index_.clear();
+    owner_->spatial_relation_index_valid_ = false;
+    owner_->spatial_outgoing_relation_ids_.clear();
     committed_ = false;
   }
  private:
@@ -2211,43 +2224,22 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     focused.cluster_spatial_positions.push_back({item.first, item.second});
   }
 
-  // Stage 3: inspect relation records once under the relation budget and
-  // retain immutable references for the duration of this const observation.
+  // Stage 3: build a derived outgoing adjacency once. Each observation then
+  // inspects only edges whose source cluster is reached from the Focus roots.
+  if (!spatial_relation_index_valid_) {
+    spatial_outgoing_relation_ids_.clear();
+    for (const auto& item : state_.relations)
+      spatial_outgoing_relation_ids_[item.second.from].push_back(item.first);
+    spatial_relation_index_valid_ = true;
+  }
   std::vector<const GraphRelation*> inspected_relations;
-  std::map<std::string, std::vector<const GraphRelation*>> contains_by_cluster;
-  bool relation_scan_complete = true;
-  const auto inspect_relations = [&]() {
-    for (const auto& item : state_.relations) {
-      if (inspected_relations.size() >= max_relations) {
-        relation_scan_complete = false;
-        break;
-      }
-      const auto* relation = &item.second;
-      inspected_relations.push_back(relation);
-      if (relation->kind == RelationKind::Contains)
-        contains_by_cluster[relation->from].push_back(relation);
-    }
-    focused.focus_work.relations_examined = inspected_relations.size();
-  };
-  inspect_relations();
+  std::set<std::string> inspected_relation_ids;
 
   // Stage 4: expand each root independently. A failed root remains deferred;
   // the logical region is never rewritten to match the admitted work prefix.
   std::set<std::string> visible_ids;
   std::set<std::string> expanded_paths;
   const auto expand_roots = [&]() {
-    if (!relation_scan_complete) {
-      focused.focus_work.budget_exhausted = true;
-      for (const auto& root : roots) {
-        if (visible_ids.size() < max_nodes) {
-          visible_ids.insert(root);
-          ++focused.focus_work.clusters_scheduled;
-        }
-        focused.deferred_region_cluster_ids.push_back(root);
-      }
-      return;
-    }
-
     struct FrontierItem {
       std::string cluster_id;
       std::size_t level;
@@ -2281,11 +2273,27 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         const auto configured = depth_by_cluster.find(current.origin_cluster_id);
         const std::size_t origin_depth =
             configured == depth_by_cluster.end() ? 1 : configured->second;
-        if (current.level >= origin_depth) continue;
-
-        const auto adjacency = contains_by_cluster.find(current.cluster_id);
-        if (adjacency == contains_by_cluster.end()) continue;
-        for (const auto* relation : adjacency->second) {
+        const auto adjacency =
+            spatial_outgoing_relation_ids_.find(current.cluster_id);
+        if (adjacency == spatial_outgoing_relation_ids_.end()) continue;
+        for (const auto& relation_id : adjacency->second) {
+          const auto relation_it = state_.relations.find(relation_id);
+          if (relation_it == state_.relations.end()) continue;
+          const auto* relation = &relation_it->second;
+          if (inspected_relation_ids.insert(relation_id).second) {
+            if (focused.focus_work.relations_examined +
+                    focused.focus_work.relations_traversed >= max_relations) {
+              inspected_relation_ids.erase(relation_id);
+              complete = false;
+              focused.focus_work.budget_exhausted = true;
+              break;
+            }
+            ++focused.focus_work.relations_examined;
+            inspected_relations.push_back(relation);
+          }
+          if (relation->kind != RelationKind::Contains ||
+              current.level >= origin_depth)
+            continue;
           if (focused.focus_work.relations_examined +
                   focused.focus_work.relations_traversed >= max_relations) {
             complete = false;
