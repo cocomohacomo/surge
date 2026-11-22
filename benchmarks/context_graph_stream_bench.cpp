@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
   surge::ResourceBudgetLimits limits;
   limits.resident_bytes = 200U * 1024U * 1024U;
   limits.transient_bytes = 32U * 1024U * 1024U;
-  limits.retained_events = events + 16;
+  limits.retained_events = events * 4 + 64;
   limits.retained_clusters = 4096;
   limits.decision_candidates = 1024;
   limits.decision_evidence = 8192;
