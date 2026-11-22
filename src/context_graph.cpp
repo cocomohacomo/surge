@@ -40,8 +40,8 @@ bool decode_cluster_lifecycle_content(const std::string& content,
  return true;
 }
 bool parse_node_kind(const std::string& s,NodeKind& k){const std::pair<const char*,NodeKind> v[]={{"CLUSTER",NodeKind::Cluster},{"CHAOS_CLUSTER",NodeKind::ChaosCluster},{"ENTITY",NodeKind::Entity},{"EVIDENCE",NodeKind::Evidence},{"CLAIM",NodeKind::Claim},{"QUESTION",NodeKind::Question},{"QUESTION_ASPECT",NodeKind::QuestionAspect},{"DEPENDENCY",NodeKind::Dependency},{"INTEREST",NodeKind::Interest},{"CLUSTER_LIFECYCLE",NodeKind::ClusterLifecycle}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
-const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";case RelationKind::Supersedes:return "SUPERSEDES";case RelationKind::Retracts:return "RETRACTS";case RelationKind::Duplicates:return "DUPLICATES";case RelationKind::Contains:return "CONTAINS";}return "UNKNOWN";}
-bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts},{"DUPLICATES",RelationKind::Duplicates},{"CONTAINS",RelationKind::Contains}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
+const char* relation_kind_name(RelationKind k){switch(k){case RelationKind::Supports:return "SUPPORTS";case RelationKind::Contradicts:return "CONTRADICTS";case RelationKind::AgreesWith:return "AGREES_WITH";case RelationKind::ConflictsWith:return "CONFLICTS_WITH";case RelationKind::DependsOn:return "DEPENDS_ON";case RelationKind::About:return "ABOUT";case RelationKind::Supersedes:return "SUPERSEDES";case RelationKind::Retracts:return "RETRACTS";case RelationKind::Duplicates:return "DUPLICATES";case RelationKind::Contains:return "CONTAINS";case RelationKind::DerivedFrom:return "DERIVED_FROM";}return "UNKNOWN";}
+bool parse_relation_kind(const std::string& s,RelationKind& k){const std::pair<const char*,RelationKind> v[]={{"SUPPORTS",RelationKind::Supports},{"CONTRADICTS",RelationKind::Contradicts},{"AGREES_WITH",RelationKind::AgreesWith},{"CONFLICTS_WITH",RelationKind::ConflictsWith},{"DEPENDS_ON",RelationKind::DependsOn},{"ABOUT",RelationKind::About},{"SUPERSEDES",RelationKind::Supersedes},{"RETRACTS",RelationKind::Retracts},{"DUPLICATES",RelationKind::Duplicates},{"CONTAINS",RelationKind::Contains},{"DERIVED_FROM",RelationKind::DerivedFrom}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 const char* scope_kind_name(ScopeKind k){switch(k){case ScopeKind::Negation:return "NEGATION";case ScopeKind::Condition:return "CONDITION";case ScopeKind::Modality:return "MODALITY";case ScopeKind::Concession:return "CONCESSION";case ScopeKind::Contrast:return "CONTRAST";case ScopeKind::Coreference:return "COREFERENCE";case ScopeKind::Anaphora:return "ANAPHORA";case ScopeKind::Quotation:return "QUOTATION";case ScopeKind::Temporal:return "TEMPORAL";case ScopeKind::ListContinuation:return "LIST_CONTINUATION";case ScopeKind::TableHeader:return "TABLE_HEADER";}return "UNKNOWN";}
 bool parse_scope_kind(const std::string& s,ScopeKind& k){const std::pair<const char*,ScopeKind> v[]={{"NEGATION",ScopeKind::Negation},{"CONDITION",ScopeKind::Condition},{"MODALITY",ScopeKind::Modality},{"CONCESSION",ScopeKind::Concession},{"CONTRAST",ScopeKind::Contrast},{"COREFERENCE",ScopeKind::Coreference},{"ANAPHORA",ScopeKind::Anaphora},{"QUOTATION",ScopeKind::Quotation},{"TEMPORAL",ScopeKind::Temporal},{"LIST_CONTINUATION",ScopeKind::ListContinuation},{"TABLE_HEADER",ScopeKind::TableHeader}};for(const auto& x:v)if(s==x.first){k=x.second;return true;}return false;}
 struct ParsedRfc3339 { std::int64_t seconds{0}; int nanos{0}; };
@@ -260,6 +260,7 @@ bool ContextGraph::apply_relation(State& s,const GraphRelation& r,std::string& e
  switch(r.kind){case RelationKind::Supports:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;case RelationKind::Contradicts:if(!((a==NodeKind::Claim&&b==NodeKind::Claim)||(a==NodeKind::Evidence&&b==NodeKind::Claim))){e="CLAIM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::AgreesWith:case RelationKind::ConflictsWith:if(a!=b||(a!=NodeKind::Cluster&&a!=NodeKind::Claim&&a!=NodeKind::Question)){e="GRAPH_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Duplicates:if(a!=NodeKind::Question||b!=NodeKind::Question){e="QUESTION_RELATION_TYPE_INVALID";return false;}break;
+ case RelationKind::DerivedFrom:if(a!=NodeKind::Cluster||b!=NodeKind::Cluster){e="DERIVED_FROM_RELATION_TYPE_INVALID";return false;}break;
  case RelationKind::Contains: {
   const bool from_cluster = a == NodeKind::Cluster || a == NodeKind::ChaosCluster;
   const bool to_cluster = b == NodeKind::Cluster || b == NodeKind::ChaosCluster;
@@ -1908,6 +1909,88 @@ CognitionObservation ContextGraph::observe_cognition() const {
   return observation;
 }
 
+CognitionObservation ContextGraph::observe_focused_cognition() const {
+  CognitionObservation focused;
+  const auto full = observe_cognition();
+  focused.state_version = full.state_version;
+  focused.current_focus = full.current_focus;
+  focused.focus_history = full.focus_history;
+  focused.unresolved_scope_count = full.unresolved_scope_count;
+  focused.dependency_evaluation_count = full.dependency_evaluation_count;
+  if (!full.current_focus) return focused;
+
+  const std::string& cluster_id = full.current_focus->cluster_id;
+  std::set<std::string> visible_ids{cluster_id};
+  for (const auto& membership : full.memberships)
+    if (membership.cluster_node_id == cluster_id) {
+      visible_ids.insert(membership.member_node_id);
+      focused.memberships.push_back(membership);
+      if (full.current_focus->chaos_cluster)
+        focused.unresolved_member_ids.push_back(membership.member_node_id);
+    }
+  for (const auto& node : full.nodes)
+    if (visible_ids.count(node.id)) focused.nodes.push_back(node);
+  for (const auto& relation : full.relations)
+    if (visible_ids.count(relation.from) && visible_ids.count(relation.to))
+      focused.relations.push_back(relation);
+  return focused;
+}
+
+bool ContextGraph::append_derived_cognition_cluster(SemanticDelta& delta,
+    const std::string& cluster_id, const std::string& content,
+    const std::vector<std::string>& source_cluster_ids,
+    const std::string& relation_prefix, std::string& error) const {
+  error.clear();
+  if (cluster_id.empty() || content.empty() || source_cluster_ids.size() < 2 ||
+      relation_prefix.empty() || cluster_id.size() > 1024 ||
+      content.size() > 1024 * 1024 || relation_prefix.size() > 256) {
+    error = "DERIVED_COGNITION_INPUT_INVALID";
+    return false;
+  }
+  if (state_.nodes.count(cluster_id)) {
+    error = "DERIVED_COGNITION_CLUSTER_ALREADY_EXISTS";
+    return false;
+  }
+  for (const auto& item : delta.nodes)
+    if (item.node.id == cluster_id) {
+      error = "DERIVED_COGNITION_CLUSTER_ALREADY_EXISTS";
+      return false;
+    }
+  std::set<std::string> unique_sources;
+  for (const auto& source_id : source_cluster_ids) {
+    if (source_id.empty() || source_id == cluster_id ||
+        !unique_sources.insert(source_id).second) {
+      error = "DERIVED_COGNITION_SOURCE_INVALID";
+      return false;
+    }
+    bool found = false;
+    const auto existing = state_.nodes.find(source_id);
+    if (existing != state_.nodes.end())
+      found = existing->second.kind == NodeKind::Cluster;
+    for (const auto& item : delta.nodes)
+      if (item.node.id == source_id && item.node.kind == NodeKind::Cluster)
+        found = true;
+    if (!found) {
+      error = "DERIVED_COGNITION_SOURCE_NOT_FOUND";
+      return false;
+    }
+  }
+  delta.nodes.push_back({{cluster_id, NodeKind::Cluster, content, {}}});
+  std::size_t index = 0;
+  for (const auto& source_id : unique_sources) {
+    const std::string relation_id = relation_prefix + "/" + std::to_string(index++);
+    if (state_.relations.count(relation_id) ||
+        std::any_of(delta.relations.begin(), delta.relations.end(),
+          [&](const AddRelation& relation) { return relation.relation.id == relation_id; })) {
+      error = "DERIVED_COGNITION_RELATION_ID_CONFLICT";
+      delta.nodes.pop_back();
+      return false;
+    }
+    delta.relations.push_back({{relation_id, RelationKind::DerivedFrom,
+        cluster_id, source_id, 1.0}});
+  }
+  return true;
+}
 
 std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     const std::string& input_member_id, const std::vector<std::string>& query_terms,
