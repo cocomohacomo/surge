@@ -2114,7 +2114,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
       depth_by_cluster[item.cluster_id] = item.depth;
   }
 
-  std::set<std::string> visible_ids;
   std::vector<std::string> roots;
   for (const auto& item : position_by_cluster) {
     ++focused.focus_work.clusters_considered;
