@@ -313,7 +313,7 @@ jobs:
       - name: Publish CPU model benchmark summary
         env:
           REPORT: ${{ runner.temp }}/surge-cpu-projector-benchmark.json
-          SUMMARY: ${{ github.step_summary }}
+          SUMMARY: ${{ runner.temp }}/surge-cpu-projector-summary.md
         run: |
           python - <<'PY'
           import json, os
@@ -326,6 +326,7 @@ jobs:
                   out.write(f"| {model['name']} | {model['file_bytes']} | {model['json_valid_cases']}/5 | {model['expected_marker_hits']}/{model['expected_marker_total']} | {model['mean_elapsed_seconds']} |\\n")
               out.write("\\nThis is a five-case synthetic smoke test, not a semantic-quality certification or target-device benchmark.\\n")
           PY
+          cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain raw model outputs and measurements
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
