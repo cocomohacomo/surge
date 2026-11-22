@@ -89,10 +89,12 @@ int main(){
    recall_json.data(),recall_json.size(),&required,error,sizeof(error))==1);
  CHECK(recall_json.find("cognition-cluster")!=std::string::npos);
  const auto feedback_expected = surge_packet_core_state_version(h);
- CHECK(surge_context_graph_record_cognition_feedback(h,"api-feedback-1",
+ const int feedback_ok = surge_context_graph_record_cognition_feedback(h,"api-feedback-1",
    "cognition-cluster","cognition-input","CONFIRMED","external-reviewer","2",
    "policy-api-1","2026-11-22T00:00:00Z","externally confirmed",
-   feedback_expected,"api-feedback-node-1","api-feedback-edge-1",&version,error,sizeof(error))==1);
+   feedback_expected,"api-feedback-node-1","api-feedback-edge-1",&version,error,sizeof(error));
+ if (!feedback_ok) std::cerr << "cognition feedback C ABI error: " << error << "\\n";
+ CHECK(feedback_ok==1);
  required=0;
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    nullptr,0,&required,error,sizeof(error))==0);
