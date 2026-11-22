@@ -134,6 +134,7 @@ struct CognitionObservation {
   std::vector<FocusRecord> focus_history;
   std::optional<FocusRegion> focus_region;
   std::vector<ClusterFocusDepth> cluster_focus_depths;
+  std::vector<ClusterSpatialPosition> cluster_spatial_positions;
   std::vector<std::string> logical_region_cluster_ids;
   std::vector<std::string> processed_region_cluster_ids;
   std::vector<std::string> deferred_region_cluster_ids;
