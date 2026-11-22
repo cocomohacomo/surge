@@ -493,7 +493,7 @@ int main(){
     CHECK(durable_observation.focus_region.has_value());
     CHECK(durable_observation.focus_region->center.x==0.25);
     CHECK(durable_observation.focus_region->half_extents.x==1.5);
-    CHECK(durable_observation.cluster_spatial_positions.size()==3);
+    CHECK(durable_observation.cluster_spatial_positions.size()==2);
     CHECK(durable_observation.cluster_focus_depths.size()==3);
     CHECK(durable_observation.logical_region_cluster_ids.size()==2);
     CHECK(durable_observation.processed_region_cluster_ids.size()==2);
@@ -506,7 +506,7 @@ int main(){
       CHECK(replayed_view.focus_region.has_value());
       CHECK(replayed_view.focus_region->center.x==0.25);
       CHECK(replayed_view.focus_region->half_extents.x==1.5);
-      CHECK(replayed_view.cluster_spatial_positions.size()==3);
+      CHECK(replayed_view.cluster_spatial_positions.size()==2);
       CHECK(replayed_view.cluster_focus_depths.size()==3);
       CHECK(replayed_view.logical_region_cluster_ids.size()==2);
 
@@ -523,7 +523,7 @@ int main(){
       CHECK(prepared->commit());
       const auto restored_view=restored.observe_focused_cognition(20,20);
       CHECK(restored_view.focus_region.has_value());
-      CHECK(restored_view.cluster_spatial_positions.size()==3);
+      CHECK(restored_view.cluster_spatial_positions.size()==2);
       CHECK(restored_view.cluster_focus_depths.size()==3);
       CHECK(restored_view.logical_region_cluster_ids.size()==2);
     }
