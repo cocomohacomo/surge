@@ -1511,7 +1511,7 @@ bool ContextGraphSnapshotDomain::capture(std::string* payload,
   if (!payload) { if (error) *error = "SNAPSHOT_OUTPUT_REQUIRED"; return false; }
   const auto& s = graph_.state_;
   std::ostringstream out;
-  out << "CGS1 " << s.nodes.size() << ' ';
+  out << "CGS2 " << s.nodes.size() << ' ';
   for (const auto& item : s.nodes)
     out << std::quoted(encode_node(item.second)) << ' ';
   out << s.relations.size() << ' ';
@@ -1569,6 +1569,20 @@ bool ContextGraphSnapshotDomain::capture(std::string* payload,
   out << graph_.idempotency_.size() << ' ';
   for (const auto& item : graph_.idempotency_)
     out << std::quoted(item.first) << ' ' << std::quoted(item.second) << ' ';
+  out << (s.focus_region ? 1 : 0) << ' ';
+  if (s.focus_region) {
+    const auto& r=*s.focus_region;
+    out << std::setprecision(17) << r.center.x << ' ' << r.center.y << ' '
+        << r.center.z << ' ' << r.half_extents.x << ' ' << r.half_extents.y
+        << ' ' << r.half_extents.z << ' ';
+  }
+  out << s.cluster_positions.size() << ' ';
+  for (const auto& item : s.cluster_positions)
+    out << std::quoted(item.first) << ' ' << std::setprecision(17)
+        << item.second.x << ' ' << item.second.y << ' ' << item.second.z << ' ';
+  out << s.cluster_focus_depths.size() << ' ';
+  for (const auto& item : s.cluster_focus_depths)
+    out << std::quoted(item.first) << ' ' << item.second << ' ';
   *payload = out.str();
   if (error) error->clear();
   return true;
@@ -1594,7 +1608,7 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
     if (error) *error = code;
     return nullptr;
   };
-  if (!(in >> magic >> count) || magic != "CGS1" || count > 100000)
+  if (!(in >> magic >> count) || (magic != "CGS1" && magic != "CGS2") || count > 100000)
     return fail_restore("SNAPSHOT_CONTEXT_GRAPH_HEADER_INVALID");
   std::string detail;
   std::map<std::string, GraphNode> pending_nodes;
@@ -1831,6 +1845,35 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
         key.empty() || fingerprint.empty() ||
         !idempotency.emplace(key, fingerprint).second)
       return fail_restore("SNAPSHOT_CONTEXT_GRAPH_IDEMPOTENCY_INVALID");
+  }
+  if (magic == "CGS2") {
+    int has_region=0;
+    if (!(in >> has_region) || (has_region!=0 && has_region!=1))
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_REGION_MARKER_INVALID");
+    if (has_region) {
+      FocusRegion region;
+      if (!(in >> region.center.x >> region.center.y >> region.center.z >>
+            region.half_extents.x >> region.half_extents.y >> region.half_extents.z) ||
+          !graph_.apply_focus_region(candidate,region,detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_FOCUS_REGION_INVALID");
+    }
+    if (!(in >> count) || count > 100000)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLUSTER_POSITION_COUNT_INVALID");
+    for (std::size_t i=0;i<count;++i) {
+      ClusterSpatialPosition position;
+      if (!(in >> std::quoted(position.cluster_id) >> position.position.x >>
+            position.position.y >> position.position.z) ||
+          !graph_.apply_cluster_position(candidate,position,detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLUSTER_POSITION_INVALID");
+    }
+    if (!(in >> count) || count > 100000)
+      return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLUSTER_DEPTH_COUNT_INVALID");
+    for (std::size_t i=0;i<count;++i) {
+      ClusterFocusDepth depth;
+      if (!(in >> std::quoted(depth.cluster_id) >> depth.depth) ||
+          !graph_.apply_cluster_depth(candidate,depth,detail))
+        return fail_restore("SNAPSHOT_CONTEXT_GRAPH_CLUSTER_DEPTH_INVALID");
+    }
   }
   if (in >> extra) return fail_restore("SNAPSHOT_CONTEXT_GRAPH_TRAILING_DATA");
 
