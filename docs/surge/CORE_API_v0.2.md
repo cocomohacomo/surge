@@ -510,7 +510,9 @@ The no-argument legacy overload remains available and preserves its historical s
 The following update methods append independent commands to a caller-owned
 `SemanticDelta` and are committed through the normal ContextGraph journal:
 
-- `append_focus_region_update(delta, region, error)`
+- `append_focus_region_update(delta, region, error)` for initialization/replacement
+- `append_focus_region_move(delta, center, error)` to change only the center
+- `append_focus_region_resize(delta, half_extents, error)` to change only the extents
 - `append_cluster_spatial_position_update(delta, position, error)`
 - `append_cluster_focus_depth_update(delta, depth, error)`
 
