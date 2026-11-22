@@ -20,6 +20,8 @@ typedef struct SurgeFocusRegionInput {
   double center_x, center_y, center_z;
   double half_extent_x, half_extent_y, half_extent_z;
 } SurgeFocusRegionInput;
+typedef struct SurgeFocusRegionCenterInput { double x, y, z; } SurgeFocusRegionCenterInput;
+typedef struct SurgeFocusRegionExtentInput { double x, y, z; } SurgeFocusRegionExtentInput;
 typedef struct SurgeClusterSpatialPositionInput {
   const char* cluster_id;
   double x, y, z;
@@ -354,6 +356,14 @@ int surge_context_graph_dependency_evaluation(void* handle, const char* delta_id
 int surge_context_graph_set_focus_region(void* handle, const char* delta_id,
     const char* idempotency_key, uint64_t expected_state_version,
     const SurgeFocusRegionInput* region, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_move_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionCenterInput* center, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_resize_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionExtentInput* half_extents, int* duplicate,
     uint64_t* state_version, char* error, size_t error_capacity);
 int surge_context_graph_set_cluster_spatial_position(void* handle,
     const char* delta_id, const char* idempotency_key,
