@@ -166,6 +166,22 @@ int main() {
     CHECK(reused.error == "PROJECTION_IDEMPOTENCY_KEY_REUSED");
     CHECK(journal.state_version() == 1);
 
+    auto stale_packet = packet;
+    stale_packet.packet_id = "source-packet-stale";
+    stale_packet.idempotency_key = "source-packet-idem-stale";
+    stale_packet.block_ref = "utterance-stale";
+    stale_packet.source_sequence = 3;
+    auto stale_batch = atomic_batch;
+    stale_batch.projection_id = "stale-projection";
+    stale_batch.idempotency_key = "stale-projection-idem";
+    stale_batch.source_event_refs = {stale_packet.packet_id};
+    stale_batch.base_state_version = 0;
+    const auto stale = surge::apply_projection_batch(
+        packets, graph, stale_batch, stale_packet, source);
+    CHECK(!stale.admitted);
+    CHECK(stale.error == "STATE_VERSION_CONFLICT");
+    CHECK(journal.state_version() == 1);
+
     auto mismatched = atomic_batch;
     mismatched.source_event_refs = {"another-packet"};
     const auto rejected = surge::apply_projection_batch(
