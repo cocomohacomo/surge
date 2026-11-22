@@ -514,9 +514,11 @@ The following update methods append independent commands to a caller-owned
 - `append_cluster_spatial_position_update(delta, position, error)`
 - `append_cluster_focus_depth_update(delta, depth, error)`
 
-Journal event kinds are `FOCUS_REGION_SET_V1`,
-`CLUSTER_SPATIAL_POSITION_SET_V1`, and
-`CLUSTER_FOCUS_DEPTH_SET_V1`. They have independent validation and replay paths.
+Journal event kinds are `FOCUS_REGION_SET_V1`, `FOCUS_REGION_MOVE_V1`,
+`FOCUS_REGION_RESIZE_V1`, `CLUSTER_SPATIAL_POSITION_SET_V1`, and
+`CLUSTER_FOCUS_DEPTH_SET_V1`. Region movement changes only the center;
+region resize changes only the half-extents. Each has an independent validation
+and replay path.
 A transaction may carry multiple position/depth updates, but a region update is
 never encoded as a depth update or vice versa.
 
@@ -529,6 +531,8 @@ three new event kinds in a journal tail.
 The additive C ABI is version 0.3 and exposes:
 
 - `surge_context_graph_set_focus_region`
+- `surge_context_graph_move_focus_region`
+- `surge_context_graph_resize_focus_region`
 - `surge_context_graph_set_cluster_spatial_position`
 - `surge_context_graph_set_cluster_focus_depth`
 - `surge_context_graph_observe_focused_cognition`
