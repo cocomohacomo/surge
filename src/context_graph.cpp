@@ -1939,8 +1939,8 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       if (!token.empty()) tokens.push_back(std::move(token));
       std::sort(tokens.begin(), tokens.end());
       tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
-      const auto posting = std::make_pair(membership.member_node_id,
-          membership.cluster_node_id, membership.upstream_weight);
+      const auto posting = std::make_pair(std::make_pair(membership.member_node_id,
+          membership.cluster_node_id), membership.upstream_weight);
       recall_member_postings_[membership.member_node_id].push_back(posting);
       for (const auto& indexed_token : tokens)
         recall_term_postings_[indexed_token].push_back(posting);
@@ -1958,8 +1958,8 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     const auto indexed = recall_term_postings_.find(term);
     if (indexed == recall_term_postings_.end()) continue;
     for (const auto& posting : indexed->second) {
-      if (posting.first == input_member_id) continue;
-      auto& terms = matched_postings[{posting.first, posting.second}];
+      if (posting.first.first == input_member_id) continue;
+      auto& terms = matched_postings[{posting.first.first, posting.first.second}];
       if (std::find(terms.begin(), terms.end(), term) == terms.end())
         terms.push_back(term);
     }
@@ -1970,7 +1970,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     const auto member_postings = recall_member_postings_.find(hit.first.first);
     if (member_postings == recall_member_postings_.end()) continue;
     const auto membership_it = std::find_if(member_postings->second.begin(),
-        member_postings->second.end(), [&](const auto& p) { return p.second == hit.first.second; });
+        member_postings->second.end(), [&](const auto& p) { return p.first.second == hit.first.second; });
     if (membership_it == member_postings->second.end()) continue;
     const auto& membership = *membership_it;
     const auto& node = node_it->second;
@@ -1986,19 +1986,19 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       if (std::find(candidate.matched_terms.begin(), candidate.matched_terms.end(), term) ==
           candidate.matched_terms.end()) candidate.matched_terms.push_back(term);
       positions.emplace_back(position, position + term.size());
-      candidate.recall_score += membership.upstream_weight;
+      candidate.recall_score += membership.second;
     }
     if (!positions.empty() &&
         std::find(candidate.supporting_member_ids.begin(), candidate.supporting_member_ids.end(),
-            membership.member_node_id) == candidate.supporting_member_ids.end())
-      candidate.supporting_member_ids.push_back(membership.member_node_id);
+            membership.first.first) == candidate.supporting_member_ids.end())
+      candidate.supporting_member_ids.push_back(membership.first.first);
     for (std::size_t i = 0; i < positions.size(); ++i)
       for (std::size_t j = i + 1; j < positions.size(); ++j) {
         const auto distance = positions[i].second <= positions[j].first
             ? positions[j].first - positions[i].second
             : positions[j].second <= positions[i].first
                 ? positions[i].first - positions[j].second : 0;
-        candidate.recall_score += membership.upstream_weight /
+        candidate.recall_score += membership.second /
             (100.0 + static_cast<double>(distance));
       }
   }
