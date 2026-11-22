@@ -2143,6 +2143,7 @@ CognitionObservation ContextGraph::observe_focused_cognition(
         focused.deferred_region_cluster_ids.push_back(roots[j]);
       break;
     }
+    ++focused.focus_work.clusters_scheduled;
     std::vector<FrontierItem> frontier{{root,0,root}};
     std::set<std::string> visited_for_root;
     bool complete=true;
@@ -2176,7 +2177,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     }
     if(complete) {
       focused.processed_region_cluster_ids.push_back(root);
-      ++focused.focus_work.clusters_scheduled;
     } else {
       focused.deferred_region_cluster_ids.push_back(root);
       focused.focus_work.budget_exhausted=true;
@@ -2206,7 +2206,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   focused.focus_work.nodes_processed = focused.nodes.size();
   focused.focus_work.relations_processed = focused.relations.size();
   focused.focus_work.position_checks = focused.focus_work.clusters_considered;
-  focused.focus_work.clusters_scheduled = focused.processed_region_cluster_ids.size();
   focused.focus_work.clusters_deferred = focused.deferred_region_cluster_ids.size();
   focused.focus_work.work_units = focused.focus_work.position_checks +
       focused.focus_work.nodes_processed + focused.focus_work.relations_processed;
