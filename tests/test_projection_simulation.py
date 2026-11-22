@@ -104,6 +104,14 @@ def make_batch(template: dict, index: int) -> dict:
     ])
     batch["nodes"] = nodes
     batch["relations"] = []
+    if index % 2 == 1:
+        batch["relations"].append({
+            "id": f"sim-conflict-{index // 2:03d}",
+            "kind": "CONTRADICTS",
+            "from": f"sim-claim-{index - 1:03d}",
+            "to": claim_id,
+            "weight": 0.9,
+        })
     batch["memberships"] = [{
         "relation_id": membership_id,
         "member_ref": claim_id,
@@ -148,6 +156,7 @@ class ProjectionStreamSimulation(unittest.TestCase):
                 self.assertEqual(first.next_index, 48)
                 self.assertEqual(first.state_version, 48)
                 self.assertEqual(first.nodes_processed, 102)
+                self.assertEqual(first.relations_processed, 24)
                 self.assertEqual(first.memberships_processed, 48)
                 self.assertEqual(first.spatial_placements_processed, 48)
                 self.assertGreater(first.input_bytes, 0)
@@ -163,6 +172,7 @@ class ProjectionStreamSimulation(unittest.TestCase):
                 self.assertEqual(resumed.next_index, 48)
                 self.assertEqual(resumed.state_version, BATCH_COUNT)
                 self.assertEqual(resumed.nodes_processed, 102)
+                self.assertEqual(resumed.relations_processed, 24)
                 self.assertEqual(resumed.memberships_processed, 48)
                 self.assertEqual(resumed.spatial_placements_processed, 48)
                 self.assertGreater(resumed.input_bytes, 0)
@@ -205,6 +215,7 @@ class ProjectionStreamSimulation(unittest.TestCase):
                     "packet_count": core.packet_count,
                     "input_bytes": first.input_bytes + resumed.input_bytes,
                     "nodes_processed": first.nodes_processed + resumed.nodes_processed,
+                    "relations_processed": first.relations_processed + resumed.relations_processed,
                     "memberships_processed": (
                         first.memberships_processed + resumed.memberships_processed
                     ),
@@ -249,7 +260,7 @@ class ProjectionStreamSimulation(unittest.TestCase):
                             "synthetic_batches", "cluster_groups", "chaos_cluster_groups",
                             "interrupted_after_commits", "resume_cursor", "resumed_commits",
                             "replay_duplicates", "state_version", "packet_count",
-                            "input_bytes", "nodes_processed", "memberships_processed",
+                            "input_bytes", "nodes_processed", "relations_processed", "memberships_processed",
                             "spatial_placements_processed", "elapsed_microseconds",
                             "resident_bytes_used", "retained_events_used",
                             "transient_bytes_used_after_replay",
