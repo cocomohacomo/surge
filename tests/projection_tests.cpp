@@ -275,5 +275,113 @@ int main() {
     }
     std::filesystem::remove(format_path);
   }
+  const auto budget_path = (std::filesystem::temp_directory_path() /
+      "surge-projection-budget-reject.sgj").string();
+  std::filesystem::remove(budget_path);
+  {
+    surge::EventJournal journal(budget_path);
+    CHECK(journal.open());
+    surge::PacketAdmissionCoordinator packets(journal);
+    CHECK(packets.recover());
+    surge::ContextGraph graph(journal);
+    CHECK(graph.open());
+    surge::ResourceBudgetLimits limits;
+    limits.resident_bytes = 1024 * 1024;
+    limits.transient_bytes = 1;
+    limits.retained_events = 1024;
+    limits.retained_clusters = 128;
+    limits.total_byte_limit = 1024 * 1024;
+    surge::ResourceBudget budget(limits);
+    surge::BudgetedContextGraph budgeted(graph, budget);
+    std::string recovery_error;
+    CHECK(budgeted.recover(recovery_error));
+    auto rejected_batch = atomic_batch;
+    rejected_batch.base_state_version = 0;
+    const auto rejected = surge::apply_projection_batch(
+        packets, budgeted, rejected_batch, packet, source);
+    CHECK(!rejected.admitted);
+    CHECK(rejected.error == "RESOURCE_BUDGET_EXCEEDED");
+    CHECK(journal.state_version() == 0);
+    CHECK(packets.packet_count() == 0);
+    CHECK(budget.snapshot().used[static_cast<std::size_t>(
+        surge::ResourceKind::TransientBytes)] == 0);
+  }
+  std::filesystem::remove(budget_path);
+
+  const auto stream_path = (std::filesystem::temp_directory_path() /
+      "surge-projection-stream.sgj").string();
+  std::filesystem::remove(stream_path);
+  {
+    surge::EventJournal journal(stream_path);
+    CHECK(journal.open());
+    surge::PacketAdmissionCoordinator packets(journal);
+    CHECK(packets.recover());
+    surge::ContextGraph graph(journal);
+    CHECK(graph.open());
+    auto limits = surge::ResourceBudgetLimits::temporary_edge_200mb();
+    limits.retained_events = 10000;
+    limits.retained_clusters = 1000;
+    surge::ResourceBudget budget(limits);
+    surge::BudgetedContextGraph budgeted(graph, budget);
+    std::string recovery_error;
+    CHECK(budgeted.recover(recovery_error));
+
+    auto make_item = [&](const std::string& suffix, const std::string& text,
+                         std::uint64_t sequence, std::uint64_t base_version) {
+      surge::ProjectionStreamItem item;
+      item.normalized_source_snapshot = text;
+      item.packet.packet_id = "stream-packet-" + suffix;
+      item.packet.idempotency_key = "stream-packet-idem-" + suffix;
+      item.packet.context_id = "stream-context";
+      item.packet.source_id = "stream-source";
+      item.packet.source_generation = "stream-generation";
+      item.packet.block_ref = "stream-block-" + suffix;
+      item.packet.offset_basis = "UTF8_BYTE_NFC";
+      item.packet.start_offset = 0;
+      item.packet.end_offset = text.size();
+      item.packet.source_sequence = sequence;
+      item.packet.source_snapshot_digest = surge::sha256_hex(text);
+      item.packet.source_range_digest = item.packet.source_snapshot_digest;
+      item.packet.canonical_request_digest = surge::sha256_hex("canonical-" + suffix);
+      auto& batch_item = item.batch;
+      batch_item.projection_id = "stream-projection-" + suffix;
+      batch_item.idempotency_key = "stream-projection-idem-" + suffix;
+      batch_item.context_id = item.packet.context_id;
+      batch_item.producer_id = "test-projector";
+      batch_item.producer_version = "1";
+      batch_item.policy_version = "test-policy-1";
+      batch_item.base_state_version = base_version;
+      batch_item.source_event_refs = {item.packet.packet_id};
+      batch_item.evidence_refs = {"stream-evidence-" + suffix};
+      batch_item.nodes = {
+        {"stream-cluster-" + suffix, surge::NodeKind::Cluster, "topic " + suffix, {}},
+        {"stream-claim-" + suffix, surge::NodeKind::Claim, "claim " + suffix,
+          {"stream-evidence-" + suffix}},
+        {"stream-evidence-" + suffix, surge::NodeKind::Evidence, text, {}}
+      };
+      batch_item.memberships = {
+        {"stream-membership-" + suffix, "stream-claim-" + suffix,
+         "stream-cluster-" + suffix, 0.75}
+      };
+      batch_item.spatial_placements = {
+        {"stream-cluster-" + suffix, {static_cast<double>(sequence), 0.0, 0.0}}
+      };
+      return item;
+    };
+    std::vector<surge::ProjectionStreamItem> stream;
+    stream.push_back(make_item("one", "会議は火曜日", 1, 0));
+    stream.push_back(make_item("two", "会議は水曜日", 2, 1));
+    const auto result = surge::apply_projection_stream(packets, budgeted, stream);
+    CHECK(result.complete);
+    CHECK(result.committed_packets == 2);
+    CHECK(result.duplicate_packets == 0);
+    CHECK(result.next_index == 2);
+    CHECK(result.state_version == 2);
+    CHECK(packets.packet_count() == 2);
+    CHECK(graph.nodes().count("stream-claim-one") == 1);
+    CHECK(graph.nodes().count("stream-claim-two") == 1);
+  }
+  std::filesystem::remove(stream_path);
+
   return 0;
 }
