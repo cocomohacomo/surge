@@ -1848,7 +1848,14 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
         <<",\"max_nodes\":"<<observation.focus_work.max_nodes
         <<",\"max_relations\":"<<observation.focus_work.max_relations
         <<",\"budget_exhausted\":"<<(observation.focus_work.budget_exhausted?"true":"false")<<"}";
-    json<<",\"cluster_focus_depths\":[";
+    json<<",\"cluster_spatial_positions\":[";
+    for(size_t i=0;i<observation.cluster_spatial_positions.size();++i){
+      if(i) json<<',';
+      const auto& p=observation.cluster_spatial_positions[i];
+      json<<"{\"cluster_id\":"<<json_quote(p.cluster_id)<<",\"position\":["
+          <<std::setprecision(17)<<p.position.x<<','<<p.position.y<<','<<p.position.z<<"]}";
+    }
+    json<<"],\"cluster_focus_depths\":[";
     for(size_t i=0;i<observation.cluster_focus_depths.size();++i){
       if(i) json<<',';
       const auto& d=observation.cluster_focus_depths[i];
