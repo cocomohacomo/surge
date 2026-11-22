@@ -259,7 +259,7 @@ std::size_t PacketAdmissionCoordinator::packet_count() const {
 }
 std::size_t PacketAdmissionCoordinator::estimated_resident_bytes() const noexcept {
   std::size_t total = 0;
-  const auto add = [&](std::size_t value) mutable {
+  auto add = [&](std::size_t value) {
     if (value > std::numeric_limits<std::size_t>::max() - total) {
       total = std::numeric_limits<std::size_t>::max();
       return false;
