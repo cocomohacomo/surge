@@ -327,11 +327,11 @@ The source event is the admitted RecognitionPacket. The projection's Evidence no
 
 `schemas/projection-batch-v0.1.schema.json` defines the transport-neutral JSON shape. The fixture set includes conversation, document, and structured-record examples under `tests/fixtures/projection/`. The schema validation tool checks all three, verifies UTF-8 byte offsets and SHA-256 source digests, checks the source-event reference against the packet ID, and ensures referenced Evidence IDs are represented by Evidence nodes.
 
-The C ABI adds `surge_projection_batch_admit_and_apply()` and the associated `SurgeProjection*Input` structures. It accepts the RecognitionPacket envelope, normalized source bytes, producer/policy metadata, Evidence references, graph nodes, weighted relations, cluster memberships, and spatial placements. It routes these through the same typed `ProjectionBatch` validator and atomic C++ commit function. The ABI version is now 0.4.0. The Python `surge_adapter.projection.ProjectionBatchAdapter` validates parsed JSON objects against this schema, verifies NFC UTF-8 source offsets and digests, retains source/Evidence lineage, and marshals the typed data to this C ABI. The schema is installed with the Python package.
+The C ABI adds `surge_projection_batch_admit_and_apply()` and the associated `SurgeProjection*Input` structures. It accepts the RecognitionPacket envelope, normalized source bytes, producer/policy metadata, Evidence references, graph nodes, weighted relations, cluster memberships, and spatial placements. It routes these through the same typed `ProjectionBatch` validator and atomic C++ commit function. The ABI version is now 0.5.0. The new `surge_packet_core_resource_snapshot()` query reports current logical resource usage and configured limits without exposing mutable budget controls. The Python `surge_adapter.projection.ProjectionBatchAdapter` validates parsed JSON objects against this schema, verifies NFC UTF-8 source offsets and digests, retains source/Evidence lineage, and marshals the typed data to this C ABI. The schema is installed with the Python package.
 
 The C ABI test covers commit, exact duplicate retry, invalid non-finite membership weight, and replay from the same journal. Struct layouts are included in the ABI layout conformance test.
 
-**Current boundary:** the JSON Schema is the normative JSON contract, but the native library does not yet include a JSON text parser that turns raw JSON directly into `ProjectionBatch`. Applications validate/decode JSON with their chosen parser and pass the typed values through the C ABI or C++ API. The current C ABI's atomic entry point supports one RecognitionPacket per batch. A multi-packet batch, a built-in JSON decoder, and format-specific semantic projectors remain separate follow-up work.
+**Current boundary:** the JSON Schema is the normative JSON contract, but the native library does not yet include a JSON text parser that turns raw JSON directly into `ProjectionBatch`. Applications validate/decode JSON with their chosen parser and pass the typed values through the C ABI or C++ API. The current C ABI's atomic entry point supports one RecognitionPacket per batch. A single ProjectionBatch remains bound to one RecognitionPacket. Ordered multi-packet streams are supported as resumable sequences of per-packet atomic commits; this intentionally does not introduce a cross-packet transaction. A built-in JSON text decoder and format-specific semantic projectors remain separate follow-up work.
 
 ## 14. SURGE principle invariants
 
@@ -344,3 +344,21 @@ The projection adapter is intentionally a transport and commit boundary, not a n
 5. External applications observe the focused cognition region and decide what action, truth or relevance policy to apply.
 
 These constraints keep the two fundamentals unchanged: cognition information clusters and the spatial Focus region operating over them.
+
+## 15. Resource-budgeted projection and packet streams
+
+The production C ABI projection route now uses the handle's `BudgetedContextGraph`, not the graph-only mutation path. Before the packet coordinator commits the atomic source-packet plus semantic-event transaction, the budget facade:
+
+1. estimates projected resident bytes, retained cluster count, and retained semantic events;
+2. reserves transient staging capacity;
+3. prepares the graph journal events;
+4. reserves resident, cluster, and retained-event capacity;
+5. stages lease-vector capacity before durable commit.
+
+Only after the packet coordinator reports a successful non-duplicate journal commit does the facade replay the graph from the committed journal and publish the resource leases. Budget rejection therefore occurs before source-packet admission and leaves both packet and graph state unchanged. Duplicate retries do not reserve or publish a second set of persistent leases. The external-commit facade rejects reclamation deltas; projection batches do not use graph reclamation as an implicit side effect.
+
+The C ABI `surge_packet_core_resource_snapshot()` and Python `CppCoreBridge.resource_snapshot` expose read-only used/limit counters for resident bytes, transient bytes, retained events, retained clusters, decision candidates, decision evidence, and combined byte usage. These are logical resource-accounting metrics, not process RSS measurements.
+
+`apply_projection_stream()` and `ProjectionBatchAdapter.commit_stream()` accept ordered sequences of source-packet/batch pairs. Each pair is committed independently using the same atomic packet-plus-projection path. The result reports committed count, duplicate count, next index, current state version, and an error if processing stops. A caller can resume from `next_index`; previously committed items remain safe to replay through idempotency. This is deliberately a sequence of atomic commits, not a synthetic multi-packet transaction, so a later failure does not roll back earlier valid packets.
+
+The stream contract preserves the SURGE boundary: Projectors supply candidate information and weights; Core validates and stores it. No Focus movement, Focus-region resizing, cluster-depth update, truth selection, or relevance decision is implied by stream ingestion.
