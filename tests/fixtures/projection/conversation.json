@@ -24,7 +24,12 @@
     "canonical_request_digest": "fixture-conversation",
     "revision": false,
     "revision_sequence": 0,
-    "context_id": "context-conversation"
+    "context_id": "context-conversation",
+    "document_ref": "document-conversation",
+    "document_generation": "document-generation-1",
+    "document_sequence": 1,
+    "global_start_offset": 0,
+    "global_end_offset": 24
   },
   "normalized_source_snapshot": "会議日程は火曜日",
   "source_event_refs": [
