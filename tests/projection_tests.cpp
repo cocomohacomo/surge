@@ -387,7 +387,7 @@ int main() {
     add_entity.idempotency_key = add_entity.delta_id;
     add_entity.expected_state_version = 2;
     add_entity.nodes.push_back({{"stream-entity-reclaim", surge::NodeKind::Entity,
-        "temporary entity", {}}});
+        std::string(2048, 'x'), {}}});
     const auto entity_added = budgeted.apply(add_entity);
     CHECK(entity_added.committed);
     const auto resident_after_entity = budget.snapshot().used[
