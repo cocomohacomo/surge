@@ -133,6 +133,8 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
             "packet-document": "packet-stream-2",
             "packet-idem-conversation": "packet-idem-stream-1",
             "packet-idem-document": "packet-idem-stream-2",
+            "document-conversation": "document-stream",
+            "document-document": "document-stream",
         }
         first = rewrite(first, common)
         second = rewrite(second, {
@@ -144,6 +146,18 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
         second["source_packet"]["block_ref"] = "block-stream-2"
         first["source_packet"]["source_sequence"] = 1
         second["source_packet"]["source_sequence"] = 2
+        first["source_packet"]["document_ref"] = "document-stream"
+        second["source_packet"]["document_ref"] = "document-stream"
+        first["source_packet"]["document_generation"] = "document-generation-stream"
+        second["source_packet"]["document_generation"] = "document-generation-stream"
+        first["source_packet"]["document_sequence"] = 1
+        second["source_packet"]["document_sequence"] = 2
+        first_bytes = first["normalized_source_snapshot"].encode("utf-8")
+        second_bytes = second["normalized_source_snapshot"].encode("utf-8")
+        first["source_packet"]["global_start_offset"] = 0
+        first["source_packet"]["global_end_offset"] = len(first_bytes)
+        second["source_packet"]["global_start_offset"] = len(first_bytes)
+        second["source_packet"]["global_end_offset"] = len(first_bytes) + len(second_bytes)
         first["base_state_version"] = 0
         second["base_state_version"] = 1
         for batch in (first, second):
