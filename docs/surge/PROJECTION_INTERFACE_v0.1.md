@@ -366,21 +366,26 @@ The stream contract preserves the SURGE boundary: Projectors supply candidate in
 
 ## 10. Long-document stream boundary semantics
 
-The current ProjectionBatch v0.1 adapter admits one normalized source snapshot per RecognitionPacket. Its `block_ref`, `start_offset`, and `end_offset` describe that packet's source block. A sequence of packets may be associated with the same higher-level document by the producer, but v0.1 does not persist a document-global byte coordinate or a durable block-to-document offset map.
+The ProjectionBatch v0.1 adapter admits one normalized source snapshot per RecognitionPacket. The packet-local `block_ref`, `start_offset`, and `end_offset` remain distinct from the optional document-global envelope carried by the versioned C ABI extension.
 
-Consequently:
+When supplied, the document envelope contains `document_ref`, `document_generation`, `document_sequence`, `global_start_offset`, and `global_end_offset`. The Core persists these fields in RecognitionPacket journal records using the backward-readable `RPA3` encoding. The original `SurgeRecognitionPacketInput` layout is unchanged; callers use `SurgeDocumentStreamInput` through `surge_projection_batch_admit_and_apply_v2`.
 
-- Each independently hashed block MUST use a distinct `block_ref` unless it is an explicit revision of the same immutable block range. Reusing one block reference and the same range for different block contents is correctly rejected as `RANGE_CONTENT_CONFLICT`.
-- The producer MAY calculate contiguous global UTF-8 byte ranges, but this is producer-side metadata until a versioned packet contract persists it.
-- Cross-block cluster continuity is represented by stable cluster references and explicit relations supplied by the projector. Core validates and persists those references; it does not infer topic continuity from adjacent blocks.
+Core validates each document stream independently by (context, document_ref, document_generation):
+
+- The first admitted block MUST have document sequence 1 and global start offset 0.
+- Each subsequent new block MUST have the next document sequence and begin exactly at the previous global end offset.
+- Sequence reuse, missing sequence, overlapping ranges, and byte gaps are rejected before journal commit.
+- A retry with the identical packet envelope remains idempotent. Explicit revisions may replace the latest packet for the same document sequence and exact global range.
+- Each independently hashed block MUST use a distinct `block_ref` unless it is an explicit revision of the same immutable block range. Reusing one block reference and the same range for different block contents is rejected as `RANGE_CONTENT_CONFLICT`.
+- A new `document_generation` creates an independent immutable document revision stream; blocks from different generations cannot be mixed.
+- Cross-block cluster continuity is still represented by stable cluster references and explicit relations supplied by the projector. Core validates and persists those references; it does not infer topic continuity from adjacent blocks.
 - A relation from a previously committed claim to a claim in a later batch is valid only when the referenced prior node already exists in the committed graph.
-- Evidence remains block-anchored in v0.1. A single Evidence span that crosses two blocks is not representable as one canonical source range.
 
-### 10.1 Required follow-up contract
+The document envelope is optional for legacy ProjectionBatch v0.1 callers. It is all-or-none when present. The JSON adapter verifies that the global range length matches the packet-local source range length. The Core then verifies stream ordering and exact global contiguity. This is a contiguous stream contract, not a predeclared whole-document manifest: a missing future block is not an error until a later block arrives or the producer declares the stream complete.
 
-A future packet contract version should add an immutable document identity and document-global coordinate envelope, for example `document_ref`, `document_generation`, `global_start_offset`, and `global_end_offset`. These fields must be distinct from the block-local packet offsets. Validation must bind the global range to the ordered block manifest and reject gaps, overlaps, generation mixing, and digest mismatch. This is a schema/API evolution task, not something that can safely be simulated by overloading the existing block-local offsets.
+### 10.1 Cross-block Evidence boundary
 
-A cross-block Evidence representation should then reference an ordered list of block-local spans plus the document-global range and source digest. It must preserve the original per-block evidence anchors and must not synthesize a contiguous byte span where the source blocks are not contiguous.
+Document identity and global offsets are now durable, but a single Evidence/ScopeSpan that references multiple block-local source anchors is not yet integrated into ProjectionBatch. Existing ScopeSpan supports multiple packet references at the graph layer, but the projection C ABI does not yet submit and validate a set of per-block snapshots and anchors atomically. Cross-block Evidence remains the next implementation stage. It MUST preserve each original block-local digest and exact span, and expose the document-global range only as a derived aggregate. It MUST NOT fabricate one continuous source substring when a semantic span crosses a block boundary.
 
 ### 10.2 Focus isolation
 
