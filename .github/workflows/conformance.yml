@@ -183,7 +183,7 @@ jobs:
         run: cmake --build build-edge --target surge_context_graph_stream_bench --config Release --parallel 2
       - name: Measure bounded ContextGraph stream and publish RSS/latency split
         run: |
-          ./build-edge/surge_context_graph_stream_bench 1000 > "$RUNNER_TEMP/surge-context-stream.json"
+          ./build-edge/surge_context_graph_stream_bench 1000 10 > "$RUNNER_TEMP/surge-context-stream.json"
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -195,8 +195,9 @@ jobs:
               summary.write("| Metric | Value |\n|---|---:|\n")
               for key in ("peak_rss_bytes", "rss_growth_bytes_per_1000_events",
                           "logical_resident_peak_accounted_bytes", "logical_resident_limit_bytes",
-                          "candidate_total", "candidate_max_per_event",
-                          "operation_p50_us", "operation_p95_us", "operation_p99_us"):
+                          "recall_samples", "candidate_total", "candidate_max_per_recall",
+                          "operation_p50_us", "operation_p95_us", "operation_p99_us",
+                          "recall_p50_us", "recall_p95_us", "recall_p99_us"):
                   summary.write(f"| {key} | {report[key]} |\n")
           PY
 
