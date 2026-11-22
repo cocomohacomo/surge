@@ -1529,6 +1529,8 @@ class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore
     using std::swap;
     swap(owner_->state_, state_);
     owner_->idempotency_.swap(idempotency_);
+    owner_->spatial_position_index_valid_ = false;
+    owner_->spatial_position_x_index_.clear();
     committed_ = true;
     return true;
   }
@@ -1537,6 +1539,8 @@ class PreparedContextGraphSnapshotRestore final : public PreparedSnapshotRestore
     using std::swap;
     swap(owner_->state_, state_);
     owner_->idempotency_.swap(idempotency_);
+    owner_->spatial_position_index_valid_ = false;
+    owner_->spatial_position_x_index_.clear();
     committed_ = false;
   }
  private:
