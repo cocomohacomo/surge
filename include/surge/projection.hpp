@@ -166,7 +166,7 @@ inline DeltaResult apply_projection_batch(ContextGraph& graph, const ProjectionB
 inline bool estimate_projection_packet_resources(
     const ValidatedRecognitionPacket& packet, const std::string& source_snapshot,
     std::size_t& resident_bytes, std::size_t& staging_bytes) {
-  resident_bytes = sizeof(ValidatedRecognitionPacket) + 512;
+  resident_bytes = sizeof(ValidatedRecognitionPacket) + 2048;
   staging_bytes = source_snapshot.size();
   const auto add = [](std::size_t value, std::size_t& total) {
     if (value > std::numeric_limits<std::size_t>::max() - total) return false;
