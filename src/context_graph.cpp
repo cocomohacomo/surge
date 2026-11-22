@@ -2495,6 +2495,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   const auto relation_factor = [](RelationKind kind) {
     switch (kind) {
       case RelationKind::AgreesWith: return 0.40;
+      case RelationKind::DerivedFrom: return 0.30;
       case RelationKind::Supports: return 0.30;
       case RelationKind::DependsOn: return 0.20;
       case RelationKind::ConflictsWith: return 0.15;
