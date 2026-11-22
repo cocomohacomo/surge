@@ -238,7 +238,9 @@ void* surge_packet_core_open_with_limits(const char* path,
     if (!handle->coordinator.recover()) { copy_text(error, cap, "PACKET_COORDINATOR_RECOVERY_FAILED"); return nullptr; }
     if (!handle->graph.open()) { copy_text(error, cap, "CONTEXT_GRAPH_RECOVERY_FAILED"); return nullptr; }
     std::string graph_budget_error;
-    if (!handle->mutations.recover(graph_budget_error)) {
+    if (!handle->mutations.recover(graph_budget_error,
+        handle->coordinator.estimated_resident_bytes(),
+        handle->coordinator.packet_count())) {
       copy_text(error, cap, graph_budget_error); return nullptr;
     }
     if (!handle->tickets.open()) { copy_text(error, cap, "RETRIEVAL_TICKET_RECOVERY_FAILED"); return nullptr; }
