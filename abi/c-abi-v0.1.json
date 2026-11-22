@@ -1,7 +1,7 @@
 {
   "abi_version": {
     "major": 0,
-    "minor": 4,
+    "minor": 5,
     "patch": 0
   },
   "structs": {
@@ -280,6 +280,25 @@
         "const char*cluster_id",
         "double x,y,z"
       ]
+    },
+    "SurgeResourceBudgetSnapshot": {
+      "tag": "SurgeResourceBudgetSnapshot",
+      "fields": [
+        "size_t resident_bytes_used",
+        "size_t transient_bytes_used",
+        "size_t retained_events_used",
+        "size_t retained_clusters_used",
+        "size_t decision_candidates_used",
+        "size_t decision_evidence_used",
+        "size_t resident_bytes_limit",
+        "size_t transient_bytes_limit",
+        "size_t retained_events_limit",
+        "size_t retained_clusters_limit",
+        "size_t decision_candidates_limit",
+        "size_t decision_evidence_limit",
+        "size_t total_byte_used",
+        "size_t total_byte_limit"
+      ]
     }
   },
   "functions": [
@@ -512,6 +531,11 @@
       "name": "surge_packet_core_packet_count",
       "return_type": "size_t",
       "parameters": "void*handle"
+    },
+    {
+      "name": "surge_packet_core_resource_snapshot",
+      "return_type": "int",
+      "parameters": "void*,SurgeResourceBudgetSnapshot*,char*,size_t"
     },
     {
       "name": "surge_packet_core_state_version",
