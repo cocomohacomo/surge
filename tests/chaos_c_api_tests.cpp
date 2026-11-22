@@ -59,9 +59,9 @@ int main(){
  char cognition[32768]{};required=0;
  CHECK(surge_context_graph_observe_cognition(h,cognition,sizeof(cognition),
    &required,error,sizeof(error))==1);
- CHECK(std::string(cognition).find("\\"state_version\\"")!=std::string::npos);
- CHECK(std::string(cognition).find("\\"memberships\\"")!=std::string::npos);
- CHECK(std::string(cognition).find("\\"current_focus\\"")!=std::string::npos);
+ CHECK(std::string(cognition).find("\"state_version\"")!=std::string::npos);
+ CHECK(std::string(cognition).find("\"memberships\"")!=std::string::npos);
+ CHECK(std::string(cognition).find("\"current_focus\"")!=std::string::npos);
  CHECK(required>1);
 
  // Shared C ABI path for cognition recall and append-only external feedback.
@@ -82,7 +82,7 @@ int main(){
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    nullptr,0,&required,error,sizeof(error))==0);
  CHECK(std::string(error)=="COGNITION_RECALL_BUFFER_TOO_SMALL");
- std::string recall_json(required,'\\0');
+ std::string recall_json(required,'\0');
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    recall_json.data(),recall_json.size(),&required,error,sizeof(error))==1);
  CHECK(recall_json.find("cognition-cluster")!=std::string::npos);
@@ -94,10 +94,10 @@ int main(){
  required=0;
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    nullptr,0,&required,error,sizeof(error))==0);
- std::string recalled_after(required,'\\0');
+ std::string recalled_after(required,'\0');
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    recalled_after.data(),recalled_after.size(),&required,error,sizeof(error))==1);
- CHECK(recalled_after.find("\\"recall_score\\":2.2")!=std::string::npos);
+ CHECK(recalled_after.find("\"recall_score\":2.2")!=std::string::npos);
  char too_small[2]{};size_t required_full=0;
  CHECK(surge_context_graph_observe_cognition(h,too_small,sizeof(too_small),
    &required_full,error,sizeof(error))==0);
