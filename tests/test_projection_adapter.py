@@ -45,6 +45,18 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectionRejected, "PROJECTION_CONTEXT_PACKET_MISMATCH"):
             self.adapter.validate(batch)
 
+    def test_document_global_range_length_mismatch_is_rejected(self):
+        batch = self.fixture("document")
+        batch["source_packet"]["global_end_offset"] += 1
+        with self.assertRaisesRegex(ProjectionRejected, "DOCUMENT_GLOBAL_RANGE_LENGTH_MISMATCH"):
+            self.adapter.validate(batch)
+
+    def test_document_stream_envelope_must_be_complete(self):
+        batch = self.fixture("document")
+        del batch["source_packet"]["document_generation"]
+        with self.assertRaisesRegex(ProjectionRejected, "DOCUMENT_STREAM_ENVELOPE_INCOMPLETE"):
+            self.adapter.validate(batch)
+
     def test_non_finite_membership_weight_is_rejected(self):
         batch = self.fixture("conversation")
         batch["memberships"][0]["upstream_weight"] = float("nan")
