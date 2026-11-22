@@ -32,4 +32,5 @@ include-package-data = true
   "schemas/surge-v0.9-input.schema.json",
   "schemas/surge-v0.9-proposal.schema.json",
   "schemas/surge-v0.9-compact-model.schema.json",
+  "schemas/projection-batch-v0.1.schema.json",
 ]
