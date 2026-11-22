@@ -370,6 +370,15 @@ std::size_t PacketAdmissionCoordinator::estimated_resident_bytes() const noexcep
   for (const auto& item : idempotency_packets_) {
     if (!add(256) || !add(item.first.size()) || !add(item.second.size())) return total;
   }
+  for (const auto& document : document_streams_) {
+    if (!add(256) || !add(document.first.size()) ||
+        !add(sizeof(document.second.next_sequence)) ||
+        !add(sizeof(document.second.next_global_offset))) return total;
+    for (const auto& item : document.second.sequence_packets)
+      if (!add(96) || !add(sizeof(item.first)) || !add(item.second.size())) return total;
+    for (const auto& item : document.second.range_latest_packets)
+      if (!add(128) || !add(item.first.size()) || !add(item.second.size())) return total;
+  }
   for (const auto& stream : streams_) {
     if (!add(256) || !add(stream.first.size())) return total;
     for (const auto& item : stream.second.sequence_packets)
