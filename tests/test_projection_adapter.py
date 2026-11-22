@@ -69,10 +69,10 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                     duplicate = self.adapter.commit(batch, core)
                     self.assertTrue(duplicate.duplicate)
                     self.assertEqual(duplicate.state_version, 1)
-                metrics = core.resource_snapshot
-                self.assertGreater(metrics["resident_bytes_used"], 0)
-                self.assertGreater(metrics["retained_events_used"], 0)
-                self.assertEqual(metrics["transient_bytes_used"], 0)
+                    metrics = core.resource_snapshot
+                    self.assertGreater(metrics["resident_bytes_used"], 0)
+                    self.assertGreater(metrics["retained_events_used"], 0)
+                    self.assertEqual(metrics["transient_bytes_used"], 0)
 
     def test_budget_rejection_happens_before_packet_or_graph_commit(self):
         batch = self.fixture("conversation")
