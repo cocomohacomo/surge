@@ -69,6 +69,9 @@
     },
     {
       "$ref": "#/$defs/spatialFocusObservation"
+    },
+    {
+      "$ref": "#/$defs/spatialFocusEvent"
     }
   ],
   "$defs": {
@@ -1975,10 +1978,6 @@
         },
         "geometry": {
           "const": "AXIS_ALIGNED_3D"
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "required": [
@@ -1986,8 +1985,7 @@
         "region_id",
         "center",
         "half_extents",
-        "geometry",
-        "revision"
+        "geometry"
       ],
       "additionalProperties": false
     },
@@ -2007,17 +2005,12 @@
           },
           "minItems": 3,
           "maxItems": 3
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "required": [
         "schema_version",
         "cluster_ref",
-        "position",
-        "revision"
+        "position"
       ],
       "additionalProperties": false
     },
@@ -2034,17 +2027,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1000000
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "required": [
         "schema_version",
         "cluster_ref",
-        "depth",
-        "revision"
+        "depth"
       ],
       "additionalProperties": false
     },
@@ -2146,13 +2134,29 @@
         "nodes": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/semanticUnit"
+            "$ref": "#/$defs/graphObservationNode"
           }
         },
         "relations": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/relation"
+            "$ref": "#/$defs/graphObservationRelation"
+          }
+        },
+        "focus_region": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/spatialFocusRegion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster_spatial_positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/clusterSpatialPosition"
           }
         }
       },
@@ -2164,9 +2168,146 @@
         "deferred_region_cluster_refs",
         "work",
         "nodes",
-        "relations"
+        "relations",
+        "focus_region",
+        "cluster_spatial_positions"
       ],
       "additionalProperties": false
+    },
+    "graphObservationNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "CLUSTER",
+            "CHAOS_CLUSTER",
+            "ENTITY",
+            "EVIDENCE",
+            "CLAIM",
+            "QUESTION",
+            "QUESTION_ASPECT",
+            "DEPENDENCY",
+            "INTEREST",
+            "CLUSTER_LIFECYCLE"
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "content",
+        "references"
+      ],
+      "additionalProperties": false
+    },
+    "graphObservationRelation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "to",
+        "weight"
+      ],
+      "additionalProperties": false
+    },
+    "spatialFocusEvent": {
+      "type": "object",
+      "properties": {
+        "event_kind": {
+          "type": "string",
+          "enum": [
+            "FOCUS_REGION_SET_V1",
+            "CLUSTER_SPATIAL_POSITION_SET_V1",
+            "CLUSTER_FOCUS_DEPTH_SET_V1"
+          ]
+        },
+        "region": {
+          "$ref": "#/$defs/spatialFocusRegion"
+        },
+        "cluster_position": {
+          "$ref": "#/$defs/clusterSpatialPosition"
+        },
+        "cluster_focus_depth": {
+          "$ref": "#/$defs/clusterFocusDepth"
+        }
+      },
+      "required": [
+        "event_kind"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "event_kind": {
+              "const": "FOCUS_REGION_SET_V1"
+            },
+            "region": {
+              "$ref": "#/$defs/spatialFocusRegion"
+            }
+          },
+          "required": [
+            "region"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "CLUSTER_SPATIAL_POSITION_SET_V1"
+            },
+            "cluster_position": {
+              "$ref": "#/$defs/clusterSpatialPosition"
+            }
+          },
+          "required": [
+            "cluster_position"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "CLUSTER_FOCUS_DEPTH_SET_V1"
+            },
+            "cluster_focus_depth": {
+              "$ref": "#/$defs/clusterFocusDepth"
+            }
+          },
+          "required": [
+            "cluster_focus_depth"
+          ]
+        }
+      ]
     }
   }
 }
