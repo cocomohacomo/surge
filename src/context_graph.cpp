@@ -2181,7 +2181,6 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   focused.focus_work.relations_examined=inspected_relations.size();
 
   std::set<std::string> visible_ids;
-  std::set<std::string> visible_relation_ids;
   std::set<std::string> expanded_paths;
   if(!relation_scan_complete){
     focused.focus_work.budget_exhausted=true;
@@ -2227,11 +2226,9 @@ CognitionObservation ContextGraph::observe_focused_cognition(
             break;
           }
           ++focused.focus_work.relations_traversed;
-          visible_relation_ids.insert(relation.id);
           const bool inserted=visible_ids.insert(relation.to).second;
           if(inserted&&visible_ids.size()>max_nodes){
             visible_ids.erase(relation.to);
-            visible_relation_ids.erase(relation.id);
             complete=false;
             break;
           }
