@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -162,6 +163,30 @@ inline DeltaResult apply_projection_batch(ContextGraph& graph, const ProjectionB
   return graph.apply(delta);
 }
 
+inline bool estimate_projection_packet_resources(
+    const ValidatedRecognitionPacket& packet, const std::string& source_snapshot,
+    std::size_t& resident_bytes, std::size_t& staging_bytes) {
+  resident_bytes = sizeof(ValidatedRecognitionPacket) + 512;
+  staging_bytes = source_snapshot.size();
+  const auto add = [](std::size_t value, std::size_t& total) {
+    if (value > std::numeric_limits<std::size_t>::max() - total) return false;
+    total += value;
+    return true;
+  };
+  const std::string* fields[] = {
+    &packet.packet_id, &packet.idempotency_key, &packet.context_id,
+    &packet.source_id, &packet.source_generation, &packet.block_ref,
+    &packet.offset_basis, &packet.source_snapshot_digest,
+    &packet.source_range_digest, &packet.canonical_request_digest,
+    &packet.revision_of_packet_id
+  };
+  for (const auto* field : fields) {
+    if (!add(field->size() * 3, resident_bytes) ||
+        !add(field->size(), staging_bytes)) return false;
+  }
+  return add(resident_bytes, staging_bytes);
+}
+
 // Budgeted atomic source-packet + projection commit. Resource reservations
 // are acquired before PacketAdmissionCoordinator writes the shared journal.
 inline PacketAdmissionResult apply_projection_batch(
@@ -186,6 +211,12 @@ inline PacketAdmissionResult apply_projection_batch(
     packet_result.error = error;
     return packet_result;
   }
+  std::size_t packet_resident_bytes = 0, packet_staging_bytes = 0;
+  if (!estimate_projection_packet_resources(packet, normalized_source_snapshot,
+      packet_resident_bytes, packet_staging_bytes)) {
+    packet_result.error = "PROJECTION_PACKET_BUDGET_SIZE_OVERFLOW";
+    return packet_result;
+  }
   const auto budgeted = graph.apply_with_external_commit(delta,
       [&](const std::vector<JournalEvent>& semantic_events) {
         if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
@@ -196,7 +227,7 @@ inline PacketAdmissionResult apply_projection_batch(
         packet_result = packets.admit(packet, normalized_source_snapshot, semantic_events);
         return DeltaResult{packet_result.admitted, packet_result.duplicate,
             packet_result.state_version, packet_result.error};
-      });
+      }, packet_resident_bytes, 1, packet_staging_bytes);
   if (!budgeted.committed && packet_result.error.empty())
     packet_result.error = budgeted.error;
   if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
