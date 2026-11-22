@@ -439,6 +439,10 @@ int main(){
     const auto bounded=graph.observe_focused_cognition(expanded,positions,deeper,2,20);
     CHECK(bounded.focus_work.budget_exhausted);
     CHECK(bounded.nodes.size()<=2);
+    CHECK(bounded.logical_region_cluster_ids.size()==3);
+    CHECK(bounded.processed_region_cluster_ids.empty());
+    CHECK(bounded.deferred_region_cluster_ids.size()==3);
+    CHECK(bounded.focus_work.clusters_in_region==3);
 
     // Persist region, positions and depths as independent journal event families.
     SemanticDelta region_delta;region_delta.delta_id="spatial-region-update";
