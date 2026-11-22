@@ -37,8 +37,12 @@ struct SpatialVector3 { double x{0.0}, y{0.0}, z{0.0}; };
 struct FocusRegion { SpatialVector3 center; SpatialVector3 half_extents; };
 struct ClusterSpatialPosition { std::string cluster_id; SpatialVector3 position; };
 struct ClusterFocusDepth { std::string cluster_id; std::size_t depth{0}; };
+struct SetFocusRegion { FocusRegion region; };
+struct SetClusterSpatialPosition { ClusterSpatialPosition position; };
+struct SetClusterFocusDepth { ClusterFocusDepth focus_depth; };
 struct FocusWorkMetrics {
   std::size_t clusters_considered{0}, clusters_in_region{0};
+  std::size_t clusters_scheduled{0}, clusters_deferred{0};
   std::size_t nodes_processed{0}, relations_processed{0};
   std::size_t max_nodes{0}, max_relations{0};
   bool budget_exhausted{false};
@@ -80,6 +84,9 @@ struct SemanticDelta {
   std::vector<std::string> reclaim_entity_node_ids;
   std::vector<AddScopeSpan> scope_spans;
   std::optional<SetFocus> focus;
+  std::optional<SetFocusRegion> focus_region;
+  std::vector<SetClusterSpatialPosition> cluster_position_updates;
+  std::vector<SetClusterFocusDepth> cluster_focus_depth_updates;
   std::vector<ClaimValidity> claim_validity_updates;
   std::vector<EvidenceValidity> evidence_validity_updates;
 };
@@ -126,6 +133,9 @@ struct CognitionObservation {
   std::vector<FocusRecord> focus_history;
   std::optional<FocusRegion> focus_region;
   std::vector<ClusterFocusDepth> cluster_focus_depths;
+  std::vector<std::string> logical_region_cluster_ids;
+  std::vector<std::string> processed_region_cluster_ids;
+  std::vector<std::string> deferred_region_cluster_ids;
   FocusWorkMetrics focus_work;
   std::size_t unresolved_scope_count{0};
   std::size_t dependency_evaluation_count{0};
@@ -185,6 +195,10 @@ class ContextGraph {
   CognitionObservation observe_cognition() const;
   // Read-only projection containing only the focused cognition cluster and its direct members.
   CognitionObservation observe_focused_cognition() const;
+  CognitionObservation observe_focused_cognition(std::size_t max_nodes, std::size_t max_relations) const;
+  bool append_focus_region_update(SemanticDelta& delta, const FocusRegion& region, std::string& error) const;
+  bool append_cluster_spatial_position_update(SemanticDelta& delta, const ClusterSpatialPosition& position, std::string& error) const;
+  bool append_cluster_focus_depth_update(SemanticDelta& delta, const ClusterFocusDepth& depth, std::string& error) const;
   // Spatial projection with independent region geometry and per-cluster depth.
   // Depth 0 exposes the cluster only; each level traverses one Contains edge.
   // Budgets cap node/relation work deterministically.
@@ -271,6 +285,9 @@ class ContextGraph {
     std::map<std::string, ScopeSpanRecord> scope_spans;
     std::optional<FocusRecord> focus;
     std::vector<FocusRecord> focus_history;
+    std::optional<FocusRegion> focus_region;
+    std::map<std::string, SpatialVector3> cluster_positions;
+    std::map<std::string, std::size_t> cluster_focus_depths;
     std::map<std::string, QuestionAspectStatus> question_aspect_statuses;
     std::map<std::string, QuestionMemoryState> question_memory_states;
     std::map<std::string, std::uint64_t> question_reference_counts;
@@ -286,6 +303,9 @@ class ContextGraph {
   bool apply_entity_reclamation(State&, const std::string&, std::string&) const;
   bool apply_scope_span(State&, const AddScopeSpan&, std::string&) const;
   bool apply_focus(State&, const FocusRecord&, std::string&) const;
+  bool apply_focus_region(State&, const FocusRegion&, std::string&) const;
+  bool apply_cluster_position(State&, const ClusterSpatialPosition&, std::string&) const;
+  bool apply_cluster_depth(State&, const ClusterFocusDepth&, std::string&) const;
   bool apply_claim_validity(State&, const ClaimValidity&, std::uint64_t recorded_state_version, std::string&) const;
   bool apply_evidence_validity(State&, const EvidenceValidity&, std::uint64_t recorded_state_version, std::string&) const;
   bool build_reassessment(const State&, const std::string&, const std::string&,
