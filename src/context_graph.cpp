@@ -681,7 +681,7 @@ bool ContextGraph::replay(){
    }
    ++version;continue;
   }
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="ENTITY_RECLAIMED"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="ENTITY_RECLAIMED"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="FOCUS_REGION_SET_V1"||e.kind=="CLUSTER_SPATIAL_POSITION_SET_V1"||e.kind=="CLUSTER_FOCUS_DEPTH_SET_V1"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
@@ -726,7 +726,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
     std::vector<JournalEvent>& events, std::string& error) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
-    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.reclaim_entity_node_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus)){
+    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.reclaim_entity_node_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus&&!d.focus_region&&d.cluster_position_updates.empty()&&d.cluster_focus_depth_updates.empty())){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
@@ -758,6 +758,9 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  for(const auto& validity:d.claim_validity_updates)if(!apply_claim_validity(staged,validity,d.expected_state_version+1,error))return false;
  for(const auto& validity:d.evidence_validity_updates)if(!apply_evidence_validity(staged,validity,d.expected_state_version+1,error))return false;
  if(d.focus&&!apply_focus(staged,d.focus->focus,error))return false;
+ if(d.focus_region&&!apply_focus_region(staged,d.focus_region->region,error))return false;
+ for(const auto& p:d.cluster_position_updates)if(!apply_cluster_position(staged,p.position,error))return false;
+ for(const auto& p:d.cluster_focus_depth_updates)if(!apply_cluster_depth(staged,p.focus_depth,error))return false;
 
  std::set<std::string> changed;
  auto add_if_node=[&](const std::string& id){if(staged.nodes.count(id))changed.insert(id);};
@@ -775,6 +778,8 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
   for(const auto& id:scope.span.antecedent_refs)add_if_node(id);
  }
  if(d.focus){add_if_node(d.focus->focus.cluster_id);add_if_node(d.focus->focus.interest_id);}
+ for(const auto& p:d.cluster_position_updates)add_if_node(p.position.cluster_id);
+ for(const auto& p:d.cluster_focus_depth_updates)add_if_node(p.focus_depth.cluster_id);
  bool has_dependencies=false;
  for(const auto& item:staged.nodes)if(item.second.kind==NodeKind::Dependency){has_dependencies=true;break;}
  const auto fp_value=fingerprint(d);
@@ -1890,6 +1895,9 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
         event.kind == "NODE_ADD" || event.kind == "RELATION_ADD" ||
         event.kind == "RELATION_REMOVE" || event.kind == "ENTITY_RECLAIMED" ||
         event.kind == "SCOPE_SPAN_ADD" || event.kind == "FOCUS_SET" ||
+        event.kind == "FOCUS_REGION_SET_V1" ||
+        event.kind == "CLUSTER_SPATIAL_POSITION_SET_V1" ||
+        event.kind == "CLUSTER_FOCUS_DEPTH_SET_V1" ||
         event.kind == "CLAIM_VALIDITY_SET" ||
         event.kind == "EVIDENCE_VALIDITY_SET" ||
         event.kind == "DEPENDENCY_EVALUATION";
