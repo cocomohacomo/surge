@@ -2324,9 +2324,17 @@
           },
           "minItems": 3,
           "maxItems": 3
+        },
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "geometry": {
+          "const": "AXIS_ALIGNED_3D"
         }
       },
       "required": [
+        "schema_version",
+        "geometry",
         "center",
         "half_extents"
       ],
