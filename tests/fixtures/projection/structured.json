@@ -24,7 +24,12 @@
     "canonical_request_digest": "fixture-structured",
     "revision": false,
     "revision_sequence": 0,
-    "context_id": "context-structured"
+    "context_id": "context-structured",
+    "document_ref": "document-structured",
+    "document_generation": "document-generation-1",
+    "document_sequence": 1,
+    "global_start_offset": 0,
+    "global_end_offset": 66
   },
   "normalized_source_snapshot": "{\"asset\":\"A-17\",\"status\":\"inspection_due\",\"due_date\":\"2026-12-01\"}",
   "source_event_refs": [
