@@ -28,8 +28,8 @@ std::string json_quote(const std::string& value) {
   std::string out = "\"";
   for (unsigned char ch : value) {
     switch (ch) {
-      case '"': out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
+      case '"': out += "\\""; break;
+      case '\\': out += "\\\"; break;
       case '\b': out += "\\b"; break;
       case '\f': out += "\\f"; break;
       case '\n': out += "\\n"; break;
@@ -1422,8 +1422,8 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
       std::string out = "\"";
       for (unsigned char ch : value) {
         switch (ch) {
-          case '\"': out += "\\\""; break;
-          case '\\': out += "\\\\"; break;
+          case '\"': out += "\\""; break;
+          case '\\': out += "\\\"; break;
           case '\b': out += "\\b"; break;
           case '\f': out += "\\f"; break;
           case '\n': out += "\\n"; break;
@@ -1664,8 +1664,8 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
       std::string out = "\"";
       for (unsigned char ch : value) {
         switch (ch) {
-          case '"': out += "\\\""; break;
-          case '\\': out += "\\\\"; break;
+          case '"': out += "\\""; break;
+          case '\\': out += "\\\"; break;
           case '\b': out += "\\b"; break;
           case '\f': out += "\\f"; break;
           case '\n': out += "\\n"; break;
@@ -1872,21 +1872,21 @@ int surge_context_graph_recall_candidates(void* opaque, const char* input_member
     const auto candidates = handle.mutations.recall_cognition_candidates(
         input_member_id, terms, max_candidates);
     std::ostringstream json;
-    json << "{\\"state_version\\":" << handle.journal.state_version()
-         << ",\\"candidates\\":[";
+    json << "{\"state_version\":" << handle.journal.state_version()
+         << ",\"candidates\":[";
     for (size_t i = 0; i < candidates.size(); ++i) {
       if (i) json << ',';
       const auto& candidate = candidates[i];
-      json << "{\\"cluster_id\\":" << json_quote(candidate.cluster_id)
-           << ",\\"recall_score\\":" << std::setprecision(17)
+      json << "{\"cluster_id\":" << json_quote(candidate.cluster_id)
+           << ",\"recall_score\":" << std::setprecision(17)
            << candidate.recall_score
-           << ",\\"memory_state_version\\":" << candidate.memory_state_version
-           << ",\\"supporting_member_ids\\":[";
+           << ",\"memory_state_version\":" << candidate.memory_state_version
+           << ",\"supporting_member_ids\":[";
       for (size_t j = 0; j < candidate.supporting_member_ids.size(); ++j) {
         if (j) json << ',';
         json << json_quote(candidate.supporting_member_ids[j]);
       }
-      json << "],\\"matched_terms\\":[";
+      json << "],\"matched_terms\":[";
       for (size_t j = 0; j < candidate.matched_terms.size(); ++j) {
         if (j) json << ',';
         json << json_quote(candidate.matched_terms[j]);
