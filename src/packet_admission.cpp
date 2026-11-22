@@ -242,6 +242,36 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   if (sequence != staged.sequence_packets.end() && sequence->second != p.packet_id) {
     result.error = "SOURCE_SEQUENCE_REUSED"; return result;
   }
+  DocumentStreamState staged_document;
+  std::string dkey;
+  std::string drange;
+  if (!p.document_ref.empty()) {
+    dkey = document_stream_key(p);
+    auto old_document = document_streams_.find(dkey);
+    if (old_document != document_streams_.end()) staged_document = old_document->second;
+    drange = document_range_key(p);
+    const auto prior = staged_document.sequence_packets.find(p.document_sequence);
+    if (p.revision) {
+      const auto latest_document = staged_document.range_latest_packets.find(drange);
+      if (prior == staged_document.sequence_packets.end() ||
+          latest_document == staged_document.range_latest_packets.end() ||
+          latest_document->second != p.revision_of_packet_id ||
+          prior->second != p.revision_of_packet_id) {
+        result.error = "DOCUMENT_REVISION_TARGET_MISMATCH"; return result;
+      }
+    } else {
+      if (p.document_sequence != staged_document.next_sequence) {
+        result.error = p.document_sequence < staged_document.next_sequence
+            ? "DOCUMENT_SEQUENCE_REUSED" : "DOCUMENT_SEQUENCE_GAP";
+        return result;
+      }
+      if (p.global_start_offset != staged_document.next_global_offset) {
+        result.error = p.global_start_offset < staged_document.next_global_offset
+            ? "DOCUMENT_GLOBAL_RANGE_OVERLAP" : "DOCUMENT_GLOBAL_RANGE_GAP";
+        return result;
+      }
+    }
+  }
   const auto rkey = range_key(p);
   const auto latest = staged.range_latest_packets.find(rkey);
   if (p.revision) {
@@ -259,6 +289,14 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
 
   staged.sequence_packets[p.source_sequence] = p.packet_id;
   staged.sequencer.observe(p.source_sequence);
+  if (!p.document_ref.empty()) {
+    staged_document.sequence_packets[p.document_sequence] = p.packet_id;
+    staged_document.range_latest_packets[drange] = p.packet_id;
+    if (!p.revision) {
+      ++staged_document.next_sequence;
+      staged_document.next_global_offset = p.global_end_offset;
+    }
+  }
 
   const auto expected = journal_.state_version();
   if (!semantic_events.empty()) {
@@ -296,6 +334,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   }
 
   streams_[skey] = std::move(staged);
+  if (!p.document_ref.empty()) document_streams_[dkey] = std::move(staged_document);
   packet_digests_[p.packet_id] = p.canonical_request_digest;
   packet_encodings_[p.packet_id] = encode(p);
   idempotency_packets_[p.idempotency_key] = p.packet_id;
