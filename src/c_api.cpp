@@ -1804,6 +1804,23 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
     }
     const auto observation=static_cast<Handle*>(opaque)->graph.observe_focused_cognition(
         max_nodes,max_relations);
+    const auto node_name=[](surge::NodeKind kind)->const char*{
+      switch(kind){case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::ChaosCluster:return "CHAOS_CLUSTER";
+      case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Evidence:return "EVIDENCE";
+      case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Question:return "QUESTION";
+      case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Dependency:return "DEPENDENCY";
+      case surge::NodeKind::Interest:return "INTEREST";case surge::NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";}
+      return "UNKNOWN";
+    };
+    const auto relation_name=[](surge::RelationKind kind)->const char*{
+      switch(kind){case surge::RelationKind::Supports:return "SUPPORTS";case surge::RelationKind::Contradicts:return "CONTRADICTS";
+      case surge::RelationKind::AgreesWith:return "AGREES_WITH";case surge::RelationKind::ConflictsWith:return "CONFLICTS_WITH";
+      case surge::RelationKind::DependsOn:return "DEPENDS_ON";case surge::RelationKind::About:return "ABOUT";
+      case surge::RelationKind::Supersedes:return "SUPERSEDES";case surge::RelationKind::Retracts:return "RETRACTS";
+      case surge::RelationKind::Duplicates:return "DUPLICATES";case surge::RelationKind::Contains:return "CONTAINS";
+      case surge::RelationKind::DerivedFrom:return "DERIVED_FROM";}
+      return "UNKNOWN";
+    };
     std::ostringstream json;
     json<<"{\"state_version\":"<<observation.state_version<<",\"focus_region\":";
     if(observation.focus_region){
@@ -1839,13 +1856,13 @@ int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
     json<<"],\"nodes\":[";
     for(size_t i=0;i<observation.nodes.size();++i){
       if(i)json<<',';const auto& n=observation.nodes[i];
-      json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(node_kind_name(n.kind))
+      json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(node_name(n.kind))
           <<",\"content\":"<<json_quote(n.content)<<"}";
     }
     json<<"],\"relations\":[";
     for(size_t i=0;i<observation.relations.size();++i){
       if(i)json<<',';const auto& rel=observation.relations[i];
-      json<<"{\"id\":"<<json_quote(rel.id)<<",\"kind\":"<<json_quote(relation_kind_name(rel.kind))
+      json<<"{\"id\":"<<json_quote(rel.id)<<",\"kind\":"<<json_quote(relation_name(rel.kind))
           <<",\"from\":"<<json_quote(rel.from)<<",\"to\":"<<json_quote(rel.to)
           <<",\"weight\":"<<std::setprecision(17)<<rel.weight<<"}";
     }
