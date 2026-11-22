@@ -137,7 +137,7 @@ class ProjectionBatchAdapter:
             string_values.extend([membership["relation_id"], membership["member_ref"], membership["cluster_ref"]])
         for placement in batch["spatial_placements"]:
             string_values.append(placement["cluster_id"])
-        if any("\\x00" in value for value in string_values):
+        if any("\x00" in value for value in string_values):
             raise ProjectionRejected("C_API_STRING_CONTAINS_NUL")
 
         node_ids = {node["id"] for node in batch["nodes"]}
