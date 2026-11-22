@@ -2013,6 +2013,8 @@ CognitionObservation ContextGraph::observe_cognition() const {
   observation.focus_region = state_.focus_region;
   for (const auto& item : state_.cluster_focus_depths)
     observation.cluster_focus_depths.push_back({item.first,item.second});
+  for (const auto& item : state_.cluster_positions)
+    observation.cluster_spatial_positions.push_back({item.first,item.second});
   for (const auto& item : state_.scope_spans)
     if (item.second.status == ScopeStatus::Unresolved)
       ++observation.unresolved_scope_count;
@@ -2021,6 +2023,7 @@ CognitionObservation ContextGraph::observe_cognition() const {
 }
 
 CognitionObservation ContextGraph::observe_focused_cognition() const {
+  if (state_.focus_region) return observe_focused_cognition(10000,20000);
   CognitionObservation focused;
   const auto full = observe_cognition();
   focused.state_version = full.state_version;
@@ -2047,6 +2050,21 @@ CognitionObservation ContextGraph::observe_focused_cognition() const {
   return focused;
 }
 
+
+CognitionObservation ContextGraph::observe_focused_cognition(
+    std::size_t max_nodes, std::size_t max_relations) const {
+  if (!state_.focus_region) return observe_focused_cognition();
+  std::vector<ClusterSpatialPosition> positions;
+  std::vector<ClusterFocusDepth> depths;
+  positions.reserve(state_.cluster_positions.size());
+  depths.reserve(state_.cluster_focus_depths.size());
+  for (const auto& item : state_.cluster_positions)
+    positions.push_back({item.first,item.second});
+  for (const auto& item : state_.cluster_focus_depths)
+    depths.push_back({item.first,item.second});
+  return observe_focused_cognition(*state_.focus_region,positions,depths,
+                                   max_nodes,max_relations);
+}
 
 CognitionObservation ContextGraph::observe_focused_cognition(
     const FocusRegion& region,
