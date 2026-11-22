@@ -1,7 +1,7 @@
 {
   "abi_version": {
     "major": 0,
-    "minor": 3,
+    "minor": 4,
     "patch": 0
   },
   "structs": {
@@ -242,6 +242,46 @@
         "const char*const*packet_refs",
         "size_t packet_count"
       ]
+    },
+    "SurgeProjectionMetadataInput": {
+      "tag": "SurgeProjectionMetadataInput",
+      "fields": [
+        "const char*projection_id",
+        "const char*idempotency_key",
+        "const char*context_id",
+        "const char*producer_id",
+        "const char*producer_version",
+        "const char*policy_version",
+        "uint64_t base_state_version"
+      ]
+    },
+    "SurgeProjectionRelationInput": {
+      "tag": "SurgeProjectionRelationInput",
+      "fields": [
+        "const char*id",
+        "const char*kind",
+        "const char*from_id",
+        "const char*to_id",
+        "double weight"
+      ]
+    },
+    "SurgeProjectionMembershipInput": {
+      "tag": "SurgeProjectionMembershipInput",
+      "fields": [
+        "const char*relation_id",
+        "const char*member_ref",
+        "const char*cluster_ref",
+        "double upstream_weight"
+      ]
+    },
+    "SurgeProjectionSpatialPlacementInput": {
+      "tag": "SurgeProjectionSpatialPlacementInput",
+      "fields": [
+        "const char*cluster_id",
+        "double x",
+        "double y",
+        "double z"
+      ]
     }
   },
   "functions": [
@@ -479,6 +519,11 @@
       "name": "surge_packet_core_state_version",
       "return_type": "uint64_t",
       "parameters": "void*handle"
+    },
+    {
+      "name": "surge_projection_batch_admit_and_apply",
+      "return_type": "int",
+      "parameters": "void*handle,const SurgeRecognitionPacketInput*packet,const unsigned char*normalized_source_snapshot,size_t snapshot_size,const SurgeProjectionMetadataInput*metadata,const char*const*evidence_refs,size_t evidence_count,const SurgeGraphNodeInput*nodes,size_t node_count,const SurgeProjectionRelationInput*relations,size_t relation_count,const SurgeProjectionMembershipInput*memberships,size_t membership_count,const SurgeProjectionSpatialPlacementInput*spatial_placements,size_t placement_count,int*duplicate,uint64_t*state_version,char*packet_status,size_t status_capacity,char*error,size_t error_capacity"
     },
     {
       "name": "surge_question_aspect_get_status",
