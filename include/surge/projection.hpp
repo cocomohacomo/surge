@@ -112,4 +112,15 @@ inline bool build_projection_delta(const ProjectionBatch& batch,
   return true;
 }
 
+// Validate, translate, and commit through the graph's existing journal-backed
+// transaction path. This does not admit source Events; those must already exist
+// in the caller's event pipeline and be referenced by the batch.
+inline DeltaResult apply_projection_batch(ContextGraph& graph, const ProjectionBatch& batch) {
+  SemanticDelta delta;
+  std::string error;
+  if (!build_projection_delta(batch, delta, error))
+    return {false, false, graph.state_version(), error};
+  return graph.apply(delta);
+}
+
 } // namespace surge
