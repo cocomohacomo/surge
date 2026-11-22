@@ -134,6 +134,8 @@ int main() {
       };
       auto out_of_order=make_document_packet("doc-2",1,2,3,6);
       CHECK(coordinator.admit(out_of_order,"abc").error=="DOCUMENT_SEQUENCE_GAP");
+      auto malformed_range=make_document_packet("doc-malformed",1,1,0,4);
+      CHECK(coordinator.admit(malformed_range,"abc").error=="PACKET_CORE_INVARIANT_FAILED");
       auto first=make_document_packet("doc-1",1,1,0,3);
       CHECK(coordinator.admit(first,"abc").admitted);
       auto gap=make_document_packet("doc-3",2,2,4,7);
