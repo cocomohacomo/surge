@@ -15,7 +15,7 @@ int main() {
   assert(surge_context_graph_apply(handle,"seed-focus","seed-focus",0,nodes,1,
       nullptr,0,nullptr,nullptr,&duplicate,&version,error,sizeof(error))==1);
   assert(version==1);
-  const SurgeFocusRegionInput region{{0.0,0.0,0.0},{2.0,2.0,2.0}};
+  const SurgeFocusRegionInput region{0.0,0.0,0.0,2.0,2.0,2.0};
   assert(surge_context_graph_set_focus_region(handle,"set-region","set-region",1,
       &region,&duplicate,&version,error,sizeof(error))==1);
   assert(version==2);
