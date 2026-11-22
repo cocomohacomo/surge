@@ -154,7 +154,12 @@ inline PacketAdmissionResult apply_projection_batch(
     rejected.error = error;
     return rejected;
   }
-  return packets.admit(packet, normalized_source_snapshot, semantic_events);
+  auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
+  if (admitted.admitted && !graph.open()) {
+    admitted.admitted = false;
+    admitted.error = "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED";
+  }
+  return admitted;
 }
 
 } // namespace surge
