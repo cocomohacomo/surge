@@ -387,10 +387,54 @@ int main(){
     const auto focused=graph.observe_focused_cognition();
     CHECK(focused.current_focus && focused.current_focus->cluster_id=="new-cognition");
     CHECK(focused.nodes.size()==1 && focused.nodes.front().id=="new-cognition");
-    CHECK(std::count_if(graph.relations().begin(),graph.relations().end(),
+    const auto derived_relations=graph.relations();
+    CHECK(std::count_if(derived_relations.begin(),derived_relations.end(),
         [](const auto& item){return item.second.kind==RelationKind::DerivedFrom &&
           item.second.from=="new-cognition";})==2);
     CHECK(graph.observe_cognition().nodes.size()==3);
+  }
+
+  // Spatial focus selects a 3D region; per-cluster depths remain independent.
+  {
+    const auto path=(root/"spatial-focus.sgj").string();
+    ContextGraph graph(path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="spatial-focus-seed";
+    seed.idempotency_key="spatial-focus-seed";seed.expected_state_version=0;
+    seed.nodes={{{"spatial-a",NodeKind::Cluster,"A",{} }},
+                {{"spatial-b",NodeKind::Cluster,"B",{} }},
+                {{"spatial-c",NodeKind::Cluster,"C",{} }},
+                {{"spatial-nested",NodeKind::Cluster,"nested",{} }},
+                {{"spatial-member",NodeKind::Entity,"member",{} }},
+                {{"spatial-deep",NodeKind::Entity,"deep member",{} }}};
+    seed.relations={{{"spatial-a-nested",RelationKind::Contains,"spatial-a","spatial-nested"}},
+                    {{"spatial-a-member",RelationKind::Contains,"spatial-a","spatial-member"}},
+                    {{"spatial-nested-deep",RelationKind::Contains,"spatial-nested","spatial-deep"}}};
+    CHECK(graph.apply(seed).committed);
+    const FocusRegion compact{{0.0,0.0,0.0},{1.0,1.0,1.0}};
+    const std::vector<ClusterSpatialPosition> positions={
+      {"spatial-a",{-0.5,0.0,0.0}},{"spatial-b",{0.5,0.0,0.0}},
+      {"spatial-c",{5.0,0.0,0.0}}};
+    const std::vector<ClusterFocusDepth> depths={
+      {"spatial-a",1},{"spatial-b",0},{"spatial-nested",0}};
+    const auto focused=graph.observe_focused_cognition(compact,positions,depths,20,20);
+    CHECK(focused.focus_region.has_value());
+    CHECK(focused.focus_work.clusters_considered==3);
+    CHECK(focused.focus_work.clusters_in_region==2);
+    CHECK(focused.nodes.size()==4);
+    CHECK(focused.focus_work.nodes_processed==4);
+    CHECK(focused.focus_work.relations_processed==2);
+    CHECK(!focused.focus_work.budget_exhausted);
+    const FocusRegion expanded{{0.0,0.0,0.0},{10.0,1.0,1.0}};
+    const auto wider=graph.observe_focused_cognition(expanded,positions,depths,20,20);
+    CHECK(wider.focus_work.clusters_in_region==3);
+    CHECK(wider.nodes.size()>focused.nodes.size());
+    const std::vector<ClusterFocusDepth> deeper={
+      {"spatial-a",1},{"spatial-b",0},{"spatial-nested",1}};
+    const auto deeper_view=graph.observe_focused_cognition(compact,positions,deeper,20,20);
+    CHECK(deeper_view.nodes.size()==focused.nodes.size()+1);
+    const auto bounded=graph.observe_focused_cognition(expanded,positions,deeper,2,20);
+    CHECK(bounded.focus_work.budget_exhausted);
+    CHECK(bounded.nodes.size()<=2);
   }
 
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
