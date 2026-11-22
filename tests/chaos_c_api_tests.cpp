@@ -63,6 +63,41 @@ int main(){
  CHECK(std::string(cognition).find("\\"memberships\\"")!=std::string::npos);
  CHECK(std::string(cognition).find("\\"current_focus\\"")!=std::string::npos);
  CHECK(required>1);
+
+ // Shared C ABI path for cognition recall and append-only external feedback.
+ SurgeGraphNodeInput cognition_nodes[] = {
+   {"cognition-cluster","CLUSTER","CLASS=TOPIC;PARTITION=API",nullptr,0},
+   {"cognition-input","EVIDENCE","incoming stream input",nullptr,0},
+   {"cognition-member","EVIDENCE","alpha beta gamma",nullptr,0}
+ };
+ SurgeGraphRelationInput cognition_edges[] = {
+   {"cognition-membership","CONTAINS","cognition-cluster","cognition-member"}
+ };
+ const auto cognition_version = surge_packet_core_state_version(h);
+ CHECK(surge_context_graph_apply(h,"cognition-seed","cognition-seed-key",
+   cognition_version,cognition_nodes,3,cognition_edges,1,nullptr,nullptr,
+   &duplicate,&version,error,sizeof(error))==1);
+ const char* cognition_terms[] = {"alpha","beta"};
+ required=0;
+ CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
+   nullptr,0,&required,error,sizeof(error))==0);
+ CHECK(std::string(error)=="COGNITION_RECALL_BUFFER_TOO_SMALL");
+ std::string recall_json(required,'\\0');
+ CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
+   recall_json.data(),recall_json.size(),&required,error,sizeof(error))==1);
+ CHECK(recall_json.find("cognition-cluster")!=std::string::npos);
+ const auto feedback_expected = surge_packet_core_state_version(h);
+ CHECK(surge_context_graph_record_cognition_feedback(h,"api-feedback-1",
+   "cognition-cluster","cognition-input","CONFIRMED","external-reviewer","2",
+   "policy-api-1","2026-11-22T00:00:00Z","api-feedback-node-1",
+   "api-feedback-edge-1",feedback_expected,&version,error,sizeof(error))==1);
+ required=0;
+ CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
+   nullptr,0,&required,error,sizeof(error))==0);
+ std::string recalled_after(required,'\\0');
+ CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
+   recalled_after.data(),recalled_after.size(),&required,error,sizeof(error))==1);
+ CHECK(recalled_after.find("0.2")!=std::string::npos);
  char too_small[2]{};size_t required_full=0;
  CHECK(surge_context_graph_observe_cognition(h,too_small,sizeof(too_small),
    &required_full,error,sizeof(error))==0);
