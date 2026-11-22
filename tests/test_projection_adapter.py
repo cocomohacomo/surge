@@ -76,6 +76,11 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
                     self.assertGreater(metrics["resident_bytes_used"], 0)
                     self.assertGreater(metrics["retained_events_used"], 0)
                     self.assertEqual(metrics["transient_bytes_used"], 0)
+                with CppCoreBridge(pathlib.Path(tmp) / "projection.sgj") as recovered:
+                    self.assertEqual(recovered.state_version, 1)
+                    self.assertEqual(recovered.packet_count, 1)
+                    self.assertGreater(
+                        recovered.resource_snapshot["resident_bytes_used"], 0)
 
     def test_budget_rejection_happens_before_packet_or_graph_commit(self):
         batch = self.fixture("conversation")
