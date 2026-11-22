@@ -45,7 +45,7 @@ struct SetClusterFocusDepth { ClusterFocusDepth focus_depth; };
 struct FocusWorkMetrics {
   std::size_t clusters_considered{0}, clusters_in_region{0};
   std::size_t clusters_scheduled{0}, clusters_deferred{0};
-  std::size_t position_checks{0}, nodes_processed{0}, relations_examined{0}, relations_processed{0};
+  std::size_t position_checks{0}, nodes_processed{0}, relations_examined{0}, relations_traversed{0}, relations_processed{0};
   std::size_t work_units{0}, elapsed_microseconds{0};
   std::size_t max_nodes{0}, max_relations{0};
   bool budget_exhausted{false};
