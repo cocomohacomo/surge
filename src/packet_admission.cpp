@@ -180,7 +180,13 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
       p.offset_basis != "UTF8_BYTE_NFC" || p.end_offset <= p.start_offset ||
       p.source_sequence == 0 || p.source_sequence == std::numeric_limits<std::uint64_t>::max() ||
       (p.revision && (p.revision_sequence == 0 || p.revision_of_packet_id.empty())) ||
-      (!p.revision && (p.revision_sequence != 0 || !p.revision_of_packet_id.empty()))) {
+      (!p.revision && (p.revision_sequence != 0 || !p.revision_of_packet_id.empty())) ||
+      (!p.document_ref.empty() &&
+       (p.document_generation.empty() || p.document_sequence == 0 ||
+        p.global_end_offset <= p.global_start_offset)) ||
+      (p.document_ref.empty() &&
+       (!p.document_generation.empty() || p.document_sequence != 0 ||
+        p.global_start_offset != 0 || p.global_end_offset != 0))) {
     result.error = "PACKET_CORE_INVARIANT_FAILED"; return result;
   }
   if (!is_valid_utf8(normalized_source_snapshot)) {
