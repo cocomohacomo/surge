@@ -543,6 +543,8 @@ std::string ContextGraph::fingerprint(const SemanticDelta& d)const{
  for(const auto& v:d.evidence_validity_updates)o<<"EV "<<std::quoted(v.evidence_id)<<' '<<std::quoted(v.valid_from)<<' '<<std::quoted(v.valid_until)<<' '<<std::quoted(v.basis_evidence_id)<<' '<<v.revision<<' '<<std::quoted(v.review_evidence_id)<<' '<<std::quoted(v.reviewer_id)<<'\n';
  if(d.focus) { o<<"F "<<encode_focus(d.focus->focus)<<'\n'; }
  if(d.focus_region){const auto& r=d.focus_region->region;o<<"FR "<<std::setprecision(17)<<r.center.x<<' '<<r.center.y<<' '<<r.center.z<<' '<<r.half_extents.x<<' '<<r.half_extents.y<<' '<<r.half_extents.z<<'\n';}
+ if(d.focus_region_move){const auto& p=d.focus_region_move->center;o<<"FM "<<std::setprecision(17)<<p.x<<' '<<p.y<<' '<<p.z<<'\n';}
+ if(d.focus_region_resize){const auto& p=d.focus_region_resize->half_extents;o<<"FZ "<<std::setprecision(17)<<p.x<<' '<<p.y<<' '<<p.z<<'\n';}
  for(const auto& p:d.cluster_position_updates)o<<"CP "<<std::quoted(p.position.cluster_id)<<' '<<std::setprecision(17)<<p.position.position.x<<' '<<p.position.position.y<<' '<<p.position.position.z<<'\n';
  for(const auto& p:d.cluster_focus_depth_updates)o<<"CD "<<std::quoted(p.focus_depth.cluster_id)<<' '<<p.focus_depth.depth<<'\n';
  return hash_text(o.str());
@@ -557,6 +559,8 @@ std::vector<JournalEvent> ContextGraph::encode(const SemanticDelta& d,const std:
  i=0;for(const auto& s:d.scope_spans)out.push_back({d.delta_id+"/scope/"+std::to_string(i++),"SCOPE_SPAN_ADD",encode_scope(s)});
  if(d.focus) { out.push_back({d.delta_id+"/focus","FOCUS_SET",encode_focus(d.focus->focus)}); }
  if(d.focus_region){const auto& r=d.focus_region->region;std::ostringstream p;p<<std::setprecision(17)<<r.center.x<<' '<<r.center.y<<' '<<r.center.z<<' '<<r.half_extents.x<<' '<<r.half_extents.y<<' '<<r.half_extents.z;out.push_back({d.delta_id+"/focus-region","FOCUS_REGION_SET_V1",p.str()});}
+ if(d.focus_region_move){const auto& p=d.focus_region_move->center;std::ostringstream payload;payload<<std::setprecision(17)<<p.x<<' '<<p.y<<' '<<p.z;out.push_back({d.delta_id+"/focus-region-move","FOCUS_REGION_MOVE_V1",payload.str()});}
+ if(d.focus_region_resize){const auto& p=d.focus_region_resize->half_extents;std::ostringstream payload;payload<<std::setprecision(17)<<p.x<<' '<<p.y<<' '<<p.z;out.push_back({d.delta_id+"/focus-region-resize","FOCUS_REGION_RESIZE_V1",payload.str()});}
  i=0;for(const auto& item:d.cluster_position_updates){const auto& p=item.position;std::ostringstream payload;payload<<std::quoted(p.cluster_id)<<' '<<std::setprecision(17)<<p.position.x<<' '<<p.position.y<<' '<<p.position.z;out.push_back({d.delta_id+"/cluster-position/"+std::to_string(i++),"CLUSTER_SPATIAL_POSITION_SET_V1",payload.str()});}
  i=0;for(const auto& item:d.cluster_focus_depth_updates){const auto& p=item.focus_depth;std::ostringstream payload;payload<<std::quoted(p.cluster_id)<<' '<<p.depth;out.push_back({d.delta_id+"/cluster-depth/"+std::to_string(i++),"CLUSTER_FOCUS_DEPTH_SET_V1",payload.str()});}
  i=0;for(const auto& v:d.claim_validity_updates){ClaimValidityRecord record{v,d.expected_state_version+1};out.push_back({d.delta_id+"/claim-validity/"+std::to_string(i++),"CLAIM_VALIDITY_SET",encode_claim_validity(record)});}
@@ -585,6 +589,8 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  if(e.kind=="SCOPE_SPAN_ADD"){AddScopeSpan span;if(!decode_scope(e.payload,span)){error="JOURNAL_SCOPE_SPAN_DECODE_FAILED";return false;}return apply_scope_span(s,span,error);}
  if(e.kind=="FOCUS_SET"){FocusRecord f;if(!decode_focus(e.payload,f)){error="JOURNAL_FOCUS_DECODE_FAILED";return false;}return apply_focus(s,f,error);}
  if(e.kind=="FOCUS_REGION_SET_V1"){std::istringstream in(e.payload);FocusRegion r;std::string extra;if(!(in>>r.center.x>>r.center.y>>r.center.z>>r.half_extents.x>>r.half_extents.y>>r.half_extents.z)||(in>>extra)){error="JOURNAL_FOCUS_REGION_DECODE_FAILED";return false;}return apply_focus_region(s,r,error);}
+ if(e.kind=="FOCUS_REGION_MOVE_V1"){std::istringstream in(e.payload);SpatialVector3 p;std::string extra;if(!(in>>p.x>>p.y>>p.z)||(in>>extra)){error="JOURNAL_FOCUS_REGION_MOVE_DECODE_FAILED";return false;}return apply_focus_region_move(s,p,error);}
+ if(e.kind=="FOCUS_REGION_RESIZE_V1"){std::istringstream in(e.payload);SpatialVector3 p;std::string extra;if(!(in>>p.x>>p.y>>p.z)||(in>>extra)){error="JOURNAL_FOCUS_REGION_RESIZE_DECODE_FAILED";return false;}return apply_focus_region_resize(s,p,error);}
  if(e.kind=="CLUSTER_SPATIAL_POSITION_SET_V1"){std::istringstream in(e.payload);ClusterSpatialPosition p;std::string extra;if(!(in>>std::quoted(p.cluster_id)>>p.position.x>>p.position.y>>p.position.z)||(in>>extra)){error="JOURNAL_CLUSTER_POSITION_DECODE_FAILED";return false;}return apply_cluster_position(s,p,error);}
  if(e.kind=="CLUSTER_FOCUS_DEPTH_SET_V1"){std::istringstream in(e.payload);ClusterFocusDepth d;std::string extra;if(!(in>>std::quoted(d.cluster_id)>>d.depth)||(in>>extra)){error="JOURNAL_CLUSTER_DEPTH_DECODE_FAILED";return false;}return apply_cluster_depth(s,d,error);}
  if(e.kind=="CLAIM_VALIDITY_SET"){ClaimValidityRecord record;if(!decode_claim_validity(e.payload,record)){error="JOURNAL_CLAIM_VALIDITY_DECODE_FAILED";return false;}return apply_claim_validity(s,record.validity,record.recorded_state_version,error);}
@@ -711,7 +717,7 @@ bool ContextGraph::replay(){
    }
    ++version;continue;
   }
-  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="ENTITY_RECLAIMED"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="FOCUS_REGION_SET_V1"||e.kind=="CLUSTER_SPATIAL_POSITION_SET_V1"||e.kind=="CLUSTER_FOCUS_DEPTH_SET_V1"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
+  if(e.kind=="NODE_ADD"||e.kind=="RELATION_ADD"||e.kind=="RELATION_REMOVE"||e.kind=="ENTITY_RECLAIMED"||e.kind=="SCOPE_SPAN_ADD"||e.kind=="FOCUS_SET"||e.kind=="FOCUS_REGION_SET_V1"||e.kind=="FOCUS_REGION_MOVE_V1"||e.kind=="FOCUS_REGION_RESIZE_V1"||e.kind=="CLUSTER_SPATIAL_POSITION_SET_V1"||e.kind=="CLUSTER_FOCUS_DEPTH_SET_V1"||e.kind=="CLAIM_VALIDITY_SET"||e.kind=="EVIDENCE_VALIDITY_SET"||e.kind=="DEPENDENCY_EVALUATION"){if(!have_meta||!replay_event(rebuilt,e,last_error_))return false;}
  }
  if(semantic_packet_waiting_for_delta){last_error_="JOURNAL_SEMANTIC_PACKET_DELTA_MISSING";return false;}
  if(have_meta) { ++version; }
@@ -756,7 +762,7 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
     std::vector<JournalEvent>& events, std::string& error) const {
  events.clear(); error.clear();
  if(d.delta_id.empty()||d.idempotency_key.empty()||
-    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.reclaim_entity_node_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus&&!d.focus_region&&d.cluster_position_updates.empty()&&d.cluster_focus_depth_updates.empty())){
+    (d.nodes.empty()&&d.relations.empty()&&d.remove_relation_ids.empty()&&d.reclaim_entity_node_ids.empty()&&d.scope_spans.empty()&&d.claim_validity_updates.empty()&&d.evidence_validity_updates.empty()&&!d.focus&&!d.focus_region&&!d.focus_region_move&&!d.focus_region_resize&&d.cluster_position_updates.empty()&&d.cluster_focus_depth_updates.empty())){
   error="DELTA_EMPTY_OR_ID_INVALID";return false;
  }
  const auto fp=fingerprint(d);
@@ -789,6 +795,8 @@ bool ContextGraph::prepare_transaction(const SemanticDelta& d, State& staged,
  for(const auto& validity:d.evidence_validity_updates)if(!apply_evidence_validity(staged,validity,d.expected_state_version+1,error))return false;
  if(d.focus&&!apply_focus(staged,d.focus->focus,error))return false;
  if(d.focus_region&&!apply_focus_region(staged,d.focus_region->region,error))return false;
+ if(d.focus_region_move&&!apply_focus_region_move(staged,d.focus_region_move->center,error))return false;
+ if(d.focus_region_resize&&!apply_focus_region_resize(staged,d.focus_region_resize->half_extents,error))return false;
  for(const auto& p:d.cluster_position_updates)if(!apply_cluster_position(staged,p.position,error))return false;
  for(const auto& p:d.cluster_focus_depth_updates)if(!apply_cluster_depth(staged,p.focus_depth,error))return false;
 
@@ -1969,6 +1977,8 @@ ContextGraphSnapshotDomain::prepare_restore_with_tail(
         event.kind == "RELATION_REMOVE" || event.kind == "ENTITY_RECLAIMED" ||
         event.kind == "SCOPE_SPAN_ADD" || event.kind == "FOCUS_SET" ||
         event.kind == "FOCUS_REGION_SET_V1" ||
+        event.kind == "FOCUS_REGION_MOVE_V1" ||
+        event.kind == "FOCUS_REGION_RESIZE_V1" ||
         event.kind == "CLUSTER_SPATIAL_POSITION_SET_V1" ||
         event.kind == "CLUSTER_FOCUS_DEPTH_SET_V1" ||
         event.kind == "CLAIM_VALIDITY_SET" ||
