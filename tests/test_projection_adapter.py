@@ -1,4 +1,3 @@
-import copy
 import json
 import pathlib
 import unittest
@@ -31,11 +30,10 @@ class ProjectionBatchAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectionRejected, "SOURCE_SNAPSHOT_DIGEST_MISMATCH"):
             self.adapter.validate(batch)
 
-    def test_evidence_must_retain_source_packet_lineage(self):
+    def test_projection_must_reference_its_source_packet(self):
         batch = self.fixture("document")
-        evidence = next(node for node in batch["nodes"] if node["kind"] == "EVIDENCE")
-        evidence["references"] = []
-        with self.assertRaisesRegex(ProjectionRejected, "EVIDENCE_SOURCE_LINEAGE_MISSING"):
+        batch["source_event_refs"] = ["different-packet"]
+        with self.assertRaisesRegex(ProjectionRejected, "PROJECTION_SOURCE_PACKET_MISMATCH"):
             self.adapter.validate(batch)
 
     def test_source_packet_context_must_match_projection_context(self):
