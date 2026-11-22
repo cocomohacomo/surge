@@ -535,7 +535,7 @@
     {
       "name": "surge_packet_core_resource_snapshot",
       "return_type": "int",
-      "parameters": "void*,SurgeResourceBudgetSnapshot*,char*,size_t"
+      "parameters": "void*handle,SurgeResourceBudgetSnapshot*snapshot,char*error,size_t error_capacity"
     },
     {
       "name": "surge_packet_core_state_version",
