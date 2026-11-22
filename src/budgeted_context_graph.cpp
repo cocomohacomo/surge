@@ -425,12 +425,13 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
   std::string error;
   if (!estimate_delta(delta, bytes, clusters, retained_events, error))
     return {false, false, graph_.state_version(), error};
-  std::size_t resident_estimate = bytes;
+  std::size_t resident_total = bytes;
   std::size_t staging_base = bytes;
-  if (!add(external_resident_bytes, resident_estimate) ||
+  std::size_t retained_total = retained_events;
+  if (!add(external_resident_bytes, resident_total) ||
       !add(external_staging_bytes, staging_base) ||
-      !add(external_retained_events, retained_events) ||
-      resident_estimate > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
+      !add(external_retained_events, retained_total) ||
+      resident_total > std::numeric_limits<std::size_t>::max() - accounted_resident_bytes_)
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
 
   const auto staging_estimate = staging_base > std::numeric_limits<std::size_t>::max() / 2
@@ -438,7 +439,8 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
   if (max_staging_bytes_ != 0 && staging_estimate > max_staging_bytes_)
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_STAGING_BUDGET_EXCEEDED"};
 
-  ResourceLease staging, resident, retained_clusters, retained;
+  ResourceLease staging, resident, external_resident, retained_clusters,
+      retained, external_retained;
   if (staging_estimate && !budget_.try_acquire(ResourceKind::TransientBytes,
       staging_estimate, staging, error))
     return {false, false, graph_.state_version(), error};
@@ -448,7 +450,10 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
     return {false, false, graph_.state_version(), error};
 
   if (!prepared.empty()) {
-    if (resident_estimate && !budget_.try_acquire(ResourceKind::ResidentBytes, resident_estimate, resident, error))
+    if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
+      return {false, false, graph_.state_version(), error};
+    if (external_resident_bytes && !budget_.try_acquire(ResourceKind::ResidentBytes,
+        external_resident_bytes, external_resident, error))
       return {false, false, graph_.state_version(), error};
     if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
         retained_clusters, error))
@@ -456,10 +461,17 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
     if (retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
         retained_events, retained, error))
       return {false, false, graph_.state_version(), error};
+    if (external_retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
+        external_retained_events, external_retained, error))
+      return {false, false, graph_.state_version(), error};
     try {
       if (resident) resident_leases_.reserve(resident_leases_.size() + 1);
+      if (external_resident)
+        external_resident_leases_.reserve(external_resident_leases_.size() + 1);
       if (retained_clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
       if (retained) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
+      if (external_retained)
+        external_event_leases_.reserve(external_event_leases_.size() + 1);
     } catch (...) {
       return {false, false, graph_.state_version(), "CONTEXT_GRAPH_LEASE_STAGING_FAILED"};
     }
@@ -471,9 +483,13 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
     return {false, false, graph_.state_version(), "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED"};
 
   if (resident) resident_leases_.push_back(std::move(resident));
+  if (external_resident)
+    external_resident_leases_.push_back(std::move(external_resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
   if (retained) recovery_event_leases_.push_back(std::move(retained));
-  accounted_resident_bytes_ += resident_estimate;
+  if (external_retained)
+    external_event_leases_.push_back(std::move(external_retained));
+  accounted_resident_bytes_ += resident_total;
   return result;
 }
 
