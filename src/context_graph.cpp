@@ -1972,6 +1972,33 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     }
   }
 
+  // Historical external evaluation is a bounded ranking signal. Feedback
+  // is append-only Evidence; it never changes membership or upstream weights.
+  std::map<std::string, double> feedback_adjustment;
+  for (const auto& node_item : state_.nodes) {
+    const auto& feedback_node = node_item.second;
+    if (feedback_node.kind != NodeKind::Evidence ||
+        feedback_node.content.rfind("SURGE_COGNITION_FEEDBACK_V1 ", 0) != 0 ||
+        feedback_node.references.size() < 2) continue;
+    std::istringstream input(feedback_node.content.substr(
+        std::string("SURGE_COGNITION_FEEDBACK_V1 ").size()));
+    std::string feedback_id, outcome, producer_id, producer_version,
+        policy_version, recorded_at, notes;
+    if (!(input >> std::quoted(feedback_id) >> std::quoted(outcome) >>
+          std::quoted(producer_id) >> std::quoted(producer_version) >>
+          std::quoted(policy_version) >> std::quoted(recorded_at) >>
+          std::quoted(notes))) continue;
+    const auto& candidate_cluster = feedback_node.references[0];
+    if (outcome == "CONFIRMED") feedback_adjustment[candidate_cluster] += 0.20;
+    else if (outcome == "REJECTED") feedback_adjustment[candidate_cluster] -= 0.30;
+    else if (outcome == "REVISED") feedback_adjustment[candidate_cluster] -= 0.10;
+  }
+  for (auto& item : by_cluster) {
+    const auto feedback = feedback_adjustment.find(item.first);
+    if (feedback != feedback_adjustment.end())
+      item.second.recall_score += feedback->second;
+  }
+
   // One-hop inter-cluster association: agreement/support/dependency/conflict
   // edges make related clusters retrievable. Use a fixed relation coefficient
   // and the stored relation weight; do not recursively amplify scores.
