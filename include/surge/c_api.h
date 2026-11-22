@@ -6,7 +6,7 @@
 // Major changes may break ABI; minor changes are additive; patch changes
 // preserve ABI. Major zero denotes the pre-stability compatibility period.
 #define SURGE_ABI_VERSION_MAJOR 0u
-#define SURGE_ABI_VERSION_MINOR 3u
+#define SURGE_ABI_VERSION_MINOR 4u
 #define SURGE_ABI_VERSION_PATCH 0u
 #define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
@@ -119,6 +119,36 @@ typedef struct SurgeGraphRelationInput {
   const char* to_id;
 } SurgeGraphRelationInput;
 
+typedef struct SurgeProjectionMetadataInput {
+  const char* projection_id;
+  const char* idempotency_key;
+  const char* context_id;
+  const char* producer_id;
+  const char* producer_version;
+  const char* policy_version;
+  uint64_t base_state_version;
+} SurgeProjectionMetadataInput;
+
+typedef struct SurgeProjectionRelationInput {
+  const char* id;
+  const char* kind;
+  const char* from_id;
+  const char* to_id;
+  double weight;
+} SurgeProjectionRelationInput;
+
+typedef struct SurgeProjectionMembershipInput {
+  const char* relation_id;
+  const char* member_ref;
+  const char* cluster_ref;
+  double upstream_weight;
+} SurgeProjectionMembershipInput;
+
+typedef struct SurgeProjectionSpatialPlacementInput {
+  const char* cluster_id;
+  double x, y, z;
+} SurgeProjectionSpatialPlacementInput;
+
 typedef struct SurgeScopeAnchorInput {
   const char* anchor_id;
   const char* source_digest;
@@ -223,6 +253,19 @@ int surge_packet_core_admit(
     size_t status_capacity, char* error, size_t error_capacity);
 
 // Atomically validates and commits a typed SemanticDelta to the shared ContextGraph/EventJournal.
+// Atomically admit one source packet and its transport-neutral projection batch.
+int surge_projection_batch_admit_and_apply(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const unsigned char* normalized_source_snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* spatial_placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* packet_status,
+    size_t status_capacity, char* error, size_t error_capacity);
+
 int surge_context_graph_apply(
     void* handle, const char* delta_id, const char* idempotency_key,
     uint64_t expected_state_version,
