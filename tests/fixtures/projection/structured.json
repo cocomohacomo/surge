@@ -17,10 +17,10 @@
     "block_ref": "block-1",
     "offset_basis": "UTF8_BYTE_NFC",
     "start_offset": 0,
-    "end_offset": 1,
+    "end_offset": 66,
     "source_sequence": 1,
-    "source_snapshot_digest": "0000000000000000000000000000000000000000000000000000000000000000",
-    "source_range_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_snapshot_digest": "4a4396e7a356505aba22d43edebbdfaeb227975817b1c4ad0986a825313fe928",
+    "source_range_digest": "4a4396e7a356505aba22d43edebbdfaeb227975817b1c4ad0986a825313fe928",
     "canonical_request_digest": "fixture-structured",
     "revision": false,
     "revision_sequence": 0
