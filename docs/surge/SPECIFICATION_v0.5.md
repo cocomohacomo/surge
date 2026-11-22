@@ -24,6 +24,42 @@ Coreの共通データ構造やAPIは用途非依存とし、認知の生成・�
 
 # 1. 概要
 
+
+### 0.1 Spatial Focus Region (migration contract)
+
+Focus is a spatial computation boundary, not a single selected Cluster. The legacy
+`FocusRecord` remains readable and writable for compatibility, but it is not the
+authoritative representation of spatial focus.
+
+The spatial projection contract has four independent inputs:
+
+- `FocusRegion.center`: the region center in 3D graph coordinates.
+- `FocusRegion.half_extents`: non-negative extent along each axis. The initial
+  geometry is axis-aligned; this does not prescribe the eventual graph embedding.
+- `ClusterSpatialPosition`: the position of each Cluster or ChaosCluster.
+- `ClusterFocusDepth`: an independent traversal depth for each Cluster.
+
+Changing region geometry MUST NOT implicitly modify per-cluster depth. Changing
+one Cluster's depth MUST NOT implicitly expand or contract the region. Coordinates
+may be negative; extents may not. Invalid or duplicate position records are ignored
+by the read projection and MUST be rejected by a future persistent write API.
+
+Depth zero exposes the Cluster itself. Each positive depth permits one additional
+Contains-membership level. When traversal reaches a nested Cluster, its own
+configured depth applies independently; it does not inherit the parent's depth.
+This is a structural traversal rule, not a truth or relevance score.
+
+The observation reports clusters considered/in-region, nodes and relations
+processed, configured limits, and whether a work budget was exhausted. Budget
+exhaustion is an explicit partial observation, never a claim that the full region
+was processed. External observers may consume all nodes, memberships and relations
+inside the projection, not just the legacy focused Cluster.
+
+The current C++ overload accepts positions and depths as read inputs. Durable
+spatial-position storage, independently journaled region movement/resize and
+per-cluster depth updates, and transport/schema bindings remain migration work;
+they MUST NOT be represented as complete by this read-only projection.
+
 ## 1.1 定義
 
 SURGEは、異なる形式・粒度・時間軸で逐次入力される情報を共通イベント形式に正規化し、意味認識、文脈統合、Focus管理、状態更新、履歴管理を継続的に実行するモデル非依存の汎用文脈認識フレームワークである。
