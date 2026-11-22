@@ -535,7 +535,7 @@ three new event kinds in a journal tail.
 
 ### 5.15 C ABI spatial Focus
 
-The additive C ABI is version 0.3 and exposes:
+The additive C ABI is version 0.4 and exposes:
 
 - `surge_context_graph_set_focus_region`
 - `surge_context_graph_move_focus_region`
@@ -547,3 +547,13 @@ The additive C ABI is version 0.3 and exposes:
 The observation API returns the logical region and its full geometric membership
 separately from processed/deferred cluster roots. Its work object includes operation
 counts, elapsed microseconds, configured limits and an explicit budget-exhausted flag.
+
+### 5.16 Atomic ProjectionBatch C ABI
+
+`surge_projection_batch_admit_and_apply()` accepts one RecognitionPacket, its normalized source bytes, ProjectionBatch producer/policy metadata, Evidence references, information nodes, weighted Relations, weighted cluster Memberships, and spatial placements.
+
+The function converts the inputs to the same typed `ProjectionBatch` used by the C++ API, validates the envelope, prepares the SemanticDelta through `ContextGraph::prepare_events()`, and submits the packet and semantic journal events through `PacketAdmissionCoordinator::admit()`. Packet admission and graph projection are one EventJournal transaction. It does not create or move Focus as a side effect.
+
+The additive public structures are `SurgeProjectionMetadataInput`, `SurgeProjectionRelationInput`, `SurgeProjectionMembershipInput`, and `SurgeProjectionSpatialPlacementInput`. The function returns duplicate status, resulting state version, packet status, and an error string.
+
+The current native API accepts one source packet per ProjectionBatch. Raw JSON decoding is not embedded in the native library; `schemas/projection-batch-v0.1.schema.json` defines the JSON transport contract for callers to validate and decode before invoking the typed API.
