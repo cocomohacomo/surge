@@ -397,6 +397,8 @@ int main(){
   // Spatial focus selects a 3D region; per-cluster depths remain independent.
   {
     const auto path=(root/"spatial-focus.sgj").string();
+    std::string spatial_error;
+    {
     ContextGraph graph(path);CHECK(graph.open());
     SemanticDelta seed;seed.delta_id="spatial-focus-seed";
     seed.idempotency_key="spatial-focus-seed";seed.expected_state_version=0;
@@ -457,7 +459,6 @@ int main(){
     SemanticDelta region_delta;region_delta.delta_id="spatial-region-update";
     region_delta.idempotency_key="spatial-region-update";
     region_delta.expected_state_version=graph.state_version();
-    std::string spatial_error;
     const FocusRegion durable_region{{0.0,0.0,0.0},{2.0,2.0,2.0}};
     CHECK(graph.append_focus_region_update(region_delta,durable_region,spatial_error));
     CHECK(graph.apply(region_delta).committed);
