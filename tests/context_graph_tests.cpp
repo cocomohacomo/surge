@@ -510,6 +510,30 @@ int main(){
     CHECK(durable_observation.logical_region_cluster_ids.size()==2);
     CHECK(durable_observation.processed_region_cluster_ids.size()==2);
     CHECK(durable_observation.deferred_region_cluster_ids.empty());
+    // The x-axis index excludes the third cluster before exact 3D checks.
+    CHECK(durable_observation.focus_work.position_checks==2);
+    CHECK(durable_observation.focus_work.clusters_considered==2);
+
+    // Updating a persisted position invalidates and rebuilds the derived index.
+    SemanticDelta bring_inside;bring_inside.delta_id="spatial-index-bring-inside";
+    bring_inside.idempotency_key="spatial-index-bring-inside";
+    bring_inside.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_spatial_position_update(
+        bring_inside,{"spatial-c",{1.0,0.0,0.0}},spatial_error));
+    CHECK(graph.apply(bring_inside).committed);
+    const auto expanded_index_view=graph.observe_focused_cognition(20,20);
+    CHECK(expanded_index_view.logical_region_cluster_ids.size()==3);
+    CHECK(expanded_index_view.focus_work.position_checks==3);
+
+    SemanticDelta move_outside;move_outside.delta_id="spatial-index-move-outside";
+    move_outside.idempotency_key="spatial-index-move-outside";
+    move_outside.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_spatial_position_update(
+        move_outside,{"spatial-c",{5.0,0.0,0.0}},spatial_error));
+    CHECK(graph.apply(move_outside).committed);
+    const auto restored_index_view=graph.observe_focused_cognition(20,20);
+    CHECK(restored_index_view.logical_region_cluster_ids.size()==2);
+    CHECK(restored_index_view.focus_work.position_checks==2);
   } // Close the journal writer before opening a second reader.
 
   {
