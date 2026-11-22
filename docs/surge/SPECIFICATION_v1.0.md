@@ -812,3 +812,14 @@ quality benchmarks remain follow-up integration tasks.
 - Regression coverage verifies candidate ranking with distinct upstream weights, snapshot version, unchanged Contains weights, append-only feedback, invalid outcome rejection and unchanged membership counts.
 - The current baseline is still lexical and graph-structural, not embedding-based. Feedback history querying/adaptive learning, C ABI/Python exposure, and independently annotated recall-quality benchmarks remain future work.
 - GitHub Actions can measure CI-runner resource use, but it cannot substitute for target-device RSS/latency measurements. Target qualification requires running the benchmark harness on the intended hardware with fixed input stream, warm-up, duration, RSS sampling and p50/p95/p99 latency capture.
+
+
+## Cognition Recall C ABI / Python / Feedback adaptation and stream measurement (2026-11-22)
+- The C ABI exposes bounded read-only candidate recall with caller-supplied query terms, a maximum candidate count, explicit output-buffer sizing and the committed memory state version.
+- The Python `SemanticCoreBridge` delegates recall and feedback operations to the same C ABI/Core implementation. Python does not implement a second scoring path.
+- External evaluation is appended as versioned Evidence with producer, producer version, policy version, timestamp, outcome and notes. `CONFIRMED`, `REJECTED` and `REVISED` provide bounded retrieval-ranking adjustments for subsequent recall of the same input member. `UNRESOLVED` records history without a score adjustment.
+- Feedback adjustments are ranking-only and input-scoped. They do not modify Contains edges, membership weights, cluster classification, or admission decisions. The initial adjustment coefficients are deterministic policy defaults, not trained parameters.
+- Additive cognition functions are included in C ABI minor version 2; existing structures and entry points remain unchanged.
+- `surge_context_graph_stream_bench` performs sequential journal-backed ContextGraph admissions and recall. It reports committed events, candidate counts, p50/p95/p99 operation latency, current/peak RSS where supported, RSS growth per 1,000 events, and BudgetedContextGraph logical resident accounting.
+- The benchmark explicitly reports logical resource budget and process RSS as separate measurements. The configured 200 MiB logical ceiling is not a guarantee that process RSS is at or below 200 MiB.
+- CI runs a 1,000-event smoke profile. Release qualification still requires a long-duration run on the target device (recommended 100,000+ events) and measurement of steady-state RSS, peak RSS, memory growth slope, and p50/p95/p99 latency.
