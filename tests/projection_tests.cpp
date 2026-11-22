@@ -170,7 +170,7 @@ int main() {
   const FormatCase formats[] = {
     {"conversation", "会議日程は火曜日", "meeting-date=Tuesday"},
     {"document", "第3条 申請期限は毎年3月末日とする。", "application-deadline=March-end"},
-    {"structured", "{\\"asset\\":\\"A-17\\",\\"status\\":\\"inspection_due\\"}", "asset:A-17/status=inspection_due"}
+    {"structured", "asset=A-17;status=inspection_due", "asset:A-17/status=inspection_due"}
   };
   for (const auto& format : formats) {
     const std::string format_source = format.source;
