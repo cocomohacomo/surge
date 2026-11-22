@@ -166,6 +166,10 @@ inline PacketAdmissionResult apply_projection_batch(
     rejected.error = error;
     return rejected;
   }
+  if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
+    rejected.error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
+    return rejected;
+  }
   auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
   if (admitted.admitted && !graph.open()) {
     admitted.admitted = false;
