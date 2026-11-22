@@ -1721,6 +1721,145 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
 
 
 
+int surge_context_graph_set_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    const surge::FocusRegion region{{input->center_x,input->center_y,input->center_z},
+      {input->half_extent_x,input->half_extent_y,input->half_extent_z}};
+    std::string detail;
+    if(!handle.graph.append_focus_region_update(delta,region,detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_set_cluster_spatial_position(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,
+    const SurgeClusterSpatialPositionInput* input,int* duplicate,
+    uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||
+       !input||!input->cluster_id||!*input->cluster_id){
+      copy_text(error,error_capacity,"CLUSTER_POSITION_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_cluster_spatial_position_update(delta,
+        {input->cluster_id,{input->x,input->y,input->z}},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"CLUSTER_POSITION_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_set_cluster_focus_depth(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,
+    const SurgeClusterFocusDepthInput* input,int* duplicate,
+    uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||
+       !input||!input->cluster_id||!*input->cluster_id){
+      copy_text(error,error_capacity,"CLUSTER_DEPTH_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_cluster_focus_depth_update(delta,
+        {input->cluster_id,input->depth},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"CLUSTER_DEPTH_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
+    size_t max_relations,char* output,size_t output_capacity,
+    size_t* required_capacity,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||max_nodes>1000000||max_relations>2000000){
+      copy_text(error,error_capacity,"FOCUSED_OBSERVATION_ARGUMENT_INVALID");return 0;
+    }
+    const auto observation=static_cast<Handle*>(opaque)->graph.observe_focused_cognition(
+        max_nodes,max_relations);
+    std::ostringstream json;
+    json<<"{\"state_version\":"<<observation.state_version<<",\"focus_region\":";
+    if(observation.focus_region){
+      const auto& r=*observation.focus_region;
+      json<<"{\"center\":["<<std::setprecision(17)<<r.center.x<<','<<r.center.y<<','<<r.center.z
+          <<"],\"half_extents\":["<<r.half_extents.x<<','<<r.half_extents.y<<','<<r.half_extents.z<<"]}";
+    }else json<<"null";
+    auto write_ids=[&](const char* key,const std::vector<std::string>& ids){
+      json<<",\""<<key<<"\":[";
+      for(size_t i=0;i<ids.size();++i){if(i)json<<',';json<<json_quote(ids[i]);}
+      json<<']';
+    };
+    write_ids("logical_region_cluster_ids",observation.logical_region_cluster_ids);
+    write_ids("processed_region_cluster_ids",observation.processed_region_cluster_ids);
+    write_ids("deferred_region_cluster_ids",observation.deferred_region_cluster_ids);
+    json<<",\"work\":{\"clusters_considered\":"<<observation.focus_work.clusters_considered
+        <<",\"clusters_in_region\":"<<observation.focus_work.clusters_in_region
+        <<",\"clusters_scheduled\":"<<observation.focus_work.clusters_scheduled
+        <<",\"clusters_deferred\":"<<observation.focus_work.clusters_deferred
+        <<",\"position_checks\":"<<observation.focus_work.position_checks
+        <<",\"nodes_processed\":"<<observation.focus_work.nodes_processed
+        <<",\"relations_processed\":"<<observation.focus_work.relations_processed
+        <<",\"work_units\":"<<observation.focus_work.work_units
+        <<",\"elapsed_microseconds\":"<<observation.focus_work.elapsed_microseconds
+        <<",\"max_nodes\":"<<observation.focus_work.max_nodes
+        <<",\"max_relations\":"<<observation.focus_work.max_relations
+        <<",\"budget_exhausted\":"<<(observation.focus_work.budget_exhausted?"true":"false")<<"}";
+    json<<",\"cluster_focus_depths\":[";
+    for(size_t i=0;i<observation.cluster_focus_depths.size();++i){
+      if(i)json<<',';const auto& d=observation.cluster_focus_depths[i];
+      json<<"{\"cluster_id\":"<<json_quote(d.cluster_id)<<",\"depth\":"<<d.depth<<"}";
+    }
+    json<<"],\"nodes\":[";
+    for(size_t i=0;i<observation.nodes.size();++i){
+      if(i)json<<',';const auto& n=observation.nodes[i];
+      json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(node_kind_name(n.kind))
+          <<",\"content\":"<<json_quote(n.content)<<"}";
+    }
+    json<<"],\"relations\":[";
+    for(size_t i=0;i<observation.relations.size();++i){
+      if(i)json<<',';const auto& rel=observation.relations[i];
+      json<<"{\"id\":"<<json_quote(rel.id)<<",\"kind\":"<<json_quote(relation_kind_name(rel.kind))
+          <<",\"from\":"<<json_quote(rel.from)<<",\"to\":"<<json_quote(rel.to)
+          <<",\"weight\":"<<std::setprecision(17)<<rel.weight<<"}";
+    }
+    json<<"]}";
+    const auto payload=json.str();
+    if(required_capacity)*required_capacity=payload.size()+1;
+    if(!output||output_capacity<payload.size()+1){
+      copy_text(error,error_capacity,"FOCUSED_OBSERVATION_BUFFER_TOO_SMALL");return 0;
+    }
+    copy_text(output,output_capacity,payload);copy_text(error,error_capacity,"");return 1;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUSED_OBSERVATION_UNKNOWN_EXCEPTION");return 0;}
+}
+
 int surge_context_graph_observe_cognition(void* opaque, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity) {
