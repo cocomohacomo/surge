@@ -21,7 +21,7 @@ int main() {
   batch.nodes = {
     {"cluster-1", surge::NodeKind::Cluster, "topic", {}},
     {"claim-1", surge::NodeKind::Claim, "meeting is Tuesday", {"evidence-1"}},
-    {"evidence-1", surge::NodeKind::Evidence, "source span", {"event-1"}}
+    {"evidence-1", surge::NodeKind::Evidence, "source span", {}}
   };
   batch.memberships.push_back({"membership-1", "claim-1", "cluster-1", 0.82});
   batch.spatial_placements.push_back({"cluster-1", {1.0, 2.0, 3.0}});
@@ -56,9 +56,9 @@ int main() {
   CHECK(!validation.valid && validation.error == "INVALID_OR_DUPLICATE_SPATIAL_PLACEMENT");
 
   invalid = batch;
-  invalid.nodes[2].references.clear();
+  invalid.source_event_refs.clear();
   validation = surge::validate_projection_batch(invalid);
-  CHECK(!validation.valid && validation.error == "EVIDENCE_SOURCE_LINEAGE_MISSING");
+  CHECK(!validation.valid && validation.error == "MISSING_SOURCE_OR_EVIDENCE");
 
   invalid = batch;
   invalid.idempotency_key.clear();
@@ -120,7 +120,6 @@ int main() {
   atomic_batch.base_state_version = 0;
   atomic_batch.source_event_refs = {packet.packet_id};
   atomic_batch.nodes[1].references = {"evidence-1"};
-  atomic_batch.nodes[2].references = {packet.packet_id};
 
   {
     surge::EventJournal journal(atomic_path);
@@ -199,7 +198,7 @@ int main() {
     format_batch.nodes = {
       {"cluster-" + suffix, surge::NodeKind::Cluster, "projected topic", {}},
       {"claim-" + suffix, surge::NodeKind::Claim, format.claim, {"evidence-" + suffix}},
-      {"evidence-" + suffix, surge::NodeKind::Evidence, "source evidence", {format_packet.packet_id}}
+      {"evidence-" + suffix, surge::NodeKind::Evidence, "source evidence", {}}
     };
     format_batch.memberships = {
       {"membership-" + suffix, "claim-" + suffix, "cluster-" + suffix, 0.82}
