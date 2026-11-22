@@ -545,10 +545,11 @@ The logical region and its membership are distinct from bounded execution:
   omitted by a budget limit.
 
 The observation reports position checks, clusters considered/in-region/scheduled/
-deferred, nodes and relations processed, work units, elapsed microseconds, configured
-limits and `budget_exhausted`. Work units are an operation-count estimate
-(position checks + emitted nodes + emitted relations); elapsed microseconds are
-measured wall-clock time for the projection. Neither metric is a correctness score.
+deferred, nodes processed, relations examined/emitted, work units, elapsed
+microseconds, configured limits and `budget_exhausted`. Relation inspection is
+capped before traversal and the full graph is not copied as an intermediate.
+Work units are position checks + relation records examined + nodes emitted;
+elapsed microseconds are measured wall-clock time for the projection. Neither metric is a correctness score.
 
 The current geometry is an axis-aligned 3D box. Graph topology and Euclidean
 coordinates remain separate: Contains traversal is controlled by per-cluster depth,
