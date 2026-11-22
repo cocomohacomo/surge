@@ -464,8 +464,22 @@ int main(){
     CHECK(graph.append_cluster_focus_depth_update(depth_delta,{"spatial-b",0},spatial_error));
     CHECK(graph.append_cluster_focus_depth_update(depth_delta,{"spatial-nested",1},spatial_error));
     CHECK(graph.apply(depth_delta).committed);
+
+    SemanticDelta move_delta;move_delta.delta_id="spatial-region-move";
+    move_delta.idempotency_key="spatial-region-move";
+    move_delta.expected_state_version=graph.state_version();
+    CHECK(graph.append_focus_region_move(move_delta,{0.25,0.0,0.0},spatial_error));
+    CHECK(graph.apply(move_delta).committed);
+    SemanticDelta resize_delta;resize_delta.delta_id="spatial-region-resize";
+    resize_delta.idempotency_key="spatial-region-resize";
+    resize_delta.expected_state_version=graph.state_version();
+    CHECK(graph.append_focus_region_resize(resize_delta,{1.5,2.0,2.0},spatial_error));
+    CHECK(graph.apply(resize_delta).committed);
+
     const auto durable_observation=graph.observe_focused_cognition(20,20);
     CHECK(durable_observation.focus_region.has_value());
+    CHECK(durable_observation.focus_region->center.x==0.25);
+    CHECK(durable_observation.focus_region->half_extents.x==1.5);
     CHECK(durable_observation.cluster_spatial_positions.size()==3);
     CHECK(durable_observation.cluster_focus_depths.size()==3);
     CHECK(durable_observation.logical_region_cluster_ids.size()==2);
@@ -477,7 +491,8 @@ int main(){
       ContextGraph replayed(path);CHECK(replayed.open());
       const auto replayed_view=replayed.observe_focused_cognition(20,20);
       CHECK(replayed_view.focus_region.has_value());
-      CHECK(replayed_view.focus_region->half_extents.x==2.0);
+      CHECK(replayed_view.focus_region->center.x==0.25);
+      CHECK(replayed_view.focus_region->half_extents.x==1.5);
       CHECK(replayed_view.cluster_spatial_positions.size()==3);
       CHECK(replayed_view.cluster_focus_depths.size()==3);
       CHECK(replayed_view.logical_region_cluster_ids.size()==2);
