@@ -13,7 +13,7 @@ namespace surge {
 enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
 enum class ClusterLifecycleState { Active, Dormant, Archived, Tombstoned };
 struct ClusterLifecycleRecord { std::string cluster_id; ClusterLifecycleState state{ClusterLifecycleState::Active}; std::uint64_t revision{0}; std::string recorded_at, reason, provenance_digest; };
-enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts, Duplicates, Contains };
+enum class RelationKind { Supports, Contradicts, AgreesWith, ConflictsWith, DependsOn, About, Supersedes, Retracts, Duplicates, Contains, DerivedFrom };
 enum class ClaimStatus { Active, Superseded, Retracted };
 enum class ClaimTemporalState { Unknown, NotYetValid, Valid, Expired };
 enum class ScopeKind { Negation, Condition, Modality, Concession, Contrast, Coreference, Anaphora, Quotation, Temporal, ListContinuation, TableHeader };
@@ -169,6 +169,14 @@ class ContextGraph {
   std::uint64_t state_version() const { return journal_->state_version(); }
   // Read-only projection of the exact committed cognition state; no inference or mutation.
   CognitionObservation observe_cognition() const;
+  // Read-only projection containing only the focused cognition cluster and its direct members.
+  CognitionObservation observe_focused_cognition() const;
+  // Add a new cognition cluster with explicit lineage to the activated source clusters.
+  // The caller supplies the recognized content; Core validates and journals the structure.
+  bool append_derived_cognition_cluster(SemanticDelta& delta,
+      const std::string& cluster_id, const std::string& content,
+      const std::vector<std::string>& source_cluster_ids,
+      const std::string& relation_prefix, std::string& error) const;
   // Deterministic lightweight associative recall. Query terms are supplied by
   // the caller; Core does not classify the input. Scores are retrieval-only.
   std::vector<CognitionCandidate> recall_cognition_candidates(
