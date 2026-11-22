@@ -1,7 +1,7 @@
 {
   "abi_version": {
     "major": 0,
-    "minor": 5,
+    "minor": 6,
     "patch": 0
   },
   "structs": {
@@ -172,6 +172,11 @@
         "const char*source_id",
         "const char*source_generation",
         "const char*block_ref",
+        "const char*document_ref",
+        "const char*document_generation",
+        "uint64_t document_sequence",
+        "uint64_t global_start_offset",
+        "uint64_t global_end_offset",
         "const char*offset_basis",
         "uint64_t start_offset",
         "uint64_t end_offset",
