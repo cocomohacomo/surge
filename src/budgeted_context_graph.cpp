@@ -260,32 +260,45 @@ bool BudgetedContextGraph::recover(std::string& error,
   if (recovered_) {
     error = "CONTEXT_GRAPH_BUDGET_ALREADY_RECOVERED"; return false;
   }
-  std::size_t bytes = 0, clusters = 0, retained_events = 0;
-  if (!estimate_graph(graph_, bytes, clusters, retained_events, error)) return false;
-  if (!add(external_resident_bytes, bytes) ||
-      !add(external_retained_events, retained_events)) {
+  std::size_t graph_bytes = 0, clusters = 0, graph_events = 0;
+  if (!estimate_graph(graph_, graph_bytes, clusters, graph_events, error)) return false;
+  std::size_t total_bytes = graph_bytes, total_events = graph_events;
+  if (!add(external_resident_bytes, total_bytes) ||
+      !add(external_retained_events, total_events)) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW";
     return false;
   }
-  ResourceLease resident, retained_clusters, retained;
+
+  ResourceLease resident, external_resident, retained_clusters, retained, external_retained;
   try {
-    if (bytes) resident_leases_.reserve(resident_leases_.size() + 1);
+    if (graph_bytes) resident_leases_.reserve(resident_leases_.size() + 1);
+    if (external_resident_bytes)
+      external_resident_leases_.reserve(external_resident_leases_.size() + 1);
     if (clusters) cluster_leases_.reserve(cluster_leases_.size() + 1);
-    if (retained_events) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
+    if (graph_events) recovery_event_leases_.reserve(recovery_event_leases_.size() + 1);
+    if (external_retained_events)
+      external_event_leases_.reserve(external_event_leases_.size() + 1);
   } catch (...) {
     error = "CONTEXT_GRAPH_RECOVERY_LEASE_STAGING_FAILED";
     return false;
   }
-  if (bytes && !budget_.try_acquire(ResourceKind::ResidentBytes, bytes, resident, error))
-    return false;
-  if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters, clusters,
-                                        retained_clusters, error)) return false;
-  if (retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents, retained_events,
-                                               retained, error)) return false;
+  if (graph_bytes && !budget_.try_acquire(ResourceKind::ResidentBytes,
+      graph_bytes, resident, error)) return false;
+  if (external_resident_bytes && !budget_.try_acquire(ResourceKind::ResidentBytes,
+      external_resident_bytes, external_resident, error)) return false;
+  if (clusters && !budget_.try_acquire(ResourceKind::RetainedClusters,
+      clusters, retained_clusters, error)) return false;
+  if (graph_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
+      graph_events, retained, error)) return false;
+  if (external_retained_events && !budget_.try_acquire(ResourceKind::RetainedEvents,
+      external_retained_events, external_retained, error)) return false;
+
   if (retained) recovery_event_leases_.push_back(std::move(retained));
+  if (external_retained) external_event_leases_.push_back(std::move(external_retained));
   if (resident) resident_leases_.push_back(std::move(resident));
+  if (external_resident) external_resident_leases_.push_back(std::move(external_resident));
   if (retained_clusters) cluster_leases_.push_back(std::move(retained_clusters));
-  accounted_resident_bytes_ = bytes;
+  accounted_resident_bytes_ = total_bytes;
   recovered_ = true;
   return true;
 }
@@ -389,6 +402,7 @@ DeltaResult BudgetedContextGraph::apply(const SemanticDelta& delta) {
     return true;
   };
   if (!recount_resident(resident_leases_) ||
+      !recount_resident(external_resident_leases_) ||
       !recount_resident(mutation_resident_leases_))
     return {false, false, graph_.state_version(), "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"};
   return result;
