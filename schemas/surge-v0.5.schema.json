@@ -2095,6 +2095,10 @@
             "relations_examined": {
               "type": "integer",
               "minimum": 0
+            },
+            "relations_traversed": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
@@ -2110,7 +2114,8 @@
             "max_nodes",
             "max_relations",
             "budget_exhausted",
-            "relations_examined"
+            "relations_examined",
+            "relations_traversed"
           ],
           "additionalProperties": false
         },
