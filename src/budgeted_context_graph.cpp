@@ -117,6 +117,28 @@ bool BudgetedContextGraph::estimate_delta(const SemanticDelta& delta,
       !add(delta.focus->focus.interest_id.size(), bytes))) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
   }
+  if (delta.focus_region && (!add(1,retained_events) ||
+      !add_parts(bytes,{kEntryOverhead,sizeof(FocusRegion)}))) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+  }
+  if (delta.focus_region_move && (!add(1,retained_events) ||
+      !add_parts(bytes,{kEntryOverhead,sizeof(SpatialVector3)}))) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+  }
+  if (delta.focus_region_resize && (!add(1,retained_events) ||
+      !add_parts(bytes,{kEntryOverhead,sizeof(SpatialVector3)}))) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+  }
+  for (const auto& item : delta.cluster_position_updates)
+    if (!add(1,retained_events) ||
+        !add_parts(bytes,{kEntryOverhead,item.position.cluster_id.size(),sizeof(SpatialVector3)})) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : delta.cluster_focus_depth_updates)
+    if (!add(1,retained_events) ||
+        !add_parts(bytes,{kEntryOverhead,item.focus_depth.cluster_id.size(),sizeof(std::size_t)})) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
   return true;
 }
 
@@ -149,6 +171,18 @@ bool BudgetedContextGraph::estimate_graph(const ContextGraph& graph,
                           state.focus->interest_id.size()})) {
     error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
   }
+  if (state.focus_region &&
+      !add_parts(bytes,{kEntryOverhead,sizeof(FocusRegion)})) {
+    error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+  }
+  for (const auto& item : state.cluster_positions)
+    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(SpatialVector3)})) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
+  for (const auto& item : state.cluster_focus_depths)
+    if (!add_parts(bytes,{kEntryOverhead,item.first.size(),sizeof(std::size_t)})) {
+      error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
+    }
   for (const auto& item : state.question_aspect_statuses)
     if (!add_parts(bytes, {kEntryOverhead, item.first.size()}) || !add(1, retained_events)) {
       error = "CONTEXT_GRAPH_BUDGET_SIZE_OVERFLOW"; return false;
