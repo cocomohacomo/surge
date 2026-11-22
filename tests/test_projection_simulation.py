@@ -147,6 +147,12 @@ class ProjectionStreamSimulation(unittest.TestCase):
                 self.assertEqual(first.committed_batches, 48)
                 self.assertEqual(first.next_index, 48)
                 self.assertEqual(first.state_version, 48)
+                self.assertEqual(first.nodes_processed, 102)
+                self.assertEqual(first.memberships_processed, 48)
+                self.assertEqual(first.spatial_placements_processed, 48)
+                self.assertGreater(first.input_bytes, 0)
+                self.assertGreater(first.elapsed_microseconds, 0)
+                self.assertIn("SCHEMA_INVALID", first.error)
                 self.assertEqual(core.packet_count, 48)
 
                 # Repair the rejected proposal and resume exactly at the reported cursor.
@@ -156,6 +162,11 @@ class ProjectionStreamSimulation(unittest.TestCase):
                 self.assertEqual(resumed.duplicate_batches, 0)
                 self.assertEqual(resumed.next_index, 48)
                 self.assertEqual(resumed.state_version, BATCH_COUNT)
+                self.assertEqual(resumed.nodes_processed, 102)
+                self.assertEqual(resumed.memberships_processed, 48)
+                self.assertEqual(resumed.spatial_placements_processed, 48)
+                self.assertGreater(resumed.input_bytes, 0)
+                self.assertGreater(resumed.elapsed_microseconds, 0)
                 self.assertEqual(core.packet_count, BATCH_COUNT)
 
                 # Replaying the full stream must not append records or double-reserve memory.
@@ -251,6 +262,12 @@ class ProjectionStreamSimulation(unittest.TestCase):
                         ) + "\n\n")
                         summary.write("**Result: PASS**. Synthetic claims and producer metadata only; "
                                       "no external model inference and no Focus mutation.\n")
+
+            # All records survive journal recovery, not just the in-memory coordinator.
+        with CppCoreBridge(journal) as recovered:
+            self.assertEqual(recovered.state_version, BATCH_COUNT)
+            self.assertEqual(recovered.packet_count, BATCH_COUNT)
+            self.assertGreater(recovered.resource_snapshot["resident_bytes_used"], 0)
 
         # The report artifact is deliberately generated after successful native commits.
         self.assertEqual(BATCH_COUNT, sum(
