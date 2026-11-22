@@ -97,7 +97,7 @@ int main(){
  std::string recalled_after(required,'\\0');
  CHECK(surge_context_graph_recall_candidates(h,"cognition-input",cognition_terms,2,8,
    recalled_after.data(),recalled_after.size(),&required,error,sizeof(error))==1);
- CHECK(recalled_after.find("0.2")!=std::string::npos);
+ CHECK(recalled_after.find("\\"recall_score\\":2.2")!=std::string::npos);
  char too_small[2]{};size_t required_full=0;
  CHECK(surge_context_graph_observe_cognition(h,too_small,sizeof(too_small),
    &required_full,error,sizeof(error))==0);
