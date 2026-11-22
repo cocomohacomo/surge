@@ -1953,14 +1953,15 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   std::map<std::pair<std::string, std::string>, std::vector<std::string>> matched_postings;
   for (const auto& term : query_terms) {
     if (term.empty()) continue;
-    for (const auto& indexed : recall_term_postings_) {
-      if (indexed.first.find(term) == std::string::npos) continue;
-      for (const auto& posting : indexed.second) {
-        if (posting.first == input_member_id) continue;
-        auto& terms = matched_postings[{posting.first, posting.second}];
-        if (std::find(terms.begin(), terms.end(), term) == terms.end())
-          terms.push_back(term);
-      }
+    // Query terms are expected to be caller-tokenized. Direct lookup avoids
+    // scanning the entire vocabulary for substring matches on every input.
+    const auto indexed = recall_term_postings_.find(term);
+    if (indexed == recall_term_postings_.end()) continue;
+    for (const auto& posting : indexed->second) {
+      if (posting.first == input_member_id) continue;
+      auto& terms = matched_postings[{posting.first, posting.second}];
+      if (std::find(terms.begin(), terms.end(), term) == terms.end())
+        terms.push_back(term);
     }
   }
   for (const auto& hit : matched_postings) {
