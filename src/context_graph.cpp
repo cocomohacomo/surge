@@ -5,6 +5,7 @@
 #include "surge/dependency_engine.hpp"
 #include "surge/cluster_archive_store.hpp"
 #include <algorithm>
+#include <cctype
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
@@ -1915,44 +1916,82 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   if (max_candidates == 0 || query_terms.empty()) return candidates;
 
   const auto observation = observe_cognition();
+  // Rebuild a derived inverted index only when the committed graph version changes.
+  // The index is intentionally not journaled: graph replay is the source of truth.
+  if (recall_index_state_version_ != observation.state_version) {
+    recall_term_postings_.clear();
+    recall_member_postings_.clear();
+    for (const auto& membership : observation.memberships) {
+      const auto node_it = state_.nodes.find(membership.member_node_id);
+      if (node_it == state_.nodes.end()) continue;
+      std::string corpus = node_it->second.content;
+      for (const auto& ref : node_it->second.references) {
+        corpus.push_back(' ');
+        corpus += ref;
+      }
+      std::vector<std::string> tokens;
+      std::string token;
+      for (const unsigned char ch : corpus) {
+        if (std::isspace(ch)) {
+          if (!token.empty()) { tokens.push_back(std::move(token)); token.clear(); }
+        } else token.push_back(static_cast<char>(ch));
+      }
+      if (!token.empty()) tokens.push_back(std::move(token));
+      std::sort(tokens.begin(), tokens.end());
+      tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+      const auto posting = std::make_pair(membership.member_node_id,
+          membership.cluster_node_id, membership.upstream_weight);
+      recall_member_postings_[membership.member_node_id].push_back(posting);
+      for (const auto& indexed_token : tokens)
+        recall_term_postings_[indexed_token].push_back(posting);
+    }
+    recall_index_state_version_ = observation.state_version;
+  }
   std::map<std::string, CognitionCandidate> by_cluster;
-  for (const auto& membership : observation.memberships) {
-    if (membership.member_node_id == input_member_id) continue;
-    const auto node_it = state_.nodes.find(membership.member_node_id);
+  // Resolve query terms through the inverted index, avoiding the full Membership
+  // scan on every Recall. Substring matching is retained at token granularity.
+  std::map<std::pair<std::string, std::string>, std::vector<std::string>> matched_postings;
+  for (const auto& term : query_terms) {
+    if (term.empty()) continue;
+    for (const auto& indexed : recall_term_postings_) {
+      if (indexed.first.find(term) == std::string::npos) continue;
+      for (const auto& posting : indexed.second) {
+        if (posting.first == input_member_id) continue;
+        auto& terms = matched_postings[{posting.first, posting.second}];
+        if (std::find(terms.begin(), terms.end(), term) == terms.end())
+          terms.push_back(term);
+      }
+    }
+  }
+  for (const auto& hit : matched_postings) {
+    const auto node_it = state_.nodes.find(hit.first.first);
     if (node_it == state_.nodes.end()) continue;
-
+    const auto member_postings = recall_member_postings_.find(hit.first.first);
+    if (member_postings == recall_member_postings_.end()) continue;
+    const auto membership_it = std::find_if(member_postings->second.begin(),
+        member_postings->second.end(), [&](const auto& p) { return p.second == hit.first.second; });
+    if (membership_it == member_postings->second.end()) continue;
+    const auto& membership = *membership_it;
     const auto& node = node_it->second;
     std::string corpus = node.content;
-    for (const auto& ref : node.references) {
-      corpus.push_back(' ');
-      corpus += ref;
-    }
+    for (const auto& ref : node.references) { corpus.push_back(' '); corpus += ref; }
     std::vector<std::pair<std::size_t, std::size_t>> positions;
     auto& candidate = by_cluster[membership.cluster_node_id];
     candidate.cluster_id = membership.cluster_node_id;
     candidate.memory_state_version = observation.state_version;
-
-    for (const auto& term : query_terms) {
-      if (term.empty()) continue;
+    for (const auto& term : hit.second) {
       const auto position = corpus.find(term);
       if (position == std::string::npos) continue;
-      if (std::find(candidate.matched_terms.begin(),
-          candidate.matched_terms.end(), term) == candidate.matched_terms.end())
-        candidate.matched_terms.push_back(term);
+      if (std::find(candidate.matched_terms.begin(), candidate.matched_terms.end(), term) ==
+          candidate.matched_terms.end()) candidate.matched_terms.push_back(term);
       positions.emplace_back(position, position + term.size());
-      // Upstream membership weight contributes to retrieval ranking only.
-      // It is never written back to a Contains edge or used for admission.
       candidate.recall_score += membership.upstream_weight;
     }
     if (!positions.empty() &&
-        std::find(candidate.supporting_member_ids.begin(),
-          candidate.supporting_member_ids.end(), membership.member_node_id) ==
-          candidate.supporting_member_ids.end())
+        std::find(candidate.supporting_member_ids.begin(), candidate.supporting_member_ids.end(),
+            membership.member_node_id) == candidate.supporting_member_ids.end())
       candidate.supporting_member_ids.push_back(membership.member_node_id);
-
-    // Nearby co-occurring query terms provide a bounded proximity bonus.
-    // This captures local association without requiring a learned embedding.
-    for (std::size_t i = 0; i < positions.size(); ++i) {
+    for (std::size_t i = 0; i < positions.size(); ++i)
       for (std::size_t j = i + 1; j < positions.size(); ++j) {
         const auto distance = positions[i].second <= positions[j].first
             ? positions[j].first - positions[i].second
@@ -1961,7 +2000,6 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
         candidate.recall_score += membership.upstream_weight /
             (100.0 + static_cast<double>(distance));
       }
-    }
   }
 
   // Classification/partition labels stored on clusters are part of recall
