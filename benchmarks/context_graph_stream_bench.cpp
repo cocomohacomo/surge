@@ -11,6 +11,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#ifdef __linux__
+#include <unistd.h>
+#endif
 
 #ifdef _WIN32
 #ifndef NOMINMAX
