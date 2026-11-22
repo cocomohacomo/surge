@@ -49,11 +49,10 @@ int main() {
 
   const char* evidence_refs[] = {"evidence-c-api-1"};
   const char* claim_refs[] = {"evidence-c-api-1"};
-  const char* evidence_source_refs[] = {"packet-c-api-1"};
   SurgeGraphNodeInput nodes[] = {
     {"cluster-c-api-1", "CLUSTER", "meeting plan", nullptr, 0},
     {"claim-c-api-1", "CLAIM", "meeting-date=Tuesday", claim_refs, 1},
-    {"evidence-c-api-1", "EVIDENCE", "source utterance", evidence_source_refs, 1}
+    {"evidence-c-api-1", "EVIDENCE", "source utterance", nullptr, 0}
   };
   SurgeProjectionMembershipInput memberships[] = {
     {"membership-c-api-1", "claim-c-api-1", "cluster-c-api-1", 0.82}
