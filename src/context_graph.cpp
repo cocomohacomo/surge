@@ -2005,15 +2005,22 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       }
   }
 
-  // Classification/partition labels stored on clusters are part of recall
-  // context. A label match adds a small signal but never changes membership.
-  for (auto& item : by_cluster) {
-    const auto node = state_.nodes.find(item.first);
-    if (node == state_.nodes.end()) continue;
+  // Classification/partition labels are an independent activation path.
+  // A matching label can create a candidate even when no member text matched.
+  for (const auto& node_item : state_.nodes) {
+    const auto& cluster = node_item.second;
+    if (cluster.kind != NodeKind::Cluster && cluster.kind != NodeKind::ChaosCluster)
+      continue;
+    double label_signal = 0.0;
     for (const auto& term : query_terms) {
-      if (!term.empty() && node->second.content.find(term) != std::string::npos)
-        item.second.recall_score += 0.25;
+      if (!term.empty() && cluster.content.find(term) != std::string::npos)
+        label_signal += 0.25;
     }
+    if (label_signal <= 0.0) continue;
+    auto& candidate = by_cluster[cluster.id];
+    candidate.cluster_id = cluster.id;
+    candidate.memory_state_version = observation.state_version;
+    candidate.recall_score += label_signal;
   }
 
   // Historical external evaluation is a bounded ranking signal. Feedback
@@ -2043,10 +2050,9 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       item.second.recall_score += std::clamp(feedback->second, -0.5, 0.5);
   }
 
-  // One-hop inter-cluster association: agreement/support/dependency/conflict
-  // edges make related clusters retrievable. Use a fixed relation coefficient
-  // and the stored relation weight; do not recursively amplify scores.
-  std::map<std::string, double> association_bonus;
+  // One-hop relation activation synthesizes candidates from experience.
+  // Only candidates activated before this pass can seed expansion, preventing
+  // recursive score amplification and keeping the path bounded.
   const auto relation_factor = [](RelationKind kind) {
     switch (kind) {
       case RelationKind::AgreesWith: return 0.40;
@@ -2057,20 +2063,41 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
       default: return 0.0;
     }
   };
+  const auto seed_candidates = by_cluster;
+  std::map<std::string, double> association_bonus;
   for (const auto& relation : observation.relations) {
     const double factor = relation_factor(relation.kind);
     if (factor == 0.0) continue;
-    const auto from = by_cluster.find(relation.from);
-    const auto to = by_cluster.find(relation.to);
-    if (from != by_cluster.end() && to != by_cluster.end()) {
-      association_bonus[relation.from] +=
-          to->second.recall_score * factor * std::clamp(relation.weight, 0.0, 1.0);
-      association_bonus[relation.to] +=
-          from->second.recall_score * factor * std::clamp(relation.weight, 0.0, 1.0);
+    const auto from = seed_candidates.find(relation.from);
+    const auto to = seed_candidates.find(relation.to);
+    if (from == seed_candidates.end() && to == seed_candidates.end()) continue;
+    const double edge_weight = std::clamp(relation.weight, 0.0, 1.0);
+    auto activate = [&](const std::string& target, const CognitionCandidate& source) {
+      const double signal = source.recall_score * factor * edge_weight;
+      if (signal <= 0.0) return;
+      auto& candidate = by_cluster[target];
+      candidate.cluster_id = target;
+      candidate.memory_state_version = observation.state_version;
+      association_bonus[target] += signal;
+    };
+    if (from != seed_candidates.end()) activate(relation.to, from->second);
+    if (to != seed_candidates.end()) activate(relation.from, to->second);
+  }
+  for (const auto& item : association_bonus) {
+    auto& candidate = by_cluster[item.first];
+    candidate.cluster_id = item.first;
+    candidate.memory_state_version = observation.state_version;
+    candidate.recall_score += item.second;
+    // Preserve an inspectable provenance trail for synthesized candidates by
+    // attaching representative members from the activated destination cluster.
+    for (const auto& membership : observation.memberships) {
+      if (membership.cluster_node_id == item.first &&
+          std::find(candidate.supporting_member_ids.begin(),
+              candidate.supporting_member_ids.end(), membership.member_node_id) ==
+              candidate.supporting_member_ids.end())
+        candidate.supporting_member_ids.push_back(membership.member_node_id);
     }
   }
-  for (auto& item : by_cluster)
-    item.second.recall_score += association_bonus[item.first];
 
   for (auto& item : by_cluster) candidates.push_back(std::move(item.second));
   std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
