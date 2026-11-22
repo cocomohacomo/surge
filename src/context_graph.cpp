@@ -1975,7 +1975,8 @@ bool ContextGraph::append_derived_cognition_cluster(SemanticDelta& delta,
       return false;
     }
   }
-  delta.nodes.push_back({{cluster_id, NodeKind::Cluster, content, {}}});
+  std::vector<GraphRelation> lineage;
+  lineage.reserve(unique_sources.size());
   std::size_t index = 0;
   for (const auto& source_id : unique_sources) {
     const std::string relation_id = relation_prefix + "/" + std::to_string(index++);
@@ -1983,12 +1984,13 @@ bool ContextGraph::append_derived_cognition_cluster(SemanticDelta& delta,
         std::any_of(delta.relations.begin(), delta.relations.end(),
           [&](const AddRelation& relation) { return relation.relation.id == relation_id; })) {
       error = "DERIVED_COGNITION_RELATION_ID_CONFLICT";
-      delta.nodes.pop_back();
       return false;
     }
-    delta.relations.push_back({{relation_id, RelationKind::DerivedFrom,
-        cluster_id, source_id, 1.0}});
+    lineage.push_back({relation_id, RelationKind::DerivedFrom,
+        cluster_id, source_id, 1.0});
   }
+  delta.nodes.push_back({{cluster_id, NodeKind::Cluster, content, {}}});
+  for (auto& relation : lineage) delta.relations.push_back({std::move(relation)});
   return true;
 }
 
