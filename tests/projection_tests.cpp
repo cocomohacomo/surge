@@ -143,6 +143,19 @@ int main() {
     CHECK(duplicate.admitted && duplicate.duplicate);
     CHECK(journal.state_version() == 1);
 
+    auto second_packet = packet;
+    second_packet.packet_id = "source-packet-2";
+    second_packet.idempotency_key = "source-packet-idem-2";
+    second_packet.block_ref = "utterance-2";
+    second_packet.source_sequence = 2;
+    auto reused_projection = atomic_batch;
+    reused_projection.source_event_refs = {second_packet.packet_id};
+    const auto reused = surge::apply_projection_batch(
+        packets, graph, reused_projection, second_packet, source);
+    CHECK(!reused.admitted);
+    CHECK(reused.error == "PROJECTION_IDEMPOTENCY_KEY_REUSED");
+    CHECK(journal.state_version() == 1);
+
     auto mismatched = atomic_batch;
     mismatched.source_event_refs = {"another-packet"};
     const auto rejected = surge::apply_projection_batch(
