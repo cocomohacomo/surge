@@ -23,7 +23,8 @@
     "source_range_digest": "8abcbed15c2e4a646a6ba061624991677cf67b70e1c2c18aed30a9968cc04fb5",
     "canonical_request_digest": "fixture-conversation",
     "revision": false,
-    "revision_sequence": 0
+    "revision_sequence": 0,
+    "context_id": "context-conversation"
   },
   "normalized_source_snapshot": "会議日程は火曜日",
   "source_event_refs": [
