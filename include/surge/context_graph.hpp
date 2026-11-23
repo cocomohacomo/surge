@@ -268,6 +268,15 @@ class ContextGraph {
       std::size_t max_nodes = 10000,
       std::size_t max_relations = 20000,
       std::size_t start_root_index = 0) const;
+  // Resumable observation. The caller owns the cursor; budgets apply per call.
+  // A cursor is rejected when the committed graph or logical Focus changes.
+  CognitionObservation observe_focused_cognition(
+      const FocusRegion& region,
+      const std::vector<ClusterSpatialPosition>& positions,
+      const std::vector<ClusterFocusDepth>& depths,
+      FocusTraversalCursor& cursor,
+      std::size_t max_nodes = 10000,
+      std::size_t max_relations = 20000) const;
   // Add a new cognition cluster with explicit lineage to the activated source clusters.
   // The caller supplies the recognized content; Core validates and journals the structure.
   bool append_derived_cognition_cluster(SemanticDelta& delta,
@@ -384,7 +393,7 @@ class ContextGraph {
       const std::vector<ClusterSpatialPosition>& positions,
       const std::vector<ClusterFocusDepth>& depths,
       std::size_t max_nodes, std::size_t max_relations,
-      std::size_t start_root_index) const;
+      std::size_t start_root_index, FocusTraversalCursor* cursor = nullptr) const;
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_relation_removal(State&, const std::string&, std::string&) const;
