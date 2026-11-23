@@ -2672,14 +2672,32 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
   // upstream classifications, or membership weights.
   const auto recalled = recall_cognition_candidates(
       input_member_id, query_terms, std::numeric_limits<std::size_t>::max());
+  const std::set<std::string> visible_node_ids = [&]() {
+    std::set<std::string> ids;
+    for (const auto& node : focused.nodes) ids.insert(node.id);
+    return ids;
+  }();
   std::size_t admitted_candidates = 0;
   for (const auto& candidate : recalled) {
-    if (processed_roots.count(candidate.cluster_id) ||
-        materialized_clusters.count(candidate.cluster_id)) {
+    const bool all_support_is_visible = !candidate.supporting_member_ids.empty() &&
+        std::all_of(candidate.supporting_member_ids.begin(),
+            candidate.supporting_member_ids.end(),
+            [&](const auto& id) { return visible_node_ids.count(id) != 0; });
+    const bool candidate_cluster_processed =
+        processed_roots.count(candidate.cluster_id) ||
+        materialized_clusters.count(candidate.cluster_id);
+    const bool candidate_cluster_deferred =
+        deferred_roots.count(candidate.cluster_id);
+    // A visible cluster root is not enough: its configured Focus depth must
+    // also expose every support used by the global recall score. Otherwise
+    // returning that score as processed would leak information from outside
+    // the current spatial/depth work slice.
+    if (candidate_cluster_processed && all_support_is_visible) {
       if (admitted_candidates >= max_candidates) break;
       result.candidates.push_back(candidate);
       ++admitted_candidates;
-    } else if (deferred_roots.count(candidate.cluster_id)) {
+    } else if (candidate_cluster_deferred ||
+               (candidate_cluster_processed && !all_support_is_visible)) {
       if (admitted_candidates >= max_candidates) break;
       result.deferred_candidates.push_back(candidate);
       ++admitted_candidates;
