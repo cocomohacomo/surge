@@ -160,8 +160,17 @@ struct CognitionStateSnapshot {
   double recall_score{0.0};
   std::vector<std::string> supporting_member_ids, matched_terms;
 };
+struct FocusedCognitionCursor {
+  std::uint64_t state_version{0};
+  std::string query_digest;
+  std::size_t next_root_index{0};
+  bool initialized{false};
+};
 struct FocusedCognitionCandidates {
   std::uint64_t state_version{0};
+  std::size_t next_root_index{0};
+  bool complete{false};
+  std::string error;
   std::vector<std::string> logical_region_cluster_ids;
   std::vector<std::string> processed_region_cluster_ids;
   std::vector<std::string> deferred_region_cluster_ids;
@@ -230,7 +239,8 @@ class ContextGraph {
       const std::vector<ClusterSpatialPosition>& positions,
       const std::vector<ClusterFocusDepth>& depths,
       std::size_t max_nodes = 10000,
-      std::size_t max_relations = 20000) const;
+      std::size_t max_relations = 20000,
+      std::size_t start_root_index = 0) const;
   // Add a new cognition cluster with explicit lineage to the activated source clusters.
   // The caller supplies the recognized content; Core validates and journals the structure.
   bool append_derived_cognition_cluster(SemanticDelta& delta,
@@ -249,6 +259,12 @@ class ContextGraph {
       const std::string& input_member_id, const std::vector<std::string>& query_terms,
       std::size_t max_candidates = 8, std::size_t max_nodes = 10000,
       std::size_t max_relations = 20000) const;
+  // Resumes at a deterministic Focus root boundary. The caller owns the cursor;
+  // it is valid only for the same committed graph version and query digest.
+  FocusedCognitionCandidates recall_focused_cognition_candidates(
+      const std::string& input_member_id, const std::vector<std::string>& query_terms,
+      FocusedCognitionCursor& cursor, std::size_t max_candidates = 8,
+      std::size_t max_nodes = 10000, std::size_t max_relations = 20000) const;
   // Append an immutable, provenance-linked snapshot of a candidate evaluation.
   // The candidate must have been recalled from the transaction's expected graph version.
   bool append_cognition_state_snapshot(SemanticDelta& delta,
