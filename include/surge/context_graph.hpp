@@ -160,6 +160,15 @@ struct CognitionStateSnapshot {
   double recall_score{0.0};
   std::vector<std::string> supporting_member_ids, matched_terms;
 };
+struct FocusedCognitionCandidates {
+  std::uint64_t state_version{0};
+  std::vector<std::string> logical_region_cluster_ids;
+  std::vector<std::string> processed_region_cluster_ids;
+  std::vector<std::string> deferred_region_cluster_ids;
+  std::vector<CognitionCandidate> candidates;
+  std::vector<CognitionCandidate> deferred_candidates;
+  FocusWorkMetrics focus_work;
+};
 struct CognitionFeedback {
   std::string feedback_id, candidate_cluster_id, input_member_id;
   std::string outcome; // CONFIRMED, REJECTED, UNRESOLVED, REVISED
@@ -233,6 +242,13 @@ class ContextGraph {
   std::vector<CognitionCandidate> recall_cognition_candidates(
       const std::string& input_member_id, const std::vector<std::string>& query_terms,
       std::size_t max_candidates = 8) const;
+  // Recall is restricted to clusters materialized by the current Focus work
+  // budget. Candidates in logical but unprocessed roots are reported deferred.
+  // The logical Focus region itself is never reduced to fit the budget.
+  FocusedCognitionCandidates recall_focused_cognition_candidates(
+      const std::string& input_member_id, const std::vector<std::string>& query_terms,
+      std::size_t max_candidates = 8, std::size_t max_nodes = 10000,
+      std::size_t max_relations = 20000) const;
   // Append an immutable, provenance-linked snapshot of a candidate evaluation.
   // The candidate must have been recalled from the transaction's expected graph version.
   bool append_cognition_state_snapshot(SemanticDelta& delta,
