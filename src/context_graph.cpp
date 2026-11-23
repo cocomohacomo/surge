@@ -2445,27 +2445,31 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
           ++nodes_admitted_this_call;
         }
         if (child_is_cluster) {
-          const std::string child_key =
-              current.origin_root_id + "\n" + relation.to;
-          const auto pending = [&](const std::string& origin) {
-            return std::any_of(state.frontier.begin(), state.frontier.end(),
-                [&](const auto& entry) {
-                  return entry.cluster_id == relation.to &&
-                         entry.origin_root_id == origin;
-                });
+          const std::string inherited_origin = current.origin_root_id;
+          const std::size_t inherited_level = current.level + 1;
+          const std::string child_key = inherited_origin + "\n" + relation.to;
+          const std::string nested_key = relation.to + "\n" + relation.to;
+          const std::size_t current_index = state.frontier.size() - 1;
+          const auto pending_before_current = [&](const std::string& origin) {
+            for (std::size_t i = 0; i < current_index; ++i)
+              if (state.frontier[i].cluster_id == relation.to &&
+                  state.frontier[i].origin_root_id == origin)
+                return true;
+            return false;
           };
-          if (!expanded_keys.count(child_key) &&
-              !pending(current.origin_root_id))
-            state.frontier.push_back({relation.to, current.origin_root_id,
-                                      current.level + 1, 0});
+          const bool enqueue_inherited =
+              !expanded_keys.count(child_key) &&
+              !pending_before_current(inherited_origin);
+          const bool enqueue_nested = depth_by_cluster.count(relation.to) &&
+              !expanded_keys.count(nested_key) &&
+              !pending_before_current(relation.to);
+          if (enqueue_inherited)
+            state.frontier.push_back({relation.to, inherited_origin,
+                                      inherited_level, 0});
           // A nested cluster with an explicit depth setting is also an
-          // independent expansion origin. This preserves per-cluster depth
-          // semantics even when it is not itself a spatially selected root.
-          if (depth_by_cluster.count(relation.to)) {
-            const std::string nested_key = relation.to + "\n" + relation.to;
-            if (!expanded_keys.count(nested_key) && !pending(relation.to))
-              state.frontier.push_back({relation.to, relation.to, 0, 0});
-          }
+          // independent expansion origin, even when it is not a spatial root.
+          if (enqueue_nested)
+            state.frontier.push_back({relation.to, relation.to, 0, 0});
         }
       }
     }
