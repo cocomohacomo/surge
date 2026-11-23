@@ -2641,6 +2641,72 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   return candidates;
 }
 
+
+bool ContextGraph::append_cognition_state_snapshot(SemanticDelta& delta,
+    const CognitionCandidate& candidate, const std::string& input_member_id,
+    const std::string& snapshot_node_id, const std::string& relation_prefix,
+    std::string& error) const {
+  if (candidate.cluster_id.empty() || input_member_id.empty() ||
+      snapshot_node_id.empty() || relation_prefix.empty() ||
+      !std::isfinite(candidate.recall_score) || candidate.recall_score < 0.0 ||
+      candidate.memory_state_version != state_version() ||
+      delta.expected_state_version != candidate.memory_state_version) {
+    error = "cognition snapshot requires a current candidate and matching transaction version";
+    return false;
+  }
+  const auto cluster = state_.nodes.find(candidate.cluster_id);
+  if (cluster == state_.nodes.end() ||
+      (cluster->second.kind != NodeKind::Cluster &&
+       cluster->second.kind != NodeKind::ChaosCluster) ||
+      !state_.nodes.count(input_member_id)) {
+    error = "cognition snapshot references missing cluster or input";
+    return false;
+  }
+  if (state_.nodes.count(snapshot_node_id) ||
+      std::any_of(delta.nodes.begin(), delta.nodes.end(), [&](const AddNode& n) {
+        return n.node.id == snapshot_node_id;
+      })) {
+    error = "cognition snapshot node identity conflict";
+    return false;
+  }
+  std::set<std::string> supporters;
+  for (const auto& id : candidate.supporting_member_ids) {
+    if (!state_.nodes.count(id) || !supporters.insert(id).second) {
+      error = "cognition snapshot has missing or duplicate supporting member";
+      return false;
+    }
+  }
+  std::ostringstream content;
+  content << "SURGE_COGNITION_STATE_V1 " << std::quoted(candidate.cluster_id)
+      << ' ' << std::quoted(input_member_id) << ' '
+      << candidate.memory_state_version << ' ' << std::setprecision(17)
+      << candidate.recall_score << ' ' << candidate.supporting_member_ids.size();
+  for (const auto& id : candidate.supporting_member_ids) content << ' ' << std::quoted(id);
+  content << ' ' << candidate.matched_terms.size();
+  for (const auto& term : candidate.matched_terms) content << ' ' << std::quoted(term);
+  std::vector<GraphRelation> relations;
+  relations.push_back({relation_prefix + "/cluster", RelationKind::About,
+      snapshot_node_id, candidate.cluster_id, 1.0});
+  relations.push_back({relation_prefix + "/input", RelationKind::DerivedFrom,
+      snapshot_node_id, input_member_id, 1.0});
+  std::size_t index = 0;
+  for (const auto& id : candidate.supporting_member_ids)
+    relations.push_back({relation_prefix + "/support/" + std::to_string(index++),
+        RelationKind::DerivedFrom, snapshot_node_id, id, 1.0});
+  for (const auto& relation : relations) {
+    if (state_.relations.count(relation.id) ||
+        std::any_of(delta.relations.begin(), delta.relations.end(),
+          [&](const AddRelation& item) { return item.relation.id == relation.id; })) {
+      error = "cognition snapshot relation identity conflict";
+      return false;
+    }
+  }
+  delta.nodes.push_back({{snapshot_node_id, NodeKind::Evidence, content.str(), {}}});
+  for (auto& relation : relations) delta.relations.push_back({std::move(relation)});
+  error.clear();
+  return true;
+}
+
 bool ContextGraph::append_cognition_feedback(SemanticDelta& delta,
     const CognitionFeedback& feedback, const std::string& feedback_node_id,
     const std::string& relation_id, std::string& error) const {
