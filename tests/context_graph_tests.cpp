@@ -520,6 +520,15 @@ int main(){
     CHECK(std::adjacent_find(actual_nodes.begin(),actual_nodes.end())==actual_nodes.end());
     CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
 
+    // A zero budget must not even start a previously untouched root.
+    FocusTraversalCursor untouched_cursor;
+    const auto untouched=graph.observe_focused_cognition(
+        compact,positions,shared_depths,untouched_cursor,0,0);
+    CHECK(!untouched.complete);
+    CHECK(untouched_cursor.next_root_index==0);
+    CHECK(untouched_cursor.active_root_id.empty());
+    CHECK(untouched_cursor.frontier.empty());
+
     // A zero budget is a true no-op for an initialized continuation cursor.
     const auto saved_frontier_size=traversal_cursor.frontier.size();
     const auto saved_next_root=traversal_cursor.next_root_index;
