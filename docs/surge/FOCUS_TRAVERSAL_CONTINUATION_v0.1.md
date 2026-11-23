@@ -41,7 +41,8 @@ A resumable traversal cursor MUST carry, at minimum:
 - next logical root index;
 - active root identity;
 - deterministic frontier entries (node/cluster identity, origin root,
-  traversal level, and any path discriminator required by depth semantics);
+  traversal level, and next outgoing-relation offset so a relation-budget yield
+  resumes within the same adjacency list rather than rescanning prior edges);
 - visited expansion keys, scoped by origin root and depth/path semantics;
 - relation visitation/inspection state sufficient to avoid charging or
   returning the same relation twice;
