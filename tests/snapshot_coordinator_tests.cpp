@@ -1,5 +1,6 @@
 #include "surge/snapshot_coordinator.hpp"
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -15,11 +16,33 @@ class MemoryDomain final : public surge::SnapshotDomain {
   bool capture(std::string* payload, std::string*) const override {
     *payload = value_; return true;
   }
+  bool capture_chunks(const surge::SnapshotChunkWriter& writer,
+                      std::string* error) const override {
+    for (std::size_t offset = 0; offset < value_.size();) {
+      const std::size_t amount = value_.size() - offset < 3
+          ? value_.size() - offset : 3;
+      if (!writer(value_.data() + offset, amount, error)) return false;
+      offset += amount;
+    }
+    if (error) error->clear();
+    return true;
+  }
   class Prepared final : public surge::PreparedSnapshotRestore {
    public:
     Prepared(MemoryDomain* owner, std::string value) : owner_(owner), value_(std::move(value)) {}
-    void commit() noexcept override { owner_->value_ = std::move(value_); }
-   private: MemoryDomain* owner_; std::string value_;
+    bool commit() noexcept override {
+      if (owner_->fail_commit_) return false;
+      previous_ = std::move(owner_->value_);
+      owner_->value_ = std::move(value_);
+      committed_ = true;
+      return true;
+    }
+    void rollback() noexcept override {
+      if (!committed_) return;
+      owner_->value_.swap(previous_);
+      committed_ = false;
+    }
+   private: MemoryDomain* owner_; std::string value_, previous_; bool committed_{false};
   };
   std::unique_ptr<surge::PreparedSnapshotRestore> prepare_restore(
       const std::string& payload, std::string* error) override {
@@ -29,9 +52,10 @@ class MemoryDomain final : public surge::SnapshotDomain {
   std::string value() const { return value_; }
   void set_value(std::string value) { value_ = std::move(value); }
   void reject(bool value) { reject_ = value; }
+  void fail_commit(bool value) { fail_commit_ = value; }
  private:
   std::string id_, value_;
-  bool reject_{false};
+  bool reject_{false}, fail_commit_{false};
 };
 
 int main() {
@@ -56,9 +80,156 @@ int main() {
   CHECK(graph.value() == "keep-graph");
   CHECK(chaos.value() == "keep-chaos");
   chaos.reject(false);
+
+  // A commit failure after an earlier domain has published must roll every
+  // previously committed domain back to its exact pre-restore state.
+  graph.set_value("rollback-graph");
+  chaos.set_value("rollback-chaos");
+  chaos.fail_commit(true);
+  CHECK(!coordinator.restore(bytes, "ctx-a", 7, 19, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(graph.value() == "rollback-graph");
+  CHECK(chaos.value() == "rollback-chaos");
+  chaos.fail_commit(false);
+
   CHECK(!coordinator.restore(bytes, "wrong-context", 7, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 8, 19, &error));
   CHECK(!coordinator.restore(bytes, "ctx-a", 7, 20, &error));
+
+  const std::string valid_snapshot_bytes = bytes;
+
+  // Store-backed restore consumes the authenticated bundle incrementally and
+  // prepares every domain before publishing any of them.
+  const auto stream_store_path =
+      std::filesystem::temp_directory_path() / "surge_coordinator_stream_restore.bin";
+  std::error_code cleanup_error;
+  std::filesystem::remove(stream_store_path, cleanup_error);
+  std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
+  const auto stream_journal_path =
+      std::filesystem::temp_directory_path() /
+      "surge_coordinator_stream_restore.journal";
+  std::filesystem::remove(stream_journal_path, cleanup_error);
+  std::filesystem::remove(stream_journal_path.string() + ".lock", cleanup_error);
+  EventJournal stream_journal(stream_journal_path.string());
+  CHECK(stream_journal.open());
+  SnapshotCoordinator stream_coordinator;
+  const std::string large_graph_state(100000, 'g');
+  MemoryDomain stream_graph("graph", large_graph_state);
+  MemoryDomain stream_chaos("chaos", "checkpoint-chaos");
+  CHECK(stream_coordinator.register_domain(&stream_graph, &error));
+  CHECK(stream_coordinator.register_domain(&stream_chaos, &error));
+  std::string stream_bytes;
+  CHECK(stream_coordinator.capture("stream-ctx", 0, 0, &stream_bytes, &error));
+  SnapshotStore stream_store(stream_store_path.string());
+  CHECK(stream_store.save(stream_bytes, &error));
+  stream_graph.set_value("mutated-graph");
+  stream_chaos.set_value("mutated-chaos");
+  CHECK(stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(stream_graph.value() == large_graph_state);
+  CHECK(stream_chaos.value() == "checkpoint-chaos");
+
+  stream_graph.set_value("atomic-graph");
+  stream_chaos.set_value("atomic-chaos");
+  stream_chaos.reject(true);
+  CHECK(!stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(stream_graph.value() == "atomic-graph");
+  CHECK(stream_chaos.value() == "atomic-chaos");
+  stream_chaos.reject(false);
+
+  // The store-backed path uses the same rollback contract after every domain
+  // has prepared and an earlier domain has already published.
+  stream_graph.set_value("store-rollback-graph");
+  stream_chaos.set_value("store-rollback-chaos");
+  stream_chaos.fail_commit(true);
+  CHECK(!stream_coordinator.restore_from_store(stream_store, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(stream_graph.value() == "store-rollback-graph");
+  CHECK(stream_chaos.value() == "store-rollback-chaos");
+  stream_chaos.fail_commit(false);
+
+  // The checkpoint-plus-tail path also rolls back a previously committed
+  // domain when a later domain refuses publication.
+  stream_graph.set_value("tail-rollback-graph");
+  stream_chaos.set_value("tail-rollback-chaos");
+  stream_chaos.fail_commit(true);
+  CHECK(!stream_coordinator.restore_with_tail(stream_bytes, stream_journal,
+      "stream-ctx", 0, 0, JournalTailLimits{}, &error));
+  CHECK(error == "SNAPSHOT_DOMAIN_COMMIT_FAILED");
+  CHECK(stream_graph.value() == "tail-rollback-graph");
+  CHECK(stream_chaos.value() == "tail-rollback-chaos");
+  stream_chaos.fail_commit(false);
+  std::filesystem::remove(stream_store_path, cleanup_error);
+  std::filesystem::remove(stream_store_path.string() + ".bak", cleanup_error);
+  std::filesystem::remove(stream_journal_path, cleanup_error);
+
+  // Reject a domain callback that exceeds the configured chunk bound.
+  SnapshotCoordinatorLimits chunk_limits;
+  chunk_limits.max_capture_chunk_bytes = 2;
+  SnapshotCoordinator chunk_guard(chunk_limits);
+  MemoryDomain chunk_graph("graph", "graph-state");
+  CHECK(chunk_guard.register_domain(&chunk_graph, &error));
+  CHECK(!chunk_guard.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "SNAPSHOT_CAPTURE_CHUNK_LIMIT_EXCEEDED");
+
+  // Capture refuses a bundle whose payload + bundle + encoded envelope peak
+  // would exceed the configured logical staging ceiling.
+  SnapshotCoordinatorLimits capture_limits;
+  capture_limits.max_capture_staging_bytes = 32;
+  SnapshotCoordinator capture_guard(capture_limits);
+  MemoryDomain capture_graph("graph", "graph-state");
+  MemoryDomain capture_chaos("chaos", "chaos-state");
+  CHECK(capture_guard.register_domain(&capture_graph, &error));
+  CHECK(capture_guard.register_domain(&capture_chaos, &error));
+  CHECK(!capture_guard.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "SNAPSHOT_CAPTURE_STAGING_LIMIT_EXCEEDED");
+
+  // Capture staging is charged incrementally to the shared transient
+  // budget and all reservations are released after rejection.
+  ResourceBudgetLimits capture_budget_limits;
+  capture_budget_limits.transient_bytes = 1;
+  ResourceBudget capture_budget(capture_budget_limits);
+  SnapshotCoordinator capture_budgeted({}, &capture_budget);
+  MemoryDomain capture_budget_graph("graph", "capture-state");
+  CHECK(capture_budgeted.register_domain(&capture_budget_graph, &error));
+  CHECK(!capture_budgeted.capture("ctx-a", 7, 19, &bytes, &error));
+  CHECK(error == "RESOURCE_BUDGET_EXCEEDED");
+  CHECK(capture_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
+  // Shared transient budget rejects restore before domain publication and
+  // releases every reservation on both rejection and successful completion.
+  ResourceBudgetLimits tiny_limits;
+  tiny_limits.transient_bytes = 1;
+  ResourceBudget tiny_budget(tiny_limits);
+  SnapshotCoordinator guarded({}, &tiny_budget);
+  MemoryDomain guarded_graph("graph", "preserve-graph");
+  MemoryDomain guarded_chaos("chaos", "preserve-chaos");
+  CHECK(guarded.register_domain(&guarded_graph, &error));
+  CHECK(guarded.register_domain(&guarded_chaos, &error));
+  CHECK(!guarded.restore(valid_snapshot_bytes, "ctx-a", 7, 19, &error));
+  CHECK(error == "RESOURCE_BUDGET_EXCEEDED");
+  CHECK(guarded_graph.value() == "preserve-graph");
+  CHECK(guarded_chaos.value() == "preserve-chaos");
+  CHECK(tiny_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
+  ResourceBudgetLimits sufficient_limits;
+  sufficient_limits.transient_bytes = valid_snapshot_bytes.size() * 3;
+  ResourceBudget sufficient_budget(sufficient_limits);
+  SnapshotCoordinator budgeted({}, &sufficient_budget);
+  MemoryDomain budgeted_graph("graph", "old-graph");
+  MemoryDomain budgeted_chaos("chaos", "old-chaos");
+  CHECK(budgeted.register_domain(&budgeted_graph, &error));
+  CHECK(budgeted.register_domain(&budgeted_chaos, &error));
+  CHECK(budgeted.restore(valid_snapshot_bytes, "ctx-a", 7, 19, &error));
+  CHECK(budgeted_graph.value() == "graph-state");
+  CHECK(budgeted_chaos.value() == "chaos-state");
+  CHECK(sufficient_budget.snapshot().used[static_cast<std::size_t>(
+      ResourceKind::TransientBytes)] == 0);
+
   std::cout << "SURGE snapshot coordinator tests passed\n";
   return 0;
 }

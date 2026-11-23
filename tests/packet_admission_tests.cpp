@@ -115,6 +115,52 @@ int main() {
           "atomic-dependency");
     }
   }
+  {
+    const auto document_path=(root/"document-stream.sgj").string();
+    {
+      EventJournal journal(document_path); CHECK(journal.open());
+      PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
+      auto make_document_packet = [&](const std::string& id, std::uint64_t source_seq,
+                                      std::uint64_t doc_seq, std::uint64_t start,
+                                      std::uint64_t end) {
+        auto p=packet(id,"document-idem-"+id,source_seq,"abc");
+        p.block_ref="document-block-"+std::to_string(doc_seq);
+        p.document_ref="document-42";
+        p.document_generation="revision-3";
+        p.document_sequence=doc_seq;
+        p.global_start_offset=start;
+        p.global_end_offset=end;
+        return p;
+      };
+      auto out_of_order=make_document_packet("doc-2",1,2,3,6);
+      CHECK(coordinator.admit(out_of_order,"abc").error=="DOCUMENT_SEQUENCE_GAP");
+      auto malformed_range=make_document_packet("doc-malformed",1,1,0,4);
+      CHECK(coordinator.admit(malformed_range,"abc").error=="PACKET_CORE_INVARIANT_FAILED");
+      auto first=make_document_packet("doc-1",1,1,0,3);
+      CHECK(coordinator.admit(first,"abc").admitted);
+      auto gap=make_document_packet("doc-3",2,2,4,7);
+      CHECK(coordinator.admit(gap,"abc").error=="DOCUMENT_GLOBAL_RANGE_GAP");
+      auto overlap=make_document_packet("doc-4",2,2,2,5);
+      CHECK(coordinator.admit(overlap,"abc").error=="DOCUMENT_GLOBAL_RANGE_OVERLAP");
+      auto second=make_document_packet("doc-2",2,2,3,6);
+      CHECK(coordinator.admit(second,"abc").admitted);
+      auto third=make_document_packet("doc-3",3,3,6,9);
+      CHECK(coordinator.admit(third,"abc").admitted);
+    }
+    {
+      EventJournal journal(document_path); CHECK(journal.open());
+      PacketAdmissionCoordinator recovered(journal); CHECK(recovered.recover());
+      CHECK(recovered.packet_count()==3);
+      auto next=packet("doc-4","document-idem-doc-4",4,"abc");
+      next.block_ref="document-block-4";
+      next.document_ref="document-42";
+      next.document_generation="revision-3";
+      next.document_sequence=4;
+      next.global_start_offset=9;
+      next.global_end_offset=12;
+      CHECK(recovered.admit(next,"abc").admitted);
+    }
+  }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE PacketAdmission + SHA-256 tests passed\\n";
 }

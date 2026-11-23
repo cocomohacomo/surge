@@ -1,5 +1,7 @@
 #include "surge/c_api.h"
 #include "surge/context_graph.hpp"
+#include "surge/budgeted_context_graph.hpp"
+#include "surge/resource_budget.hpp"
 #include "surge/chaos_cluster.hpp"
 #include "surge/context_hint.hpp"
 #include "surge/event_journal.hpp"
@@ -8,11 +10,13 @@
 #include "surge/temporal_boundary_ledger.hpp"
 #include "surge/temporal_question_ledger.hpp"
 #include "surge/question_router.hpp"
+#include "surge/projection.hpp"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <exception>
 #include <memory>
+#include <limits>
 #include <string>
 #include <sstream>
 #include <set>
@@ -110,6 +114,7 @@ bool node_kind(const char* value, surge::NodeKind& out) {
   else if(s=="QUESTION_ASPECT")out=surge::NodeKind::QuestionAspect;
   else if(s=="DEPENDENCY")out=surge::NodeKind::Dependency;
   else if(s=="INTEREST")out=surge::NodeKind::Interest;
+  else if(s=="CLUSTER_LIFECYCLE")out=surge::NodeKind::ClusterLifecycle;
   else return false;
   return true;
 }
@@ -157,17 +162,25 @@ bool relation_kind(const char* value, surge::RelationKind& out) {
   else return false;
   return true;
 }
+surge::ResourceBudgetLimits compatibility_budget_limits() {
+  // Preserve the legacy C ABI's historical unbounded behavior.
+  const auto unlimited = std::numeric_limits<std::size_t>::max();
+  return {unlimited, unlimited, unlimited, unlimited, unlimited, unlimited};
+}
 struct Handle {
   surge::EventJournal journal;
   surge::PacketAdmissionCoordinator coordinator;
   surge::ContextGraph graph;
+  surge::ResourceBudget graph_budget;
+  surge::BudgetedContextGraph mutations;
   surge::PersistentRetrievalTicketRegistry tickets;
   surge::TemporalBoundaryLedger temporal_ledger;
   surge::TemporalQuestionLedger temporal_questions;
   surge::EvidenceProvenanceLedger evidence_provenance;
   surge::ChaosClusterLedger chaos;
-  explicit Handle(const std::string& path)
-      : journal(path), coordinator(journal), graph(journal), tickets(journal),
+  explicit Handle(const std::string& path, surge::ResourceBudgetLimits limits)
+      : journal(path), coordinator(journal), graph(journal),
+        graph_budget(limits), mutations(graph, graph_budget), tickets(journal),
         temporal_ledger(journal), temporal_questions(journal),
         evidence_provenance(journal), chaos(journal) {}
 };
@@ -201,18 +214,35 @@ bool ensure_temporal_question_route(Handle& handle,const surge::TemporalQuestion
       "時間境界の根拠を確認する対象クラスター",{aspect_id,cluster}}});
   }
   if(clusters.size()==1)delta.focus=surge::SetFocus{{*clusters.begin(),interests.front()}};
-  const auto result=handle.graph.apply(delta);
+  const auto result=handle.mutations.apply(delta);
   return result.committed;
 }
 }
 extern "C" {
-void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+uint32_t surge_abi_version(void) {
+  return SURGE_ABI_VERSION_ENCODE(SURGE_ABI_VERSION_MAJOR,
+                                 SURGE_ABI_VERSION_MINOR,
+                                 SURGE_ABI_VERSION_PATCH);
+}
+
+void* surge_packet_core_open_with_limits(const char* path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t cap) {
   try {
     if (!path || !*path) { copy_text(error, cap, "JOURNAL_PATH_REQUIRED"); return nullptr; }
-    auto handle = std::make_unique<Handle>(path);
+    if (!limits) { copy_text(error, cap, "RESOURCE_BUDGET_LIMITS_REQUIRED"); return nullptr; }
+    const surge::ResourceBudgetLimits budget_limits{
+      limits->resident_bytes, limits->transient_bytes, limits->retained_events,
+      limits->retained_clusters, limits->decision_candidates, limits->decision_evidence};
+    auto handle = std::make_unique<Handle>(path, budget_limits);
     if (!handle->journal.open()) { copy_text(error, cap, handle->journal.last_error()); return nullptr; }
     if (!handle->coordinator.recover()) { copy_text(error, cap, "PACKET_COORDINATOR_RECOVERY_FAILED"); return nullptr; }
     if (!handle->graph.open()) { copy_text(error, cap, "CONTEXT_GRAPH_RECOVERY_FAILED"); return nullptr; }
+    std::string graph_budget_error;
+    if (!handle->mutations.recover(graph_budget_error,
+        handle->coordinator.estimated_resident_bytes(),
+        handle->coordinator.packet_count())) {
+      copy_text(error, cap, graph_budget_error); return nullptr;
+    }
     if (!handle->tickets.open()) { copy_text(error, cap, "RETRIEVAL_TICKET_RECOVERY_FAILED"); return nullptr; }
     if (!handle->temporal_ledger.replay()) {
       copy_text(error, cap, handle->temporal_ledger.last_error()); return nullptr;
@@ -229,7 +259,46 @@ void* surge_packet_core_open(const char* path, char* error, size_t cap) {
   } catch (const std::exception& ex) { copy_text(error, cap, ex.what()); return nullptr; }
     catch (...) { copy_text(error, cap, "UNKNOWN_CORE_EXCEPTION"); return nullptr; }
 }
+void* surge_packet_core_open(const char* path, char* error, size_t cap) {
+  const auto limits = compatibility_budget_limits();
+  const SurgeResourceBudgetLimits c_limits{
+    limits.resident_bytes, limits.transient_bytes, limits.retained_events,
+    limits.retained_clusters, limits.decision_candidates, limits.decision_evidence};
+  return surge_packet_core_open_with_limits(path, &c_limits, error, cap);
+}
 void surge_packet_core_close(void* opaque) { try { delete static_cast<Handle*>(opaque); } catch (...) {} }
+int surge_packet_core_resource_snapshot(void* opaque,
+    SurgeResourceBudgetSnapshot* output, char* error, size_t error_cap) {
+  try {
+    if (!opaque || !output) {
+      copy_text(error, error_cap, "RESOURCE_SNAPSHOT_ARGUMENT_INVALID");
+      return 0;
+    }
+    const auto snapshot = static_cast<Handle*>(opaque)->graph_budget.snapshot();
+    output->resident_bytes_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::ResidentBytes)];
+    output->transient_bytes_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::TransientBytes)];
+    output->retained_events_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::RetainedEvents)];
+    output->retained_clusters_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::RetainedClusters)];
+    output->decision_candidates_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::DecisionCandidates)];
+    output->decision_evidence_used = snapshot.used[static_cast<std::size_t>(surge::ResourceKind::DecisionEvidence)];
+    output->resident_bytes_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::ResidentBytes)];
+    output->transient_bytes_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::TransientBytes)];
+    output->retained_events_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::RetainedEvents)];
+    output->retained_clusters_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::RetainedClusters)];
+    output->decision_candidates_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::DecisionCandidates)];
+    output->decision_evidence_limit = snapshot.limits[static_cast<std::size_t>(surge::ResourceKind::DecisionEvidence)];
+    output->total_byte_used = snapshot.total_byte_used;
+    output->total_byte_limit = snapshot.total_byte_limit;
+    copy_text(error, error_cap, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_cap, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_cap, "UNKNOWN_RESOURCE_SNAPSHOT_EXCEPTION");
+    return 0;
+  }
+}
 int surge_packet_core_admit(
     void* opaque, const char* packet_id, const char* idempotency_key,
     const char* context_id, const char* source_id, const char* source_generation,
@@ -268,6 +337,182 @@ int surge_packet_core_admit(
   } catch(const std::exception& ex){copy_text(error,error_cap,ex.what());return 0;}
     catch(...){copy_text(error,error_cap,"UNKNOWN_CORE_EXCEPTION");return 0;}
 }
+int surge_projection_batch_admit_and_apply_v2(
+    void* opaque, const SurgeRecognitionPacketInput* input,
+    const SurgeDocumentStreamInput* document_stream,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_cap,
+    char* error, size_t error_cap) {
+  try {
+    if (!opaque || !input || !metadata ||
+        !input->packet_id || !input->idempotency_key || !input->context_id ||
+        !input->source_id || !input->source_generation || !input->block_ref ||
+        !input->offset_basis ||
+        (document_stream && (!document_stream->document_ref ||
+         !document_stream->document_generation)) || !input->source_snapshot_digest ||
+        !input->source_range_digest || !input->canonical_request_digest ||
+        !metadata->projection_id || !metadata->idempotency_key ||
+        !metadata->context_id || !metadata->producer_id ||
+        !metadata->producer_version || !metadata->policy_version ||
+        (!snapshot && snapshot_size) || (evidence_count && !evidence_refs) ||
+        (node_count && !nodes) || (relation_count && !relations) ||
+        (membership_count && !memberships) || (placement_count && !placements) ||
+        (input->revision != 0 && input->revision != 1) ||
+        evidence_count == 0 || evidence_count > 4096 ||
+        node_count == 0 || node_count > 4096 || relation_count > 8192 ||
+        membership_count > 8192 || placement_count > 4096) {
+      copy_text(error, error_cap, "PROJECTION_C_API_ARGUMENT_INVALID");
+      return 0;
+    }
+    auto* handle = static_cast<Handle*>(opaque);
+    surge::ValidatedRecognitionPacket packet;
+    packet.packet_id = input->packet_id;
+    packet.idempotency_key = input->idempotency_key;
+    packet.context_id = input->context_id;
+    packet.source_id = input->source_id;
+    packet.source_generation = input->source_generation;
+    packet.block_ref = input->block_ref;
+    if (document_stream) {
+      packet.document_ref = document_stream->document_ref;
+      packet.document_generation = document_stream->document_generation;
+      packet.document_sequence = document_stream->document_sequence;
+      packet.global_start_offset = document_stream->global_start_offset;
+      packet.global_end_offset = document_stream->global_end_offset;
+    }
+    packet.offset_basis = input->offset_basis;
+    packet.start_offset = input->start_offset;
+    packet.end_offset = input->end_offset;
+    packet.source_sequence = input->source_sequence;
+    packet.source_snapshot_digest = input->source_snapshot_digest;
+    packet.source_range_digest = input->source_range_digest;
+    packet.canonical_request_digest = input->canonical_request_digest;
+    packet.revision_of_packet_id = input->revision_of_packet_id ? input->revision_of_packet_id : "";
+    packet.revision = input->revision == 1;
+    packet.revision_sequence = input->revision_sequence;
+    const std::string source = snapshot_size
+        ? std::string(reinterpret_cast<const char*>(snapshot), snapshot_size)
+        : std::string();
+
+    surge::ProjectionBatch batch;
+    batch.projection_id = metadata->projection_id;
+    batch.idempotency_key = metadata->idempotency_key;
+    batch.context_id = metadata->context_id;
+    batch.producer_id = metadata->producer_id;
+    batch.producer_version = metadata->producer_version;
+    batch.policy_version = metadata->policy_version;
+    batch.base_state_version = metadata->base_state_version;
+    batch.source_event_refs = {packet.packet_id};
+    for (size_t i = 0; i < evidence_count; ++i) {
+      if (!evidence_refs[i] || !*evidence_refs[i]) {
+        copy_text(error, error_cap, "PROJECTION_EVIDENCE_REF_INVALID");
+        return 0;
+      }
+      batch.evidence_refs.emplace_back(evidence_refs[i]);
+    }
+    for (size_t i = 0; i < node_count; ++i) {
+      if (!nodes[i].id || !nodes[i].kind || !nodes[i].content ||
+          (nodes[i].reference_count && !nodes[i].references) ||
+          nodes[i].reference_count > 1024) {
+        copy_text(error, error_cap, "PROJECTION_NODE_ARGUMENT_INVALID");
+        return 0;
+      }
+      surge::GraphNode node;
+      node.id = nodes[i].id;
+      node.content = nodes[i].content;
+      if (!node_kind(nodes[i].kind, node.kind)) {
+        copy_text(error, error_cap, "PROJECTION_NODE_KIND_INVALID");
+        return 0;
+      }
+      for (size_t j = 0; j < nodes[i].reference_count; ++j) {
+        if (!nodes[i].references[j]) {
+          copy_text(error, error_cap, "PROJECTION_NODE_REFERENCE_INVALID");
+          return 0;
+        }
+        node.references.emplace_back(nodes[i].references[j]);
+      }
+      batch.nodes.push_back(std::move(node));
+    }
+    for (size_t i = 0; i < relation_count; ++i) {
+      if (!relations[i].id || !relations[i].kind ||
+          !relations[i].from_id || !relations[i].to_id) {
+        copy_text(error, error_cap, "PROJECTION_RELATION_ARGUMENT_INVALID");
+        return 0;
+      }
+      surge::GraphRelation relation;
+      relation.id = relations[i].id;
+      relation.from = relations[i].from_id;
+      relation.to = relations[i].to_id;
+      relation.weight = relations[i].weight;
+      if (!relation_kind(relations[i].kind, relation.kind)) {
+        copy_text(error, error_cap, "PROJECTION_RELATION_KIND_INVALID");
+        return 0;
+      }
+      batch.relations.push_back(std::move(relation));
+    }
+    for (size_t i = 0; i < membership_count; ++i) {
+      if (!memberships[i].relation_id || !memberships[i].member_ref ||
+          !memberships[i].cluster_ref) {
+        copy_text(error, error_cap, "PROJECTION_MEMBERSHIP_ARGUMENT_INVALID");
+        return 0;
+      }
+      batch.memberships.push_back({memberships[i].relation_id,
+          memberships[i].member_ref, memberships[i].cluster_ref,
+          memberships[i].upstream_weight});
+    }
+    for (size_t i = 0; i < placement_count; ++i) {
+      if (!placements[i].cluster_id) {
+        copy_text(error, error_cap, "PROJECTION_SPATIAL_ARGUMENT_INVALID");
+        return 0;
+      }
+      batch.spatial_placements.push_back({placements[i].cluster_id,
+          {placements[i].x, placements[i].y, placements[i].z}});
+    }
+
+    const auto admitted = surge::apply_projection_batch(
+        handle->coordinator, handle->mutations, batch, packet, source);
+    if (!admitted.admitted) {
+      copy_text(error, error_cap, admitted.error);
+      if (state_version) *state_version = admitted.state_version;
+      return 0;
+    }
+    if (duplicate) *duplicate = admitted.duplicate ? 1 : 0;
+    if (state_version) *state_version = admitted.state_version;
+    copy_text(status, status_cap, admitted.packet_status);
+    copy_text(error, error_cap, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_cap, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_cap, "UNKNOWN_PROJECTION_C_API_EXCEPTION");
+    return 0;
+  }
+}
+
+int surge_projection_batch_admit_and_apply(
+    void* opaque, const SurgeRecognitionPacketInput* input,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_cap,
+    char* error, size_t error_cap) {
+  return surge_projection_batch_admit_and_apply_v2(opaque, input, nullptr,
+      snapshot, snapshot_size, metadata, evidence_refs, evidence_count,
+      nodes, node_count, relations, relation_count, memberships, membership_count,
+      placements, placement_count, duplicate, state_version, status, status_cap,
+      error, error_cap);
+}
+
 int surge_context_graph_apply(
     void* opaque,const char* delta_id,const char* idempotency_key,uint64_t expected,
     const SurgeGraphNodeInput* nodes,size_t node_count,
@@ -306,7 +551,7 @@ int surge_context_graph_apply(
     }
     if(focus_cluster_id&&*focus_cluster_id)
       delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_cap,result.error);
@@ -381,7 +626,7 @@ int surge_context_graph_apply_scoped(
     }
     if(focus_cluster_id&&*focus_cluster_id)
       delta.focus=surge::SetFocus{{focus_cluster_id,focus_interest_id?focus_interest_id:""}};
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_cap,result.error);
@@ -749,7 +994,7 @@ int surge_context_graph_apply_claim_validity(void* opaque,
     delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
     delta.expected_state_version=expected_state_version;
     delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",basis_evidence_id,revision,"",""});
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_capacity,result.error);
@@ -775,7 +1020,7 @@ int surge_context_graph_apply_claim_validity_reviewed(void* opaque,
     delta.expected_state_version=expected_state_version;
     delta.claim_validity_updates.push_back({claim_id,valid_from,valid_until?valid_until:"",
         basis_evidence_id,revision,review_evidence_id,reviewer_id});
-    const auto result=static_cast<Handle*>(opaque)->graph.apply(delta);
+    const auto result=static_cast<Handle*>(opaque)->mutations.apply(delta);
     if(duplicate)*duplicate=result.duplicate?1:0;
     if(state_version)*state_version=result.state_version;
     copy_text(error,error_capacity,result.error);
@@ -868,10 +1113,10 @@ int surge_question_get_aggregate_status(void* opaque, const char* question_id,
 
 
 
-int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->graph.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_set_state(void*o,const char*id,const char*state,uint64_t expected,char*err,size_t ec){try{if(!o||!id||!*id||!state){copy_text(err,ec,"QUESTION_MEMORY_ARGUMENT_INVALID");return 0;}surge::QuestionMemoryState v;if(!strcmp(state,"ACTIVE"))v=surge::QuestionMemoryState::Active;else if(!strcmp(state,"DORMANT"))v=surge::QuestionMemoryState::Dormant;else if(!strcmp(state,"ARCHIVED"))v=surge::QuestionMemoryState::Archived;else{copy_text(err,ec,"QUESTION_MEMORY_STATE_INVALID");return 0;}std::string detail;bool ok=static_cast<Handle*>(o)->mutations.set_question_memory_state(id,v,expected,detail);copy_text(err,ec,detail);return ok?1:0;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_MEMORY_SET_UNKNOWN_EXCEPTION");return 0;}}
 
-int surge_question_memory_record_reference(void* o,const char* id,uint64_t expected,int* reactivated,uint64_t* count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=g.record_question_reference(id,expected,did,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(count)*count=g.question_reference_count(id);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_REFERENCE_UNKNOWN_EXCEPTION");return 0;}}
-int surge_question_memory_record_reference_with_dependents(void* o,const char* id,uint64_t expected,size_t max_depth,size_t max_nodes,int* reactivated,size_t* dependent_count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;size_t count=0;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=g.record_question_reference_with_dependents(id,expected,max_depth,max_nodes,did,count,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(dependent_count)*dependent_count=count;copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_DEPENDENCY_REACTIVATION_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_record_reference(void* o,const char* id,uint64_t expected,int* reactivated,uint64_t* count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;std::string detail;auto& g=static_cast<Handle*>(o)->graph;bool ok=static_cast<Handle*>(o)->mutations.record_question_reference(id,expected,did,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(count)*count=g.question_reference_count(id);copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_REFERENCE_UNKNOWN_EXCEPTION");return 0;}}
+int surge_question_memory_record_reference_with_dependents(void* o,const char* id,uint64_t expected,size_t max_depth,size_t max_nodes,int* reactivated,size_t* dependent_count,char* err,size_t ec){try{if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}bool did=false;size_t count=0;std::string detail;bool ok=static_cast<Handle*>(o)->mutations.record_question_reference_with_dependents(id,expected,max_depth,max_nodes,did,count,detail);if(!ok){copy_text(err,ec,detail);return 0;}if(reactivated)*reactivated=did;if(dependent_count)*dependent_count=count;copy_text(err,ec,"");return 1;}catch(const std::exception&x){copy_text(err,ec,x.what());return 0;}catch(...){copy_text(err,ec,"QUESTION_DEPENDENCY_REACTIVATION_UNKNOWN_EXCEPTION");return 0;}}
 int surge_question_memory_get_state(void* o,const char* id,char* out,size_t cap,size_t* req,char* err,size_t ec){
  try{
   if(!o||!id||!*id){copy_text(err,ec,"QUESTION_ID_REQUIRED");return 0;}
@@ -970,7 +1215,7 @@ int surge_question_memory_enforce_capacity(void* opaque,const char* const* ids,c
   std::vector<std::pair<std::string,double>> values;values.reserve(count);
   for(size_t i=0;i<count;++i)values.emplace_back(ids[i],scores[i]);
   auto& graph=static_cast<Handle*>(opaque)->graph;std::vector<std::string> demoted;std::string detail;
-  if(!graph.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
+  if(!static_cast<Handle*>(opaque)->mutations.enforce_question_memory_capacity(values,max_active,expected,demoted,detail)){copy_text(error,error_capacity,detail);return 0;}
   size_t active_after=0;for(const auto& n:graph.nodes())if(n.second.kind==surge::NodeKind::Question&&graph.question_memory_state(n.first)==surge::QuestionMemoryState::Active)++active_after;
   std::ostringstream json;json<<'{'<<char(34)<<"capacity"<<char(34)<<':'<<max_active<<','<<char(34)<<"active_after"<<char(34)<<':'<<active_after<<','<<char(34)<<"demoted"<<char(34)<<":[";
   for(size_t i=0;i<demoted.size();++i){if(i)json<<',';json<<json_quote(demoted[i]);}
@@ -996,7 +1241,7 @@ int surge_question_get_context_bundle(void* opaque,const char* question_id,size_
   for(const auto& item:graph.nodes()){const auto& n=item.second;if(n.kind!=surge::NodeKind::Claim&&n.kind!=surge::NodeKind::Evidence)continue;bool linked=false;for(const auto& ref:n.references)if(anchors.count(ref)||about_targets.count(ref)){linked=true;break;}if(!linked)for(const auto& rel:graph.relations()){const auto&r=rel.second;if((r.from==n.id&&(anchors.count(r.to)||about_targets.count(r.to)))||(r.to==n.id&&(anchors.count(r.from)||about_targets.count(r.from)))){linked=true;break;}}if(linked){if(n.kind==surge::NodeKind::Claim)claims.insert(n.id);else evidence.insert(n.id);}}
   for(const auto& item:graph.relations()){const auto&r=item.second;auto a=graph.nodes().find(r.from),b=graph.nodes().find(r.to);if(claims.count(r.from)&&b!=graph.nodes().end()&&b->second.kind==surge::NodeKind::Evidence)evidence.insert(r.to);if(claims.count(r.to)&&a!=graph.nodes().end()&&a->second.kind==surge::NodeKind::Evidence)evidence.insert(r.from);}
   if(questions.size()+aspects.size()+claims.size()+evidence.size()>max_nodes){copy_text(error,error_capacity,"QUESTION_CONTEXT_NODE_LIMIT");return 0;}
-  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";default:return "UNKNOWN";}};
+  auto kn=[](surge::NodeKind k){switch(k){case surge::NodeKind::Question:return "QUESTION";case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Evidence:return "EVIDENCE";case surge::NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";default:return "UNKNOWN";}};
   auto mn=[](surge::QuestionMemoryState s){return s==surge::QuestionMemoryState::Active?"ACTIVE":s==surge::QuestionMemoryState::Dormant?"DORMANT":"ARCHIVED";};
   auto an=[](surge::QuestionAspectStatus s){return s==surge::QuestionAspectStatus::Open?"OPEN":s==surge::QuestionAspectStatus::Resolved?"RESOLVED":"DEFERRED";};
   auto cn=[](surge::ClaimStatus s){return s==surge::ClaimStatus::Active?"ACTIVE":s==surge::ClaimStatus::Superseded?"SUPERSEDED":"RETRACTED";};
@@ -1260,7 +1505,7 @@ int surge_question_aspect_set_status_batch(void* opaque, const char* const* aspe
     }
     auto& graph = static_cast<Handle*>(opaque)->graph;
     std::string message;
-    const bool ok = graph.apply_question_aspect_statuses(updates, expected_state_version, message);
+    const bool ok = static_cast<Handle*>(opaque)->mutations.apply_question_aspect_statuses(updates, expected_state_version, message);
     copy_text(error, error_capacity, message);
     if (!ok) return 0;
     if (state_version) *state_version = graph.state_version();
@@ -1282,8 +1527,7 @@ int surge_question_aspect_set_status(void* opaque, const char* aspect_id,
     else if (name == "DEFERRED") value = surge::QuestionAspectStatus::Deferred;
     else { copy_text(error, error_capacity, "QUESTION_ASPECT_STATUS_INVALID"); return 0; }
     std::string message;
-    auto& graph = static_cast<Handle*>(opaque)->graph;
-    const bool ok = graph.set_question_aspect_status(aspect_id, value, expected_state_version, message);
+    const bool ok = static_cast<Handle*>(opaque)->mutations.set_question_aspect_status(aspect_id, value, expected_state_version, message);
     copy_text(error, error_capacity, message);
     return ok ? 1 : 0;
   } catch (const std::exception& ex) { copy_text(error, error_capacity, ex.what()); return 0; }
@@ -1389,7 +1633,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
       std::string out = "\"";
       for (unsigned char ch : value) {
         switch (ch) {
-          case '\"': out += "\\\""; break;
+          case '"': out += "\\\""; break;
           case '\\': out += "\\\\"; break;
           case '\b': out += "\\b"; break;
           case '\f': out += "\\f"; break;
@@ -1423,6 +1667,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
         case surge::NodeKind::Dependency: return "DEPENDENCY";
         case surge::NodeKind::Interest: return "INTEREST";
+        case surge::NodeKind::ClusterLifecycle: return "CLUSTER_LIFECYCLE";
       }
       return "UNKNOWN";
     };
@@ -1438,6 +1683,7 @@ int surge_context_graph_retrieve_page(void* opaque, const char* query, const cha
         case surge::RelationKind::Retracts: return "RETRACTS";
         case surge::RelationKind::Duplicates: return "DUPLICATES";
         case surge::RelationKind::Contains: return "CONTAINS";
+        case surge::RelationKind::DerivedFrom: return "DERIVED_FROM";
       }
       return "UNKNOWN";
     };
@@ -1685,6 +1931,457 @@ int surge_context_graph_dependency_evaluation(void* opaque, const char* delta_id
 }
 
 
+
+int surge_context_graph_set_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    const surge::FocusRegion region{{input->center_x,input->center_y,input->center_z},
+      {input->half_extent_x,input->half_extent_y,input->half_extent_z}};
+    std::string detail;
+    if(!handle.graph.append_focus_region_update(delta,region,detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_move_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionCenterInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_MOVE_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_focus_region_move(delta,{input->x,input->y,input->z},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_MOVE_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_resize_focus_region(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,const SurgeFocusRegionExtentInput* input,
+    int* duplicate,uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||!input){
+      copy_text(error,error_capacity,"FOCUS_REGION_RESIZE_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_focus_region_resize(delta,{input->x,input->y,input->z},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUS_REGION_RESIZE_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_set_cluster_spatial_position(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,
+    const SurgeClusterSpatialPositionInput* input,int* duplicate,
+    uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||
+       !input||!input->cluster_id||!*input->cluster_id){
+      copy_text(error,error_capacity,"CLUSTER_POSITION_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_cluster_spatial_position_update(delta,
+        {input->cluster_id,{input->x,input->y,input->z}},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"CLUSTER_POSITION_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_set_cluster_focus_depth(void* opaque,const char* delta_id,
+    const char* idempotency_key,uint64_t expected,
+    const SurgeClusterFocusDepthInput* input,int* duplicate,
+    uint64_t* state_version,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||!delta_id||!*delta_id||!idempotency_key||!*idempotency_key||
+       !input||!input->cluster_id||!*input->cluster_id){
+      copy_text(error,error_capacity,"CLUSTER_DEPTH_ARGUMENT_INVALID");return 0;
+    }
+    auto& handle=*static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;delta.delta_id=delta_id;delta.idempotency_key=idempotency_key;
+    delta.expected_state_version=expected;
+    std::string detail;
+    if(!handle.graph.append_cluster_focus_depth_update(delta,
+        {input->cluster_id,input->depth},detail)){
+      copy_text(error,error_capacity,detail);return 0;
+    }
+    const auto result=handle.mutations.apply(delta);
+    if(duplicate)*duplicate=result.duplicate?1:0;
+    if(state_version)*state_version=result.state_version;
+    copy_text(error,error_capacity,result.error);return result.committed?1:0;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"CLUSTER_DEPTH_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_observe_focused_cognition(void* opaque,size_t max_nodes,
+    size_t max_relations,char* output,size_t output_capacity,
+    size_t* required_capacity,char* error,size_t error_capacity) {
+  try {
+    if(!opaque||max_nodes>1000000||max_relations>2000000){
+      copy_text(error,error_capacity,"FOCUSED_OBSERVATION_ARGUMENT_INVALID");return 0;
+    }
+    const auto observation=static_cast<Handle*>(opaque)->graph.observe_focused_cognition(
+        max_nodes,max_relations);
+    const auto node_name=[](surge::NodeKind kind)->const char*{
+      switch(kind){case surge::NodeKind::Cluster:return "CLUSTER";case surge::NodeKind::ChaosCluster:return "CHAOS_CLUSTER";
+      case surge::NodeKind::Entity:return "ENTITY";case surge::NodeKind::Evidence:return "EVIDENCE";
+      case surge::NodeKind::Claim:return "CLAIM";case surge::NodeKind::Question:return "QUESTION";
+      case surge::NodeKind::QuestionAspect:return "QUESTION_ASPECT";case surge::NodeKind::Dependency:return "DEPENDENCY";
+      case surge::NodeKind::Interest:return "INTEREST";case surge::NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";}
+      return "UNKNOWN";
+    };
+    const auto relation_name=[](surge::RelationKind kind)->const char*{
+      switch(kind){case surge::RelationKind::Supports:return "SUPPORTS";case surge::RelationKind::Contradicts:return "CONTRADICTS";
+      case surge::RelationKind::AgreesWith:return "AGREES_WITH";case surge::RelationKind::ConflictsWith:return "CONFLICTS_WITH";
+      case surge::RelationKind::DependsOn:return "DEPENDS_ON";case surge::RelationKind::About:return "ABOUT";
+      case surge::RelationKind::Supersedes:return "SUPERSEDES";case surge::RelationKind::Retracts:return "RETRACTS";
+      case surge::RelationKind::Duplicates:return "DUPLICATES";case surge::RelationKind::Contains:return "CONTAINS";
+      case surge::RelationKind::DerivedFrom:return "DERIVED_FROM";}
+      return "UNKNOWN";
+    };
+    std::ostringstream json;
+    json<<"{\"schema_version\":\"0.5.0\",\"state_version\":"<<observation.state_version<<",\"focus_region\":";
+    if(observation.focus_region){
+      const auto& r=*observation.focus_region;
+      json<<"{\"schema_version\":\"0.5.0\",\"geometry\":\"AXIS_ALIGNED_3D\",\"center\":["<<std::setprecision(17)<<r.center.x<<','<<r.center.y<<','<<r.center.z
+          <<"],\"half_extents\":["<<r.half_extents.x<<','<<r.half_extents.y<<','<<r.half_extents.z<<"]}";
+    }else json<<"null";
+    auto write_ids=[&](const char* key,const std::vector<std::string>& ids){
+      json<<",\""<<key<<"\":[";
+      for(size_t i=0;i<ids.size();++i){if(i)json<<',';json<<json_quote(ids[i]);}
+      json<<']';
+    };
+    write_ids("logical_region_cluster_ids",observation.logical_region_cluster_ids);
+    write_ids("processed_region_cluster_ids",observation.processed_region_cluster_ids);
+    write_ids("deferred_region_cluster_ids",observation.deferred_region_cluster_ids);
+    json<<",\"work\":{\"clusters_considered\":"<<observation.focus_work.clusters_considered
+        <<",\"clusters_in_region\":"<<observation.focus_work.clusters_in_region
+        <<",\"clusters_scheduled\":"<<observation.focus_work.clusters_scheduled
+        <<",\"clusters_deferred\":"<<observation.focus_work.clusters_deferred
+        <<",\"position_checks\":"<<observation.focus_work.position_checks
+        <<",\"nodes_processed\":"<<observation.focus_work.nodes_processed
+        <<",\"relations_examined\":"<<observation.focus_work.relations_examined
+        <<",\"relations_traversed\":"<<observation.focus_work.relations_traversed
+        <<",\"relations_processed\":"<<observation.focus_work.relations_processed
+        <<",\"work_units\":"<<observation.focus_work.work_units
+        <<",\"elapsed_microseconds\":"<<observation.focus_work.elapsed_microseconds
+        <<",\"max_nodes\":"<<observation.focus_work.max_nodes
+        <<",\"max_relations\":"<<observation.focus_work.max_relations
+        <<",\"budget_exhausted\":"<<(observation.focus_work.budget_exhausted?"true":"false")<<"}";
+    json<<",\"cluster_spatial_positions\":[";
+    for(size_t i=0;i<observation.cluster_spatial_positions.size();++i){
+      if(i) json<<',';
+      const auto& p=observation.cluster_spatial_positions[i];
+      json<<"{\"cluster_id\":"<<json_quote(p.cluster_id)<<",\"position\":["
+          <<std::setprecision(17)<<p.position.x<<','<<p.position.y<<','<<p.position.z<<"]}";
+    }
+    json<<"],\"cluster_focus_depths\":[";
+    for(size_t i=0;i<observation.cluster_focus_depths.size();++i){
+      if(i) json<<',';
+      const auto& d=observation.cluster_focus_depths[i];
+      json<<"{\"cluster_id\":"<<json_quote(d.cluster_id)<<",\"depth\":"<<d.depth<<"}";
+    }
+    json<<"],\"nodes\":[";
+    for(size_t i=0;i<observation.nodes.size();++i){
+      if(i) json<<',';
+      const auto& n=observation.nodes[i];
+      json<<"{\"id\":"<<json_quote(n.id)<<",\"kind\":"<<json_quote(node_name(n.kind))
+          <<",\"content\":"<<json_quote(n.content)<<"}";
+    }
+    json<<"],\"relations\":[";
+    for(size_t i=0;i<observation.relations.size();++i){
+      if(i) json<<',';
+      const auto& rel=observation.relations[i];
+      json<<"{\"id\":"<<json_quote(rel.id)<<",\"kind\":"<<json_quote(relation_name(rel.kind))
+          <<",\"from\":"<<json_quote(rel.from)<<",\"to\":"<<json_quote(rel.to)
+          <<",\"weight\":"<<std::setprecision(17)<<rel.weight<<"}";
+    }
+    json<<"]}";
+    const auto payload=json.str();
+    if(required_capacity)*required_capacity=payload.size()+1;
+    if(!output||output_capacity<payload.size()+1){
+      copy_text(error,error_capacity,"FOCUSED_OBSERVATION_BUFFER_TOO_SMALL");return 0;
+    }
+    copy_text(output,output_capacity,payload);copy_text(error,error_capacity,"");return 1;
+  }catch(const std::exception& ex){copy_text(error,error_capacity,ex.what());return 0;}
+   catch(...){copy_text(error,error_capacity,"FOCUSED_OBSERVATION_UNKNOWN_EXCEPTION");return 0;}
+}
+
+int surge_context_graph_observe_cognition(void* opaque, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque) {
+      copy_text(error, error_capacity, "COGNITION_OBSERVATION_HANDLE_INVALID");
+      return 0;
+    }
+    const auto observation =
+        static_cast<Handle*>(opaque)->mutations.observe_cognition();
+    const auto node_kind_name = [](surge::NodeKind kind) -> const char* {
+      switch (kind) {
+        case surge::NodeKind::Cluster: return "CLUSTER";
+        case surge::NodeKind::ChaosCluster: return "CHAOS_CLUSTER";
+        case surge::NodeKind::Entity: return "ENTITY";
+        case surge::NodeKind::Evidence: return "EVIDENCE";
+        case surge::NodeKind::Claim: return "CLAIM";
+        case surge::NodeKind::Question: return "QUESTION";
+        case surge::NodeKind::QuestionAspect: return "QUESTION_ASPECT";
+        case surge::NodeKind::Dependency: return "DEPENDENCY";
+        case surge::NodeKind::Interest: return "INTEREST";
+        case surge::NodeKind::ClusterLifecycle: return "CLUSTER_LIFECYCLE";
+      }
+      return "UNKNOWN";
+    };
+    const auto relation_kind_name = [](surge::RelationKind kind) -> const char* {
+      switch (kind) {
+        case surge::RelationKind::Supports: return "SUPPORTS";
+        case surge::RelationKind::Contradicts: return "CONTRADICTS";
+        case surge::RelationKind::AgreesWith: return "AGREES_WITH";
+        case surge::RelationKind::ConflictsWith: return "CONFLICTS_WITH";
+        case surge::RelationKind::DependsOn: return "DEPENDS_ON";
+        case surge::RelationKind::About: return "ABOUT";
+        case surge::RelationKind::Supersedes: return "SUPERSEDES";
+        case surge::RelationKind::Retracts: return "RETRACTS";
+        case surge::RelationKind::Duplicates: return "DUPLICATES";
+        case surge::RelationKind::Contains: return "CONTAINS";
+        case surge::RelationKind::DerivedFrom: return "DERIVED_FROM";
+      }
+      return "UNKNOWN";
+    };
+    std::ostringstream json;
+    json << "{\"state_version\":" << observation.state_version << ",\"nodes\":[";
+    for (size_t i = 0; i < observation.nodes.size(); ++i) {
+      if (i) json << ',';
+      const auto& node = observation.nodes[i];
+      json << "{\"id\":" << json_quote(node.id)
+           << ",\"kind\":" << json_quote(node_kind_name(node.kind))
+           << ",\"content\":" << json_quote(node.content)
+           << ",\"references\":[";
+      for (size_t j = 0; j < node.references.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(node.references[j]);
+      }
+      json << "]}";
+    }
+    json << "],\"relations\":[";
+    for (size_t i = 0; i < observation.relations.size(); ++i) {
+      if (i) json << ',';
+      const auto& relation = observation.relations[i];
+      json << "{\"id\":" << json_quote(relation.id)
+           << ",\"kind\":" << json_quote(relation_kind_name(relation.kind))
+           << ",\"from\":" << json_quote(relation.from)
+           << ",\"to\":" << json_quote(relation.to)
+           << ",\"weight\":" << std::setprecision(17) << relation.weight << "}";
+    }
+    json << "],\"memberships\":[";
+    for (size_t i = 0; i < observation.memberships.size(); ++i) {
+      if (i) json << ',';
+      const auto& membership = observation.memberships[i];
+      json << "{\"member_node_id\":" << json_quote(membership.member_node_id)
+           << ",\"cluster_node_id\":" << json_quote(membership.cluster_node_id)
+           << ",\"upstream_weight\":" << std::setprecision(17)
+           << membership.upstream_weight << "}";
+    }
+    json << "],\"unresolved_member_ids\":[";
+    for (size_t i = 0; i < observation.unresolved_member_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.unresolved_member_ids[i]);
+    }
+    json << "],\"active_question_ids\":[";
+    for (size_t i = 0; i < observation.active_question_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.active_question_ids[i]);
+    }
+    json << "],\"active_interest_ids\":[";
+    for (size_t i = 0; i < observation.active_interest_ids.size(); ++i) {
+      if (i) json << ',';
+      json << json_quote(observation.active_interest_ids[i]);
+    }
+    json << "],\"current_focus\":";
+    if (observation.current_focus) {
+      json << "{\"cluster_id\":" << json_quote(observation.current_focus->cluster_id)
+           << ",\"interest_id\":" << json_quote(observation.current_focus->interest_id)
+           << ",\"chaos_cluster\":"
+           << (observation.current_focus->chaos_cluster ? "true" : "false") << "}";
+    } else {
+      json << "null";
+    }
+    json << ",\"focus_history\":[";
+    for (size_t i = 0; i < observation.focus_history.size(); ++i) {
+      if (i) json << ',';
+      const auto& focus = observation.focus_history[i];
+      json << "{\"cluster_id\":" << json_quote(focus.cluster_id)
+           << ",\"interest_id\":" << json_quote(focus.interest_id)
+           << ",\"chaos_cluster\":" << (focus.chaos_cluster ? "true" : "false") << "}";
+    }
+    json << "],\"unresolved_scope_count\":" << observation.unresolved_scope_count
+         << ",\"dependency_evaluation_count\":"
+         << observation.dependency_evaluation_count << "}";
+    const auto payload = json.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "COGNITION_OBSERVATION_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what());
+    return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_OBSERVATION_EXCEPTION");
+    return 0;
+  }
+}
+
+
+
+int surge_context_graph_recall_candidates(void* opaque, const char* input_member_id,
+    const char* const* query_terms, size_t query_term_count, size_t max_candidates,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !input_member_id || (!query_terms && query_term_count) ||
+        query_term_count > 4096 || max_candidates > 1024) {
+      copy_text(error, error_capacity, "COGNITION_RECALL_ARGUMENT_INVALID");
+      return 0;
+    }
+    std::vector<std::string> terms;
+    terms.reserve(query_term_count);
+    for (size_t i = 0; i < query_term_count; ++i) {
+      if (!query_terms[i]) {
+        copy_text(error, error_capacity, "COGNITION_RECALL_TERM_INVALID");
+        return 0;
+      }
+      terms.emplace_back(query_terms[i]);
+    }
+    const auto& handle = *static_cast<Handle*>(opaque);
+    const auto candidates = handle.mutations.recall_cognition_candidates(
+        input_member_id, terms, max_candidates);
+    std::ostringstream json;
+    json << "{\"state_version\":" << handle.journal.state_version()
+         << ",\"candidates\":[";
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      if (i) json << ',';
+      const auto& candidate = candidates[i];
+      json << "{\"cluster_id\":" << json_quote(candidate.cluster_id)
+           << ",\"recall_score\":" << std::setprecision(17)
+           << candidate.recall_score
+           << ",\"memory_state_version\":" << candidate.memory_state_version
+           << ",\"supporting_member_ids\":[";
+      for (size_t j = 0; j < candidate.supporting_member_ids.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(candidate.supporting_member_ids[j]);
+      }
+      json << "],\"matched_terms\":[";
+      for (size_t j = 0; j < candidate.matched_terms.size(); ++j) {
+        if (j) json << ',';
+        json << json_quote(candidate.matched_terms[j]);
+      }
+      json << "]}";
+    }
+    json << "]}";
+    const auto payload = json.str();
+    if (required_capacity) *required_capacity = payload.size() + 1;
+    if (!output || output_capacity < payload.size() + 1) {
+      copy_text(error, error_capacity, "COGNITION_RECALL_BUFFER_TOO_SMALL");
+      return 0;
+    }
+    copy_text(output, output_capacity, payload);
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_RECALL_EXCEPTION"); return 0;
+  }
+}
+
+int surge_context_graph_record_cognition_feedback(void* opaque,
+    const char* feedback_id, const char* candidate_cluster_id,
+    const char* input_member_id, const char* outcome, const char* producer_id,
+    const char* producer_version, const char* policy_version,
+    const char* recorded_at, const char* notes, uint64_t expected_state_version,
+    const char* feedback_node_id, const char* relation_id,
+    uint64_t* state_version, char* error, size_t error_capacity) {
+  try {
+    if (!opaque || !feedback_id || !candidate_cluster_id || !input_member_id ||
+        !outcome || !producer_id || !producer_version || !policy_version ||
+        !recorded_at || !feedback_node_id || !relation_id) {
+      copy_text(error, error_capacity, "COGNITION_FEEDBACK_ARGUMENT_INVALID");
+      return 0;
+    }
+    auto& handle = *static_cast<Handle*>(opaque);
+    surge::SemanticDelta delta;
+    delta.delta_id = std::string("cognition-feedback/") + feedback_id;
+    delta.idempotency_key = delta.delta_id;
+    delta.expected_state_version = expected_state_version;
+    surge::CognitionFeedback feedback;
+    feedback.feedback_id = feedback_id;
+    feedback.candidate_cluster_id = candidate_cluster_id;
+    feedback.input_member_id = input_member_id;
+    feedback.outcome = outcome;
+    feedback.producer_id = producer_id;
+    feedback.producer_version = producer_version;
+    feedback.policy_version = policy_version;
+    feedback.recorded_at = recorded_at;
+    feedback.notes = notes ? notes : "";
+    std::string detail;
+    const auto result = handle.mutations.append_cognition_feedback(
+        std::move(delta), feedback, feedback_node_id, relation_id, detail);
+    if (!result) {
+      copy_text(error, error_capacity, detail.empty() ?
+          "COGNITION_FEEDBACK_COMMIT_FAILED" : detail);
+      return 0;
+    }
+    if (state_version) *state_version = handle.journal.state_version();
+    copy_text(error, error_capacity, "");
+    return 1;
+  } catch (const std::exception& ex) {
+    copy_text(error, error_capacity, ex.what()); return 0;
+  } catch (...) {
+    copy_text(error, error_capacity, "UNKNOWN_COGNITION_FEEDBACK_EXCEPTION"); return 0;
+  }
+}
+
 int surge_temporal_boundary_add(void*o,const char*t,const char*i,const char*e,uint64_t v,const char*c,const char*r,const char*f,const char*u,const char*b,const char*p,char*out,size_t cap,size_t*req,char*err,size_t ec){try{if(!o||!t||!i||!e||!c||!r||!f||!u||!b||!p){copy_text(err,ec,"TEMPORAL_LEDGER_ARGUMENT_INVALID");return 0;}surge::TemporalBoundaryContribution x{c,r,f,u,b,p};auto&h=*static_cast<Handle*>(o);auto z=h.temporal_ledger.add(t,i,e,v,x);
 if(z.committed){bool already_synced=false;for(const auto&q:h.temporal_questions.for_claim(z.pending.claim_id))if(q.last_event_id==std::string(e)+"/question")already_synced=true;
 if(!already_synced){auto sync=h.temporal_questions.synchronize(std::string(t)+"/question",std::string(i)+"/question",std::string(e)+"/question",z.state_version,z.pending);
@@ -1742,7 +2439,7 @@ int surge_context_graph_focus_set_chaos(void* opaque,const char* delta_id,const 
     if(existing==handle.graph.nodes().end()) delta.nodes.push_back({{chaos_cluster_id,surge::NodeKind::ChaosCluster,"Chaos Cluster "+cluster.cluster_id,{}}});
     else if(existing->second.kind!=surge::NodeKind::ChaosCluster) { copy_text(error,error_cap,"CHAOS_FOCUS_GRAPH_ID_CONFLICT");return 0; }
     delta.focus=surge::SetFocus{{chaos_cluster_id,interest_id?interest_id:"",true}};
-    const auto result=handle.graph.apply(delta);
+    const auto result=handle.mutations.apply(delta);
     if(duplicate) *duplicate=result.duplicate?1:0;
     if(state_version) *state_version=result.state_version;
     copy_text(error,error_cap,result.error);return result.committed?1:0;

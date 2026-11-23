@@ -1,9 +1,35 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+
+// C ABI version is independent from the SURGE package version.
+// Major changes may break ABI; minor changes are additive; patch changes
+// preserve ABI. Major zero denotes the pre-stability compatibility period.
+#define SURGE_ABI_VERSION_MAJOR 0u
+#define SURGE_ABI_VERSION_MINOR 6u
+#define SURGE_ABI_VERSION_PATCH 0u
+#define SURGE_ABI_VERSION_ENCODE(major, minor, patch) ((((uint32_t)(major) & 0xffu) << 24) | (((uint32_t)(minor) & 0xffu) << 16) | ((uint32_t)(patch) & 0xffffu))
 #ifdef __cplusplus
 extern "C" {
+
+// Returns SURGE_ABI_VERSION_ENCODE(major, minor, patch).
+uint32_t surge_abi_version(void);
 #endif
+
+typedef struct SurgeFocusRegionInput {
+  double center_x, center_y, center_z;
+  double half_extent_x, half_extent_y, half_extent_z;
+} SurgeFocusRegionInput;
+typedef struct SurgeFocusRegionCenterInput { double x, y, z; } SurgeFocusRegionCenterInput;
+typedef struct SurgeFocusRegionExtentInput { double x, y, z; } SurgeFocusRegionExtentInput;
+typedef struct SurgeClusterSpatialPositionInput {
+  const char* cluster_id;
+  double x, y, z;
+} SurgeClusterSpatialPositionInput;
+typedef struct SurgeClusterFocusDepthInput {
+  const char* cluster_id;
+  size_t depth;
+} SurgeClusterFocusDepthInput;
 
 typedef struct SurgeChaosProvenanceInput {
   const char* producer_id;
@@ -78,9 +104,17 @@ typedef struct SurgeRecognitionPacketInput {
   uint64_t revision_sequence;
 } SurgeRecognitionPacketInput;
 
+typedef struct SurgeDocumentStreamInput {
+  const char* document_ref;
+  const char* document_generation;
+  uint64_t document_sequence;
+  uint64_t global_start_offset;
+  uint64_t global_end_offset;
+} SurgeDocumentStreamInput;
+
 typedef struct SurgeGraphNodeInput {
   const char* id;
-  const char* kind;       // CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST
+  const char* kind;       // CLUSTER, CHAOS_CLUSTER, ENTITY, EVIDENCE, CLAIM, QUESTION, QUESTION_ASPECT, DEPENDENCY, INTEREST, CLUSTER_LIFECYCLE
   const char* content;
   const char* const* references;
   size_t reference_count;
@@ -92,6 +126,36 @@ typedef struct SurgeGraphRelationInput {
   const char* from_id;
   const char* to_id;
 } SurgeGraphRelationInput;
+
+typedef struct SurgeProjectionMetadataInput {
+  const char* projection_id;
+  const char* idempotency_key;
+  const char* context_id;
+  const char* producer_id;
+  const char* producer_version;
+  const char* policy_version;
+  uint64_t base_state_version;
+} SurgeProjectionMetadataInput;
+
+typedef struct SurgeProjectionRelationInput {
+  const char* id;
+  const char* kind;
+  const char* from_id;
+  const char* to_id;
+  double weight;
+} SurgeProjectionRelationInput;
+
+typedef struct SurgeProjectionMembershipInput {
+  const char* relation_id;
+  const char* member_ref;
+  const char* cluster_ref;
+  double upstream_weight;
+} SurgeProjectionMembershipInput;
+
+typedef struct SurgeProjectionSpatialPlacementInput {
+  const char* cluster_id;
+  double x, y, z;
+} SurgeProjectionSpatialPlacementInput;
 
 typedef struct SurgeScopeAnchorInput {
   const char* anchor_id;
@@ -170,8 +234,40 @@ int surge_retention_journal_get_events(void* handle, char* output,
     size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
 
+typedef struct SurgeResourceBudgetSnapshot {
+  size_t resident_bytes_used;
+  size_t transient_bytes_used;
+  size_t retained_events_used;
+  size_t retained_clusters_used;
+  size_t decision_candidates_used;
+  size_t decision_evidence_used;
+  size_t resident_bytes_limit;
+  size_t transient_bytes_limit;
+  size_t retained_events_limit;
+  size_t retained_clusters_limit;
+  size_t decision_candidates_limit;
+  size_t decision_evidence_limit;
+  size_t total_byte_used;
+  size_t total_byte_limit;
+} SurgeResourceBudgetSnapshot;
+
+typedef struct SurgeResourceBudgetLimits {
+  size_t resident_bytes;
+  size_t transient_bytes;
+  size_t retained_events;
+  size_t retained_clusters;
+  size_t decision_candidates;
+  size_t decision_evidence;
+} SurgeResourceBudgetLimits;
+
+// Opens the Core with explicit finite logical resource limits. Zero capacity
+// means no resources of that kind may be admitted.
+void* surge_packet_core_open_with_limits(const char* journal_path,
+    const SurgeResourceBudgetLimits* limits, char* error, size_t error_capacity);
 void* surge_packet_core_open(const char* journal_path, char* error, size_t error_capacity);
 void surge_packet_core_close(void* handle);
+int surge_packet_core_resource_snapshot(void* handle,
+    SurgeResourceBudgetSnapshot* snapshot, char* error, size_t error_capacity);
 int surge_packet_core_admit(
     void* handle, const char* packet_id, const char* idempotency_key,
     const char* context_id, const char* source_id, const char* source_generation,
@@ -184,6 +280,32 @@ int surge_packet_core_admit(
     size_t status_capacity, char* error, size_t error_capacity);
 
 // Atomically validates and commits a typed SemanticDelta to the shared ContextGraph/EventJournal.
+// Atomically admit one source packet and its transport-neutral projection batch.
+int surge_projection_batch_admit_and_apply_v2(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const SurgeDocumentStreamInput* document_stream,
+    const unsigned char* snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* status, size_t status_capacity,
+    char* error, size_t error_capacity);
+
+int surge_projection_batch_admit_and_apply(
+    void* handle, const SurgeRecognitionPacketInput* packet,
+    const unsigned char* normalized_source_snapshot, size_t snapshot_size,
+    const SurgeProjectionMetadataInput* metadata,
+    const char* const* evidence_refs, size_t evidence_count,
+    const SurgeGraphNodeInput* nodes, size_t node_count,
+    const SurgeProjectionRelationInput* relations, size_t relation_count,
+    const SurgeProjectionMembershipInput* memberships, size_t membership_count,
+    const SurgeProjectionSpatialPlacementInput* spatial_placements, size_t placement_count,
+    int* duplicate, uint64_t* state_version, char* packet_status,
+    size_t status_capacity, char* error, size_t error_capacity);
+
 int surge_context_graph_apply(
     void* handle, const char* delta_id, const char* idempotency_key,
     uint64_t expected_state_version,
@@ -309,6 +431,57 @@ int surge_context_graph_retrieve_page(void* handle, const char* query, const cha
 int surge_context_graph_dependency_evaluation(void* handle, const char* delta_id,
     char* output, size_t output_capacity, size_t* required_capacity,
     char* error, size_t error_capacity);
+
+// Read-only detached snapshot of the committed SURGE cognition state as JSON.
+// On insufficient output capacity, required_capacity receives bytes including NUL.
+// Spatial Focus mutation events. Region geometry, cluster position and cluster depth
+// are separate durable events and each commits in its own SemanticDelta.
+int surge_context_graph_set_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionInput* region, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_move_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionCenterInput* center, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_resize_focus_region(void* handle, const char* delta_id,
+    const char* idempotency_key, uint64_t expected_state_version,
+    const SurgeFocusRegionExtentInput* half_extents, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_set_cluster_spatial_position(void* handle,
+    const char* delta_id, const char* idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeClusterSpatialPositionInput* position, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+int surge_context_graph_set_cluster_focus_depth(void* handle,
+    const char* delta_id, const char* idempotency_key,
+    uint64_t expected_state_version,
+    const SurgeClusterFocusDepthInput* depth, int* duplicate,
+    uint64_t* state_version, char* error, size_t error_capacity);
+// Read-only bounded projection of the persisted logical Focus Region.
+int surge_context_graph_observe_focused_cognition(void* handle,
+    size_t max_nodes, size_t max_relations, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
+int surge_context_graph_observe_cognition(void* handle, char* output,
+    size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+
+/* Read-only cognition candidate recall. Query terms are producer supplied.
+ * Output JSON includes retrieval-only scores and the memory state version. */
+int surge_context_graph_recall_candidates(void* handle, const char* input_member_id,
+    const char* const* query_terms, size_t query_term_count, size_t max_candidates,
+    char* output, size_t output_capacity, size_t* required_capacity,
+    char* error, size_t error_capacity);
+/* Append external candidate evaluation as Evidence in one budgeted transaction. */
+int surge_context_graph_record_cognition_feedback(void* handle,
+    const char* feedback_id, const char* candidate_cluster_id,
+    const char* input_member_id, const char* outcome, const char* producer_id,
+    const char* producer_version, const char* policy_version,
+    const char* recorded_at, const char* notes, uint64_t expected_state_version,
+    const char* feedback_node_id, const char* relation_id,
+    uint64_t* state_version, char* error, size_t error_capacity);
 
 // Durable RetrievalTicket issue/resolve operations share the Core EventJournal.
 int surge_retrieval_ticket_issue(void* handle, const SurgeRetrievalTicketInput* ticket,

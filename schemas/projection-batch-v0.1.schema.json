@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/projection-batch-v0.1.schema.json",
+  "title": "SURGE ProjectionBatch v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "projection_id",
+    "idempotency_key",
+    "context_id",
+    "producer",
+    "policy_version",
+    "base_state_version",
+    "source_packet",
+    "source_event_refs",
+    "evidence_refs",
+    "nodes",
+    "relations",
+    "memberships",
+    "spatial_placements",
+    "normalized_source_snapshot"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "projection_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer_id",
+        "producer_version"
+      ],
+      "properties": {
+        "producer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_state_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_packet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packet_id",
+        "idempotency_key",
+        "source_id",
+        "source_generation",
+        "block_ref",
+        "offset_basis",
+        "start_offset",
+        "end_offset",
+        "source_sequence",
+        "source_snapshot_digest",
+        "source_range_digest",
+        "canonical_request_digest",
+        "context_id"
+      ],
+      "properties": {
+        "packet_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_generation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "block_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offset_basis": {
+          "const": "UTF8_BYTE_NFC"
+        },
+        "start_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_snapshot_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "source_range_digest": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "canonical_request_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision_of_packet_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "boolean"
+        },
+        "revision_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "context_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_generation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "global_start_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "global_end_offset": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "normalized_source_snapshot": {
+      "type": "string"
+    },
+    "source_event_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "memberships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/membership"
+      }
+    },
+    "spatial_placements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/placement"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "content",
+        "references"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "CLUSTER",
+            "CHAOS_CLUSTER",
+            "ENTITY",
+            "EVIDENCE",
+            "CLAIM",
+            "QUESTION",
+            "QUESTION_ASPECT",
+            "DEPENDENCY",
+            "INTEREST",
+            "CLUSTER_LIFECYCLE"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "to",
+        "weight"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "SUPPORTS",
+            "CONTRADICTS",
+            "AGREES_WITH",
+            "CONFLICTS_WITH",
+            "DEPENDS_ON",
+            "ABOUT",
+            "SUPERSEDES",
+            "RETRACTS",
+            "DUPLICATES",
+            "CONTAINS"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation_id",
+        "member_ref",
+        "cluster_ref",
+        "upstream_weight"
+      ],
+      "properties": {
+        "relation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "member_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream_weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cluster_id",
+        "position"
+      ],
+      "properties": {
+        "cluster_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  }
+}

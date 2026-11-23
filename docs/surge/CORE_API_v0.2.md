@@ -463,3 +463,99 @@ submit_proposalはsemantic_contract_versionとcanonicalization_versionを検証�
 
 ### 12.7 Lifecycle and migration
 Focus更新とCluster lifecycle更新は別操作とする。v0.4 payloadはschema_versionを書き換えるだけでv0.5に移行しない。Migrationは元Schema、Migration Policy、未解決Mapping、Provenanceを記録する。
+
+### 5.11 observe_focused_cognition
+
+**Purpose:** Read the externally observable cognition centered on the currently focused cluster.
+
+**Response result**
+- committed `state_version`
+- current Focus and Focus history
+- focused Cluster node
+- direct member nodes and their membership weights
+- relations whose endpoints are both in the focused projection
+
+This operation is read-only. If no Focus exists, it returns an empty focused projection with the current state version. It does not infer truth or mutate Cluster lifecycle.
+
+### 5.12 append_derived_cognition_cluster (Core library operation)
+
+**Purpose:** Persist a newly composed recognition as a new Cluster.
+
+The caller supplies the recognized content, a unique Cluster ID, and at least two existing or same-Delta source Cluster IDs. The Core validates source types and identifiers, adds the new Cluster, and records `DERIVED_FROM` relations from the new Cluster to each source Cluster in the same SemanticDelta. The operation does not judge whether the recognition is true. Focus selection is a separate operation and may target the new Cluster in the same transaction.
+
+
+
+### 5.13 observe_focused_cognition (spatial overload, C++ library)
+
+**Purpose:** Return the cognition information inside a 3D focus region.
+
+**Inputs**
+- `FocusRegion`: center and non-negative axis half-extents.
+- `ClusterSpatialPosition[]`: cluster coordinates in the same graph coordinate space.
+- `ClusterFocusDepth[]`: independent traversal depth per cluster.
+- `max_nodes`, `max_relations`: deterministic work limits.
+
+**Semantics**
+- Region membership is evaluated against the 3D axis-aligned extent.
+- Depth zero returns the cluster only; positive depth traverses Contains edges.
+- A nested cluster uses its own depth setting, independently of its parent.
+- The response contains every node and relation admitted by the region/depth/budget projection, plus work metrics and an explicit budget-exhausted flag.
+- This explicit-argument overload is read-only and projects the caller-supplied region, positions and depths. It is useful for isolated projection, testing and compatibility.
+- The persisted overload `observe_focused_cognition(max_nodes, max_relations)` reads the journaled FocusRegion, cluster positions and per-cluster depths from ContextGraph. It does not require the caller to reconstruct those inputs.
+- The no-argument overload uses persisted spatial Focus when a region exists. If no spatial region has been configured, it falls back to the legacy single-cluster projection for source compatibility.
+- The logical region membership is computed independently of node/relation traversal budgets. `logical_region_cluster_ids` remains complete while `processed_region_cluster_ids` and `deferred_region_cluster_ids` report actual execution. Budget exhaustion never silently contracts the logical region.
+- `max_nodes` caps admitted graph nodes. `max_relations` caps combined relation inspection and traversal. Persisted observation uses a derived in-memory x-axis ordered index as a broad phase, followed by exact 3D membership checks. `position_checks` counts those exact checks after filtering. The index is invalidated by position updates, replay, archive import and snapshot publication/rollback; it is rebuilt lazily and is not durable state.
+- Persisted observation also uses a derived outgoing-Relation adjacency index keyed by source cluster ID. It stores Relation IDs, is rebuilt lazily, and is invalidated by topology mutations, replay, archive import and snapshot publication/rollback. Each projection inspects outgoing Relations only for reached clusters; unrelated graph Relations do not consume its relation budget. `relations_examined` counts newly inspected outgoing records and `relations_traversed` counts Contains traversal steps. The initial index build remains O(E) with O(E) derived memory.
+- This initial one-axis index is not a balanced 3D spatial tree. A wide x extent can still visit most positions and the initial index build is O(N). The explicit caller-supplied projection overload continues to inspect its supplied positions directly.
+- Deferred roots are deterministic, but the current API does not expose a durable continuation cursor. A subsequent observation recomputes the projection from the beginning. These limits mean this API does not claim a strict total-CPU, wall-clock or process-RSS ceiling.
+
+
+### 5.14 Durable spatial Focus updates
+
+The following update methods append independent commands to a caller-owned
+`SemanticDelta` and are committed through the normal ContextGraph journal:
+
+- `append_focus_region_update(delta, region, error)` for initialization/replacement
+- `append_focus_region_move(delta, center, error)` to change only the center
+- `append_focus_region_resize(delta, half_extents, error)` to change only the extents
+- `append_cluster_spatial_position_update(delta, position, error)`
+- `append_cluster_focus_depth_update(delta, depth, error)`
+
+Journal event kinds are `FOCUS_REGION_SET_V1`, `FOCUS_REGION_MOVE_V1`,
+`FOCUS_REGION_RESIZE_V1`, `CLUSTER_SPATIAL_POSITION_SET_V1`, and
+`CLUSTER_FOCUS_DEPTH_SET_V1`. Region movement changes only the center;
+region resize changes only the half-extents. Each has an independent validation
+and replay path.
+A transaction may carry multiple position/depth updates, but a region update is
+never encoded as a depth update or vice versa.
+
+The `CGS2` ContextGraph snapshot stores the optional region, cluster positions and
+cluster depths. Restore accepts `CGS1` for backward compatibility and replays the
+three new event kinds in a journal tail.
+
+### 5.15 C ABI spatial Focus
+
+The additive C ABI is version 0.4 and exposes:
+
+- `surge_context_graph_set_focus_region`
+- `surge_context_graph_move_focus_region`
+- `surge_context_graph_resize_focus_region`
+- `surge_context_graph_set_cluster_spatial_position`
+- `surge_context_graph_set_cluster_focus_depth`
+- `surge_context_graph_observe_focused_cognition`
+
+The observation API returns the logical region and its full geometric membership
+separately from processed/deferred cluster roots. Its work object includes operation
+counts, elapsed microseconds, configured limits and an explicit budget-exhausted flag.
+
+### 5.16 Atomic ProjectionBatch C ABI
+
+`surge_projection_batch_admit_and_apply()` accepts one RecognitionPacket, its normalized source bytes, ProjectionBatch producer/policy metadata, Evidence references, information nodes, weighted Relations, weighted cluster Memberships, and spatial placements.
+
+The function converts the inputs to the same typed `ProjectionBatch` used by the C++ API, validates the envelope, prepares the SemanticDelta through `ContextGraph::prepare_events()`, and submits the packet and semantic journal events through `PacketAdmissionCoordinator::admit()`. Packet admission and graph projection are one EventJournal transaction. It does not create or move Focus as a side effect.
+
+The additive public structures are `SurgeProjectionMetadataInput`, `SurgeProjectionRelationInput`, `SurgeProjectionMembershipInput`, and `SurgeProjectionSpatialPlacementInput`. The function returns duplicate status, resulting state version, packet status, and an error string.
+
+The original `SurgeRecognitionPacketInput` layout and `surge_projection_batch_admit_and_apply()` entry point remain unchanged. ABI 0.6 adds `SurgeDocumentStreamInput` and `surge_projection_batch_admit_and_apply_v2()`. The v2 entry point accepts the optional document identity/generation, document sequence, and document-global UTF-8 byte range separately from packet-local offsets. Core persists this envelope in RecognitionPacket journal records using the backward-readable RPA3 encoding. Within each (context, document_ref, document_generation) stream, new packets must start at sequence 1 / byte offset 0 and then advance by exactly one sequence and contiguous byte range. Gaps, overlaps, sequence reuse, and incomplete document identity are rejected before commit. Existing callers may continue using the original ABI without document-global continuity enforcement.
+
+The current native API accepts one source packet per ProjectionBatch. Raw JSON decoding is not embedded in the native library; `schemas/projection-batch-v0.1.schema.json` defines the JSON transport contract for callers to validate and decode before invoking the typed API.

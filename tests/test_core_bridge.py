@@ -43,6 +43,97 @@ def make_packet(source, packet_id="bridge-p1", sequence=1, idem="bridge-i1"):
 
 
 class PythonCppRuntimeBridgeTests(unittest.TestCase):
+    def test_explicit_resource_budget_profile_rejects_graph_write_before_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            limits = {
+                "resident_bytes": 1024 * 1024,
+                "transient_bytes": 1,
+                "retained_events": 1000,
+                "retained_clusters": 100,
+                "decision_candidates": 1000,
+                "decision_evidence": 1000,
+            }
+            with SemanticCoreBridge(pathlib.Path(tmp) / "budget-profile.sgj",
+                                    resource_limits=limits) as core:
+                before = core.state_version
+                with self.assertRaisesRegex(PacketRejected, "RESOURCE_BUDGET_EXCEEDED"):
+                    core.apply_semantic_delta({
+                        "delta_id": "budget-reject",
+                        "idempotency_key": "budget-reject",
+                        "expected_state_version": before,
+                        "nodes": [{"id": "must-not-commit", "kind": "ENTITY",
+                                   "content": "budget guarded"}],
+                        "relations": [],
+                    })
+                self.assertEqual(core.state_version, before)
+
+    def test_cognition_observation_is_read_only_versioned_and_structured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with SemanticCoreBridge(pathlib.Path(tmp) / "cognition-observation.sgj") as core:
+                before = core.state_version
+                observed = core.observe_cognition()
+                self.assertEqual(observed["state_version"], before)
+                self.assertEqual(observed["nodes"], [])
+                self.assertEqual(observed["memberships"], [])
+                self.assertIsNone(observed["current_focus"])
+                self.assertEqual(core.state_version, before)
+                core.apply_semantic_delta({
+                    "delta_id": "observe-node",
+                    "idempotency_key": "observe-node",
+                    "expected_state_version": before,
+                    "nodes": [{"id": "observed-entity", "kind": "ENTITY",
+                               "content": "外部観測テスト"}],
+                    "relations": [],
+                })
+                after = core.observe_cognition()
+                self.assertEqual(after["state_version"], core.state_version)
+                self.assertEqual(after["state_version"], before + 1)
+                self.assertEqual(after["nodes"][0]["id"], "observed-entity")
+
+    def test_cognition_recall_feedback_roundtrip_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = pathlib.Path(tmp) / "cognition-feedback.sgj"
+            with SemanticCoreBridge(journal) as core:
+                core.apply_semantic_delta({
+                    "delta_id": "cognition-seed",
+                    "idempotency_key": "cognition-seed",
+                    "expected_state_version": core.state_version,
+                    "nodes": [
+                        {"id": "topic-a", "kind": "CLUSTER", "content": "CLASS=TOPIC"},
+                        {"id": "input-a", "kind": "EVIDENCE", "content": "incoming"},
+                        {"id": "member-a", "kind": "EVIDENCE",
+                         "content": "streaming context recognition"},
+                    ],
+                    "relations": [{"id": "membership-a", "kind": "CONTAINS",
+                                   "from": "topic-a", "to": "member-a"}],
+                })
+                before = core.recall_cognition_candidates("input-a", ["streaming", "context"])
+                self.assertEqual(before["candidates"][0]["cluster_id"], "topic-a")
+                before_score = before["candidates"][0]["recall_score"]
+                committed_version = core.record_cognition_feedback(
+                    feedback_id="review-a", candidate_cluster_id="topic-a",
+                    input_member_id="input-a", outcome="CONFIRMED",
+                    producer_id="external-reviewer", producer_version="1",
+                    policy_version="review-v1", recorded_at="2026-11-22T00:00:00Z",
+                    feedback_node_id="feedback-a", relation_id="feedback-about-a",
+                    notes="confirmed by external evaluator")
+                self.assertEqual(committed_version, core.state_version)
+                after = core.recall_cognition_candidates("input-a", ["streaming", "context"])
+                self.assertGreater(after["candidates"][0]["recall_score"], before_score)
+                observation = core.observe_cognition()
+                membership = next(item for item in observation["memberships"]
+                                  if item["member_node_id"] == "member-a")
+                self.assertEqual(membership["upstream_weight"], 1.0)
+            with SemanticCoreBridge(journal) as recovered:
+                again = recovered.recall_cognition_candidates("input-a", ["streaming", "context"])
+                self.assertGreater(again["candidates"][0]["recall_score"], before_score)
+
+    def test_resource_budget_profile_requires_all_nonnegative_limits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "resource_limits must define exactly"):
+                SemanticCoreBridge(pathlib.Path(tmp) / "invalid-budget.sgj",
+                                   resource_limits={"transient_bytes": 10})
+
     def test_chaos_cluster_python_bridge_roundtrip_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             journal = pathlib.Path(tmp) / "chaos-bridge.sgj"

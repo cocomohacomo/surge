@@ -1,8 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
 project(surge_core VERSION 0.9.11 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/surge/c_api.h"
+  SURGE_ABI_MAJOR_DEFINITION REGEX "^#define SURGE_ABI_VERSION_MAJOR [0-9]+u?$")
+string(REGEX MATCH "[0-9]+" SURGE_ABI_MAJOR "${SURGE_ABI_MAJOR_DEFINITION}")
+if(SURGE_ABI_MAJOR STREQUAL "")
+  message(FATAL_ERROR "SURGE_ABI_VERSION_MAJOR is missing from public C ABI header")
+endif()
 
 option(SURGE_ENABLE_SANITIZERS "Build all targets with AddressSanitizer and UBSan" OFF)
 option(SURGE_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
@@ -15,12 +25,50 @@ if(SURGE_ENABLE_SANITIZERS)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
-add_library(surge_core SHARED src/c_api.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp src/snapshot_domains.cpp src/snapshot.cpp src/snapshot_coordinator.cpp src/snapshot_store.cpp src/journal_backup_retention.cpp)
-target_include_directories(surge_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_library(surge_core SHARED src/c_api.cpp src/decision.cpp src/decision_c_api.cpp src/resource_budget.cpp src/budgeted_packet_admission.cpp src/budgeted_event_journal.cpp src/budgeted_context_graph.cpp src/cluster_retention.cpp src/cluster_archive_store.cpp src/language_runtime.cpp src/core.cpp src/event_journal.cpp src/context_graph.cpp src/cognition_state_diff.cpp src/dependency_engine.cpp src/question_router.cpp src/scope_validator.cpp src/context_hint.cpp src/packet_admission.cpp src/sha256.cpp src/temporal_boundary_ledger.cpp src/temporal_question_ledger.cpp src/evidence_provenance.cpp src/chaos_cluster.cpp src/snapshot_domains.cpp src/snapshot.cpp src/snapshot_coordinator.cpp src/snapshot_store.cpp src/journal_backup_retention.cpp)
+target_include_directories(surge_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+add_library(surge::core ALIAS surge_core)
+set_target_properties(surge_core PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${SURGE_ABI_MAJOR}
+)
+
+configure_package_config_file(
+  cmake/SurgeConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge
+)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+install(TARGETS surge_core EXPORT SurgeTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+install(EXPORT SurgeTargets FILE SurgeTargets.cmake
+  NAMESPACE surge:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/SurgeConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Surge)
 
 if(SURGE_BUILD_BENCHMARKS)
   add_executable(surge_journal_bench benchmarks/event_journal_bench.cpp)
   target_link_libraries(surge_journal_bench PRIVATE surge_core)
+  add_executable(surge_context_graph_stream_bench benchmarks/context_graph_stream_bench.cpp)
+  target_link_libraries(surge_context_graph_stream_bench PRIVATE surge_core)
+  if(WIN32)
+    target_link_libraries(surge_context_graph_stream_bench PRIVATE Psapi)
+  endif()
   if(WIN32)
     target_link_libraries(surge_journal_bench PRIVATE Psapi)
   endif()
@@ -49,12 +97,38 @@ add_executable(surge_snapshot_tests tests/snapshot_tests.cpp)
 target_link_libraries(surge_snapshot_tests PRIVATE surge_core)
 add_executable(surge_snapshot_coordinator_tests tests/snapshot_coordinator_tests.cpp)
 target_link_libraries(surge_snapshot_coordinator_tests PRIVATE surge_core)
+add_executable(surge_entity_reclamation_compaction_tests tests/entity_reclamation_compaction_tests.cpp)
+target_link_libraries(surge_entity_reclamation_compaction_tests PRIVATE surge_core)
 add_executable(surge_snapshot_domains_tests tests/snapshot_domains_tests.cpp)
 target_link_libraries(surge_snapshot_domains_tests PRIVATE surge_core)
 add_executable(surge_chaos_c_api_tests tests/chaos_c_api_tests.cpp)
 target_link_libraries(surge_chaos_c_api_tests PRIVATE surge_core)
+add_executable(surge_decision_tests tests/decision_tests.cpp)
+target_link_libraries(surge_decision_tests PRIVATE surge_core)
+add_executable(surge_decision_c_api_tests tests/decision_c_api_tests.cpp)
+target_link_libraries(surge_decision_c_api_tests PRIVATE surge_core)
+add_executable(surge_resource_budget_tests tests/resource_budget_tests.cpp)
+add_executable(surge_budgeted_packet_admission_tests tests/budgeted_packet_admission_tests.cpp)
+add_executable(surge_budgeted_event_journal_tests tests/budgeted_event_journal_tests.cpp)
+add_executable(surge_budgeted_context_graph_tests tests/budgeted_context_graph_tests.cpp)
+target_link_libraries(surge_budgeted_event_journal_tests PRIVATE surge_core)
+target_link_libraries(surge_budgeted_context_graph_tests PRIVATE surge_core)
+target_link_libraries(surge_budgeted_packet_admission_tests PRIVATE surge_core)
+target_link_libraries(surge_resource_budget_tests PRIVATE surge_core)
+add_executable(surge_language_runtime_tests tests/language_runtime_tests.cpp)
+target_link_libraries(surge_language_runtime_tests PRIVATE surge_core)
+add_executable(surge_cluster_retention_tests tests/cluster_retention_tests.cpp)
+add_executable(surge_cluster_archive_store_tests tests/cluster_archive_store_tests.cpp)
+target_link_libraries(surge_cluster_archive_store_tests PRIVATE surge_core)
+target_link_libraries(surge_cluster_retention_tests PRIVATE surge_core)
 add_executable(surge_core_tests tests/core_tests.cpp)
 target_link_libraries(surge_core_tests PRIVATE surge_core)
+add_executable(surge_c_abi_version_tests tests/c_abi_version_tests.cpp)
+target_link_libraries(surge_c_abi_version_tests PRIVATE surge_core)
+add_executable(surge_c_abi_layout_tests tests/c_abi_layout_tests.cpp)
+add_executable(surge_spatial_focus_c_api_tests tests/spatial_focus_c_api_tests.cpp)
+target_link_libraries(surge_spatial_focus_c_api_tests PRIVATE surge_core)
+target_include_directories(surge_c_abi_layout_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_executable(surge_journal_tests tests/journal_tests.cpp)
 add_executable(surge_journal_identity_budget_tests tests/journal_identity_budget_tests.cpp)
 target_link_libraries(surge_journal_identity_budget_tests PRIVATE surge_core)
@@ -67,10 +141,26 @@ target_link_libraries(surge_journal_compaction_tests PRIVATE surge_core)
 target_link_libraries(surge_journal_tests PRIVATE surge_core)
 add_executable(surge_journal_verify tools/journal_verify.cpp)
 target_link_libraries(surge_journal_verify PRIVATE surge_core)
+install(TARGETS surge_journal_verify RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(APPLE)
+  set_target_properties(surge_journal_verify PROPERTIES
+    INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif(UNIX)
+  set_target_properties(surge_journal_verify PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
 add_executable(surge_chaos_cluster_tests tests/chaos_cluster_tests.cpp)
 target_link_libraries(surge_chaos_cluster_tests PRIVATE surge_core)
 add_executable(surge_context_graph_tests tests/context_graph_tests.cpp)
 target_link_libraries(surge_context_graph_tests PRIVATE surge_core)
+add_executable(surge_cognition_evolution_tests tests/cognition_evolution_tests.cpp)
+target_link_libraries(surge_cognition_evolution_tests PRIVATE surge_core)
+add_executable(surge_cognition_state_diff_tests tests/cognition_state_diff_tests.cpp)
+target_link_libraries(surge_cognition_state_diff_tests PRIVATE surge_core)
+add_executable(surge_projection_tests tests/projection_tests.cpp)
+target_link_libraries(surge_projection_tests PRIVATE surge_core)
+add_executable(surge_projection_c_api_tests tests/projection_c_api_tests.cpp)
+target_link_libraries(surge_projection_c_api_tests PRIVATE surge_core)
 add_executable(surge_dependency_engine_tests tests/dependency_engine_tests.cpp)
 target_link_libraries(surge_dependency_engine_tests PRIVATE surge_core)
 add_executable(surge_question_router_tests tests/question_router_tests.cpp)
@@ -97,9 +187,22 @@ enable_testing()
 add_test(NAME surge_snapshot_store_conformance COMMAND surge_snapshot_store_tests)
 add_test(NAME surge_snapshot_codec_conformance COMMAND surge_snapshot_tests)
 add_test(NAME surge_snapshot_coordinator_conformance COMMAND surge_snapshot_coordinator_tests)
+add_test(NAME surge_entity_reclamation_compaction_conformance COMMAND surge_entity_reclamation_compaction_tests)
 add_test(NAME surge_snapshot_domains_conformance COMMAND surge_snapshot_domains_tests)
 add_test(NAME surge_chaos_c_api_conformance COMMAND surge_chaos_c_api_tests)
+add_test(NAME surge_decision_conformance COMMAND surge_decision_tests)
+add_test(NAME surge_decision_c_api_conformance COMMAND surge_decision_c_api_tests)
+add_test(NAME surge_resource_budget_conformance COMMAND surge_resource_budget_tests)
+add_test(NAME surge_budgeted_packet_admission_conformance COMMAND surge_budgeted_packet_admission_tests)
+add_test(NAME surge_budgeted_event_journal_conformance COMMAND surge_budgeted_event_journal_tests)
+add_test(NAME surge_budgeted_context_graph_conformance COMMAND surge_budgeted_context_graph_tests)
+add_test(NAME surge_language_runtime_conformance COMMAND surge_language_runtime_tests)
+add_test(NAME surge_cluster_retention_conformance COMMAND surge_cluster_retention_tests)
+add_test(NAME surge_cluster_archive_store_conformance COMMAND surge_cluster_archive_store_tests)
 add_test(NAME surge_core_conformance COMMAND surge_core_tests)
+add_test(NAME surge_c_abi_version_conformance COMMAND surge_c_abi_version_tests)
+add_test(NAME surge_c_abi_layout_conformance COMMAND surge_c_abi_layout_tests)
+add_test(NAME surge_spatial_focus_c_api_conformance COMMAND surge_spatial_focus_c_api_tests)
 add_test(NAME surge_event_journal_conformance COMMAND surge_journal_tests)
 add_test(NAME surge_journal_identity_budget_conformance COMMAND surge_journal_identity_budget_tests)
 add_test(NAME surge_journal_tail_conformance COMMAND surge_journal_tail_tests)
@@ -107,6 +210,10 @@ add_test(NAME surge_journal_compaction_conformance COMMAND surge_journal_compact
 add_test(NAME surge_journal_backup_retention_conformance COMMAND surge_journal_backup_retention_tests)
 add_test(NAME surge_chaos_cluster_conformance COMMAND surge_chaos_cluster_tests)
 add_test(NAME surge_context_graph_conformance COMMAND surge_context_graph_tests)
+add_test(NAME surge_cognition_evolution_conformance COMMAND surge_cognition_evolution_tests)
+add_test(NAME surge_cognition_state_diff_conformance COMMAND surge_cognition_state_diff_tests)
+add_test(NAME surge_projection_conformance COMMAND surge_projection_tests)
+add_test(NAME surge_projection_c_api_conformance COMMAND surge_projection_c_api_tests)
 add_test(NAME surge_dependency_engine_conformance COMMAND surge_dependency_engine_tests)
 add_test(NAME surge_question_router_conformance COMMAND surge_question_router_tests)
 add_test(NAME surge_scope_validator_conformance COMMAND surge_scope_validator_tests)
@@ -125,6 +232,7 @@ add_test(NAME surge_test_check_failure_is_detected COMMAND surge_check_failure_p
 set_tests_properties(surge_test_check_failure_is_detected PROPERTIES WILL_FAIL TRUE)
 
 if(SURGE_BUILD_BENCHMARKS)
+  add_test(NAME surge_context_graph_stream_benchmark_smoke COMMAND surge_context_graph_stream_bench 100)
   add_test(NAME surge_journal_benchmark_smoke COMMAND surge_journal_bench 100 64 100 1048576)
 add_test(NAME surge_journal_benchmark_identity_budget COMMAND surge_journal_bench 100 64 0 1024)
 set_tests_properties(surge_journal_benchmark_identity_budget PROPERTIES WILL_FAIL TRUE)

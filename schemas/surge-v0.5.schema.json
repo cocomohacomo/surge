@@ -57,6 +57,21 @@
     },
     {
       "$ref": "#/$defs/snapshot"
+    },
+    {
+      "$ref": "#/$defs/spatialFocusRegion"
+    },
+    {
+      "$ref": "#/$defs/clusterSpatialPosition"
+    },
+    {
+      "$ref": "#/$defs/clusterFocusDepth"
+    },
+    {
+      "$ref": "#/$defs/spatialFocusObservation"
+    },
+    {
+      "$ref": "#/$defs/spatialFocusEvent"
     }
   ],
   "$defs": {
@@ -1933,6 +1948,501 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false
+    },
+    "spatialFocusRegion": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "half_extents": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "geometry": {
+          "const": "AXIS_ALIGNED_3D"
+        }
+      },
+      "required": [
+        "schema_version",
+        "center",
+        "half_extents",
+        "geometry"
+      ],
+      "additionalProperties": false
+    },
+    "clusterSpatialPosition": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "cluster_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "schema_version",
+        "cluster_ref",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "clusterFocusDepth": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "cluster_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "schema_version",
+        "cluster_ref",
+        "depth"
+      ],
+      "additionalProperties": false
+    },
+    "spatialFocusObservation": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "work": {
+          "type": "object",
+          "properties": {
+            "clusters_considered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "clusters_in_region": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "clusters_scheduled": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "clusters_deferred": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "position_checks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nodes_processed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_processed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "work_units": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "elapsed_microseconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_relations": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "budget_exhausted": {
+              "type": "boolean"
+            },
+            "relations_examined": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_traversed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "clusters_considered",
+            "clusters_in_region",
+            "clusters_scheduled",
+            "clusters_deferred",
+            "position_checks",
+            "nodes_processed",
+            "relations_processed",
+            "work_units",
+            "elapsed_microseconds",
+            "max_nodes",
+            "max_relations",
+            "budget_exhausted",
+            "relations_examined",
+            "relations_traversed"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/graphObservationNode"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/graphObservationRelation"
+          }
+        },
+        "focus_region": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/focusRegionDescriptor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster_spatial_positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observedClusterPosition"
+          }
+        },
+        "cluster_focus_depths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observedClusterDepth"
+          }
+        },
+        "logical_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "processed_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "deferred_region_cluster_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "state_version",
+        "work",
+        "nodes",
+        "relations",
+        "focus_region",
+        "cluster_spatial_positions",
+        "logical_region_cluster_ids",
+        "processed_region_cluster_ids",
+        "deferred_region_cluster_ids",
+        "cluster_focus_depths"
+      ],
+      "additionalProperties": false
+    },
+    "graphObservationNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "CLUSTER",
+            "CHAOS_CLUSTER",
+            "ENTITY",
+            "EVIDENCE",
+            "CLAIM",
+            "QUESTION",
+            "QUESTION_ASPECT",
+            "DEPENDENCY",
+            "INTEREST",
+            "CLUSTER_LIFECYCLE"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "graphObservationRelation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "to",
+        "weight"
+      ],
+      "additionalProperties": false
+    },
+    "spatialFocusEvent": {
+      "type": "object",
+      "properties": {
+        "event_kind": {
+          "type": "string",
+          "enum": [
+            "FOCUS_REGION_SET_V1",
+            "CLUSTER_SPATIAL_POSITION_SET_V1",
+            "CLUSTER_FOCUS_DEPTH_SET_V1",
+            "FOCUS_REGION_MOVE_V1",
+            "FOCUS_REGION_RESIZE_V1"
+          ]
+        },
+        "region": {
+          "$ref": "#/$defs/spatialFocusRegion"
+        },
+        "cluster_position": {
+          "$ref": "#/$defs/clusterSpatialPosition"
+        },
+        "cluster_focus_depth": {
+          "$ref": "#/$defs/clusterFocusDepth"
+        },
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "half_extents": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "event_kind"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "event_kind": {
+              "const": "FOCUS_REGION_SET_V1"
+            },
+            "region": {
+              "$ref": "#/$defs/spatialFocusRegion"
+            }
+          },
+          "required": [
+            "region"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "CLUSTER_SPATIAL_POSITION_SET_V1"
+            },
+            "cluster_position": {
+              "$ref": "#/$defs/clusterSpatialPosition"
+            }
+          },
+          "required": [
+            "cluster_position"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "CLUSTER_FOCUS_DEPTH_SET_V1"
+            },
+            "cluster_focus_depth": {
+              "$ref": "#/$defs/clusterFocusDepth"
+            }
+          },
+          "required": [
+            "cluster_focus_depth"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "FOCUS_REGION_MOVE_V1"
+            },
+            "center": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "center"
+          ]
+        },
+        {
+          "properties": {
+            "event_kind": {
+              "const": "FOCUS_REGION_RESIZE_V1"
+            },
+            "half_extents": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "half_extents"
+          ]
+        }
+      ]
+    },
+    "focusRegionDescriptor": {
+      "type": "object",
+      "properties": {
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "half_extents": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "geometry": {
+          "const": "AXIS_ALIGNED_3D"
+        }
+      },
+      "required": [
+        "schema_version",
+        "geometry",
+        "center",
+        "half_extents"
+      ],
+      "additionalProperties": false
+    },
+    "observedClusterPosition": {
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "$ref": "#/$defs/id"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "cluster_id",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "observedClusterDepth": {
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "$ref": "#/$defs/id"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "cluster_id",
+        "depth"
+      ],
       "additionalProperties": false
     }
   }

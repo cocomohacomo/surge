@@ -2,21 +2,29 @@
 #include "surge/snapshot.hpp"
 #include "surge/snapshot_store.hpp"
 #include "surge/event_journal.hpp"
+#include "surge/resource_budget.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace surge {
 
-// A restore is prepared without mutating live state. commit() must be noexcept;
-// adapters must allocate and validate everything in prepare_restore().
+// A restore is prepared without mutating live state. commit() must either
+// publish the complete prepared state or return false without changing live
+// state. rollback() reverses a successful commit and must be noexcept.
+// Adapters allocate and validate everything during prepare_restore().
 class PreparedSnapshotRestore {
  public:
   virtual ~PreparedSnapshotRestore() = default;
-  virtual void commit() noexcept = 0;
+  virtual bool commit() noexcept = 0;
+  virtual void rollback() noexcept = 0;
 };
+
+using SnapshotChunkWriter = std::function<bool(
+    const char* data, std::size_t size, std::string* error)>;
 
 class SnapshotDomain {
  public:
@@ -24,6 +32,11 @@ class SnapshotDomain {
   virtual std::string domain_id() const = 0;
   virtual std::string schema_id() const = 0;
   virtual bool capture(std::string* payload, std::string* error) const = 0;
+  // Stream serialized payload chunks to the coordinator. The compatibility
+  // default adapts capture(); domains should override this to avoid building
+  // a full intermediate payload string.
+  virtual bool capture_chunks(const SnapshotChunkWriter& writer,
+                              std::string* error) const;
   virtual std::unique_ptr<PreparedSnapshotRestore> prepare_restore(
       const std::string& payload, std::string* error) = 0;
   // Build a detached state from the checkpoint and apply every later event
@@ -43,21 +56,32 @@ struct SnapshotCoordinatorLimits {
   SnapshotLimits envelope;
   std::size_t max_domains{64};
   std::size_t max_domain_payload_bytes{8U * 1024U * 1024U};
+  // Maximum known simultaneous serialized capture staging (domain payload,
+  // aggregate bundle and final envelope). This is a logical bound, not RSS.
+  std::size_t max_capture_staging_bytes{64U * 1024U * 1024U};
+  // Maximum single chunk accepted from a domain capture callback.
+  std::size_t max_capture_chunk_bytes{64U * 1024U};
+  // Maximum logical transient reservation for one restore operation.
+  std::size_t max_restore_staging_bytes{64U * 1024U * 1024U};
 };
 
 class SnapshotCoordinator {
  public:
-  explicit SnapshotCoordinator(SnapshotCoordinatorLimits limits = {});
+  explicit SnapshotCoordinator(SnapshotCoordinatorLimits limits = {},
+                                ResourceBudget* budget = nullptr);
   bool register_domain(SnapshotDomain* domain, std::string* error);
   bool capture(const std::string& context_id, std::uint64_t state_version,
                std::uint64_t journal_sequence, std::string* bytes,
                std::string* error) const;
+  // All restore variants require the host to quiesce readers and writers
+  // across every registered domain. Preparation is side-effect-free; if a
+  // later domain refuses commit, earlier commits are rolled back in reverse.
   bool restore(const std::string& bytes, const std::string& expected_context_id,
                std::uint64_t minimum_state_version,
                std::uint64_t minimum_journal_sequence,
                std::string* error);
   // Atomically prepare all registered domains from the snapshot plus a
-  // bounded journal tail. The caller must quiesce all writers/readers.
+  // bounded journal tail. The same cross-domain quiescence contract applies.
   bool restore_with_tail(const std::string& bytes, EventJournal& journal,
                const std::string& expected_context_id,
                std::uint64_t minimum_state_version,
@@ -74,6 +98,7 @@ class SnapshotCoordinator {
                const std::string& context_id, std::string* error);
  private:
   SnapshotCoordinatorLimits limits_;
+  ResourceBudget* budget_{nullptr};
   std::vector<SnapshotDomain*> domains_;
 };
 

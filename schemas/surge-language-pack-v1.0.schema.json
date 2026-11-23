@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocomohacomo.github.io/surge/schemas/surge-language-pack-v1.0.schema.json",
+  "title": "SURGE Language Pack Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pack_id", "language", "runtime_abi", "version", "capabilities", "resources", "limits", "license"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "pack_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"},
+    "language": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "scripts"],
+      "properties": {
+        "id": {"type": "string", "minLength": 2, "maxLength": 35},
+        "name": {"type": "string", "minLength": 1, "maxLength": 80},
+        "locale": {"type": "string", "maxLength": 35},
+        "scripts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 4, "maxLength": 8}}
+      }
+    },
+    "runtime_abi": {
+      "type": "object", "additionalProperties": false, "required": ["min", "max"],
+      "properties": {"min": {"type": "string"}, "max": {"type": "string"}}
+    },
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$"},
+    "capabilities": {
+      "type": "array", "uniqueItems": true,
+      "items": {"enum": ["segmentation", "lexicon", "morphology", "phonology", "transliteration", "connection_model", "word_ngram", "pos_ngram", "character_ngram", "syntax", "semantic_frames", "named_entities", "numbers", "date_time", "units", "orthography", "punctuation", "user_dictionary", "language_identification"]}
+    },
+    "resources": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "kind", "sha256", "bytes"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\.)([A-Za-z0-9._/-]+)$"},
+          "kind": {"enum": ["lexicon", "morphology", "connection", "ngram", "orthography", "rules", "model", "native_module", "test_vectors", "metadata"]},
+          "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+          "bytes": {"type": "integer", "minimum": 0},
+          "license": {"type": "string", "maxLength": 128},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_package_bytes", "max_unpacked_bytes", "max_resident_bytes", "max_working_bytes", "max_candidates", "max_lattice_nodes", "max_input_codepoints", "max_output_bytes", "max_event_micros"],
+      "properties": {
+        "max_package_bytes": {"type": "integer", "minimum": 1},
+        "max_unpacked_bytes": {"type": "integer", "minimum": 1},
+        "max_resident_bytes": {"type": "integer", "minimum": 1},
+        "max_working_bytes": {"type": "integer", "minimum": 1},
+        "max_candidates": {"type": "integer", "minimum": 1},
+        "max_lattice_nodes": {"type": "integer", "minimum": 1},
+        "max_input_codepoints": {"type": "integer", "minimum": 1},
+        "max_output_bytes": {"type": "integer", "minimum": 1},
+        "max_event_micros": {"type": "integer", "minimum": 1}
+      }
+    },
+    "license": {"type": "string", "minLength": 1, "maxLength": 128},
+    "native_module": {
+      "type": "object", "additionalProperties": false, "required": ["path", "abi", "sha256"],
+      "properties": {"path": {"type": "string"}, "abi": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}
+    },
+    "quality_profile": {"type": "string", "maxLength": 128},
+    "provenance": {"type": "string", "maxLength": 2048}
+  }
+}

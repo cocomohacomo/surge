@@ -85,6 +85,7 @@ DependencyEvaluationResult DependencyEngine::evaluate(
         case NodeKind::QuestionAspect: return expected == "QUESTION_ASPECT";
         case NodeKind::Dependency: return expected == "DEPENDENCY";
         case NodeKind::Interest: return expected == "INTEREST";
+        case NodeKind::ClusterLifecycle: return expected == "CLUSTER_LIFECYCLE";
       }
     }
     return false;

@@ -13,6 +13,9 @@ struct SnapshotDocument {
   std::uint64_t state_version{0};
   std::uint64_t journal_sequence{0};
   std::string payload;
+  // SHA-256 of the complete authenticated on-disk envelope, populated by
+  // SnapshotStore::load_stream without materializing the envelope.
+  std::string envelope_digest;
 };
 
 struct SnapshotLimits {

@@ -1,0 +1,82 @@
+{
+  "schema_version": "0.1.0",
+  "projection_id": "projection-structured",
+  "idempotency_key": "projection-idem-structured",
+  "context_id": "context-structured",
+  "producer": {
+    "producer_id": "fixture-projector",
+    "producer_version": "1.0"
+  },
+  "policy_version": "fixture-ja-v1",
+  "base_state_version": 0,
+  "source_packet": {
+    "packet_id": "packet-structured",
+    "idempotency_key": "packet-idem-structured",
+    "source_id": "source-structured",
+    "source_generation": "generation-1",
+    "block_ref": "block-1",
+    "offset_basis": "UTF8_BYTE_NFC",
+    "start_offset": 0,
+    "end_offset": 66,
+    "source_sequence": 1,
+    "source_snapshot_digest": "4a4396e7a356505aba22d43edebbdfaeb227975817b1c4ad0986a825313fe928",
+    "source_range_digest": "4a4396e7a356505aba22d43edebbdfaeb227975817b1c4ad0986a825313fe928",
+    "canonical_request_digest": "fixture-structured",
+    "revision": false,
+    "revision_sequence": 0,
+    "context_id": "context-structured",
+    "document_ref": "document-structured",
+    "document_generation": "document-generation-1",
+    "document_sequence": 1,
+    "global_start_offset": 0,
+    "global_end_offset": 66
+  },
+  "normalized_source_snapshot": "{\"asset\":\"A-17\",\"status\":\"inspection_due\",\"due_date\":\"2026-12-01\"}",
+  "source_event_refs": [
+    "packet-structured"
+  ],
+  "evidence_refs": [
+    "evidence-structured"
+  ],
+  "nodes": [
+    {
+      "id": "cluster-assets",
+      "kind": "CLUSTER",
+      "content": "projected topic",
+      "references": []
+    },
+    {
+      "id": "claim-structured",
+      "kind": "CLAIM",
+      "content": "asset:A-17/status=inspection_due",
+      "references": [
+        "evidence-structured"
+      ]
+    },
+    {
+      "id": "evidence-structured",
+      "kind": "EVIDENCE",
+      "content": "source span / record",
+      "references": []
+    }
+  ],
+  "relations": [],
+  "memberships": [
+    {
+      "relation_id": "membership-structured",
+      "member_ref": "claim-structured",
+      "cluster_ref": "cluster-assets",
+      "upstream_weight": 0.82
+    }
+  ],
+  "spatial_placements": [
+    {
+      "cluster_id": "cluster-assets",
+      "position": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      }
+    }
+  ]
+}

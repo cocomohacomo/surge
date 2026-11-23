@@ -1,0 +1,82 @@
+{
+  "schema_version": "0.1.0",
+  "projection_id": "projection-conversation",
+  "idempotency_key": "projection-idem-conversation",
+  "context_id": "context-conversation",
+  "producer": {
+    "producer_id": "fixture-projector",
+    "producer_version": "1.0"
+  },
+  "policy_version": "fixture-ja-v1",
+  "base_state_version": 0,
+  "source_packet": {
+    "packet_id": "packet-conversation",
+    "idempotency_key": "packet-idem-conversation",
+    "source_id": "source-conversation",
+    "source_generation": "generation-1",
+    "block_ref": "block-1",
+    "offset_basis": "UTF8_BYTE_NFC",
+    "start_offset": 0,
+    "end_offset": 24,
+    "source_sequence": 1,
+    "source_snapshot_digest": "8abcbed15c2e4a646a6ba061624991677cf67b70e1c2c18aed30a9968cc04fb5",
+    "source_range_digest": "8abcbed15c2e4a646a6ba061624991677cf67b70e1c2c18aed30a9968cc04fb5",
+    "canonical_request_digest": "fixture-conversation",
+    "revision": false,
+    "revision_sequence": 0,
+    "context_id": "context-conversation",
+    "document_ref": "document-conversation",
+    "document_generation": "document-generation-1",
+    "document_sequence": 1,
+    "global_start_offset": 0,
+    "global_end_offset": 24
+  },
+  "normalized_source_snapshot": "会議日程は火曜日",
+  "source_event_refs": [
+    "packet-conversation"
+  ],
+  "evidence_refs": [
+    "evidence-conversation"
+  ],
+  "nodes": [
+    {
+      "id": "cluster-meeting-plan",
+      "kind": "CLUSTER",
+      "content": "projected topic",
+      "references": []
+    },
+    {
+      "id": "claim-conversation",
+      "kind": "CLAIM",
+      "content": "meeting-date=Tuesday",
+      "references": [
+        "evidence-conversation"
+      ]
+    },
+    {
+      "id": "evidence-conversation",
+      "kind": "EVIDENCE",
+      "content": "source span / record",
+      "references": []
+    }
+  ],
+  "relations": [],
+  "memberships": [
+    {
+      "relation_id": "membership-conversation",
+      "member_ref": "claim-conversation",
+      "cluster_ref": "cluster-meeting-plan",
+      "upstream_weight": 0.82
+    }
+  ],
+  "spatial_placements": [
+    {
+      "cluster_id": "cluster-meeting-plan",
+      "position": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      }
+    }
+  ]
+}

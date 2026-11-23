@@ -1,4 +1,16 @@
 # SURGE 基礎設計 v0.5
+
+## 0. 基本原理: 認知情報クラスターとフォーカス
+
+SURGE Coreの基本原理は、認知情報クラスターとフォーカスの二つである。すべての認知状態は、この二つの構造とその相互作用として表現する。用途固有の認知モデルをCoreへ固定しない。
+
+- **認知情報クラスター:** 経験・情報・関係・重みを保持する認知情報の単位。複数クラスターの共起によって新しい認識が成立した場合、その認識自体を新しいクラスターとして生成する。生成元クラスターとの由来関係を保持する。
+- **フォーカス:** 認知情報空間上を移動・拡縮する三次元の計算境界であり、その内部を認知計算・観測する範囲を定める。フォーカス領域の形状・位置と、各クラスターに設定する認知展開深度は独立して管理する。フォーカスは単一クラスターの選択機構ではなく、認知の正誤を判定せず、クラスターのLifecycleも変更しない。
+- **外部観測:** 外部システムへ公開する対象は、フォーカスの論理領域に含まれる認知情報クラスター、ノード、Relationおよび所属情報である。計算予算により未処理となった範囲は論理領域から除外せず、処理済み・延期として区別する。外部システムが観測結果を用いて用途固有の判断・行動を行う。
+- **用途分離:** 会話理解、文書理解、ASR後処理、エージェント状況認識等は、二原理を利用する上位レイヤーに配置する。
+
+Coreの共通データ構造やAPIは用途非依存とし、認知の生成・想起・関係形成・フォーカス遷移をクラスター操作として表現する。新規認知の生成はProposalだけで終わらず、Commit対象のClusterとそのLineage Relationとして永続化できること。
+
 ## Universal Context Cognition Framework
 ### 統合基礎仕様書・実装契約
 
@@ -11,6 +23,81 @@
 ---
 
 # 1. 概要
+
+
+### 0.1 Spatial Focus Region (current implementation contract)
+
+Focus is the three-dimensional computation boundary over cognition information
+space, not a single selected Cluster. The legacy `FocusRecord` remains available
+for source and data compatibility; it is not the spatial boundary and does not
+replace `FocusRegion`.
+
+The durable spatial state consists of four independent dimensions:
+
+- `FocusRegion.center`: the region center in 3D graph coordinates.
+- `FocusRegion.half_extents`: non-negative extent along each axis. The current
+  implementation uses an axis-aligned box as an initial geometry, not as a
+  permanent ontology for cognition space.
+- `ClusterSpatialPosition`: persisted position of each Cluster or ChaosCluster.
+- `ClusterFocusDepth`: independently persisted traversal depth for each Cluster.
+
+Region initialization/replacement, movement, resize, cluster-position updates and
+cluster-depth updates are separate journaled operations. Moving the region changes
+only its center; resizing changes only its half-extents. Neither operation changes
+cluster positions or per-cluster depth. A depth update changes only that Cluster's
+traversal depth.
+
+The durable state is restored from the EventJournal and CGS2 snapshots. CGS1
+snapshots remain readable for backward compatibility and contain no spatial state.
+The explicit C++ projection overload accepting region, positions and depths remains
+a read-only caller-supplied projection utility; normal persisted observation reads
+the durable spatial state from ContextGraph.
+
+Depth zero exposes the Cluster itself. Each positive depth permits one additional
+Contains-membership level. When traversal reaches a nested Cluster, its own
+configured depth applies independently; it does not inherit the parent's depth.
+This is a structural traversal rule, not a truth or relevance score.
+
+The logical focus region is determined from all persisted cluster positions before
+node/relation traversal budgets are applied. The observation reports the complete
+geometric membership separately from processed and deferred roots. Budget exhaustion
+is an explicit partial observation, never a claim that the full region was processed
+and never a reason to contract the logical region. External observers may consume all
+nodes, memberships and relations admitted by the projection, not just the legacy
+focused Cluster.
+
+### 0.2 Bounded observation implementation status
+
+The current `max_nodes` limit caps admitted graph nodes. `max_relations` caps the
+combined relation-inspection and relation-traversal work. Persisted spatial positions
+use a derived, in-memory x-axis ordered index as a broad phase. The query retrieves
+only positions whose x coordinate intersects the region, then performs exact 3D
+membership checks. The index is rebuilt lazily and invalidated by position updates,
+journal replay, archive import, and snapshot publication/rollback. It is not journaled
+or serialized because it is a deterministic derivative of the durable position map.
+`position_checks` counts exact 3D checks after broad-phase filtering, not the number
+of all persisted positions.
+Persisted spatial observation also maintains a derived outgoing-Relation adjacency
+index keyed by source cluster ID. It stores Relation IDs, is rebuilt lazily from
+committed Relations, and is invalidated by topology mutations, replay, archive
+import, and snapshot publication/rollback. Each projection inspects outgoing
+Relations only for clusters reached from the logical Focus roots, so unrelated
+graph Relations do not consume that projection's relation budget.
+`relations_examined` counts newly inspected outgoing Relation records;
+`relations_traversed` counts Contains traversal steps. The first index build
+after invalidation remains O(E) in total Relations and uses O(E) derived memory;
+this is amortized acceleration, not a hard bound on index-build CPU or RSS.
+
+This is an initial one-axis index, not a balanced 3D spatial tree. Queries with a wide
+x extent can still inspect most positions, and the initial index build is O(N).
+The caller-supplied C++ projection overload continues to evaluate the supplied
+position array directly.
+
+Deferred roots are reported in deterministic order. A durable continuation cursor
+that resumes from the deferred root without recomputing the completed prefix is not
+yet implemented. Therefore this is a bounded graph-expansion projection, not a
+strict total-CPU, wall-clock or process-RSS limit. These are explicit remaining
+implementation tasks, not guarantees inferred from the current node/relation limits.
 
 ## 1.1 定義
 
@@ -167,7 +254,9 @@ Dependency状態: ACTIVE, INACTIVE, SUSPENDED, INVALIDATED。
 
 ## 4.8 Focus State
 
-Focusはscope_id、target_ref、level、role、status、activation_reason、previous_focus_refs、transition_event_refを持つ。Role: PRIMARY, SECONDARY, BACKGROUND, DORMANT。複数Focusを許容し、Scope PolicyがPRIMARYの一意性を定義する。Global/Local Scope間のPRIMARY重複は許容する。
+空間Focusの正本は `FocusRegion`、`ClusterSpatialPosition`、`ClusterFocusDepth` である。FocusRegionは認知情報空間上の計算境界を定め、位置情報により論理領域内のクラスターを決定する。ClusterFocusDepthは領域所属とは独立したクラスターごとの構造展開深度を定める。領域の拡張・縮小と深度変更は別々に行い、計算予算による処理範囲の縮小を論理領域の変更として扱わない。
+
+従来の `FocusRecord` とSchema上のscope/target/role形式は互換性および上位レイヤーの候補・遷移情報として保持する。これらのtarget選択情報を三次元Focus領域そのものと同一視しない。
 
 ## 4.9 Context State
 
@@ -463,3 +552,46 @@ Schema検証に加え、詳細設計v0.2のCross-record/意味検証と追加テ
 - Core API: CORE_API_v0.2.md
 
 v0.4文書は履歴として保持し、既存データは明示的Schema Migrationなしにv0.5として読み替えない。
+
+
+### 0.2 Durable spatial focus state and bounded execution
+
+Spatial focus state is durable ContextGraph state. It consists of an optional logical
+region, persisted 3D positions for clusters, and independent per-cluster focus depths.
+These are three different state dimensions and are updated by different journal event
+families:
+
+- `FOCUS_REGION_SET_V1`: initialize or replace the region descriptor.
+- `FOCUS_REGION_MOVE_V1`: change only the region center.
+- `FOCUS_REGION_RESIZE_V1`: change only the region half-extents.
+  Move and resize events never change cluster depth or cluster coordinates.
+- `CLUSTER_SPATIAL_POSITION_SET_V1`: update one cluster's position. It never moves
+  or resizes the focus region.
+- `CLUSTER_FOCUS_DEPTH_SET_V1`: update one cluster's depth. It never changes region
+  geometry or cluster position.
+
+Each event participates in SemanticDelta idempotency, optimistic state-version
+checking, journal replay and the graph snapshot. New snapshots use `CGS2`; the
+restorer continues to accept existing `CGS1` snapshots without spatial state.
+Malformed spatial state, non-finite coordinates, negative extents, references to
+non-cluster nodes, and excessive depth are rejected during apply or restore.
+
+The logical region and its membership are distinct from bounded execution:
+
+- `logical_region_cluster_ids` records every positioned cluster geometrically inside
+  the region, regardless of whether the execution budget permits processing it.
+- `processed_region_cluster_ids` records roots whose configured traversal completed.
+- `deferred_region_cluster_ids` records roots not fully processed due to budget.
+- The region descriptor and logical membership are never contracted to hide work
+  omitted by a budget limit.
+
+The observation reports position checks, clusters considered/in-region/scheduled/
+deferred, nodes processed, relations examined/traversed/emitted, work units, elapsed
+microseconds, configured limits and `budget_exhausted`. Relation inspection is
+capped before traversal and the full graph is not copied as an intermediate.
+Work units are position checks + relation records examined + relation traversal steps + nodes emitted;
+elapsed microseconds are measured wall-clock time for the projection. Neither metric is a correctness score.
+
+The current geometry is an axis-aligned 3D box. Graph topology and Euclidean
+coordinates remain separate: Contains traversal is controlled by per-cluster depth,
+not inferred from geometric distance.
