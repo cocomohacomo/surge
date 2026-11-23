@@ -126,7 +126,7 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
         "--threads", str(THREADS), "--no-display-prompt", "--simple-io",
     ]
     start = time.perf_counter()
-    proc = subprocess.run(command, capture_output=True, text=True, timeout=240)
+    proc = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240)
     elapsed = time.perf_counter() - start
     output = proc.stdout.strip()
     parsed = extract_json(output)
