@@ -2493,7 +2493,7 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
 
   // Stage 6: finalize public metrics and depth metadata after projection.
   focused.focus_work.nodes_processed = nodes_admitted_this_call;
-  focused.focus_work.relations_processed = relations_examined_this_call;
+  focused.focus_work.relations_processed = focused.relations.size();
   focused.focus_work.clusters_deferred =
       focused.deferred_region_cluster_ids.size();
   focused.focus_work.work_units = focused.focus_work.position_checks +
