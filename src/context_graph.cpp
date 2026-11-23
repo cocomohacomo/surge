@@ -2165,7 +2165,17 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     std::size_t max_nodes, std::size_t max_relations,
     std::size_t start_root_index) const {
   return observe_focused_cognition_impl(region, positions, depths,
-      max_nodes, max_relations, start_root_index);
+      max_nodes, max_relations, start_root_index, nullptr);
+}
+
+CognitionObservation ContextGraph::observe_focused_cognition(
+    const FocusRegion& region,
+    const std::vector<ClusterSpatialPosition>& positions,
+    const std::vector<ClusterFocusDepth>& depths,
+    FocusTraversalCursor& cursor,
+    std::size_t max_nodes, std::size_t max_relations) const {
+  return observe_focused_cognition_impl(region, positions, depths,
+      max_nodes, max_relations, cursor.next_root_index, &cursor);
 }
 
 CognitionObservation ContextGraph::observe_focused_cognition_impl(
@@ -2173,7 +2183,7 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
     const std::vector<ClusterSpatialPosition>& positions,
     const std::vector<ClusterFocusDepth>& depths,
     std::size_t max_nodes, std::size_t max_relations,
-    std::size_t start_root_index) const {
+    std::size_t start_root_index, FocusTraversalCursor* cursor) const {
   const auto focus_started = std::chrono::steady_clock::now();
   CognitionObservation focused;
   focused.state_version = state_version();
@@ -2253,117 +2263,174 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
   std::vector<const GraphRelation*> inspected_relations;
   std::set<std::string> inspected_relation_ids;
 
-  // Stage 4: expand each root independently. A failed root remains deferred;
-  // the logical region is never rewritten to match the admitted work prefix.
-  std::set<std::string> visible_ids;
-  std::set<std::string> expanded_paths;
-  const auto expand_roots = [&]() {
-    struct FrontierItem {
-      std::string cluster_id;
-      std::size_t level;
-      std::string origin_cluster_id;
-    };
-    for (std::size_t root_index = std::min(start_root_index, roots.size());
-         root_index < roots.size(); ++root_index) {
-      const auto& root = roots[root_index];
-      if (!visible_ids.count(root) && visible_ids.size() >= max_nodes) {
-        focused.focus_work.budget_exhausted = true;
-        for (std::size_t j = root_index; j < roots.size(); ++j)
-          focused.deferred_region_cluster_ids.push_back(roots[j]);
-        break;
-      }
-
-      ++focused.focus_work.clusters_scheduled;
-      std::vector<FrontierItem> frontier{{root, 0, root}};
-      bool complete = true;
-      while (!frontier.empty() && complete) {
-        const auto current = frontier.back();
-        frontier.pop_back();
-        const std::string path_key =
-            current.origin_cluster_id + "\n" + current.cluster_id;
-        if (!expanded_paths.insert(path_key).second) continue;
-        if (visible_ids.insert(current.cluster_id).second &&
-            visible_ids.size() > max_nodes) {
-          visible_ids.erase(current.cluster_id);
-          complete = false;
+  // Stage 4: resumable root-scoped DFS. Expansion identity is
+  // (origin root, cluster), while materialized nodes and relations are globally
+  // deduplicated. Node and relation budgets are independent per invocation.
+  FocusTraversalCursor local_cursor;
+  FocusTraversalCursor& state = cursor ? *cursor : local_cursor;
+  std::ostringstream focus_identity;
+  focus_identity << std::setprecision(17)
+      << region.center.x << ',' << region.center.y << ',' << region.center.z << ';'
+      << region.half_extents.x << ',' << region.half_extents.y << ','
+      << region.half_extents.z << ';';
+  for (const auto& item : position_by_cluster)
+    focus_identity << item.first.size() << ':' << item.first << '='
+        << item.second.x << ',' << item.second.y << ',' << item.second.z << ';';
+  for (const auto& item : depth_by_cluster)
+    focus_identity << item.first.size() << ':' << item.first << '=' << item.second << ';';
+  const std::string focus_digest = sha256_hex(focus_identity.str());
+  const std::string traversal_query_digest = sha256_hex("SURGE_FOCUS_TRAVERSAL_V1");
+  if (state.initialized &&
+      (state.schema_version != 1 || state.state_version != focused.state_version ||
+       state.query_digest != traversal_query_digest ||
+       state.focus_digest != focus_digest)) {
+    focused.focus_work.budget_exhausted = true;
+    focused.complete = false;
+    focused.next_root_index = state.next_root_index;
+    return focused;
+  }
+  if (!state.initialized) {
+    state = FocusTraversalCursor{};
+    state.state_version = focused.state_version;
+    state.query_digest = traversal_query_digest;
+    state.focus_digest = focus_digest;
+    state.next_root_index = std::min(start_root_index, roots.size());
+    state.initialized = true;
+  }
+  if (state.complete) {
+    focused.complete = true;
+    focused.next_root_index = roots.size();
+  }
+  std::set<std::string> visible_ids(state.visible_node_ids.begin(),
+                                    state.visible_node_ids.end());
+  std::set<std::string> inspected_relation_ids(
+      state.inspected_relation_ids.begin(), state.inspected_relation_ids.end());
+  std::set<std::string> expanded_keys(state.visited_expansion_keys.begin(),
+                                       state.visited_expansion_keys.end());
+  std::set<std::string> completed_roots(state.completed_root_ids.begin(),
+                                        state.completed_root_ids.end());
+  std::size_t nodes_admitted_this_call = 0;
+  std::size_t relations_examined_this_call = 0;
+  std::size_t relations_traversed_this_call = 0;
+  const auto save_cursor = [&]() {
+    state.visible_node_ids.assign(visible_ids.begin(), visible_ids.end());
+    state.inspected_relation_ids.assign(inspected_relation_ids.begin(),
+                                        inspected_relation_ids.end());
+    state.visited_expansion_keys.assign(expanded_keys.begin(), expanded_keys.end());
+    state.completed_root_ids.assign(completed_roots.begin(), completed_roots.end());
+  };
+  while (!state.complete && state.next_root_index < roots.size()) {
+    const std::string& root = roots[state.next_root_index];
+    if (state.active_root_id.empty()) {
+      if (!visible_ids.count(root)) {
+        if (nodes_admitted_this_call >= max_nodes) {
+          focused.focus_work.budget_exhausted = true;
           break;
         }
-
-        const auto configured = depth_by_cluster.find(current.origin_cluster_id);
-        const std::size_t origin_depth =
-            configured == depth_by_cluster.end() ? 1 : configured->second;
-        const auto adjacency =
-            spatial_outgoing_relation_ids_.find(current.cluster_id);
-        if (adjacency == spatial_outgoing_relation_ids_.end()) continue;
-        for (const auto& relation_id : adjacency->second) {
-          const auto relation_it = state_.relations.find(relation_id);
-          if (relation_it == state_.relations.end()) continue;
-          const auto* relation = &relation_it->second;
-          if (inspected_relation_ids.insert(relation_id).second) {
-            if (focused.focus_work.relations_examined +
-                    focused.focus_work.relations_traversed >= max_relations) {
-              inspected_relation_ids.erase(relation_id);
-              complete = false;
-              focused.focus_work.budget_exhausted = true;
-              break;
-            }
-            ++focused.focus_work.relations_examined;
-            inspected_relations.push_back(relation);
-          }
-          if (relation->kind != RelationKind::Contains ||
-              current.level >= origin_depth)
-            continue;
-          if (focused.focus_work.relations_examined +
-                  focused.focus_work.relations_traversed >= max_relations) {
-            complete = false;
-            focused.focus_work.budget_exhausted = true;
-            break;
-          }
-          ++focused.focus_work.relations_traversed;
-          const bool inserted = visible_ids.insert(relation->to).second;
-          if (inserted && visible_ids.size() > max_nodes) {
-            visible_ids.erase(relation->to);
-            complete = false;
-            break;
-          }
-          const auto child = state_.nodes.find(relation->to);
-          if (child != state_.nodes.end() &&
-              (child->second.kind == NodeKind::Cluster ||
-               child->second.kind == NodeKind::ChaosCluster)) {
-            frontier.push_back(
-                {relation->to, current.level + 1, current.origin_cluster_id});
-            if (depth_by_cluster.count(relation->to))
-              frontier.push_back({relation->to, 0, relation->to});
-          }
-        }
+        visible_ids.insert(root);
+        ++nodes_admitted_this_call;
       }
-
-      if (complete) {
-        focused.processed_region_cluster_ids.push_back(root);
-      } else {
+      state.active_root_id = root;
+      state.frontier.clear();
+      state.frontier.push_back({root, root, 0, 0});
+      ++focused.focus_work.clusters_scheduled;
+    }
+    bool suspended = false;
+    while (!state.frontier.empty()) {
+      auto& current = state.frontier.back();
+      const std::string expansion_key =
+          current.origin_root_id + "\n" + current.cluster_id;
+      if (!expanded_keys.insert(expansion_key).second) {
+        state.frontier.pop_back();
+        continue;
+      }
+      const auto adjacency = spatial_outgoing_relation_ids_.find(current.cluster_id);
+      if (adjacency == spatial_outgoing_relation_ids_.end() ||
+          current.next_relation_index >= adjacency->second.size()) {
+        state.frontier.pop_back();
+        continue;
+      }
+      const auto relation_id = adjacency->second[current.next_relation_index];
+      const auto relation_it = state_.relations.find(relation_id);
+      if (relation_it == state_.relations.end()) {
+        ++current.next_relation_index;
+        continue;
+      }
+      const auto& relation = relation_it->second;
+      const auto depth_it = depth_by_cluster.find(current.origin_root_id);
+      const std::size_t origin_depth =
+          depth_it == depth_by_cluster.end() ? 1 : depth_it->second;
+      const bool expands_child = relation.kind == RelationKind::Contains &&
+                                 current.level < origin_depth;
+      const auto child_it = state_.nodes.find(relation.to);
+      const bool child_is_cluster = child_it != state_.nodes.end() &&
+          (child_it->second.kind == NodeKind::Cluster ||
+           child_it->second.kind == NodeKind::ChaosCluster);
+      const bool child_is_new = expands_child && child_is_cluster &&
+                                !visible_ids.count(relation.to);
+      if (child_is_new && nodes_admitted_this_call >= max_nodes) {
         focused.focus_work.budget_exhausted = true;
-        focused.deferred_region_cluster_ids.push_back(root);
-        for (std::size_t j = root_index + 1; j < roots.size(); ++j)
-          focused.deferred_region_cluster_ids.push_back(roots[j]);
+        suspended = true;
         break;
       }
+      if (relations_examined_this_call >= max_relations) {
+        focused.focus_work.budget_exhausted = true;
+        suspended = true;
+        break;
+      }
+      ++relations_examined_this_call;
+      ++current.next_relation_index;
+      inspected_relation_ids.insert(relation_id);
+      if (expands_child) {
+        ++relations_traversed_this_call;
+        if (child_is_new) {
+          visible_ids.insert(relation.to);
+          ++nodes_admitted_this_call;
+        }
+        if (child_is_cluster) {
+          const std::string child_key =
+              current.origin_root_id + "\n" + relation.to;
+          if (!expanded_keys.count(child_key))
+            state.frontier.push_back({relation.to, current.origin_root_id,
+                                      current.level + 1, 0});
+        }
+      }
     }
-  };
-  expand_roots();
-  focused.next_root_index = std::min(start_root_index, roots.size()) +
-      focused.processed_region_cluster_ids.size();
-  if (focused.focus_work.budget_exhausted &&
-      !focused.deferred_region_cluster_ids.empty()) {
-    const auto deferred = std::find(roots.begin(), roots.end(),
-        focused.deferred_region_cluster_ids.front());
-    if (deferred != roots.end())
-      focused.next_root_index = static_cast<std::size_t>(
-          std::distance(roots.begin(), deferred));
+    if (suspended) break;
+    if (state.frontier.empty()) {
+      completed_roots.insert(root);
+      state.active_root_id.clear();
+      ++state.next_root_index;
+    }
   }
-  focused.complete = focused.next_root_index >= roots.size();
-
-  // Stage 5: materialize only admitted graph objects. The observation owns
-  // detached values; internal traversal above never copies unobserved records.
+  state.complete = state.next_root_index >= roots.size() &&
+                   state.active_root_id.empty() && state.frontier.empty();
+  save_cursor();
+  focused.next_root_index = state.next_root_index;
+  focused.complete = state.complete;
+  for (const auto& root : roots) {
+    if (completed_roots.count(root))
+      focused.processed_region_cluster_ids.push_back(root);
+    else
+      focused.deferred_region_cluster_ids.push_back(root);
+  }
+  for (const auto& id : visible_ids) {
+    if (std::find(roots.begin(), roots.end(), id) != roots.end()) continue;
+    const auto pos = position_by_cluster.find(id);
+    (void)pos;
+  }
+  focused.focus_work.nodes_processed = nodes_admitted_this_call;
+  focused.focus_work.relations_examined = relations_examined_this_call;
+  focused.focus_work.relations_traversed = relations_traversed_this_call;
+  focused.focus_work.relations_processed = inspected_relation_ids.size();
+  // Stage 5: materialize accumulated cursor output. A node is emitted once,
+  // but its expansion may have occurred independently under several roots.
+  std::vector<const GraphRelation*> inspected_relations;
+  inspected_relations.reserve(inspected_relation_ids.size());
+  for (const auto& id : inspected_relation_ids) {
+    const auto relation = state_.relations.find(id);
+    if (relation != state_.relations.end()) inspected_relations.push_back(&relation->second);
+  }
   const auto materialize_observation = [&]() {
     for (const auto& id : visible_ids) {
       const auto node = state_.nodes.find(id);
@@ -2371,12 +2438,10 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
     }
     for (const auto* relation : inspected_relations) {
       if (!visible_ids.count(relation->from) ||
-          !visible_ids.count(relation->to))
-        continue;
+          !visible_ids.count(relation->to)) continue;
       focused.relations.push_back(*relation);
       if (relation->kind != RelationKind::Contains) continue;
-      focused.memberships.push_back(
-          {relation->to, relation->from, relation->weight});
+      focused.memberships.push_back({relation->to, relation->from, relation->weight});
       const auto parent = state_.nodes.find(relation->from);
       if (parent != state_.nodes.end() &&
           parent->second.kind == NodeKind::ChaosCluster)
