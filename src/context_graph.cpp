@@ -2155,7 +2155,8 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     const FocusRegion& region,
     const std::vector<ClusterSpatialPosition>& positions,
     const std::vector<ClusterFocusDepth>& depths,
-    std::size_t max_nodes, std::size_t max_relations) const {
+    std::size_t max_nodes, std::size_t max_relations,
+    std::size_t start_root_index) const {
   const auto focus_started = std::chrono::steady_clock::now();
   CognitionObservation focused;
   focused.state_version = state_version();
@@ -2245,7 +2246,8 @@ CognitionObservation ContextGraph::observe_focused_cognition(
       std::size_t level;
       std::string origin_cluster_id;
     };
-    for (std::size_t root_index = 0; root_index < roots.size(); ++root_index) {
+    for (std::size_t root_index = std::min(start_root_index, roots.size());
+         root_index < roots.size(); ++root_index) {
       const auto& root = roots[root_index];
       if (!visible_ids.count(root) && visible_ids.size() >= max_nodes) {
         focused.focus_work.budget_exhausted = true;
@@ -2331,6 +2333,17 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     }
   };
   expand_roots();
+  focused.next_root_index = std::min(start_root_index, roots.size()) +
+      focused.processed_region_cluster_ids.size();
+  if (focused.focus_work.budget_exhausted &&
+      !focused.deferred_region_cluster_ids.empty()) {
+    const auto deferred = std::find(roots.begin(), roots.end(),
+        focused.deferred_region_cluster_ids.front());
+    if (deferred != roots.end())
+      focused.next_root_index = static_cast<std::size_t>(
+          std::distance(roots.begin(), deferred));
+  }
+  focused.complete = focused.next_root_index >= roots.size();
 
   // Stage 5: materialize only admitted graph objects. The observation owns
   // detached values; internal traversal above never copies unobserved records.
@@ -2647,10 +2660,45 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
     const std::vector<std::string>& query_terms,
     std::size_t max_candidates, std::size_t max_nodes,
     std::size_t max_relations) const {
+  FocusedCognitionCursor cursor;
+  return recall_focused_cognition_candidates(input_member_id, query_terms,
+      cursor, max_candidates, max_nodes, max_relations);
+}
+
+FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
+    const std::string& input_member_id,
+    const std::vector<std::string>& query_terms,
+    FocusedCognitionCursor& cursor, std::size_t max_candidates,
+    std::size_t max_nodes, std::size_t max_relations) const {
   FocusedCognitionCandidates result;
-  const auto focused = observe_focused_cognition(max_nodes, max_relations);
+  std::string query_material = std::to_string(input_member_id.size()) + ":" +
+      input_member_id + "|" + std::to_string(query_terms.size()) + "|";
+  for (const auto& term : query_terms)
+    query_material += std::to_string(term.size()) + ":" + term + "|";
+  const std::string query_digest = sha256_hex(query_material);
+  const auto current_version = state_version();
+  if (cursor.initialized &&
+      (cursor.state_version != current_version ||
+       cursor.query_digest != query_digest)) {
+    result.state_version = current_version;
+    result.error = cursor.state_version != current_version
+        ? "FOCUS_CURSOR_STALE_STATE_VERSION"
+        : "FOCUS_CURSOR_QUERY_MISMATCH";
+    return result;
+  }
+  if (!cursor.initialized) {
+    cursor.state_version = current_version;
+    cursor.query_digest = query_digest;
+    cursor.next_root_index = 0;
+    cursor.initialized = true;
+  }
+  const auto focused = observe_focused_cognition(
+      max_nodes, max_relations, cursor.next_root_index);
   result.state_version = focused.state_version;
+  result.next_root_index = focused.next_root_index;
+  result.complete = focused.complete;
   result.logical_region_cluster_ids = focused.logical_region_cluster_ids;
+  cursor.next_root_index = focused.next_root_index;
   result.processed_region_cluster_ids = focused.processed_region_cluster_ids;
   result.deferred_region_cluster_ids = focused.deferred_region_cluster_ids;
   result.focus_work = focused.focus_work;
