@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/budgeted_context_graph.hpp"
 #include "surge/cognition_state_diff.hpp"
 #include <algorithm>
 #include <cmath>
@@ -253,6 +254,46 @@ int main() {
   CHECK(invalid_cooccurrence.nodes.empty());
   CHECK(invalid_cooccurrence.relations.empty());
 
+
+  // The BudgetedContextGraph facade commits derived cognition through the
+  // same admission gate as ordinary semantic deltas.
+  {
+    ContextGraph budget_graph((root / "budgeted-derived.sgj").string());
+    CHECK(budget_graph.open());
+    ResourceBudgetLimits limits;
+    limits.resident_bytes = 1U << 20;
+    limits.transient_bytes = 1U << 20;
+    limits.retained_events = 64;
+    limits.retained_clusters = 16;
+    ResourceBudget budget(limits);
+    BudgetedContextGraph guarded(budget_graph, budget, 1U << 20);
+    std::string budget_error;
+    CHECK(guarded.recover(budget_error));
+
+    SemanticDelta sources;
+    sources.delta_id = "budgeted-derived-sources";
+    sources.idempotency_key = "budgeted-derived-sources";
+    sources.expected_state_version = budget_graph.state_version();
+    sources.nodes = {
+        {{"budget-source-a", NodeKind::Cluster, "source A", {}}},
+        {{"budget-source-b", NodeKind::Cluster, "source B", {}}}
+    };
+    CHECK(guarded.apply(sources).committed);
+
+    SemanticDelta derived;
+    derived.delta_id = "budgeted-derived-cluster";
+    derived.idempotency_key = "budgeted-derived-cluster";
+    derived.expected_state_version = budget_graph.state_version();
+    const auto committed = guarded.append_derived_cognition_cluster(derived,
+        "budget-derived", "externally projected co-occurrence",
+        {"budget-source-a", "budget-source-b"}, "budget-derived-lineage",
+        budget_error);
+    CHECK(committed.committed);
+    CHECK(budget_error.empty());
+    CHECK(budget_graph.nodes().count("budget-derived") == 1);
+    CHECK(budget_graph.relations().count("budget-derived-lineage/0") == 1);
+    CHECK(budget_graph.relations().count("budget-derived-lineage/1") == 1);
+  }
 
   std::filesystem::remove_all(root);
   std::cout << "SURGE cognition evolution: candidate accumulation and re-recall passed\n";
