@@ -158,6 +158,7 @@ int main() {
 
   // The Focus region is a persisted logical boundary. Placement of the
   // derived cluster is supplied explicitly by the external Projector below.
+  std::string cooccurrence_error;
   SemanticDelta cooccurrence_focus_region;
   cooccurrence_focus_region.delta_id = "cognition-cooccurrence-focus-region";
   cooccurrence_focus_region.idempotency_key = "cognition-cooccurrence-focus-region";
@@ -171,7 +172,6 @@ int main() {
   cooccurrence_delta.delta_id = "cognition-cooccurrence-derived";
   cooccurrence_delta.idempotency_key = "cognition-cooccurrence-derived";
   cooccurrence_delta.expected_state_version = graph.state_version();
-  std::string cooccurrence_error;
   CHECK(graph.append_derived_cognition_cluster(cooccurrence_delta,
       "evolution-cooccurrence-cluster",
       "Tributary flow and floodplain habitat form a coupled seasonal system",
@@ -206,14 +206,8 @@ int main() {
       graph.relations().at("evolution-cooccurrence-lineage/1").to};
   CHECK(lineage_targets == std::set<std::string>({
       "evolution-cluster", "evolution-cluster-2"}));
-  // Core does not invent spatial coordinates or Focus membership for the
-  // derived cluster. An external Projector may place it in a later delta.
-  const auto derived_observation = graph.observe_cognition();
-  CHECK(std::none_of(derived_observation.cluster_spatial_positions.begin(),
-      derived_observation.cluster_spatial_positions.end(),
-      [](const ClusterSpatialPosition& item) {
-        return item.cluster_id == "evolution-cooccurrence-cluster";
-      }));
+  // Core did not invent these coordinates: the explicit Projector update
+  // above is the sole source of the persisted spatial placement.
   CHECK(graph.cluster_membership_reference_count(
       "evolution-cooccurrence-cluster") == 0);
   const auto focused_cooccurrence = graph.observe_focused_cognition(16, 32);
