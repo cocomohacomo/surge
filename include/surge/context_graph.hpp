@@ -162,6 +162,23 @@ struct CognitionStateSnapshot {
   double recall_score{0.0};
   std::vector<std::string> supporting_member_ids, matched_terms;
 };
+// Caller-owned continuation state for traversal inside a logical Focus root.
+struct FocusTraversalFrontierEntry {
+  std::string cluster_id, origin_root_id;
+  std::size_t level{0};
+};
+struct FocusTraversalCursor {
+  std::uint32_t schema_version{1};
+  std::uint64_t state_version{0};
+  std::string query_digest, focus_digest;
+  std::size_t next_root_index{0};
+  std::string active_root_id;
+  std::vector<FocusTraversalFrontierEntry> frontier;
+  // Expansion state is origin-root scoped to preserve independent depth limits.
+  std::vector<std::string> visited_expansion_keys;
+  std::vector<std::string> inspected_relation_ids;
+  bool initialized{false}, complete{false};
+};
 struct FocusedCognitionCursor {
   std::uint64_t state_version{0};
   std::string query_digest;
