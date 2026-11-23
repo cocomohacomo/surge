@@ -225,7 +225,7 @@ class ContextGraph {
   CognitionObservation observe_cognition() const;
   // Read-only projection containing only the focused cognition cluster and its direct members.
   CognitionObservation observe_focused_cognition() const;
-  CognitionObservation observe_focused_cognition(std::size_t max_nodes, std::size_t max_relations) const;
+  CognitionObservation observe_focused_cognition(std::size_t max_nodes, std::size_t max_relations, std::size_t start_root_index = 0) const;
   bool append_focus_region_update(SemanticDelta& delta, const FocusRegion& region, std::string& error) const;
   bool append_focus_region_move(SemanticDelta& delta, const SpatialVector3& center, std::string& error) const;
   bool append_focus_region_resize(SemanticDelta& delta, const SpatialVector3& half_extents, std::string& error) const;
