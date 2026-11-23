@@ -235,6 +235,130 @@ int main() {
         return item.cluster_id == "evolution-cooccurrence-cluster" &&
             item.depth == 0;
       }));
+
+  // A generated cognition cluster must re-enter ordinary candidate recall.
+  // Cluster content is an independent activation path; no synthetic Evidence
+  // member or Core-assigned classification/weight is created for it.
+  const auto derived_recall_before = graph.recall_cognition_candidates(
+      "evolution-input", {"coupled"}, 8);
+  CHECK(derived_recall_before.size() == 1);
+  CHECK(derived_recall_before.front().cluster_id ==
+      "evolution-cooccurrence-cluster");
+  CHECK(derived_recall_before.front().supporting_member_ids.empty());
+
+  SemanticDelta derived_snapshot_before_delta;
+  derived_snapshot_before_delta.delta_id = "derived-cognition-snapshot-before";
+  derived_snapshot_before_delta.idempotency_key = "derived-cognition-snapshot-before";
+  derived_snapshot_before_delta.expected_state_version = graph.state_version();
+  CHECK(graph.append_cognition_state_snapshot(derived_snapshot_before_delta,
+      derived_recall_before.front(), "evolution-input",
+      "evolution-derived-snapshot-before", "evolution-derived-snapshot-before-rel",
+      cooccurrence_error));
+  CHECK(graph.apply(derived_snapshot_before_delta).committed);
+
+  // Recursive co-occurrence: the newly generated cluster participates as a
+  // source alongside a second existing cluster. The external Projector also
+  // supplies the new cluster's spatial placement and Focus depth.
+  SemanticDelta recursive_cooccurrence;
+  recursive_cooccurrence.delta_id = "cognition-recursive-cooccurrence";
+  recursive_cooccurrence.idempotency_key = "cognition-recursive-cooccurrence";
+  recursive_cooccurrence.expected_state_version = graph.state_version();
+  CHECK(graph.append_derived_cognition_cluster(recursive_cooccurrence,
+      "evolution-recursive-cluster",
+      "Coupled tributary habitat and seasonal floodplain dynamics",
+      {"evolution-cooccurrence-cluster", "evolution-cluster-2"},
+      "evolution-recursive-lineage", cooccurrence_error));
+  CHECK(graph.append_cluster_spatial_position_update(recursive_cooccurrence,
+      {"evolution-recursive-cluster", {0.5, 0.0, 0.0}}, cooccurrence_error));
+  CHECK(graph.append_cluster_focus_depth_update(recursive_cooccurrence,
+      {"evolution-recursive-cluster", 0}, cooccurrence_error));
+  CHECK(graph.apply(recursive_cooccurrence).committed);
+  CHECK(graph.relations().at("evolution-recursive-lineage/0").kind ==
+      RelationKind::DerivedFrom);
+  CHECK(graph.relations().at("evolution-recursive-lineage/1").kind ==
+      RelationKind::DerivedFrom);
+
+  const auto recursive_recall = graph.recall_cognition_candidates(
+      "evolution-input", {"coupled"}, 8);
+  CHECK(recursive_recall.size() == 2);
+  const auto recursive_candidate = std::find_if(recursive_recall.begin(),
+      recursive_recall.end(), [](const CognitionCandidate& candidate) {
+        return candidate.cluster_id == "evolution-recursive-cluster";
+      });
+  CHECK(recursive_candidate != recursive_recall.end());
+  const auto derived_recall_after = std::find_if(recursive_recall.begin(),
+      recursive_recall.end(), [](const CognitionCandidate& candidate) {
+        return candidate.cluster_id == "evolution-cooccurrence-cluster";
+      });
+  CHECK(derived_recall_after != recursive_recall.end());
+
+  SemanticDelta derived_snapshot_after_delta;
+  derived_snapshot_after_delta.delta_id = "derived-cognition-snapshot-after";
+  derived_snapshot_after_delta.idempotency_key = "derived-cognition-snapshot-after";
+  derived_snapshot_after_delta.expected_state_version = graph.state_version();
+  CHECK(graph.append_cognition_state_snapshot(derived_snapshot_after_delta,
+      *derived_recall_after, "evolution-input",
+      "evolution-derived-snapshot-after", "evolution-derived-snapshot-after-rel",
+      cooccurrence_error));
+  CHECK(graph.apply(derived_snapshot_after_delta).committed);
+
+  CognitionStateSnapshot derived_before_snapshot, derived_after_snapshot;
+  CHECK(decode_cognition_state_snapshot(
+      graph.nodes().at("evolution-derived-snapshot-before"),
+      derived_before_snapshot, cooccurrence_error));
+  CHECK(decode_cognition_state_snapshot(
+      graph.nodes().at("evolution-derived-snapshot-after"),
+      derived_after_snapshot, cooccurrence_error));
+  CognitionStateDiff derived_history_diff;
+  CHECK(diff_cognition_state_snapshots(derived_before_snapshot,
+      derived_after_snapshot, derived_history_diff, cooccurrence_error));
+  CHECK(derived_history_diff.cluster_id == "evolution-cooccurrence-cluster");
+  CHECK(derived_history_diff.current_state_version >
+      derived_history_diff.previous_state_version);
+  CHECK(std::abs(derived_history_diff.recall_score_delta) < 1e-12);
+
+  const auto focused_recursive = graph.observe_focused_cognition(16, 32);
+  CHECK(focused_recursive.logical_region_cluster_ids ==
+      std::vector<std::string>({
+          "evolution-cooccurrence-cluster", "evolution-recursive-cluster"}));
+  CHECK(focused_recursive.processed_region_cluster_ids ==
+      focused_recursive.logical_region_cluster_ids);
+  CHECK(focused_recursive.deferred_region_cluster_ids.empty());
+
+  // Moving the recursive cluster outside the logical Focus region changes the
+  // next observation without shrinking or rewriting the Focus region itself.
+  SemanticDelta move_recursive_out;
+  move_recursive_out.delta_id = "move-recursive-cluster-out-of-focus";
+  move_recursive_out.idempotency_key = "move-recursive-cluster-out-of-focus";
+  move_recursive_out.expected_state_version = graph.state_version();
+  CHECK(graph.append_cluster_spatial_position_update(move_recursive_out,
+      {"evolution-recursive-cluster", {2.0, 0.0, 0.0}}, cooccurrence_error));
+  CHECK(graph.apply(move_recursive_out).committed);
+  const auto focused_after_move = graph.observe_focused_cognition(16, 32);
+  CHECK(focused_after_move.logical_region_cluster_ids ==
+      std::vector<std::string>({"evolution-cooccurrence-cluster"}));
+  CHECK(focused_after_move.focus_region.has_value());
+  CHECK(focused_after_move.focus_region->half_extents.x == 1.0);
+
+  // Restore the external placement and independently change per-cluster depth.
+  SemanticDelta restore_recursive_focus;
+  restore_recursive_focus.delta_id = "restore-recursive-cluster-focus";
+  restore_recursive_focus.idempotency_key = "restore-recursive-cluster-focus";
+  restore_recursive_focus.expected_state_version = graph.state_version();
+  CHECK(graph.append_cluster_spatial_position_update(restore_recursive_focus,
+      {"evolution-recursive-cluster", {0.5, 0.0, 0.0}}, cooccurrence_error));
+  CHECK(graph.append_cluster_focus_depth_update(restore_recursive_focus,
+      {"evolution-recursive-cluster", 1}, cooccurrence_error));
+  CHECK(graph.apply(restore_recursive_focus).committed);
+  const auto focused_after_depth_change = graph.observe_focused_cognition(16, 32);
+  CHECK(focused_after_depth_change.logical_region_cluster_ids.size() == 2);
+  const auto depth_observation = graph.observe_cognition();
+  CHECK(std::any_of(depth_observation.cluster_focus_depths.begin(),
+      depth_observation.cluster_focus_depths.end(),
+      [](const ClusterFocusDepth& item) {
+        return item.cluster_id == "evolution-recursive-cluster" &&
+            item.depth == 1;
+      }));
   CHECK(graph.nodes().at("evolution-cluster").content == source_one_before);
   CHECK(graph.nodes().at("evolution-cluster-2").content == source_two_before);
   CHECK(graph.cluster_membership_reference_count("evolution-member-3") ==
