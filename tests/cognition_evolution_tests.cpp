@@ -265,7 +265,7 @@ int main() {
   recursive_cooccurrence.expected_state_version = graph.state_version();
   CHECK(graph.append_derived_cognition_cluster(recursive_cooccurrence,
       "evolution-recursive-cluster",
-      "Coupled tributary habitat and seasonal floodplain dynamics",
+      "coupled tributary habitat and seasonal floodplain dynamics",
       {"evolution-cooccurrence-cluster", "evolution-cluster-2"},
       "evolution-recursive-lineage", cooccurrence_error));
   CHECK(graph.append_cluster_spatial_position_update(recursive_cooccurrence,
