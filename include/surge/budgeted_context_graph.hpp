@@ -100,6 +100,26 @@ class BudgetedContextGraph {
       const std::string& relation_prefix, std::string& assigned_cluster_id,
       std::string& error, double membership_weight = 1.0);
 
+  // Create a derived cognition cluster from externally selected source clusters,
+  // then commit it through the same resource admission gate as other mutations.
+  DeltaResult append_derived_cognition_cluster(SemanticDelta delta,
+      const std::string& cluster_id, const std::string& content,
+      const std::vector<std::string>& source_cluster_ids,
+      const std::string& relation_prefix, std::string& error) {
+    if (!graph_.append_derived_cognition_cluster(delta, cluster_id, content,
+        source_cluster_ids, relation_prefix, error)) {
+      return {false, false, graph_.state_version(), error};
+    }
+    const auto result = apply(delta);
+    if (!result.committed) {
+      error = result.error.empty()
+          ? "DERIVED_COGNITION_BUDGETED_COMMIT_FAILED" : result.error;
+      return result;
+    }
+    error.clear();
+    return result;
+  }
+
   // Guarded wrappers for journal-backed Question/QuestionAspect mutations.
   bool record_question_reference(const std::string& id, std::uint64_t expected,
       bool& reactivated, std::string& error);
