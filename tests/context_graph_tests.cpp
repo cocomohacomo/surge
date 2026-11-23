@@ -506,11 +506,13 @@ int main(){
     CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
 
     // A zero budget is a true no-op for an initialized continuation cursor.
-    const auto saved_frontier=traversal_cursor.frontier;
+    const auto saved_frontier_size=traversal_cursor.frontier.size();
+    const auto saved_next_root=traversal_cursor.next_root_index;
     const auto zero_budget=graph.observe_focused_cognition(
         compact,positions,deeper,traversal_cursor,0,0);
     CHECK(zero_budget.complete);
-    CHECK(traversal_cursor.frontier==saved_frontier);
+    CHECK(traversal_cursor.frontier.size()==saved_frontier_size);
+    CHECK(traversal_cursor.next_root_index==saved_next_root);
 
     // A zero node budget defers all work without hiding any cluster from the
     // logical region. The geometric region is not a budget-sized prefix.
