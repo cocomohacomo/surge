@@ -2260,9 +2260,6 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
       spatial_outgoing_relation_ids_[item.second.from].push_back(item.first);
     spatial_relation_index_valid_ = true;
   }
-  std::vector<const GraphRelation*> inspected_relations;
-  std::set<std::string> inspected_relation_ids;
-
   // Stage 4: resumable root-scoped DFS. Expansion identity is
   // (origin root, cluster), while materialized nodes and relations are globally
   // deduplicated. Node and relation budgets are independent per invocation.
