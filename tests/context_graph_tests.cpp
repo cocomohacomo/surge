@@ -494,6 +494,16 @@ int main(){
     // Resumable traversal must converge to the same graph projection as one
     // unbounded pass. Tiny independent budgets force suspension inside a root.
     const auto unbounded_focus = shared_unbounded;
+    FocusTraversalCursor node_limited_cursor;
+    const auto node_limited = graph.observe_focused_cognition(
+        compact,positions,shared_depths,node_limited_cursor,1,100);
+    CHECK(node_limited.focus_work.nodes_processed<=1);
+    CHECK(node_limited.focus_work.relations_examined<=100);
+    FocusTraversalCursor relation_limited_cursor;
+    const auto relation_limited = graph.observe_focused_cognition(
+        compact,positions,shared_depths,relation_limited_cursor,100,1);
+    CHECK(relation_limited.focus_work.relations_examined<=1);
+    CHECK(relation_limited.focus_work.nodes_processed>1);
     FocusTraversalCursor traversal_cursor;
     CognitionObservation resumed_focus;
     std::size_t continuation_calls=0;
