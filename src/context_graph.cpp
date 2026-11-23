@@ -2277,6 +2277,10 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
     focus_identity << item.first.size() << ':' << item.first << '=' << item.second << ';';
   const std::string focus_digest = sha256_hex(focus_identity.str());
   const std::string traversal_query_digest = sha256_hex("SURGE_FOCUS_TRAVERSAL_V1");
+  if (!state.initialized && (max_nodes == 0 || max_relations == 0)) {
+    focused.focus_work.budget_exhausted = true;
+    return focused;
+  }
   if (state.initialized &&
       (state.schema_version != 1 || state.state_version != focused.state_version ||
        state.query_digest != traversal_query_digest ||
