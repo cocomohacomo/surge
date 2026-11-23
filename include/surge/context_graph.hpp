@@ -264,15 +264,6 @@ class ContextGraph {
       std::size_t max_nodes = 10000,
       std::size_t max_relations = 20000,
       std::size_t start_root_index = 0) const;
-  // Resumable variant. The caller owns traversal state; budgets apply per call.
-  // A cursor is invalidated when graph state or any traversal-defining input changes.
-  CognitionObservation observe_focused_cognition(
-      const FocusRegion& region,
-      const std::vector<ClusterSpatialPosition>& positions,
-      const std::vector<ClusterFocusDepth>& depths,
-      FocusTraversalCursor& cursor,
-      std::size_t max_nodes = 10000,
-      std::size_t max_relations = 20000) const;
   // Add a new cognition cluster with explicit lineage to the activated source clusters.
   // The caller supplies the recognized content; Core validates and journals the structure.
   bool append_derived_cognition_cluster(SemanticDelta& delta,
