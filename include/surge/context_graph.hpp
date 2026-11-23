@@ -128,6 +128,8 @@ struct ObservedMembership {
 };
 struct CognitionObservation {
   std::uint64_t state_version{0};
+  std::size_t next_root_index{0};
+  bool complete{false};
   std::vector<GraphNode> nodes;
   std::vector<GraphRelation> relations;
   std::vector<ObservedMembership> memberships;
