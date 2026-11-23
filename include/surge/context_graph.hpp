@@ -128,7 +128,6 @@ struct ObservedMembership {
 };
 struct CognitionObservation {
   std::uint64_t state_version{0};
-  std::string error;
   std::size_t next_root_index{0};
   bool complete{false};
   std::vector<GraphNode> nodes;
@@ -148,6 +147,8 @@ struct CognitionObservation {
   FocusWorkMetrics focus_work;
   std::size_t unresolved_scope_count{0};
   std::size_t dependency_evaluation_count{0};
+  // Stable cursor invalidation reason; empty for valid observations.
+  std::string error;
   // Snapshot semantics: detached copies, safe for external read-only inspection.
 };
 struct CognitionCandidate {
