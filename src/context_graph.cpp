@@ -2419,14 +2419,19 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
         suspended = true;
         break;
       }
-      if (relations_examined_this_call >= max_relations) {
+      const bool first_relation_inspection =
+          !inspected_relation_ids.count(relation_id);
+      if (first_relation_inspection &&
+          relations_examined_this_call >= max_relations) {
         focused.focus_work.budget_exhausted = true;
         suspended = true;
         break;
       }
-      ++relations_examined_this_call;
+      if (first_relation_inspection) {
+        ++relations_examined_this_call;
+        inspected_relation_ids.insert(relation_id);
+      }
       ++current.next_relation_index;
-      inspected_relation_ids.insert(relation_id);
       if (expands_child) {
         ++relations_traversed_this_call;
         if (child_is_new) {
