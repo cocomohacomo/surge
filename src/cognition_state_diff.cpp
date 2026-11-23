@@ -24,6 +24,13 @@ bool read_unique_items(std::istringstream& in, std::vector<std::string>& values)
   return true;
 }
 
+bool values_are_unique_and_nonempty(const std::vector<std::string>& values) {
+  std::set<std::string> seen;
+  for (const auto& value : values)
+    if (value.empty() || !seen.insert(value).second) return false;
+  return true;
+}
+
 void compare_sets(const std::vector<std::string>& before,
     const std::vector<std::string>& after, std::vector<std::string>& added,
     std::vector<std::string>& retained, std::vector<std::string>& removed) {
@@ -85,12 +92,24 @@ bool diff_cognition_state_snapshots(const CognitionStateSnapshot& previous,
     error = "cognition snapshot score is invalid";
     return false;
   }
+  if (!values_are_unique_and_nonempty(previous.supporting_member_ids) ||
+      !values_are_unique_and_nonempty(current.supporting_member_ids) ||
+      !values_are_unique_and_nonempty(previous.matched_terms) ||
+      !values_are_unique_and_nonempty(current.matched_terms)) {
+    error = "cognition snapshot contains empty or duplicate values";
+    return false;
+  }
+  const double score_delta = current.recall_score - previous.recall_score;
+  if (!std::isfinite(score_delta)) {
+    error = "cognition snapshot score delta is not finite";
+    return false;
+  }
   CognitionStateDiff result;
   result.cluster_id = current.cluster_id;
   result.input_member_id = current.input_member_id;
   result.previous_state_version = previous.evaluated_state_version;
   result.current_state_version = current.evaluated_state_version;
-  result.recall_score_delta = current.recall_score - previous.recall_score;
+  result.recall_score_delta = score_delta;
   compare_sets(previous.supporting_member_ids, current.supporting_member_ids,
       result.added_supporting_member_ids, result.retained_supporting_member_ids,
       result.removed_supporting_member_ids);
