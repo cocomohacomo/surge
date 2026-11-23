@@ -2164,6 +2164,16 @@ CognitionObservation ContextGraph::observe_focused_cognition(
     const std::vector<ClusterFocusDepth>& depths,
     std::size_t max_nodes, std::size_t max_relations,
     std::size_t start_root_index) const {
+  return observe_focused_cognition_impl(region, positions, depths,
+      max_nodes, max_relations, start_root_index);
+}
+
+CognitionObservation ContextGraph::observe_focused_cognition_impl(
+    const FocusRegion& region,
+    const std::vector<ClusterSpatialPosition>& positions,
+    const std::vector<ClusterFocusDepth>& depths,
+    std::size_t max_nodes, std::size_t max_relations,
+    std::size_t start_root_index) const {
   const auto focus_started = std::chrono::steady_clock::now();
   CognitionObservation focused;
   focused.state_version = state_version();
