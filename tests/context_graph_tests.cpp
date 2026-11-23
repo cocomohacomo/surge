@@ -539,6 +539,26 @@ int main(){
     CHECK(traversal_cursor.frontier.size()==saved_frontier_size);
     CHECK(traversal_cursor.next_root_index==saved_next_root);
 
+    // Graph mutation invalidates a partial cursor without mutating that cursor.
+    FocusTraversalCursor stale_cursor;
+    const auto partial_before_mutation=graph.observe_focused_cognition(
+        compact,positions,shared_depths,stale_cursor,1,1);
+    CHECK(!partial_before_mutation.complete);
+    const auto stale_version=stale_cursor.state_version;
+    const auto stale_frontier_size=stale_cursor.frontier.size();
+    SemanticDelta graph_change;
+    graph_change.delta_id="spatial-cursor-invalidation";
+    graph_change.idempotency_key="spatial-cursor-invalidation";
+    graph_change.expected_state_version=graph.state_version();
+    graph_change.nodes={{{"spatial-cursor-version-bump",NodeKind::Entity,
+        "cursor invalidation probe",{}}}};
+    CHECK(graph.apply(graph_change).committed);
+    const auto invalidated=graph.observe_focused_cognition(
+        compact,positions,shared_depths,stale_cursor,10,10);
+    CHECK(invalidated.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
+    CHECK(stale_cursor.state_version==stale_version);
+    CHECK(stale_cursor.frontier.size()==stale_frontier_size);
+
     // A zero node budget defers all work without hiding any cluster from the
     // logical region. The geometric region is not a budget-sized prefix.
     const auto no_node_budget =
