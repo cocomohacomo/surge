@@ -40,6 +40,13 @@ class BudgetedContextGraph {
       std::size_t max_candidates = 8) const {
     return graph_.recall_cognition_candidates(input_member_id, query_terms, max_candidates);
   }
+  FocusedCognitionCandidates recall_focused_cognition_candidates(
+      const std::string& input_member_id, const std::vector<std::string>& query_terms,
+      std::size_t max_candidates = 8, std::size_t max_nodes = 10000,
+      std::size_t max_relations = 20000) const {
+    return graph_.recall_focused_cognition_candidates(input_member_id, query_terms,
+        max_candidates, max_nodes, max_relations);
+  }
   bool append_cognition_feedback(SemanticDelta delta,
       const CognitionFeedback& feedback, const std::string& feedback_node_id,
       const std::string& relation_id, std::string& error) {
