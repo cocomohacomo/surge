@@ -2671,13 +2671,18 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
   // candidates are admitted for this work slice; it does not alter scores,
   // upstream classifications, or membership weights.
   const auto recalled = recall_cognition_candidates(
-      input_member_id, query_terms, max_candidates);
+      input_member_id, query_terms, std::numeric_limits<std::size_t>::max());
+  std::size_t admitted_candidates = 0;
   for (const auto& candidate : recalled) {
     if (processed_roots.count(candidate.cluster_id) ||
         materialized_clusters.count(candidate.cluster_id)) {
+      if (admitted_candidates >= max_candidates) break;
       result.candidates.push_back(candidate);
+      ++admitted_candidates;
     } else if (deferred_roots.count(candidate.cluster_id)) {
+      if (admitted_candidates >= max_candidates) break;
       result.deferred_candidates.push_back(candidate);
+      ++admitted_candidates;
     }
   }
   return result;
