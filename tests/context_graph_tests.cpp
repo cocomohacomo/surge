@@ -1124,6 +1124,48 @@ int main(){
     CHECK(shallow.deferred_candidates.size()==1);
     CHECK(shallow.candidates.front().cluster_id=="focus-recall-b");
     CHECK(shallow.deferred_candidates.front().cluster_id=="focus-recall-a");
+
+    // A caller-owned cursor advances by deterministic Focus root boundaries.
+    FocusedCognitionCursor cursor;
+    const auto first_page=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},cursor,8,2,8);
+    CHECK(first_page.error.empty());
+    CHECK(first_page.logical_region_cluster_ids.size()==2);
+    CHECK(first_page.processed_region_cluster_ids.size()==1);
+    CHECK(first_page.next_root_index==1);
+    CHECK(!first_page.complete);
+    CHECK(first_page.processed_region_cluster_ids.front()=="focus-recall-a");
+    const auto second_page=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},cursor,8,2,8);
+    CHECK(second_page.error.empty());
+    CHECK(second_page.processed_region_cluster_ids.size()==1);
+    CHECK(second_page.processed_region_cluster_ids.front()=="focus-recall-b");
+    CHECK(second_page.candidates.size()==1);
+    CHECK(second_page.candidates.front().cluster_id=="focus-recall-b");
+    CHECK(second_page.complete);
+    CHECK(second_page.next_root_index==2);
+
+    FocusedCognitionCursor query_cursor;
+    const auto query_page=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},query_cursor,8,2,8);
+    CHECK(query_page.error.empty());
+    const auto query_mismatch=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"flood"},query_cursor,8,2,8);
+    CHECK(query_mismatch.error=="FOCUS_CURSOR_QUERY_MISMATCH");
+
+    FocusedCognitionCursor stale_cursor;
+    const auto stale_seed=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},stale_cursor,8,2,8);
+    CHECK(stale_seed.error.empty());
+    SemanticDelta change_focus;change_focus.delta_id="focused-recall-cursor-stale";
+    change_focus.idempotency_key="focused-recall-cursor-stale";
+    change_focus.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_focus_depth_update(change_focus,
+        {"focus-recall-b",0},focus_error));
+    CHECK(graph.apply(change_focus).committed);
+    const auto stale_page=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},stale_cursor,8,2,8);
+    CHECK(stale_page.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
   }
 
   std::filesystem::remove_all(root);
