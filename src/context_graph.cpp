@@ -2118,7 +2118,12 @@ CognitionObservation ContextGraph::observe_focused_cognition() const {
 CognitionObservation ContextGraph::observe_focused_cognition(
     std::size_t max_nodes, std::size_t max_relations,
     std::size_t start_root_index) const {
-  if (!state_.focus_region) return observe_focused_cognition();
+  if (!state_.focus_region) {
+    auto focused = observe_focused_cognition();
+    focused.next_root_index = 1;
+    focused.complete = true;
+    return focused;
+  }
 
   // Build the derived x-axis index lazily. Position updates, journal replay
   // and archive/snapshot replacement invalidate it; unrelated graph writes do not.
