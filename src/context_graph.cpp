@@ -2717,10 +2717,9 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
   const std::set<std::string> deferred_roots(
       focused.deferred_region_cluster_ids.begin(),
       focused.deferred_region_cluster_ids.end());
-  std::set<std::string> materialized_clusters;
-  for (const auto& node : focused.nodes)
-    if (node.kind == NodeKind::Cluster || node.kind == NodeKind::ChaosCluster)
-      materialized_clusters.insert(node.id);
+  // Candidate admission is rooted only in the logical Focus roots. Nested
+  // clusters are not independently paged unless they are themselves Focus roots;
+  // this prevents a nested candidate from being emitted again on a later root page.
 
   // Reuse the existing recall engine. Focus only gates which recalled
   // candidates are admitted for this work slice; it does not alter scores,
@@ -2739,8 +2738,7 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
             candidate.supporting_member_ids.end(),
             [&](const auto& id) { return visible_node_ids.count(id) != 0; });
     const bool candidate_cluster_processed =
-        processed_roots.count(candidate.cluster_id) ||
-        materialized_clusters.count(candidate.cluster_id);
+        processed_roots.count(candidate.cluster_id) != 0;
     const bool candidate_cluster_deferred =
         deferred_roots.count(candidate.cluster_id);
     // A visible cluster root is not enough: its configured Focus depth must
