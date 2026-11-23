@@ -2678,12 +2678,12 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
     FocusedCognitionCursor& cursor, std::size_t max_candidates,
     std::size_t max_nodes, std::size_t max_relations) const {
   FocusedCognitionCandidates result;
+  const auto current_version = state_version();
   std::string query_material = std::to_string(input_member_id.size()) + ":" +
       input_member_id + "|" + std::to_string(query_terms.size()) + "|";
   for (const auto& term : query_terms)
     query_material += std::to_string(term.size()) + ":" + term + "|";
   const std::string query_digest = sha256_hex(query_material);
-  const auto current_version = state_version();
   if (cursor.initialized &&
       (cursor.state_version != current_version ||
        cursor.query_digest != query_digest)) {
@@ -2699,17 +2699,19 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
     cursor.next_root_index = 0;
     cursor.initialized = true;
   }
+  result.state_version = current_version;
+  result.next_root_index = cursor.next_root_index;
+  // A zero-capacity or empty query is a no-op. In particular, it must not
+  // consume Focus roots that the caller has not received candidates for.
+  if (max_candidates == 0 || query_terms.empty()) return result;
+
   const auto focused = observe_focused_cognition(
       max_nodes, max_relations, cursor.next_root_index);
   result.state_version = focused.state_version;
-  result.next_root_index = focused.next_root_index;
-  result.complete = focused.complete;
   result.logical_region_cluster_ids = focused.logical_region_cluster_ids;
-  cursor.next_root_index = focused.next_root_index;
   result.processed_region_cluster_ids = focused.processed_region_cluster_ids;
   result.deferred_region_cluster_ids = focused.deferred_region_cluster_ids;
   result.focus_work = focused.focus_work;
-  if (max_candidates == 0 || query_terms.empty()) return result;
 
   const std::set<std::string> processed_roots(
       focused.processed_region_cluster_ids.begin(),
@@ -2717,48 +2719,75 @@ FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
   const std::set<std::string> deferred_roots(
       focused.deferred_region_cluster_ids.begin(),
       focused.deferred_region_cluster_ids.end());
-  // Candidate admission is rooted only in the logical Focus roots. Nested
-  // clusters are not independently paged unless they are themselves Focus roots;
-  // this prevents a nested candidate from being emitted again on a later root page.
 
   // Reuse the existing recall engine. Focus only gates which recalled
   // candidates are admitted for this work slice; it does not alter scores,
   // upstream classifications, or membership weights.
   const auto recalled = recall_cognition_candidates(
       input_member_id, query_terms, std::numeric_limits<std::size_t>::max());
+  std::map<std::string, const CognitionCandidate*> recalled_by_cluster;
+  for (const auto& candidate : recalled)
+    recalled_by_cluster.emplace(candidate.cluster_id, &candidate);
+
   const std::set<std::string> visible_node_ids = [&]() {
     std::set<std::string> ids;
     for (const auto& node : focused.nodes) ids.insert(node.id);
     return ids;
   }();
+
+  // Consume candidates in logical root order, not global score order. The
+  // cursor is a root cursor, so advancing it past roots whose candidates were
+  // omitted by max_candidates would permanently lose those candidates.
+  std::size_t next_root_index = focused.next_root_index;
   std::size_t admitted_candidates = 0;
-  for (const auto& candidate : recalled) {
+  bool candidate_cap_reached = false;
+  const auto append_candidate_for_root = [&](const std::string& root_id,
+      bool is_processed) -> bool {
+    const auto found = recalled_by_cluster.find(root_id);
+    if (found == recalled_by_cluster.end()) return false;
+    const auto& candidate = *found->second;
     const bool all_support_is_visible = !candidate.supporting_member_ids.empty() &&
         std::all_of(candidate.supporting_member_ids.begin(),
             candidate.supporting_member_ids.end(),
             [&](const auto& id) { return visible_node_ids.count(id) != 0; });
-    const bool candidate_cluster_processed =
-        processed_roots.count(candidate.cluster_id) != 0;
-    const bool candidate_cluster_deferred =
-        deferred_roots.count(candidate.cluster_id);
-    // A visible cluster root is not enough: its configured Focus depth must
-    // also expose every support used by the global recall score. Otherwise
-    // returning that score as processed would leak information from outside
-    // the current spatial/depth work slice.
-    if (candidate_cluster_processed && all_support_is_visible) {
-      if (admitted_candidates >= max_candidates) break;
+    if (is_processed && all_support_is_visible)
       result.candidates.push_back(candidate);
-      ++admitted_candidates;
-    } else if (candidate_cluster_deferred ||
-               (candidate_cluster_processed && !all_support_is_visible)) {
-      if (admitted_candidates >= max_candidates) break;
+    else
       result.deferred_candidates.push_back(candidate);
-      ++admitted_candidates;
+    ++admitted_candidates;
+    return true;
+  };
+
+  for (std::size_t root_index = cursor.next_root_index;
+       root_index < focused.next_root_index &&
+           root_index < focused.logical_region_cluster_ids.size();
+       ++root_index) {
+    const auto& root_id = focused.logical_region_cluster_ids[root_index];
+    if (!processed_roots.count(root_id)) continue;
+    append_candidate_for_root(root_id, true);
+    if (admitted_candidates >= max_candidates) {
+      next_root_index = root_index + 1;
+      candidate_cap_reached = true;
+      break;
     }
   }
+
+  // Deferred candidates are exposed for inspection but do not advance the
+  // cursor past the first unprocessed root. A later call with a larger work
+  // budget can resume that same logical root.
+  if (!candidate_cap_reached) {
+    for (const auto& root_id : focused.deferred_region_cluster_ids) {
+      if (!deferred_roots.count(root_id)) continue;
+      append_candidate_for_root(root_id, false);
+      if (admitted_candidates >= max_candidates) break;
+    }
+  }
+
+  cursor.next_root_index = next_root_index;
+  result.next_root_index = next_root_index;
+  result.complete = next_root_index >= focused.logical_region_cluster_ids.size();
   return result;
 }
-
 
 bool ContextGraph::append_cognition_state_snapshot(SemanticDelta& delta,
     const CognitionCandidate& candidate, const std::string& input_member_id,
