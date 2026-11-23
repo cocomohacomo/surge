@@ -177,6 +177,25 @@ int main() {
       RelationKind::DerivedFrom);
   CHECK(graph.relations().at("evolution-cooccurrence-lineage/1").kind ==
       RelationKind::DerivedFrom);
+  CHECK(graph.relations().at("evolution-cooccurrence-lineage/0").from ==
+      "evolution-cooccurrence-cluster");
+  CHECK(graph.relations().at("evolution-cooccurrence-lineage/1").from ==
+      "evolution-cooccurrence-cluster");
+  const std::set<std::string> lineage_targets = {
+      graph.relations().at("evolution-cooccurrence-lineage/0").to,
+      graph.relations().at("evolution-cooccurrence-lineage/1").to};
+  CHECK(lineage_targets == std::set<std::string>({
+      "evolution-cluster", "evolution-cluster-2"}));
+  // Core does not invent spatial coordinates or Focus membership for the
+  // derived cluster. An external Projector may place it in a later delta.
+  const auto derived_observation = graph.observe_cognition();
+  CHECK(std::none_of(derived_observation.cluster_spatial_positions.begin(),
+      derived_observation.cluster_spatial_positions.end(),
+      [](const ClusterSpatialPosition& item) {
+        return item.cluster_id == "evolution-cooccurrence-cluster";
+      }));
+  CHECK(graph.cluster_membership_reference_count(
+      "evolution-cooccurrence-cluster") == 0);
   CHECK(graph.nodes().at("evolution-cluster").content == source_one_before);
   CHECK(graph.nodes().at("evolution-cluster-2").content == source_two_before);
   CHECK(graph.cluster_membership_reference_count("evolution-member-3") ==
