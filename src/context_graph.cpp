@@ -2283,6 +2283,13 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
        state.focus_digest != focus_digest)) {
     focused.focus_work.budget_exhausted = true;
     focused.complete = false;
+    focused.error = state.state_version != focused.state_version
+        ? "FOCUS_CURSOR_STALE_STATE_VERSION"
+        : (state.schema_version != 1
+            ? "FOCUS_CURSOR_SCHEMA_MISMATCH"
+            : (state.query_digest != traversal_query_digest
+                ? "FOCUS_CURSOR_QUERY_MISMATCH"
+                : "FOCUS_CURSOR_FOCUS_MISMATCH"));
     focused.next_root_index = state.next_root_index;
     return focused;
   }
@@ -2316,7 +2323,11 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
     state.visited_expansion_keys.assign(expanded_keys.begin(), expanded_keys.end());
     state.completed_root_ids.assign(completed_roots.begin(), completed_roots.end());
   };
-  while (!state.complete && state.next_root_index < roots.size()) {
+  if (max_nodes == 0 || max_relations == 0) {
+    focused.focus_work.budget_exhausted = !state.complete;
+  }
+  while (max_nodes != 0 && max_relations != 0 &&
+         !state.complete && state.next_root_index < roots.size()) {
     const std::string& root = roots[state.next_root_index];
     if (state.active_root_id.empty()) {
       if (!visible_ids.count(root)) {
@@ -2411,11 +2422,6 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
       focused.processed_region_cluster_ids.push_back(root);
     else
       focused.deferred_region_cluster_ids.push_back(root);
-  }
-  for (const auto& id : visible_ids) {
-    if (std::find(roots.begin(), roots.end(), id) != roots.end()) continue;
-    const auto pos = position_by_cluster.find(id);
-    (void)pos;
   }
   focused.focus_work.nodes_processed = nodes_admitted_this_call;
   focused.focus_work.relations_examined = relations_examined_this_call;
