@@ -45,6 +45,25 @@ int main() {
   CHECK(after.front().memory_state_version == graph.state_version());
   CHECK(after.front().memory_state_version > recall_version);
 
+  SemanticDelta snapshot_delta;
+  snapshot_delta.delta_id = "cognition-state-snapshot-1";
+  snapshot_delta.idempotency_key = "cognition-state-snapshot-1";
+  snapshot_delta.expected_state_version = graph.state_version();
+  std::string snapshot_error;
+  CHECK(graph.append_cognition_state_snapshot(snapshot_delta, after.front(),
+      "evolution-input", "evolution-snapshot-1", "evolution-snapshot-rel",
+      snapshot_error));
+  CHECK(snapshot_error.empty());
+  CHECK(snapshot_delta.nodes.size() == 1);
+  CHECK(snapshot_delta.relations.size() == 4);
+  CHECK(snapshot_delta.nodes.front().node.content.find("SURGE_COGNITION_STATE_V1") == 0);
+  CHECK(graph.apply(snapshot_delta).committed);
+  CHECK(graph.nodes().count("evolution-snapshot-1") == 1);
+  CHECK(graph.relations().count("evolution-snapshot-rel/cluster") == 1);
+  CHECK(graph.relations().count("evolution-snapshot-rel/input") == 1);
+  CHECK(graph.relations().count("evolution-snapshot-rel/support/0") == 1);
+  CHECK(graph.relations().count("evolution-snapshot-rel/support/1") == 1);
+
   const auto stable_version = graph.state_version();
   const auto repeated = graph.recall_cognition_candidates("evolution-input", {"river"}, 8);
   CHECK(repeated.size() == after.size());
