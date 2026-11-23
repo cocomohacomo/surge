@@ -2642,6 +2642,48 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
 }
 
 
+FocusedCognitionCandidates ContextGraph::recall_focused_cognition_candidates(
+    const std::string& input_member_id,
+    const std::vector<std::string>& query_terms,
+    std::size_t max_candidates, std::size_t max_nodes,
+    std::size_t max_relations) const {
+  FocusedCognitionCandidates result;
+  const auto focused = observe_focused_cognition(max_nodes, max_relations);
+  result.state_version = focused.state_version;
+  result.logical_region_cluster_ids = focused.logical_region_cluster_ids;
+  result.processed_region_cluster_ids = focused.processed_region_cluster_ids;
+  result.deferred_region_cluster_ids = focused.deferred_region_cluster_ids;
+  result.focus_work = focused.focus_work;
+  if (max_candidates == 0 || query_terms.empty()) return result;
+
+  const std::set<std::string> processed_roots(
+      focused.processed_region_cluster_ids.begin(),
+      focused.processed_region_cluster_ids.end());
+  const std::set<std::string> deferred_roots(
+      focused.deferred_region_cluster_ids.begin(),
+      focused.deferred_region_cluster_ids.end());
+  std::set<std::string> materialized_clusters;
+  for (const auto& node : focused.nodes)
+    if (node.kind == NodeKind::Cluster || node.kind == NodeKind::ChaosCluster)
+      materialized_clusters.insert(node.id);
+
+  // Reuse the existing recall engine. Focus only gates which recalled
+  // candidates are admitted for this work slice; it does not alter scores,
+  // upstream classifications, or membership weights.
+  const auto recalled = recall_cognition_candidates(
+      input_member_id, query_terms, max_candidates);
+  for (const auto& candidate : recalled) {
+    if (processed_roots.count(candidate.cluster_id) ||
+        materialized_clusters.count(candidate.cluster_id)) {
+      result.candidates.push_back(candidate);
+    } else if (deferred_roots.count(candidate.cluster_id)) {
+      result.deferred_candidates.push_back(candidate);
+    }
+  }
+  return result;
+}
+
+
 bool ContextGraph::append_cognition_state_snapshot(SemanticDelta& delta,
     const CognitionCandidate& candidate, const std::string& input_member_id,
     const std::string& snapshot_node_id, const std::string& relation_prefix,
