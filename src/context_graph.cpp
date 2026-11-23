@@ -2340,13 +2340,14 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
       auto& current = state.frontier.back();
       const std::string expansion_key =
           current.origin_root_id + "\n" + current.cluster_id;
-      if (!expanded_keys.insert(expansion_key).second) {
+      if (expanded_keys.count(expansion_key)) {
         state.frontier.pop_back();
         continue;
       }
       const auto adjacency = spatial_outgoing_relation_ids_.find(current.cluster_id);
       if (adjacency == spatial_outgoing_relation_ids_.end() ||
           current.next_relation_index >= adjacency->second.size()) {
+        expanded_keys.insert(expansion_key);
         state.frontier.pop_back();
         continue;
       }
@@ -2366,7 +2367,7 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
       const bool child_is_cluster = child_it != state_.nodes.end() &&
           (child_it->second.kind == NodeKind::Cluster ||
            child_it->second.kind == NodeKind::ChaosCluster);
-      const bool child_is_new = expands_child && child_is_cluster &&
+      const bool child_is_new = expands_child &&
                                 !visible_ids.count(relation.to);
       if (child_is_new && nodes_admitted_this_call >= max_nodes) {
         focused.focus_work.budget_exhausted = true;
