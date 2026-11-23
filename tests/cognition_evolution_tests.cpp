@@ -317,7 +317,10 @@ int main() {
   CHECK(derived_history_diff.cluster_id == "evolution-cooccurrence-cluster");
   CHECK(derived_history_diff.current_state_version >
       derived_history_diff.previous_state_version);
-  CHECK(std::abs(derived_history_diff.recall_score_delta) < 1e-12);
+  // The recursive cluster is now a second matching seed. Its DerivedFrom
+  // edge contributes the existing one-hop association factor (0.25 * 0.30)
+  // to the generated cluster; the snapshot must preserve that state change.
+  CHECK(std::abs(derived_history_diff.recall_score_delta - 0.075) < 1e-12);
 
   const auto focused_recursive = graph.observe_focused_cognition(16, 32);
   CHECK(focused_recursive.logical_region_cluster_ids ==
