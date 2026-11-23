@@ -1068,6 +1068,49 @@ int main(){
     CHECK(invalid_delta.nodes.empty()&&invalid_delta.relations.empty());
   }
 
+  // Focus gates candidate recall by the actual work slice while preserving
+  // every cluster in the logical 3D region for later processing.
+  {
+    const auto path=(root/"focused-candidate-recall.sgj").string();
+    ContextGraph graph(path);CHECK(graph.open());
+    SemanticDelta seed;seed.delta_id="focused-recall-seed";
+    seed.idempotency_key="focused-recall-seed";seed.expected_state_version=0;
+    seed.nodes={{{"focus-recall-a",NodeKind::Cluster,"A",{} }},
+                {{"focus-recall-b",NodeKind::Cluster,"B",{} }},
+                {{"focus-recall-evidence-a",NodeKind::Evidence,"river habitat",{} }},
+                {{"focus-recall-evidence-b",NodeKind::Evidence,"river floodplain",{} }}};
+    seed.relations={{{"focus-recall-a-member",RelationKind::Contains,
+                      "focus-recall-a","focus-recall-evidence-a",0.8}},
+                    {{"focus-recall-b-member",RelationKind::Contains,
+                      "focus-recall-b","focus-recall-evidence-b",0.7}}};
+    CHECK(graph.apply(seed).committed);
+    SemanticDelta focus_delta;focus_delta.delta_id="focused-recall-settings";
+    focus_delta.idempotency_key="focused-recall-settings";
+    focus_delta.expected_state_version=graph.state_version();
+    std::string focus_error;
+    CHECK(graph.append_focus_region_update(focus_delta,
+        {{0.0,0.0,0.0},{2.0,2.0,2.0}},focus_error));
+    CHECK(graph.append_cluster_spatial_position_update(focus_delta,
+        {"focus-recall-a",{-1.0,0.0,0.0}},focus_error));
+    CHECK(graph.append_cluster_spatial_position_update(focus_delta,
+        {"focus-recall-b",{1.0,0.0,0.0}},focus_error));
+    CHECK(graph.append_cluster_focus_depth_update(focus_delta,
+        {"focus-recall-a",0},focus_error));
+    CHECK(graph.append_cluster_focus_depth_update(focus_delta,
+        {"focus-recall-b",0},focus_error));
+    CHECK(graph.apply(focus_delta).committed);
+    const auto batch=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},8,1,8);
+    CHECK(batch.logical_region_cluster_ids.size()==2);
+    CHECK(batch.processed_region_cluster_ids.size()==1);
+    CHECK(batch.deferred_region_cluster_ids.size()==1);
+    CHECK(batch.candidates.size()==1);
+    CHECK(batch.deferred_candidates.size()==1);
+    CHECK(batch.focus_work.budget_exhausted);
+    CHECK(batch.candidates.front().cluster_id==batch.processed_region_cluster_ids.front());
+    CHECK(batch.deferred_candidates.front().cluster_id==batch.deferred_region_cluster_ids.front());
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
