@@ -475,6 +475,43 @@ int main(){
     CHECK(!local_budget.focus_work.budget_exhausted);
     CHECK(local_budget.focus_work.relations_examined<10);
 
+    // Resumable traversal must converge to the same graph projection as one
+    // unbounded pass. Tiny independent budgets force suspension inside a root.
+    const auto unbounded_focus =
+        graph.observe_focused_cognition(compact,positions,deeper,1000,1000);
+    FocusTraversalCursor traversal_cursor;
+    CognitionObservation resumed_focus;
+    std::size_t continuation_calls=0;
+    do {
+      resumed_focus=graph.observe_focused_cognition(
+          compact,positions,deeper,traversal_cursor,1,1);
+      CHECK(++continuation_calls<64);
+    } while(!resumed_focus.complete);
+    std::vector<std::string> expected_nodes,actual_nodes;
+    std::vector<std::string> expected_relations,actual_relations;
+    for(const auto& node:unbounded_focus.nodes) expected_nodes.push_back(node.id);
+    for(const auto& node:resumed_focus.nodes) actual_nodes.push_back(node.id);
+    for(const auto& relation:unbounded_focus.relations) expected_relations.push_back(relation.id);
+    for(const auto& relation:resumed_focus.relations) actual_relations.push_back(relation.id);
+    std::sort(expected_nodes.begin(),expected_nodes.end());
+    std::sort(actual_nodes.begin(),actual_nodes.end());
+    std::sort(expected_relations.begin(),expected_relations.end());
+    std::sort(actual_relations.begin(),actual_relations.end());
+    CHECK(actual_nodes==expected_nodes);
+    CHECK(actual_relations==expected_relations);
+    CHECK(resumed_focus.complete);
+    CHECK(traversal_cursor.complete);
+    CHECK(continuation_calls>1);
+    CHECK(std::adjacent_find(actual_nodes.begin(),actual_nodes.end())==actual_nodes.end());
+    CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
+
+    // A zero budget is a true no-op for an initialized continuation cursor.
+    const auto saved_frontier=traversal_cursor.frontier;
+    const auto zero_budget=graph.observe_focused_cognition(
+        compact,positions,deeper,traversal_cursor,0,0);
+    CHECK(zero_budget.complete);
+    CHECK(traversal_cursor.frontier==saved_frontier);
+
     // A zero node budget defers all work without hiding any cluster from the
     // logical region. The geometric region is not a budget-sized prefix.
     const auto no_node_budget =
