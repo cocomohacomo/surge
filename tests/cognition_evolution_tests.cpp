@@ -1,5 +1,7 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/cognition_state_diff.hpp"
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 using namespace surge;
@@ -69,6 +71,57 @@ int main() {
   CHECK(repeated.size() == after.size());
   CHECK(graph.state_version() == stable_version);
   CHECK(graph.observe_cognition().state_version == stable_version);
+
+  // External evaluation is persisted as feedback, then applied only when the
+  // same input is recalled again. It does not rewrite memberships or weights.
+  SemanticDelta feedback_delta;
+  feedback_delta.delta_id = "cognition-feedback-1";
+  feedback_delta.idempotency_key = "cognition-feedback-1";
+  feedback_delta.expected_state_version = graph.state_version();
+  CognitionFeedback feedback;
+  feedback.feedback_id = "external-review-1";
+  feedback.candidate_cluster_id = "evolution-cluster";
+  feedback.input_member_id = "evolution-input";
+  feedback.outcome = "CONFIRMED";
+  feedback.producer_id = "test-projector";
+  feedback.producer_version = "1";
+  feedback.policy_version = "test-policy-1";
+  feedback.recorded_at = "2026-11-23T00:00:00Z";
+  feedback.notes = "external evaluator confirmed this candidate";
+  std::string feedback_error;
+  CHECK(graph.append_cognition_feedback(feedback_delta, feedback,
+      "evolution-feedback-1", "evolution-feedback-about", feedback_error));
+  CHECK(feedback_error.empty());
+  CHECK(graph.apply(feedback_delta).committed);
+
+  const auto reevaluated = graph.recall_cognition_candidates(
+      "evolution-input", {"river"}, 8);
+  CHECK(reevaluated.size() == 1);
+  CHECK(reevaluated.front().cluster_id == "evolution-cluster");
+  CHECK(std::abs(reevaluated.front().recall_score -
+      (repeated.front().recall_score + 0.20)) < 1e-12);
+  CHECK(reevaluated.front().memory_state_version == graph.state_version());
+
+  SemanticDelta reevaluated_snapshot_delta;
+  reevaluated_snapshot_delta.delta_id = "cognition-state-snapshot-2";
+  reevaluated_snapshot_delta.idempotency_key = "cognition-state-snapshot-2";
+  reevaluated_snapshot_delta.expected_state_version = graph.state_version();
+  CHECK(graph.append_cognition_state_snapshot(reevaluated_snapshot_delta,
+      reevaluated.front(), "evolution-input", "evolution-snapshot-2",
+      "evolution-snapshot-2-rel", snapshot_error));
+  CHECK(graph.apply(reevaluated_snapshot_delta).committed);
+
+  CognitionStateSnapshot first_snapshot, second_snapshot;
+  CHECK(decode_cognition_state_snapshot(
+      graph.nodes().at("evolution-snapshot-1"), first_snapshot, snapshot_error));
+  CHECK(decode_cognition_state_snapshot(
+      graph.nodes().at("evolution-snapshot-2"), second_snapshot, snapshot_error));
+  CognitionStateDiff state_diff;
+  CHECK(diff_cognition_state_snapshots(first_snapshot, second_snapshot,
+      state_diff, snapshot_error));
+  CHECK(std::abs(state_diff.recall_score_delta - 0.20) < 1e-12);
+  CHECK(state_diff.cluster_id == "evolution-cluster");
+  CHECK(state_diff.input_member_id == "evolution-input");
 
   std::filesystem::remove_all(root);
   std::cout << "SURGE cognition evolution: candidate accumulation and re-recall passed\n";
