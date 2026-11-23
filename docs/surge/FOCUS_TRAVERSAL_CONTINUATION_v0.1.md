@@ -81,7 +81,8 @@ budget may cause an immediate yield without losing cursor state. A larger
 budget continues from the retained frontier; it does not restart a completed
 root or shrink the logical Focus region.
 
-A budget of zero is a no-op. It must not consume roots or frontier entries.
+A budget of zero is a no-op. If either per-call limit is zero, it must not
+consume roots, admit nodes, inspect relations, or alter the frontier.
 
 ## 6. Invalidation
 
@@ -94,8 +95,11 @@ The cursor MUST fail closed when any traversal-defining state changes:
 Budget values are deliberately excluded from traversal identity so that
 budget changes do not invalidate a valid cursor.
 
-The implementation must return a typed/stable error and leave the caller's
-cursor unchanged on invalidation.
+The implementation returns stable observation errors
+(FOCUS_CURSOR_STALE_STATE_VERSION, FOCUS_CURSOR_SCHEMA_MISMATCH,
+FOCUS_CURSOR_QUERY_MISMATCH, FOCUS_CURSOR_FOCUS_MISMATCH, or
+FOCUS_CURSOR_MALFORMED) and leaves the caller's cursor unchanged on
+invalidation.
 
 ## 7. Completion and result contract
 
@@ -152,3 +156,15 @@ implicit changes to membership weights.
 A design document or passing unit test alone is not implementation completion.
 The feature is complete only after the cursor-aware execution path, regression
 tests, API compatibility checks, and CI are all verified.
+
+## 8. Current implementation mapping
+
+The public legacy observation overload delegates to the same private traversal
+engine with a temporary cursor, preserving its root-offset behavior. The
+cursor-aware overload accepts caller-owned state and returns the accumulated
+observation. Frontier offsets resume within an adjacency list; Node admission
+and Relation inspection are separately counted per invocation. Expansion keys
+are scoped by origin root, while visible nodes and returned relation IDs are
+deduplicated globally. The continuation regression compares a sequence of
+one-node/one-relation slices against an unbounded observation, including a
+shared nested cluster reached under different root depth limits.
