@@ -2687,12 +2687,8 @@ bool ContextGraph::append_cognition_state_snapshot(SemanticDelta& delta,
   std::vector<GraphRelation> relations;
   relations.push_back({relation_prefix + "/cluster", RelationKind::About,
       snapshot_node_id, candidate.cluster_id, 1.0});
-  relations.push_back({relation_prefix + "/input", RelationKind::DerivedFrom,
-      snapshot_node_id, input_member_id, 1.0});
-  std::size_t index = 0;
-  for (const auto& id : candidate.supporting_member_ids)
-    relations.push_back({relation_prefix + "/support/" + std::to_string(index++),
-        RelationKind::DerivedFrom, snapshot_node_id, id, 1.0});
+  relations.push_back({relation_prefix + "/membership", RelationKind::Contains,
+      candidate.cluster_id, snapshot_node_id, 1.0});
   for (const auto& relation : relations) {
     if (state_.relations.count(relation.id) ||
         std::any_of(delta.relations.begin(), delta.relations.end(),
