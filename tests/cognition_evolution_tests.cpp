@@ -156,6 +156,17 @@ int main() {
   const auto source_two_memberships_before =
       graph.cluster_membership_reference_count("evolution-member-4");
 
+  // The Focus region is a persisted logical boundary. Placement of the
+  // derived cluster is supplied explicitly by the external Projector below.
+  SemanticDelta cooccurrence_focus_region;
+  cooccurrence_focus_region.delta_id = "cognition-cooccurrence-focus-region";
+  cooccurrence_focus_region.idempotency_key = "cognition-cooccurrence-focus-region";
+  cooccurrence_focus_region.expected_state_version = graph.state_version();
+  CHECK(graph.append_focus_region_update(cooccurrence_focus_region,
+      FocusRegion{{0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}},
+      cooccurrence_error));
+  CHECK(graph.apply(cooccurrence_focus_region).committed);
+
   SemanticDelta cooccurrence_delta;
   cooccurrence_delta.delta_id = "cognition-cooccurrence-derived";
   cooccurrence_delta.idempotency_key = "cognition-cooccurrence-derived";
@@ -170,6 +181,13 @@ int main() {
   CHECK(cooccurrence_delta.nodes.size() == 1);
   CHECK(cooccurrence_delta.relations.size() == 2);
   CHECK(cooccurrence_delta.nodes.front().node.kind == NodeKind::Cluster);
+  // External Projector placement and per-cluster depth are committed in the
+  // same delta as cluster creation. Core does not derive these coordinates.
+  CHECK(graph.append_cluster_spatial_position_update(cooccurrence_delta,
+      {"evolution-cooccurrence-cluster", {0.25, 0.0, 0.0}},
+      cooccurrence_error));
+  CHECK(graph.append_cluster_focus_depth_update(cooccurrence_delta,
+      {"evolution-cooccurrence-cluster", 0}, cooccurrence_error));
   CHECK(graph.apply(cooccurrence_delta).committed);
   CHECK(graph.nodes().at("evolution-cooccurrence-cluster").content ==
       "Tributary flow and floodplain habitat form a coupled seasonal system");
@@ -198,6 +216,30 @@ int main() {
       }));
   CHECK(graph.cluster_membership_reference_count(
       "evolution-cooccurrence-cluster") == 0);
+  const auto focused_cooccurrence = graph.observe_focused_cognition(16, 32);
+  CHECK(focused_cooccurrence.focus_region.has_value());
+  CHECK(focused_cooccurrence.logical_region_cluster_ids ==
+      std::vector<std::string>({"evolution-cooccurrence-cluster"}));
+  CHECK(focused_cooccurrence.processed_region_cluster_ids ==
+      std::vector<std::string>({"evolution-cooccurrence-cluster"}));
+  CHECK(focused_cooccurrence.deferred_region_cluster_ids.empty());
+  CHECK(std::any_of(focused_cooccurrence.nodes.begin(),
+      focused_cooccurrence.nodes.end(), [](const GraphNode& node) {
+        return node.id == "evolution-cooccurrence-cluster";
+      }));
+  const auto persisted_cognition = graph.observe_cognition();
+  CHECK(std::any_of(persisted_cognition.cluster_spatial_positions.begin(),
+      persisted_cognition.cluster_spatial_positions.end(),
+      [](const ClusterSpatialPosition& item) {
+        return item.cluster_id == "evolution-cooccurrence-cluster" &&
+            item.position.x == 0.25;
+      }));
+  CHECK(std::any_of(persisted_cognition.cluster_focus_depths.begin(),
+      persisted_cognition.cluster_focus_depths.end(),
+      [](const ClusterFocusDepth& item) {
+        return item.cluster_id == "evolution-cooccurrence-cluster" &&
+            item.depth == 0;
+      }));
   CHECK(graph.nodes().at("evolution-cluster").content == source_one_before);
   CHECK(graph.nodes().at("evolution-cluster-2").content == source_two_before);
   CHECK(graph.cluster_membership_reference_count("evolution-member-3") ==
