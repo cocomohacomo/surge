@@ -1145,6 +1145,16 @@ int main(){
     CHECK(second_page.complete);
     CHECK(second_page.next_root_index==2);
 
+    // Restore full support visibility so this pagination assertion isolates
+    // the output cap rather than the earlier depth-zero deferral case.
+    SemanticDelta restore_candidate_depth;
+    restore_candidate_depth.delta_id="focused-recall-restore-depth";
+    restore_candidate_depth.idempotency_key="focused-recall-restore-depth";
+    restore_candidate_depth.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_focus_depth_update(restore_candidate_depth,
+        {"focus-recall-a",1},focus_error));
+    CHECK(graph.apply(restore_candidate_depth).committed);
+
     // A candidate output cap must not consume later Focus roots. Both roots
     // fit in the observation budget, but the caller asks for one candidate
     // per page and must be able to retrieve the second root on the next call.
