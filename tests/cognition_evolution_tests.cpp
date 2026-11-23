@@ -1,7 +1,9 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
 #include "surge/cognition_state_diff.hpp"
+#include <algorithm>
 #include <cmath>
+#include <set>
 #include <filesystem>
 #include <iostream>
 using namespace surge;
