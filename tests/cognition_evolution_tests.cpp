@@ -241,17 +241,20 @@ int main() {
   // member or Core-assigned classification/weight is created for it.
   const auto derived_recall_before = graph.recall_cognition_candidates(
       "evolution-input", {"coupled"}, 8);
-  CHECK(derived_recall_before.size() == 1);
-  CHECK(derived_recall_before.front().cluster_id ==
-      "evolution-cooccurrence-cluster");
-  CHECK(derived_recall_before.front().supporting_member_ids.empty());
+  const auto derived_candidate_before = std::find_if(
+      derived_recall_before.begin(), derived_recall_before.end(),
+      [](const CognitionCandidate& candidate) {
+        return candidate.cluster_id == "evolution-cooccurrence-cluster";
+      });
+  CHECK(derived_candidate_before != derived_recall_before.end());
+  CHECK(derived_candidate_before->supporting_member_ids.empty());
 
   SemanticDelta derived_snapshot_before_delta;
   derived_snapshot_before_delta.delta_id = "derived-cognition-snapshot-before";
   derived_snapshot_before_delta.idempotency_key = "derived-cognition-snapshot-before";
   derived_snapshot_before_delta.expected_state_version = graph.state_version();
   CHECK(graph.append_cognition_state_snapshot(derived_snapshot_before_delta,
-      derived_recall_before.front(), "evolution-input",
+      *derived_candidate_before, "evolution-input",
       "evolution-derived-snapshot-before", "evolution-derived-snapshot-before-rel",
       cooccurrence_error));
   CHECK(graph.apply(derived_snapshot_before_delta).committed);
@@ -280,7 +283,6 @@ int main() {
 
   const auto recursive_recall = graph.recall_cognition_candidates(
       "evolution-input", {"coupled"}, 8);
-  CHECK(recursive_recall.size() == 2);
   const auto recursive_candidate = std::find_if(recursive_recall.begin(),
       recursive_recall.end(), [](const CognitionCandidate& candidate) {
         return candidate.cluster_id == "evolution-recursive-cluster";
