@@ -2336,8 +2336,32 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
   }
   for (const auto& id : state.visible_node_ids)
     if (!state_.nodes.count(id)) malformed_cursor = true;
-  for (const auto& id : state.completed_root_ids)
-    if (!logical_roots.count(id)) malformed_cursor = true;
+  for (const auto& id : state.completed_root_ids) {
+    const auto root = std::find(roots.begin(), roots.end(), id);
+    if (root == roots.end() ||
+        static_cast<std::size_t>(std::distance(roots.begin(), root)) >=
+            state.next_root_index)
+      malformed_cursor = true;
+  }
+  for (const auto& id : state.inspected_relation_ids)
+    if (!state_.relations.count(id)) malformed_cursor = true;
+  for (const auto& key : state.visited_expansion_keys) {
+    const auto separator = key.find('\n');
+    if (separator == std::string::npos || separator == 0 ||
+        separator + 1 >= key.size()) {
+      malformed_cursor = true;
+      continue;
+    }
+    const std::string origin = key.substr(0, separator);
+    const std::string cluster = key.substr(separator + 1);
+    const auto origin_node = state_.nodes.find(origin);
+    if ((!logical_roots.count(origin) && !depth_by_cluster.count(origin)) ||
+        origin_node == state_.nodes.end() ||
+        (origin_node->second.kind != NodeKind::Cluster &&
+         origin_node->second.kind != NodeKind::ChaosCluster) ||
+        !state_.nodes.count(cluster))
+      malformed_cursor = true;
+  }
   if (malformed_cursor) {
     focused.focus_work.budget_exhausted = true;
     focused.error = "FOCUS_CURSOR_MALFORMED";
