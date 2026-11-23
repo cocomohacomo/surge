@@ -475,16 +475,31 @@ int main(){
     CHECK(!local_budget.focus_work.budget_exhausted);
     CHECK(local_budget.focus_work.relations_examined<10);
 
+    // The same nested cluster is reachable from two roots with different
+    // depth limits. Expansion must be tracked per origin root, not globally.
+    SemanticDelta shared_path;
+    shared_path.delta_id="spatial-shared-root-path";
+    shared_path.idempotency_key="spatial-shared-root-path";
+    shared_path.expected_state_version=graph.state_version();
+    shared_path.relations={{{"spatial-b-shared-nested",RelationKind::Contains,
+        "spatial-b","spatial-nested"}}};
+    CHECK(graph.apply(shared_path).committed);
+    const std::vector<ClusterFocusDepth> shared_depths={
+      {"spatial-a",1},{"spatial-b",2},{"spatial-nested",2}};
+    const auto shared_unbounded=graph.observe_focused_cognition(
+        compact,positions,shared_depths,1000,1000);
+    CHECK(std::any_of(shared_unbounded.nodes.begin(),shared_unbounded.nodes.end(),
+        [](const auto& node){return node.id=="spatial-deep";}));
+
     // Resumable traversal must converge to the same graph projection as one
     // unbounded pass. Tiny independent budgets force suspension inside a root.
-    const auto unbounded_focus =
-        graph.observe_focused_cognition(compact,positions,deeper,1000,1000);
+    const auto unbounded_focus = shared_unbounded;
     FocusTraversalCursor traversal_cursor;
     CognitionObservation resumed_focus;
     std::size_t continuation_calls=0;
     do {
       resumed_focus=graph.observe_focused_cognition(
-          compact,positions,deeper,traversal_cursor,1,1);
+          compact,positions,shared_depths,traversal_cursor,1,1);
       CHECK(++continuation_calls<64);
     } while(!resumed_focus.complete);
     std::vector<std::string> expected_nodes,actual_nodes;
@@ -509,7 +524,7 @@ int main(){
     const auto saved_frontier_size=traversal_cursor.frontier.size();
     const auto saved_next_root=traversal_cursor.next_root_index;
     const auto zero_budget=graph.observe_focused_cognition(
-        compact,positions,deeper,traversal_cursor,0,0);
+        compact,positions,shared_depths,traversal_cursor,0,0);
     CHECK(zero_budget.complete);
     CHECK(traversal_cursor.frontier.size()==saved_frontier_size);
     CHECK(traversal_cursor.next_root_index==saved_next_root);
