@@ -2301,6 +2301,39 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
     state.next_root_index = std::min(start_root_index, roots.size());
     state.initialized = true;
   }
+  // Reject structurally inconsistent caller-owned state before reading or
+  // mutating it. The cursor is deliberately left untouched on this path.
+  bool malformed_cursor = state.next_root_index > roots.size() ||
+      (state.complete && (state.next_root_index != roots.size() ||
+                          !state.active_root_id.empty() || !state.frontier.empty())) ||
+      (state.active_root_id.empty() && !state.frontier.empty()) ||
+      (!state.active_root_id.empty() &&
+       (state.next_root_index >= roots.size() ||
+        state.active_root_id != roots[state.next_root_index] ||
+        state.frontier.empty()));
+  const std::set<std::string> logical_roots(roots.begin(), roots.end());
+  for (const auto& entry : state.frontier) {
+    const auto node = state_.nodes.find(entry.cluster_id);
+    const auto adjacency = spatial_outgoing_relation_ids_.find(entry.cluster_id);
+    if (entry.cluster_id.empty() || !logical_roots.count(entry.origin_root_id) ||
+        node == state_.nodes.end() || entry.level > 1000000 ||
+        (adjacency == spatial_outgoing_relation_ids_.end()
+            ? entry.next_relation_index != 0
+            : entry.next_relation_index > adjacency->second.size())) {
+      malformed_cursor = true;
+      break;
+    }
+  }
+  for (const auto& id : state.visible_node_ids)
+    if (!state_.nodes.count(id)) malformed_cursor = true;
+  for (const auto& id : state.completed_root_ids)
+    if (!logical_roots.count(id)) malformed_cursor = true;
+  if (malformed_cursor) {
+    focused.focus_work.budget_exhausted = true;
+    focused.error = "FOCUS_CURSOR_MALFORMED";
+    focused.next_root_index = state.next_root_index;
+    return focused;
+  }
   if (state.complete) {
     focused.complete = true;
     focused.next_root_index = roots.size();
