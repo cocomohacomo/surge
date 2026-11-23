@@ -376,6 +376,15 @@ class ContextGraph {
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
     std::map<std::string, std::vector<TemporalReassessmentRecord>> reassessment_history;
   };
+  // Shared implementation for legacy root paging and resumable Focus traversal.
+  // The legacy API remains a thin wrapper; cursor-aware entry points reuse this
+  // engine rather than maintaining a second graph-walk implementation.
+  CognitionObservation observe_focused_cognition_impl(
+      const FocusRegion& region,
+      const std::vector<ClusterSpatialPosition>& positions,
+      const std::vector<ClusterFocusDepth>& depths,
+      std::size_t max_nodes, std::size_t max_relations,
+      std::size_t start_root_index) const;
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_relation_removal(State&, const std::string&, std::string&) const;
