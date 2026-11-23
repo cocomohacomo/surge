@@ -166,6 +166,10 @@ struct CognitionStateSnapshot {
 struct FocusTraversalFrontierEntry {
   std::string cluster_id, origin_root_id;
   std::size_t level{0};
+  // Next outgoing adjacency slot to inspect when a node is suspended by the
+  // relation budget. Keeping this offset avoids rescanning already-accounted
+  // edges when the caller resumes the same traversal.
+  std::size_t next_relation_index{0};
 };
 struct FocusTraversalCursor {
   std::uint32_t schema_version{1};
