@@ -8,6 +8,79 @@ using namespace surge;
 
 int main() {
   const auto root = std::filesystem::temp_directory_path() / "surge-cognition-evolution-tests";
+
+  // Co-occurrence is represented as a new cognition cluster. The external
+  // Projector supplies the recognized content and source candidates; Core
+  // only validates the source clusters and records DerivedFrom lineage.
+  SemanticDelta cooccurrence_sources;
+  cooccurrence_sources.delta_id = "cognition-cooccurrence-sources";
+  cooccurrence_sources.idempotency_key = "cognition-cooccurrence-sources";
+  cooccurrence_sources.expected_state_version = graph.state_version();
+  cooccurrence_sources.nodes = {
+      {{"evolution-cluster-2", NodeKind::Cluster, "tributary habitat", {}}},
+      {{"evolution-member-3", NodeKind::Evidence, "tributary habitat seasonal flow", {}}},
+      {{"evolution-member-4", NodeKind::Evidence, "tributary habitat floodplain", {}}}
+  };
+  cooccurrence_sources.relations = {
+      {{"evolution-membership-3", RelationKind::Contains,
+        "evolution-cluster", "evolution-member-3", 0.65}},
+      {{"evolution-membership-4", RelationKind::Contains,
+        "evolution-cluster-2", "evolution-member-4", 0.55}}
+  };
+  CHECK(graph.apply(cooccurrence_sources).committed);
+
+  const auto cooccurrence_candidates = graph.recall_cognition_candidates(
+      "evolution-input", {"tributary"}, 8);
+  CHECK(cooccurrence_candidates.size() == 2);
+  const auto source_one_before = graph.nodes().at("evolution-cluster").content;
+  const auto source_two_before = graph.nodes().at("evolution-cluster-2").content;
+  const auto source_one_memberships_before =
+      graph.cluster_membership_reference_count("evolution-member-3");
+  const auto source_two_memberships_before =
+      graph.cluster_membership_reference_count("evolution-member-4");
+
+  SemanticDelta cooccurrence_delta;
+  cooccurrence_delta.delta_id = "cognition-cooccurrence-derived";
+  cooccurrence_delta.idempotency_key = "cognition-cooccurrence-derived";
+  cooccurrence_delta.expected_state_version = graph.state_version();
+  std::string cooccurrence_error;
+  CHECK(graph.append_derived_cognition_cluster(cooccurrence_delta,
+      "evolution-cooccurrence-cluster",
+      "Tributary flow and floodplain habitat form a coupled seasonal system",
+      {"evolution-cluster", "evolution-cluster-2"},
+      "evolution-cooccurrence-lineage", cooccurrence_error));
+  CHECK(cooccurrence_error.empty());
+  CHECK(cooccurrence_delta.nodes.size() == 1);
+  CHECK(cooccurrence_delta.relations.size() == 2);
+  CHECK(cooccurrence_delta.nodes.front().node.kind == NodeKind::Cluster);
+  CHECK(graph.apply(cooccurrence_delta).committed);
+  CHECK(graph.nodes().at("evolution-cooccurrence-cluster").content ==
+      "Tributary flow and floodplain habitat form a coupled seasonal system");
+  CHECK(graph.relations().count("evolution-cooccurrence-lineage/0") == 1);
+  CHECK(graph.relations().count("evolution-cooccurrence-lineage/1") == 1);
+  CHECK(graph.relations().at("evolution-cooccurrence-lineage/0").kind ==
+      RelationKind::DerivedFrom);
+  CHECK(graph.relations().at("evolution-cooccurrence-lineage/1").kind ==
+      RelationKind::DerivedFrom);
+  CHECK(graph.nodes().at("evolution-cluster").content == source_one_before);
+  CHECK(graph.nodes().at("evolution-cluster-2").content == source_two_before);
+  CHECK(graph.cluster_membership_reference_count("evolution-member-3") ==
+      source_one_memberships_before);
+  CHECK(graph.cluster_membership_reference_count("evolution-member-4") ==
+      source_two_memberships_before);
+
+  SemanticDelta invalid_cooccurrence;
+  invalid_cooccurrence.delta_id = "cognition-cooccurrence-invalid";
+  invalid_cooccurrence.idempotency_key = "cognition-cooccurrence-invalid";
+  invalid_cooccurrence.expected_state_version = graph.state_version();
+  CHECK(!graph.append_derived_cognition_cluster(invalid_cooccurrence,
+      "evolution-invalid-derived", "invalid source set",
+      {"evolution-cluster", "missing-source-cluster"},
+      "evolution-invalid-lineage", cooccurrence_error));
+  CHECK(cooccurrence_error == "DERIVED_COGNITION_SOURCE_NOT_FOUND");
+  CHECK(invalid_cooccurrence.nodes.empty());
+  CHECK(invalid_cooccurrence.relations.empty());
+
   std::filesystem::remove_all(root);
   std::filesystem::create_directories(root);
   ContextGraph graph((root / "candidate-accumulation.sgj").string());
