@@ -154,6 +154,12 @@ struct CognitionCandidate {
   double recall_score{0.0}; // Recall-only score; never a Contains weight.
   std::uint64_t memory_state_version{0};
 };
+struct CognitionStateSnapshot {
+  std::string snapshot_id, cluster_id, input_member_id;
+  std::uint64_t evaluated_state_version{0};
+  double recall_score{0.0};
+  std::vector<std::string> supporting_member_ids, matched_terms;
+};
 struct CognitionFeedback {
   std::string feedback_id, candidate_cluster_id, input_member_id;
   std::string outcome; // CONFIRMED, REJECTED, UNRESOLVED, REVISED
@@ -227,6 +233,12 @@ class ContextGraph {
   std::vector<CognitionCandidate> recall_cognition_candidates(
       const std::string& input_member_id, const std::vector<std::string>& query_terms,
       std::size_t max_candidates = 8) const;
+  // Append an immutable, provenance-linked snapshot of a candidate evaluation.
+  // The candidate must have been recalled from the transaction's expected graph version.
+  bool append_cognition_state_snapshot(SemanticDelta& delta,
+      const CognitionCandidate& candidate, const std::string& input_member_id,
+      const std::string& snapshot_node_id, const std::string& relation_prefix,
+      std::string& error) const;
   // Append externally evaluated candidate feedback to a caller-owned transaction.
   bool append_cognition_feedback(SemanticDelta& delta,
       const CognitionFeedback& feedback, const std::string& feedback_node_id,
