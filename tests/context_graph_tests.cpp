@@ -525,6 +525,7 @@ int main(){
     const auto untouched=graph.observe_focused_cognition(
         compact,positions,shared_depths,untouched_cursor,0,0);
     CHECK(!untouched.complete);
+    CHECK(!untouched_cursor.initialized);
     CHECK(untouched_cursor.next_root_index==0);
     CHECK(untouched_cursor.active_root_id.empty());
     CHECK(untouched_cursor.frontier.empty());
