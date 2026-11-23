@@ -1095,12 +1095,12 @@ int main(){
     CHECK(graph.append_cluster_spatial_position_update(focus_delta,
         {"focus-recall-b",{1.0,0.0,0.0}},focus_error));
     CHECK(graph.append_cluster_focus_depth_update(focus_delta,
-        {"focus-recall-a",0},focus_error));
+        {"focus-recall-a",1},focus_error));
     CHECK(graph.append_cluster_focus_depth_update(focus_delta,
-        {"focus-recall-b",0},focus_error));
+        {"focus-recall-b",1},focus_error));
     CHECK(graph.apply(focus_delta).committed);
     const auto batch=graph.recall_focused_cognition_candidates(
-        "incoming-input",{"river"},8,1,8);
+        "incoming-input",{"river"},8,2,8);
     CHECK(batch.logical_region_cluster_ids.size()==2);
     CHECK(batch.processed_region_cluster_ids.size()==1);
     CHECK(batch.deferred_region_cluster_ids.size()==1);
@@ -1109,6 +1109,21 @@ int main(){
     CHECK(batch.focus_work.budget_exhausted);
     CHECK(batch.candidates.front().cluster_id==batch.processed_region_cluster_ids.front());
     CHECK(batch.deferred_candidates.front().cluster_id==batch.deferred_region_cluster_ids.front());
+
+    // Depth zero exposes the root but not its supporting Evidence. Such a
+    // candidate must remain deferred rather than leaking a global recall score.
+    SemanticDelta shallow_focus;shallow_focus.delta_id="focused-recall-shallow";
+    shallow_focus.idempotency_key="focused-recall-shallow";
+    shallow_focus.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_focus_depth_update(shallow_focus,
+        {"focus-recall-a",0},focus_error));
+    CHECK(graph.apply(shallow_focus).committed);
+    const auto shallow=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},8,16,32);
+    CHECK(shallow.candidates.size()==1);
+    CHECK(shallow.deferred_candidates.size()==1);
+    CHECK(shallow.candidates.front().cluster_id=="focus-recall-b");
+    CHECK(shallow.deferred_candidates.front().cluster_id=="focus-recall-a");
   }
 
   std::filesystem::remove_all(root);
