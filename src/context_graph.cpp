@@ -2116,7 +2116,8 @@ CognitionObservation ContextGraph::observe_focused_cognition() const {
 
 
 CognitionObservation ContextGraph::observe_focused_cognition(
-    std::size_t max_nodes, std::size_t max_relations) const {
+    std::size_t max_nodes, std::size_t max_relations,
+    std::size_t start_root_index) const {
   if (!state_.focus_region) return observe_focused_cognition();
 
   // Build the derived x-axis index lazily. Position updates, journal replay
@@ -2148,7 +2149,8 @@ CognitionObservation ContextGraph::observe_focused_cognition(
   depths.reserve(state_.cluster_focus_depths.size());
   for (const auto& item : state_.cluster_focus_depths)
     depths.push_back({item.first,item.second});
-  return observe_focused_cognition(region,positions,depths,max_nodes,max_relations);
+  return observe_focused_cognition(region,positions,depths,max_nodes,max_relations,
+      start_root_index);
 }
 
 CognitionObservation ContextGraph::observe_focused_cognition(
