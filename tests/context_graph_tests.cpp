@@ -1,6 +1,8 @@
 #include "test_support.hpp"
 #include "surge/context_graph.hpp"
+#include "surge/focus_evaluation_snapshot.hpp"
 #include "surge/snapshot_domains.hpp"
+#include "surge/snapshot_store.hpp"
 #include "surge/event_journal.hpp"
 #include "surge/snapshot_domains.hpp"
 #include <algorithm>
@@ -527,6 +529,25 @@ int main(){
     CHECK(resumed_focus.complete);
     CHECK(traversal_cursor.complete);
     CHECK(continuation_calls>1);
+
+    // Completed snapshots from one-shot and sliced traversal must be identical
+    // when they describe the same graph state and logical Focus.
+    SnapshotDocument one_shot_manifest, sliced_manifest;
+    std::string traversal_snapshot_error;
+    CHECK(make_completed_focus_snapshot_document(graph,unbounded_focus,
+        "focus-geometry-v1","observation-v1","traversal-context",77,
+        &one_shot_manifest,traversal_snapshot_error));
+    CHECK(make_completed_focus_snapshot_document(graph,resumed_focus,
+        "focus-geometry-v1","observation-v1","traversal-context",77,
+        &sliced_manifest,traversal_snapshot_error));
+    FocusEvaluationSnapshotDiff traversal_diff;
+    CHECK(diff_completed_focus_snapshots(one_shot_manifest,sliced_manifest,
+        &traversal_diff,traversal_snapshot_error));
+    CHECK(!traversal_diff.focus_changed);
+    CHECK(!traversal_diff.graph_changed);
+    CHECK(validate_focus_snapshot_against_graph(one_shot_manifest,graph,
+        traversal_snapshot_error));
+
     CHECK(std::adjacent_find(actual_nodes.begin(),actual_nodes.end())==actual_nodes.end());
     CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
 
@@ -1301,6 +1322,243 @@ int main(){
     const auto stale_page=graph.recall_focused_cognition_candidates(
         "incoming-input",{"river"},stale_cursor,8,2,8);
     CHECK(stale_page.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
+  }
+
+  // Canonical Graph Digest is independent of Focus geometry, but changes
+  // when canonical cognition nodes or relations change.
+  {
+    ContextGraph digest_graph((root/"canonical-graph-digest.sgj").string());
+    CHECK(digest_graph.open());
+    SemanticDelta seed;
+    seed.delta_id="canonical-digest-seed";
+    seed.idempotency_key=seed.delta_id;
+    seed.expected_state_version=digest_graph.state_version();
+    seed.nodes={{{"digest-root",NodeKind::Cluster,"digest root",{}}}};
+    CHECK(digest_graph.apply(seed).committed);
+    ContextGraphSnapshotDomain digest_domain(digest_graph);
+    std::string digest_before, digest_error;
+    CHECK(digest_domain.canonical_digest(&digest_before,&digest_error));
+    SemanticDelta focus_move;
+    focus_move.delta_id="canonical-digest-focus";
+    focus_move.idempotency_key=focus_move.delta_id;
+    focus_move.expected_state_version=digest_graph.state_version();
+    CHECK(digest_graph.append_focus_region_update(focus_move,
+        FocusRegion{{0.0,0.0,0.0},{2.0,2.0,2.0}},digest_error));
+    CHECK(digest_graph.apply(focus_move).committed);
+    std::string digest_after_focus;
+    CHECK(digest_domain.canonical_digest(&digest_after_focus,&digest_error));
+    CHECK(digest_after_focus==digest_before);
+    SemanticDelta graph_change;
+    graph_change.delta_id="canonical-digest-node";
+    graph_change.idempotency_key=graph_change.delta_id;
+    graph_change.expected_state_version=digest_graph.state_version();
+    graph_change.nodes={{{"digest-member",NodeKind::Evidence,"new evidence",{}}}};
+    graph_change.relations={{{"digest-membership",RelationKind::Contains,
+        "digest-root","digest-member"}}};
+    CHECK(digest_graph.apply(graph_change).committed);
+    std::string digest_after_graph;
+    CHECK(digest_domain.canonical_digest(&digest_after_graph,&digest_error));
+    CHECK(digest_after_graph!=digest_before);
+  }
+
+  // Completed Focus evaluations can be promoted to snapshot metadata only
+  // when every logical root is processed and provenance is present.
+  {
+    CognitionObservation observation;
+    observation.state_version=7;
+    observation.complete=true;
+    observation.logical_region_cluster_ids={"root-a","root-b"};
+    observation.processed_region_cluster_ids={"root-b","root-a"};
+    observation.nodes={{"root-a",NodeKind::Cluster,"A",{}},
+                      {"root-b",NodeKind::Cluster,"B",{}},
+                      {"member-a",NodeKind::Evidence,"member",{}}};
+    observation.relations={{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}};
+    FocusEvaluationSnapshotMetadata metadata;
+    metadata.evaluated_state_version=7;
+    metadata.focus_digest="focus-digest";
+    metadata.graph_digest="graph-v1";
+    metadata.observation_digest="observation-digest";
+    std::string snapshot_error;
+    CHECK(validate_completed_focus_evaluation(observation,metadata,snapshot_error));
+    CHECK(snapshot_error.empty());
+    SnapshotDocument first_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        observation,metadata,"test-context",12,&first_manifest,snapshot_error));
+    CHECK(first_manifest.schema_id=="surge.focus-evaluation.v1");
+    SnapshotLimits snapshot_limits;
+    std::string encoded_snapshot;
+    CHECK(SnapshotCodec::encode(first_manifest,snapshot_limits,
+                                &encoded_snapshot,&snapshot_error));
+    SnapshotDocument decoded_snapshot;
+    CHECK(SnapshotCodec::decode(encoded_snapshot,snapshot_limits,
+                                 &decoded_snapshot,&snapshot_error));
+
+    // Persist the encoded Focus manifest through the real durable store and
+    // restore it before decoding. This exercises the file boundary, not only
+    // the in-memory codec.
+    const auto manifest_path=(root/"focus-evaluation-manifest.snapshot").string();
+    SnapshotStore manifest_store(manifest_path);
+    CHECK(manifest_store.save(encoded_snapshot,&snapshot_error));
+    const auto stored_manifest=manifest_store.load();
+    CHECK(stored_manifest.ok && !stored_manifest.used_backup);
+    CHECK(stored_manifest.bytes==encoded_snapshot);
+    SnapshotDocument restored_manifest;
+    CHECK(SnapshotCodec::decode(stored_manifest.bytes,snapshot_limits,
+                                &restored_manifest,&snapshot_error));
+    CHECK(restored_manifest.context_id=="test-context");
+    CHECK(restored_manifest.state_version==7);
+
+    FocusEvaluationSnapshotDiff no_change;
+    CHECK(diff_completed_focus_snapshots(first_manifest,decoded_snapshot,
+                                          &no_change,snapshot_error));
+    CHECK(no_change.added_node_ids.empty());
+    CHECK(no_change.removed_node_ids.empty());
+
+    auto later_observation=observation;
+    later_observation.state_version=8;
+    later_observation.nodes.push_back({"member-b",NodeKind::Evidence,"new member",{}});
+    auto later_metadata=metadata;
+    later_metadata.evaluated_state_version=8;
+    later_metadata.graph_digest="graph-v2";
+    later_metadata.observation_digest="later-observation";
+    SnapshotDocument later_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        later_observation,later_metadata,"test-context",13,
+        &later_manifest,snapshot_error));
+    FocusEvaluationSnapshotDiff changed;
+    CHECK(diff_completed_focus_snapshots(first_manifest,later_manifest,
+                                          &changed,snapshot_error));
+    CHECK(changed.added_node_ids.size()==1);
+    CHECK(changed.added_node_ids.front()=="member-b");
+    CHECK(changed.graph_changed);
+    CHECK(!changed.focus_changed);
+
+    // Graph content can change without changing any visible IDs. The
+    // Focus-independent graph digest must still surface that mutation.
+    auto graph_only_observation=observation;
+    graph_only_observation.state_version=8;
+    auto graph_only_metadata=metadata;
+    graph_only_metadata.evaluated_state_version=8;
+    graph_only_metadata.graph_digest="graph-v2";
+    graph_only_metadata.observation_digest="graph-content-updated";
+    SnapshotDocument graph_only_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        graph_only_observation,graph_only_metadata,"test-context",13,
+        &graph_only_manifest,snapshot_error));
+    CHECK(diff_completed_focus_snapshots(first_manifest,graph_only_manifest,
+                                          &changed,snapshot_error));
+    CHECK(changed.graph_changed);
+    CHECK(!changed.focus_changed);
+    CHECK(changed.added_node_ids.empty());
+    CHECK(changed.removed_node_ids.empty());
+
+    auto other_context=later_manifest;
+    other_context.context_id="other-context";
+    CHECK(!diff_completed_focus_snapshots(first_manifest,other_context,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_CONTEXT_MISMATCH");
+
+    auto other_focus=later_manifest;
+    // Rebuild a valid manifest under another Focus provenance.
+    auto focus_only_observation=observation;
+    focus_only_observation.state_version=8;
+    auto other_focus_metadata=metadata;
+    other_focus_metadata.evaluated_state_version=8;
+    other_focus_metadata.focus_digest="different-focus";
+    other_focus_metadata.observation_digest="focus-only-observation";
+    CHECK(make_completed_focus_snapshot_document(
+        focus_only_observation,other_focus_metadata,"test-context",13,
+        &other_focus,snapshot_error));
+    CHECK(diff_completed_focus_snapshots(first_manifest,other_focus,
+                                          &changed,snapshot_error));
+    CHECK(changed.focus_changed);
+    CHECK(!changed.graph_changed);
+    CHECK(changed.added_node_ids.empty());
+    CHECK(changed.added_relation_ids.empty());
+
+    // Malformed and duplicate-ID payloads must never be interpreted as a
+    // valid graph delta, even when wrapped in a valid SnapshotDocument.
+    auto malformed_manifest=first_manifest;
+    malformed_manifest.payload.pop_back();
+    CHECK(!diff_completed_focus_snapshots(first_manifest,malformed_manifest,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID");
+    auto duplicate_manifest=first_manifest;
+    duplicate_manifest.payload="FES1";
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"focus-digest");
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"graph-v1");
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"observation-digest");
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"root-a","root-b"});
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"member-a","member-a"});
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"rel-a"});
+    CHECK(!diff_completed_focus_snapshots(first_manifest,duplicate_manifest,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID");
+
+    FocusSnapshotHistory timeline;
+    CHECK(timeline.append(first_manifest,snapshot_error));
+    CHECK(timeline.append(later_manifest,snapshot_error));
+    CHECK(timeline.size()==2);
+    FocusEvaluationSnapshotDiff historical_diff;
+    CHECK(timeline.diff(0,1,&historical_diff,snapshot_error));
+    CHECK(historical_diff.graph_changed);
+    CHECK(!historical_diff.focus_changed);
+    CHECK(!timeline.append(other_context,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_HISTORY_CONTEXT_MISMATCH");
+    auto regressed_manifest=first_manifest;
+    regressed_manifest.state_version=6;
+    CHECK(!timeline.append(regressed_manifest,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_HISTORY_WATERMARK_REGRESSION");
+
+    auto partial=observation;
+    partial.complete=false;
+    CHECK(!validate_completed_focus_evaluation(partial,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_INCOMPLETE");
+
+    auto deferred=observation;
+    deferred.deferred_region_cluster_ids={"root-b"};
+    CHECK(!validate_completed_focus_evaluation(deferred,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DEFERRED_ROOTS");
+
+    auto mismatched=observation;
+    mismatched.processed_region_cluster_ids={"root-a"};
+    CHECK(!validate_completed_focus_evaluation(mismatched,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_ROOT_SET_MISMATCH");
+
+    auto stale=metadata;
+    stale.evaluated_state_version=6;
+    CHECK(!validate_completed_focus_evaluation(observation,stale,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_STATE_VERSION_MISMATCH");
+
+    auto missing_provenance=metadata;
+    missing_provenance.focus_digest.clear();
+    CHECK(!validate_completed_focus_evaluation(observation,missing_provenance,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_PROVENANCE_MISSING");
+
+    auto duplicate_roots=observation;
+    duplicate_roots.logical_region_cluster_ids.push_back("root-a");
+    CHECK(!validate_completed_focus_evaluation(duplicate_roots,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_ROOT");
+
+    auto duplicate_nodes=observation;
+    duplicate_nodes.nodes.push_back(duplicate_nodes.nodes.front());
+    CHECK(!validate_completed_focus_evaluation(duplicate_nodes,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_NODE");
+
+    auto duplicate_relations=observation;
+    duplicate_relations.relations.push_back(duplicate_relations.relations.front());
+    CHECK(!validate_completed_focus_evaluation(duplicate_relations,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_RELATION");
+
+    auto missing_root_node=observation;
+    missing_root_node.nodes.erase(missing_root_node.nodes.begin());
+    CHECK(!validate_completed_focus_evaluation(missing_root_node,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_ROOT_NODE_MISSING");
+
+    auto missing_relation_endpoint=observation;
+    missing_relation_endpoint.relations.front().to="absent-node";
+    CHECK(!validate_completed_focus_evaluation(missing_relation_endpoint,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_RELATION_ENDPOINT_MISSING");
   }
 
   std::filesystem::remove_all(root);

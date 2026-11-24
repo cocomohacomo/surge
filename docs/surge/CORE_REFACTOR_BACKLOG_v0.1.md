@@ -93,11 +93,19 @@ being drafted does not count as completion.
 
 ## Progress update
 
-The first P0 Core transaction increment is carried into
-`fix/atomic-dependency-transaction-main-sync` from the earlier PR #29 work,
-rebased at the current main state. Dependency evaluation results are journaled
-atomically with SemanticDelta and restored on replay. Restart, idempotency,
-and atomic packet + semantic tests are included. Completion remains pending
-the CI result for this main-synchronized branch and merge. C ABI/Python result
-exposure, fine-grained predicate-operation budgets, and fault-injection
-verification remain open.
+Code inspection on current main confirms that the P0 dependency-evaluation path
+is present: evaluation is part of staged transaction preparation, outcomes are
+journaled with the SemanticDelta, replay restores the durable evaluation
+record, and the read-only result is exposed through the C ABI and Python
+bridge. The older progress text below is retained as historical context only;
+those implementation gaps are no longer accurate as current-main status.
+
+The P0 list still requires a dedicated parity/fault-injection pass before it is
+closed. This audit does not claim that concurrent race, interrupted journal
+writes, or crash-window behavior have been exhaustively tested.
+
+Next implementation stage is documented in
+`CORE_COMPLETION_MATRIX_v0.1.md`: completed Focus evaluation Snapshot/Diff
+integration. Partial traversal must remain an observation, not be promoted to a
+completed evaluation snapshot. Context partitioning and retrieval continuation
+remain separate backlog items.
