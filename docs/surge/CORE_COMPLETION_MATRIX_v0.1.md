@@ -62,14 +62,16 @@ mistakenly treat a partial page as a finalized cognition state.
 
 ### First implementation slice
 
-- Define a value DTO for Focus evaluation snapshot metadata and digest.
-- Add a pure validator that rejects incomplete, invalidated, or internally
-  inconsistent observations.
-- Add conformance tests for partial/deferred rejection, complete acceptance,
-  stale version and Focus digest, duplicate snapshot identity, and Diff
-  provenance mismatch.
-- Only after this contract and tests pass, connect the DTO to the existing
-  Snapshot/Diff storage API. Do not add a parallel graph store.
+- [x] Define a value DTO for Focus evaluation snapshot metadata and digest.
+- [x] Add a pure validator rejecting incomplete, invalidated, or inconsistent
+  observations (logical/processed/deferred roots, provenance/version, duplicate
+  nodes/relations, and root/relation endpoints).
+- [x] Add regression assertions for partial/deferred rejection, complete
+  acceptance, state-version mismatch, missing provenance, and duplicate roots/nodes.
+- [ ] Add tests for duplicate relations and missing root/relation endpoints.
+- [ ] Connect the validated DTO to existing Snapshot/Diff storage APIs without
+  adding a parallel graph store.
+- [ ] Implement compatible-snapshot Diff provenance checks.
 
 ### Exit criteria
 
