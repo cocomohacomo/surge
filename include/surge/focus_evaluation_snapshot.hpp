@@ -92,6 +92,10 @@ inline bool validate_completed_focus_evaluation(
 
 
 struct FocusEvaluationSnapshotDiff {
+  // Focus changes are independent from graph-content changes. A changed
+  // Focus digest does not suppress the graph ID comparison.
+  bool focus_changed{false};
+  bool graph_changed{false};
   std::vector<std::string> added_roots, removed_roots;
   std::vector<std::string> added_node_ids, removed_node_ids;
   std::vector<std::string> added_relation_ids, removed_relation_ids;
@@ -196,8 +200,8 @@ inline bool diff_completed_focus_snapshots(
      !focus_snapshot_detail::decode_manifest(after,af,ao,ar,an,ae)) {
     error="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID"; return false;
   }
-  if(bf!=af) { error="FOCUS_SNAPSHOT_DIFF_FOCUS_MISMATCH"; return false; }
   FocusEvaluationSnapshotDiff candidate;
+  candidate.focus_changed = bf != af;
   auto diff=[](const std::vector<std::string>& old_values,
                const std::vector<std::string>& new_values,
                std::vector<std::string>& added,
@@ -210,6 +214,10 @@ inline bool diff_completed_focus_snapshots(
   diff(br,ar,candidate.added_roots,candidate.removed_roots);
   diff(bn,an,candidate.added_node_ids,candidate.removed_node_ids);
   diff(be,ae,candidate.added_relation_ids,candidate.removed_relation_ids);
+  candidate.graph_changed =
+      !candidate.added_roots.empty() || !candidate.removed_roots.empty() ||
+      !candidate.added_node_ids.empty() || !candidate.removed_node_ids.empty() ||
+      !candidate.added_relation_ids.empty() || !candidate.removed_relation_ids.empty();
   *output=std::move(candidate); return true;
 }
 
