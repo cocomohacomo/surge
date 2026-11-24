@@ -9,7 +9,8 @@
 #include <cstdint>
 #include <vector>
 #include <set>
-#include <string>\n#include <cstring>
+#include <string>
+#include <cstring>
 
 namespace surge {
 
@@ -157,7 +158,10 @@ inline bool decode_manifest(const SnapshotDocument& doc, std::string& focus,
       read_set(doc.payload,pos,relations) && pos==doc.payload.size();
 }
 
-inline void append_u64(std::string& out, std::uint64_t value) {\n  for(int shift=56;shift>=0;shift-=8) out.push_back(static_cast<char>((value>>shift)&0xff));\n}\ninline void append_double(std::string& out, double value) {
+inline void append_u64(std::string& out, std::uint64_t value) {
+  for(int shift=56;shift>=0;shift-=8) out.push_back(static_cast<char>((value>>shift)&0xff));
+}
+inline void append_double(std::string& out, double value) {
   std::uint64_t bits=0;
   static_assert(sizeof(bits)==sizeof(value),"double width");
   std::memcpy(&bits,&value,sizeof(bits));
@@ -216,7 +220,8 @@ inline std::string observation_digest(const CognitionObservation& o) {
 inline std::string focus_digest(const CognitionObservation& o) {
   return sha256_hex(focus_bytes(o));
 }
-\n}  // namespace focus_snapshot_detail
+
+}  // namespace focus_snapshot_detail
 
 // Produces a compact evaluation manifest. Full graph state remains owned by
 // ContextGraphSnapshotDomain, so this reuses SnapshotCodec/Store without a
@@ -323,7 +328,8 @@ inline bool make_completed_focus_snapshot_document(
       focus_snapshot_detail::observation_digest(observation), context_id,
       journal_sequence, output, error);
 }
-\ninline bool validate_focus_snapshot_against_graph(
+
+inline bool validate_focus_snapshot_against_graph(
     const SnapshotDocument& manifest, ContextGraph& graph,
     std::string& error) {
   error.clear();
