@@ -31,8 +31,8 @@ def evaluate_case(result: dict) -> dict:
     if not valid_json:
         parsed = {}
 
-    candidates = parsed.get("candidates", [])
-    relations = parsed.get("relations", [])
+    candidates = parsed.get("candidates")
+    relations = parsed.get("relations")
     structurally_valid = (
         isinstance(candidates, list)
         and isinstance(relations, list)
@@ -62,7 +62,6 @@ def evaluate_case(result: dict) -> dict:
     unmatched_gold = list(gold_candidates)
     candidate_tp = 0
     candidate_fp = 0
-    matched_predictions = []
     for prediction in predicted_candidates:
         match_index = next((i for i, gold in enumerate(unmatched_gold)
                             if gold in prediction or prediction in gold), None)
@@ -70,7 +69,6 @@ def evaluate_case(result: dict) -> dict:
             candidate_fp += 1
         else:
             candidate_tp += 1
-            matched_predictions.append(candidates[len(matched_predictions)].get("text", ""))
             unmatched_gold.pop(match_index)
     candidate_fn = len(unmatched_gold)
 
