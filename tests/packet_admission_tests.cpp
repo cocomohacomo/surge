@@ -45,7 +45,12 @@ int main() {
     tampered.source_range_digest=std::string(64,'e');
     CHECK(coordinator.admit(tampered,"abc").error=="SOURCE_RANGE_DIGEST_MISMATCH");
     auto wrong_snapshot=packet("p5b","i5b",6,"abc"); wrong_snapshot.block_ref="b5b";
-    CHECK(coordinator.admit(wrong_snapshot,"abd").error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
+    const auto unchanged_snapshot_digest = wrong_snapshot.source_snapshot_digest;
+    const auto wrong_snapshot_result = coordinator.admit(wrong_snapshot,"abd");
+    CHECK(wrong_snapshot_result.error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
+    CHECK(wrong_snapshot_result.failure_stage==AdmissionFailureStage::SourceValidation);
+    CHECK(wrong_snapshot_result.packet_error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
+    CHECK(wrong_snapshot.source_snapshot_digest==unchanged_snapshot_digest);
     auto bad_utf8=packet("p5c","i5c",6,"abc"); bad_utf8.block_ref="b5c";
     CHECK(coordinator.admit(bad_utf8,std::string(1, static_cast<char>(0xff))).error=="SOURCE_SNAPSHOT_INVALID_UTF8");
     auto collision=packet("p1","i-new",7,"abc"); collision.block_ref="b6";
