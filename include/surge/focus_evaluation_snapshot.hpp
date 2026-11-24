@@ -157,7 +157,7 @@ inline bool decode_manifest(const SnapshotDocument& doc, std::string& focus,
       read_set(doc.payload,pos,relations) && pos==doc.payload.size();
 }
 
-inline void append_double(std::string& out, double value) {
+inline void append_u64(std::string& out, std::uint64_t value) {\n  for(int shift=56;shift>=0;shift-=8) out.push_back(static_cast<char>((value>>shift)&0xff));\n}\ninline void append_double(std::string& out, double value) {
   std::uint64_t bits=0;
   static_assert(sizeof(bits)==sizeof(value),"double width");
   std::memcpy(&bits,&value,sizeof(bits));
@@ -166,8 +166,8 @@ inline void append_double(std::string& out, double value) {
 }
 inline std::string observation_bytes(const CognitionObservation& o) {
   std::string b="SURGE-OBSERVATION-v1";
-  append_u32(b,static_cast<std::uint32_t>(o.state_version));
-  append_u32(b,static_cast<std::uint32_t>(o.next_root_index));
+  append_u64(b,o.state_version);
+  append_u64(b,static_cast<std::uint64_t>(o.next_root_index));
   append_u32(b,o.complete?1U:0U);
   auto strings=[&](const std::vector<std::string>& v){append_set(b,v);};
   append_u32(b,static_cast<std::uint32_t>(o.nodes.size()));
@@ -186,7 +186,7 @@ inline std::string observation_bytes(const CognitionObservation& o) {
   auto vec=[&](const SpatialVector3& v){append_double(b,v.x);append_double(b,v.y);append_double(b,v.z);};
   if(o.focus_region){vec(o.focus_region->center);vec(o.focus_region->half_extents);}
   append_u32(b,static_cast<std::uint32_t>(o.cluster_focus_depths.size()));
-  for(const auto& d:o.cluster_focus_depths){append_string(b,d.cluster_id);append_u32(b,static_cast<std::uint32_t>(d.depth));}
+  for(const auto& d:o.cluster_focus_depths){append_string(b,d.cluster_id);append_u64(b,static_cast<std::uint64_t>(d.depth));}
   append_u32(b,static_cast<std::uint32_t>(o.cluster_spatial_positions.size()));
   for(const auto& p:o.cluster_spatial_positions){append_string(b,p.cluster_id);vec(p.position);}
   strings(o.logical_region_cluster_ids);strings(o.processed_region_cluster_ids);strings(o.deferred_region_cluster_ids);
