@@ -159,13 +159,19 @@ int main() {
     {"claim-wednesday", surge::NodeKind::Claim,
       "meeting schedule Wednesday", {"evidence-wednesday"}},
     {"question-date", surge::NodeKind::Question,
-      "Which meeting date is applicable?", {"claim-tuesday", "claim-wednesday"}},
+      "Which meeting date is applicable?", {}},
+    {"question-aspect-date", surge::NodeKind::QuestionAspect,
+      "meeting date", {"question-date"}},
     {"interest-date", surge::NodeKind::Interest,
-      "meeting date discrepancy", {"question-date"}}
+      "meeting date discrepancy", {"question-aspect-date", "cluster-meeting"}}
   };
   correction.relations = {
     {"relation-date-conflict", surge::RelationKind::Contradicts,
       "claim-tuesday", "claim-wednesday", 0.88},
+    {"relation-question-tuesday", surge::RelationKind::About,
+      "question-date", "claim-tuesday", 1.0},
+    {"relation-question-wednesday", surge::RelationKind::About,
+      "question-date", "claim-wednesday", 1.0},
     {"relation-question-interest", surge::RelationKind::About,
       "interest-date", "question-date", 1.0}
   };
@@ -173,6 +179,7 @@ int main() {
     {"correction-evidence-member", "evidence-wednesday", "cluster-meeting", 0.91},
     {"correction-claim-member", "claim-wednesday", "cluster-meeting", 0.91},
     {"correction-question-member", "question-date", "cluster-meeting", 0.80},
+    {"correction-question-aspect-member", "question-aspect-date", "cluster-meeting", 0.80},
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
   const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
