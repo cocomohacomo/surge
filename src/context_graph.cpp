@@ -1657,9 +1657,18 @@ bool ContextGraphSnapshotDomain::canonical_digest(std::string* digest,
     if (error) *error = "SNAPSHOT_OUTPUT_REQUIRED";
     return false;
   }
-  std::string canonical_payload;
-  if (!capture(&canonical_payload, error)) return false;
-  *digest = sha256_hex(canonical_payload);
+  // Graph identity intentionally excludes Focus geometry, Focus history,
+  // cluster positions, and per-cluster Focus depths. Those belong to the
+  // independent Focus provenance digest in the evaluation manifest.
+  const auto& state = graph_.state_;
+  std::ostringstream canonical;
+  canonical << "CGD1 " << state.nodes.size() << ' ';
+  for (const auto& item : state.nodes)
+    canonical << std::quoted(encode_node(item.second)) << ' ';
+  canonical << state.relations.size() << ' ';
+  for (const auto& item : state.relations)
+    canonical << std::quoted(encode_relation(item.second)) << ' ';
+  *digest = sha256_hex(canonical.str());
   if (error) error->clear();
   return true;
 }
