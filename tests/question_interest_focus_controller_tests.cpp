@@ -1,6 +1,7 @@
 #include "test_support.hpp"
 #include "surge/question_interest_focus_controller.hpp"
 #include <filesystem>
+#include <limits>
 int main(){
  const auto path=(std::filesystem::temp_directory_path()/"surge-question-interest-focus-controller.sgj").string();
  std::filesystem::remove(path); surge::ContextGraph graph(path); CHECK(graph.open());
@@ -24,6 +25,10 @@ int main(){
  auto applied=controller.apply(graph,inputs,"focus-policy-1"); CHECK(applied.committed);
  auto obs=graph.observe_cognition(); CHECK(obs.focus_region.has_value());
  CHECK(obs.focus_region->center.x==4.0); CHECK(obs.focus_region->center.y==2.0);
+ auto invalid=controller.evaluate({
+  {"q-nan","i-nan","cluster-new",std::numeric_limits<double>::quiet_NaN(),true,{0,0,0}},
+  {"q-inf","i-inf","cluster-new",0.8,true,{std::numeric_limits<double>::infinity(),0,0}}
+ }); CHECK(!invalid.changed);
  auto empty=controller.evaluate({}); CHECK(!empty.changed);
  auto inactive=controller.evaluate({{"q","i","cluster",1.0,false,{1,2,3}}}); CHECK(!inactive.changed);
  auto tie=controller.evaluate({{"q-b","i-b","c-b",0.5,true,{1,0,0}},{"q-a","i-a","c-a",0.5,true,{2,0,0}}});
