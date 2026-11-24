@@ -69,9 +69,9 @@ mistakenly treat a partial page as a finalized cognition state.
 - [x] Add regression assertions for partial/deferred rejection, complete
   acceptance, state-version mismatch, missing provenance, and duplicate roots/nodes.
 - [ ] Add tests for duplicate relations and missing root/relation endpoints.
-- [ ] Connect the validated DTO to existing Snapshot/Diff storage APIs without
-  adding a parallel graph store.
-- [ ] Implement compatible-snapshot Diff provenance checks.
+- [x] Connect completed Focus evaluation manifests to the existing SnapshotDocument / SnapshotCodec / SnapshotStore path without adding a second graph store.
+- [x] Implement deterministic root/node/relation ID Diff for snapshots with matching context and Focus provenance.
+- [ ] Add persistence round-trip tests through SnapshotStore and reject malformed/duplicate manifest payloads.
 
 ### Exit criteria
 
