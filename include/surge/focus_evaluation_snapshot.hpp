@@ -14,6 +14,8 @@ namespace surge {
 struct FocusEvaluationSnapshotMetadata {
   std::uint64_t evaluated_state_version{0};
   std::string focus_digest;
+  // Digest of the graph state independent of the selected Focus region.
+  std::string graph_digest;
   std::string observation_digest;
 };
 
@@ -33,7 +35,8 @@ inline bool validate_completed_focus_evaluation(
     error = "FOCUS_EVALUATION_INCOMPLETE";
     return false;
   }
-  if (metadata.focus_digest.empty() || metadata.observation_digest.empty()) {
+  if (metadata.focus_digest.empty() || metadata.graph_digest.empty() ||
+      metadata.observation_digest.empty()) {
     error = "FOCUS_EVALUATION_PROVENANCE_MISSING";
     return false;
   }
@@ -140,12 +143,13 @@ inline bool read_set(const std::string& in, std::size_t& pos,
       std::adjacent_find(values.begin(),values.end())==values.end();
 }
 inline bool decode_manifest(const SnapshotDocument& doc, std::string& focus,
-    std::string& observation, std::vector<std::string>& roots,
+    std::string& graph, std::string& observation, std::vector<std::string>& roots,
     std::vector<std::string>& nodes, std::vector<std::string>& relations) {
   if(doc.schema_id!="surge.focus-evaluation.v1" || doc.payload.size()<4 ||
      doc.payload.compare(0,4,"FES1")!=0) return false;
   std::size_t pos=4;
   return read_string(doc.payload,pos,focus) &&
+      read_string(doc.payload,pos,graph) &&
       read_string(doc.payload,pos,observation) &&
       read_set(doc.payload,pos,roots) && read_set(doc.payload,pos,nodes) &&
       read_set(doc.payload,pos,relations) && pos==doc.payload.size();
@@ -172,6 +176,7 @@ inline bool make_completed_focus_snapshot_document(
   candidate.journal_sequence=journal_sequence;
   candidate.payload="FES1";
   focus_snapshot_detail::append_string(candidate.payload,metadata.focus_digest);
+  focus_snapshot_detail::append_string(candidate.payload,metadata.graph_digest);
   focus_snapshot_detail::append_string(candidate.payload,metadata.observation_digest);
   focus_snapshot_detail::append_set(candidate.payload,observation.logical_region_cluster_ids);
   std::vector<std::string> nodes,relations;
@@ -194,14 +199,15 @@ inline bool diff_completed_focus_snapshots(
      before.journal_sequence>after.journal_sequence) {
     error="FOCUS_SNAPSHOT_DIFF_WATERMARK_REGRESSION"; return false;
   }
-  std::string bf,af,bo,ao;
+  std::string bf,af,bg,ag,bo,ao;
   std::vector<std::string> br,ar,bn,an,be,ae;
-  if(!focus_snapshot_detail::decode_manifest(before,bf,bo,br,bn,be) ||
-     !focus_snapshot_detail::decode_manifest(after,af,ao,ar,an,ae)) {
+  if(!focus_snapshot_detail::decode_manifest(before,bf,bg,bo,br,bn,be) ||
+     !focus_snapshot_detail::decode_manifest(after,af,ag,ao,ar,an,ae)) {
     error="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID"; return false;
   }
   FocusEvaluationSnapshotDiff candidate;
   candidate.focus_changed = bf != af;
+  candidate.graph_changed = bg != ag;
   auto diff=[](const std::vector<std::string>& old_values,
                const std::vector<std::string>& new_values,
                std::vector<std::string>& added,
@@ -214,7 +220,7 @@ inline bool diff_completed_focus_snapshots(
   diff(br,ar,candidate.added_roots,candidate.removed_roots);
   diff(bn,an,candidate.added_node_ids,candidate.removed_node_ids);
   diff(be,ae,candidate.added_relation_ids,candidate.removed_relation_ids);
-  candidate.graph_changed =
+  candidate.graph_changed = candidate.graph_changed ||
       !candidate.added_roots.empty() || !candidate.removed_roots.empty() ||
       !candidate.added_node_ids.empty() || !candidate.removed_node_ids.empty() ||
       !candidate.added_relation_ids.empty() || !candidate.removed_relation_ids.empty();
