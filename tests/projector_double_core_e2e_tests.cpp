@@ -79,6 +79,17 @@ int main() {
   auto first = projector.project("fixed-projection-1", 0, "event-1",
       "evidence-tuesday", "cluster-meeting",
       "会議日程 meeting schedule Tuesday", "claim-tuesday", 0.73);
+  auto invalid_projection = first;
+  invalid_projection.producer_id.clear();
+  const auto invalid_projection_result = commit_projection(
+      invalid_projection, "会議日程 meeting schedule Tuesday", 1);
+  CHECK(!invalid_projection_result.admitted);
+  CHECK(invalid_projection_result.failure_stage == surge::AdmissionFailureStage::ProjectionValidation);
+  CHECK(invalid_projection_result.projection_error == "MISSING_REQUIRED_METADATA");
+  CHECK(invalid_projection.producer_id.empty());
+  CHECK(first.producer_id == "fixed-projector-double");
+  CHECK(graph.state_version() == 0 && packets.packet_count() == 0);
+
   const auto first_result = commit_projection(first, "会議日程 meeting schedule Tuesday", 1);
   CHECK(first_result.admitted && !first_result.duplicate);
   CHECK(first_result.failure_stage == surge::AdmissionFailureStage::None);
