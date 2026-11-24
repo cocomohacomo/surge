@@ -1313,7 +1313,8 @@ int main(){
     observation.logical_region_cluster_ids={"root-a","root-b"};
     observation.processed_region_cluster_ids={"root-b","root-a"};
     observation.nodes={{"root-a",NodeKind::Cluster,"A",{}},
-                      {"root-b",NodeKind::Cluster,"B",{}}};
+                      {"root-b",NodeKind::Cluster,"B",{}},
+                      {"member-a",NodeKind::Evidence,"member",{}}};
     observation.relations={{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}};
     FocusEvaluationSnapshotMetadata metadata;
     metadata.evaluated_state_version=7;
