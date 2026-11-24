@@ -2278,7 +2278,15 @@ CognitionObservation ContextGraph::observe_focused_cognition_impl(
   const std::string focus_digest = sha256_hex(focus_identity.str());
   const std::string traversal_query_digest = sha256_hex("SURGE_FOCUS_TRAVERSAL_V1");
   if (!state.initialized && (max_nodes == 0 || max_relations == 0)) {
-    focused.focus_work.budget_exhausted = true;
+    // A zero work budget must still report the complete logical Focus region.
+    // Deferred is a scheduling state, not a reduced Focus query.
+    focused.deferred_region_cluster_ids = roots;
+    focused.focus_work.clusters_deferred = roots.size();
+    focused.focus_work.budget_exhausted = !roots.empty();
+    focused.focus_work.work_units = focused.focus_work.position_checks;
+    focused.focus_work.elapsed_microseconds = static_cast<std::size_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - focus_started).count());
     return focused;
   }
   if (state.initialized &&
