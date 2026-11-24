@@ -1312,9 +1312,9 @@ int main(){
     observation.complete=true;
     observation.logical_region_cluster_ids={"root-a","root-b"};
     observation.processed_region_cluster_ids={"root-b","root-a"};
-    observation.nodes={{{"root-a",NodeKind::Cluster,"A",{}}},
-                        {{"root-b",NodeKind::Cluster,"B",{}}}};
-    observation.relations={{{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}}};
+    observation.nodes={{"root-a",NodeKind::Cluster,"A",{}},
+                      {"root-b",NodeKind::Cluster,"B",{}}};
+    observation.relations={{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}};
     FocusEvaluationSnapshotMetadata metadata;
     metadata.evaluated_state_version=7;
     metadata.focus_digest="focus-digest";
