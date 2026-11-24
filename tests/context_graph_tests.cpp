@@ -1324,6 +1324,43 @@ int main(){
     CHECK(stale_page.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
   }
 
+  // Canonical Graph Digest is independent of Focus geometry, but changes
+  // when canonical cognition nodes or relations change.
+  {
+    ContextGraph digest_graph((root/"canonical-graph-digest.sgj").string());
+    CHECK(digest_graph.open());
+    SemanticDelta seed;
+    seed.delta_id="canonical-digest-seed";
+    seed.idempotency_key=seed.delta_id;
+    seed.expected_state_version=digest_graph.state_version();
+    seed.nodes={{{"digest-root",NodeKind::Cluster,"digest root",{}}}};
+    CHECK(digest_graph.apply(seed).committed);
+    ContextGraphSnapshotDomain digest_domain(digest_graph);
+    std::string digest_before, digest_error;
+    CHECK(digest_domain.canonical_digest(&digest_before,&digest_error));
+    SemanticDelta focus_move;
+    focus_move.delta_id="canonical-digest-focus";
+    focus_move.idempotency_key=focus_move.delta_id;
+    focus_move.expected_state_version=digest_graph.state_version();
+    CHECK(digest_graph.append_focus_region_update(focus_move,
+        FocusRegion{{0.0,0.0,0.0},{2.0,2.0,2.0}},digest_error));
+    CHECK(digest_graph.apply(focus_move).committed);
+    std::string digest_after_focus;
+    CHECK(digest_domain.canonical_digest(&digest_after_focus,&digest_error));
+    CHECK(digest_after_focus==digest_before);
+    SemanticDelta graph_change;
+    graph_change.delta_id="canonical-digest-node";
+    graph_change.idempotency_key=graph_change.delta_id;
+    graph_change.expected_state_version=digest_graph.state_version();
+    graph_change.nodes={{{"digest-member",NodeKind::Evidence,"new evidence",{}}}};
+    graph_change.relations={{{"digest-membership",RelationKind::Contains,
+        "digest-root","digest-member"}}};
+    CHECK(digest_graph.apply(graph_change).committed);
+    std::string digest_after_graph;
+    CHECK(digest_domain.canonical_digest(&digest_after_graph,&digest_error));
+    CHECK(digest_after_graph!=digest_before);
+  }
+
   // Completed Focus evaluations can be promoted to snapshot metadata only
   // when every logical root is processed and provenance is present.
   {
