@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -163,6 +164,7 @@ int main() {
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
   const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
+  if (!correction_result.admitted) std::cerr << "correction admission rejected: " << correction_result.error << "\\n";
   CHECK(correction_result.admitted);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
   CHECK(packets.packet_count() == 3);
