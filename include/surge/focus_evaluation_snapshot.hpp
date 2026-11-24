@@ -20,8 +20,8 @@ struct FocusEvaluationSnapshotMetadata {
 };
 
 // Validates that an observation is safe to promote to a completed-evaluation
-// snapshot. This is intentionally a pure contract gate; persistence/diff wiring
-// is a later stage.
+// snapshot. This remains a pure contract gate; persistence and Diff operate
+// on the validated SnapshotDocument produced below.
 inline bool validate_completed_focus_evaluation(
     const CognitionObservation& observation,
     const FocusEvaluationSnapshotMetadata& metadata,
