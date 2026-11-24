@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 #include "surge/projection.hpp"
+#include "surge/sha256.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,16 +48,38 @@ int main() {
       "surge-fixed-projector-core-e2e.sgj").string();
   std::filesystem::remove(path);
   const FixedProjectorDouble projector;
-  surge::ContextGraph graph(path);
+  surge::EventJournal journal(path);
+  CHECK(journal.open());
+  surge::PacketAdmissionCoordinator packets(journal);
+  CHECK(packets.recover());
+  surge::ContextGraph graph(journal);
   CHECK(graph.open());
+  auto commit_projection = [&](const surge::ProjectionBatch& batch,
+                               const std::string& source, std::uint64_t sequence) {
+    surge::ValidatedRecognitionPacket packet;
+    packet.packet_id = batch.source_event_refs.front();
+    packet.idempotency_key = "packet-idem-" + packet.packet_id;
+    packet.context_id = batch.context_id;
+    packet.source_id = "fixed-projector-source";
+    packet.source_generation = "fixture-session-1";
+    packet.block_ref = packet.packet_id;
+    packet.offset_basis = "UTF8_BYTE_NFC";
+    packet.start_offset = 0;
+    packet.end_offset = source.size();
+    packet.source_sequence = sequence;
+    packet.source_snapshot_digest = surge::sha256_hex(source);
+    packet.source_range_digest = packet.source_snapshot_digest;
+    packet.canonical_request_digest = surge::sha256_hex("canonical-" + packet.packet_id);
+    return surge::apply_projection_batch(packets, graph, batch, packet, source);
+  };
 
   // The projector is deterministic and fixed. It emits candidates, source
   // evidence, membership weights and placement; Core must preserve them.
   auto first = projector.project("fixed-projection-1", 0, "event-1",
       "evidence-tuesday", "cluster-meeting",
       "会議日程 meeting schedule Tuesday", "claim-tuesday", 0.73);
-  const auto first_result = surge::apply_projection_batch(graph, first);
-  CHECK(first_result.committed && !first_result.duplicate);
+  const auto first_result = commit_projection(first, "会議日程 meeting schedule Tuesday", 1);
+  CHECK(first_result.admitted && !first_result.duplicate);
   CHECK(first_result.state_version == 1);
   CHECK(graph.nodes().at("evidence-tuesday").content ==
       "会議日程 meeting schedule Tuesday");
@@ -88,8 +111,8 @@ int main() {
     {"topic2-claim-member", "claim-deadline", "cluster-deadline", 0.61}
   };
   second_topic.spatial_placements = {{"cluster-deadline", {1.0, 0.0, 0.0}}};
-  const auto second_result = surge::apply_projection_batch(graph, second_topic);
-  CHECK(second_result.committed && second_result.state_version == 2);
+  const auto second_result = commit_projection(second_topic, "project deadline Friday", 2);
+  CHECK(second_result.admitted && second_result.state_version == 2);
 
   // Core recall is a structural/associative operation over projector-supplied
   // terms. It does not manufacture a Supports/AgreesWith relation.
@@ -139,9 +162,10 @@ int main() {
     {"correction-question-member", "question-date", "cluster-meeting", 0.80},
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
-  const auto correction_result = surge::apply_projection_batch(graph, correction);
-  CHECK(correction_result.committed);
+  const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
+  CHECK(correction_result.admitted);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
+  CHECK(packets.packet_count() == 3);
   CHECK(graph.nodes().count("evidence-wednesday") == 1);
   CHECK(graph.relations().at("relation-date-conflict").kind ==
       surge::RelationKind::Contradicts);
