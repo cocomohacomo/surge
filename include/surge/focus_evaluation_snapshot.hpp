@@ -254,6 +254,10 @@ inline bool validate_focus_snapshot_against_graph(
   return true;
 }
 
+inline bool diff_completed_focus_snapshots(
+    const SnapshotDocument& before, const SnapshotDocument& after,
+    FocusEvaluationSnapshotDiff* output, std::string& error);
+
 // Append-only in-memory timeline. Every append must be a compatible,
  // monotonic completed snapshot; history never mutates the underlying graph.
 class FocusSnapshotHistory {
