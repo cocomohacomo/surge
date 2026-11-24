@@ -176,7 +176,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
     const std::vector<JournalEvent>& semantic_events) {
   PacketAdmissionResult result;
   result.state_version = journal_.state_version();
-  if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
+  if (!recovered_) { set_failure(result, stage_for_packet_error("PACKET_COORDINATOR_NOT_RECOVERED"), "PACKET_COORDINATOR_NOT_RECOVERED"); return result; }
    if (p.packet_id.empty() || p.idempotency_key.empty() || p.context_id.empty() ||
       p.source_id.empty() || p.source_generation.empty() || p.block_ref.empty() ||
       p.source_snapshot_digest.size() != 64 || p.source_range_digest.size() != 64 || p.canonical_request_digest.empty() ||
@@ -191,32 +191,32 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
       (p.document_ref.empty() &&
        (!p.document_generation.empty() || p.document_sequence != 0 ||
         p.global_start_offset != 0 || p.global_end_offset != 0))) {
-    result.error = "PACKET_CORE_INVARIANT_FAILED"; return result;
+    set_failure(result, stage_for_packet_error("PACKET_CORE_INVARIANT_FAILED"), "PACKET_CORE_INVARIANT_FAILED"); return result;
   }
   if (!is_valid_utf8(normalized_source_snapshot)) {
-    result.error = "SOURCE_SNAPSHOT_INVALID_UTF8"; return result;
+    set_failure(result, stage_for_packet_error("SOURCE_SNAPSHOT_INVALID_UTF8"), "SOURCE_SNAPSHOT_INVALID_UTF8"); return result;
   }
   if (p.end_offset > normalized_source_snapshot.size() ||
       sha256_hex(normalized_source_snapshot) != p.source_snapshot_digest) {
-    result.error = "SOURCE_SNAPSHOT_DIGEST_MISMATCH"; return result;
+    set_failure(result, stage_for_packet_error("SOURCE_SNAPSHOT_DIGEST_MISMATCH"), "SOURCE_SNAPSHOT_DIGEST_MISMATCH"); return result;
   }
   const auto range_bytes = normalized_source_snapshot.substr(
       static_cast<std::size_t>(p.start_offset),
       static_cast<std::size_t>(p.end_offset - p.start_offset));
   if (sha256_hex(range_bytes) != p.source_range_digest) {
-    result.error = "SOURCE_RANGE_DIGEST_MISMATCH"; return result;
+    set_failure(result, stage_for_packet_error("SOURCE_RANGE_DIGEST_MISMATCH"), "SOURCE_RANGE_DIGEST_MISMATCH"); return result;
   }
 
   auto existing_packet = packet_digests_.find(p.packet_id);
   if (existing_packet != packet_digests_.end()) {
     if (!semantic_events.empty()) {
-      result.error = "PACKET_ALREADY_ADMITTED_SEMANTIC_NOT_COMMITTED";
+      set_failure(result, stage_for_packet_error("PACKET_ALREADY_ADMITTED_SEMANTIC_NOT_COMMITTED"), "PACKET_ALREADY_ADMITTED_SEMANTIC_NOT_COMMITTED");
       return result;
     }
     const auto encoded = packet_encodings_.find(p.packet_id);
     if (existing_packet->second != p.canonical_request_digest ||
         encoded == packet_encodings_.end() || encoded->second != encode(p)) {
-      result.error = "PACKET_ID_REUSED"; return result;
+      set_failure(result, stage_for_packet_error("PACKET_ID_REUSED"), "PACKET_ID_REUSED"); return result;
     }
     result.admitted = true;
     result.duplicate = true;
@@ -240,11 +240,11 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
 
   if (p.source_sequence > staged.sequencer.watermark() &&
       p.source_sequence - staged.sequencer.watermark() > 4096) {
-    result.error = "SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT"; return result;
+    set_failure(result, stage_for_packet_error("SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT"), "SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT"); return result;
   }
   const auto sequence = staged.sequence_packets.find(p.source_sequence);
   if (sequence != staged.sequence_packets.end() && sequence->second != p.packet_id) {
-    result.error = "SOURCE_SEQUENCE_REUSED"; return result;
+    set_failure(result, stage_for_packet_error("SOURCE_SEQUENCE_REUSED"), "SOURCE_SEQUENCE_REUSED"); return result;
   }
   DocumentStreamState staged_document;
   std::string dkey;
@@ -261,7 +261,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
           latest_document == staged_document.range_latest_packets.end() ||
           latest_document->second != p.revision_of_packet_id ||
           prior->second != p.revision_of_packet_id) {
-        result.error = "DOCUMENT_REVISION_TARGET_MISMATCH"; return result;
+        set_failure(result, stage_for_packet_error("DOCUMENT_REVISION_TARGET_MISMATCH"), "DOCUMENT_REVISION_TARGET_MISMATCH"); return result;
       }
     } else {
       if (p.document_sequence != staged_document.next_sequence) {
@@ -281,10 +281,10 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   if (p.revision) {
     if (latest == staged.range_latest_packets.end() ||
         p.revision_of_packet_id != latest->second) {
-      result.error = "REVISION_TARGET_MISMATCH"; return result;
+      set_failure(result, stage_for_packet_error("REVISION_TARGET_MISMATCH"), "REVISION_TARGET_MISMATCH"); return result;
     }
   } else if (!p.revision_of_packet_id.empty()) {
-    result.error = "REVISION_FIELDS_REQUIRE_REVISION_PACKET"; return result;
+    set_failure(result, stage_for_packet_error("REVISION_FIELDS_REQUIRE_REVISION_PACKET"), "REVISION_FIELDS_REQUIRE_REVISION_PACKET"); return result;
   }
   const auto range = staged.ranges.ingest(rkey, p.source_range_digest,
       p.idempotency_key, p.revision, p.revision_sequence);
@@ -305,7 +305,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   const auto expected = journal_.state_version();
   if (!semantic_events.empty()) {
     if (semantic_events.front().kind != "DELTA_META") {
-      result.error = "SEMANTIC_TRANSACTION_META_REQUIRED"; return result;
+      set_failure(result, stage_for_packet_error("SEMANTIC_TRANSACTION_META_REQUIRED"), "SEMANTIC_TRANSACTION_META_REQUIRED"); return result;
     }
     std::istringstream meta(semantic_events.front().payload);
     std::string delta_id, semantic_key, fingerprint;
@@ -313,10 +313,10 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
     if (!(meta >> std::quoted(delta_id) >> std::quoted(semantic_key) >>
           semantic_expected >> std::quoted(fingerprint)) ||
         delta_id.empty() || semantic_key.empty() || fingerprint.empty()) {
-      result.error = "SEMANTIC_TRANSACTION_META_INVALID"; return result;
+      set_failure(result, stage_for_packet_error("SEMANTIC_TRANSACTION_META_INVALID"), "SEMANTIC_TRANSACTION_META_INVALID"); return result;
     }
     if (semantic_expected != expected) {
-      result.error = "STATE_VERSION_CONFLICT"; return result;
+      set_failure(result, stage_for_packet_error("STATE_VERSION_CONFLICT"), "STATE_VERSION_CONFLICT"); return result;
     }
   }
   const std::string tx = "recognition-packet-tx:" + p.packet_id;
@@ -327,13 +327,13 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   transaction_events.insert(transaction_events.end(), semantic_events.begin(), semantic_events.end());
   const auto committed = journal_.commit(tx, p.idempotency_key, expected, transaction_events);
   if (!committed.committed) {
-    result.error = committed.error;
+    set_failure(result, AdmissionFailureStage::JournalCommit, committed.error);
     result.state_version = committed.state_version;
     return result;
   }
   if (committed.duplicate) {
     // A duplicate journal commit must already be reflected by recovered state.
-    result.error = "JOURNAL_DUPLICATE_WITHOUT_COORDINATOR_STATE";
+    set_failure(result, AdmissionFailureStage::JournalCommit, "JOURNAL_DUPLICATE_WITHOUT_COORDINATOR_STATE");
     return result;
   }
 
