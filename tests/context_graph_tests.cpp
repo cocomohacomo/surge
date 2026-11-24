@@ -529,6 +529,25 @@ int main(){
     CHECK(resumed_focus.complete);
     CHECK(traversal_cursor.complete);
     CHECK(continuation_calls>1);
+
+    // Completed snapshots from one-shot and sliced traversal must be identical
+    // when they describe the same graph state and logical Focus.
+    SnapshotDocument one_shot_manifest, sliced_manifest;
+    std::string traversal_snapshot_error;
+    CHECK(make_completed_focus_snapshot_document(graph,unbounded_focus,
+        "focus-geometry-v1","observation-v1","traversal-context",77,
+        &one_shot_manifest,traversal_snapshot_error));
+    CHECK(make_completed_focus_snapshot_document(graph,resumed_focus,
+        "focus-geometry-v1","observation-v1","traversal-context",77,
+        &sliced_manifest,traversal_snapshot_error));
+    FocusEvaluationSnapshotDiff traversal_diff;
+    CHECK(diff_completed_focus_snapshots(one_shot_manifest,sliced_manifest,
+        &traversal_diff,traversal_snapshot_error));
+    CHECK(!traversal_diff.focus_changed);
+    CHECK(!traversal_diff.graph_changed);
+    CHECK(validate_focus_snapshot_against_graph(one_shot_manifest,graph,
+        traversal_snapshot_error));
+
     CHECK(std::adjacent_find(actual_nodes.begin(),actual_nodes.end())==actual_nodes.end());
     CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
 
@@ -1434,6 +1453,21 @@ int main(){
     CHECK(!diff_completed_focus_snapshots(first_manifest,duplicate_manifest,
                                            &changed,snapshot_error));
     CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID");
+
+    FocusSnapshotHistory timeline;
+    CHECK(timeline.append(first_manifest,snapshot_error));
+    CHECK(timeline.append(later_manifest,snapshot_error));
+    CHECK(timeline.size()==2);
+    FocusEvaluationSnapshotDiff historical_diff;
+    CHECK(timeline.diff(0,1,&historical_diff,snapshot_error));
+    CHECK(historical_diff.graph_changed);
+    CHECK(!historical_diff.focus_changed);
+    CHECK(!timeline.append(other_context,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_HISTORY_CONTEXT_MISMATCH");
+    auto regressed_manifest=first_manifest;
+    regressed_manifest.state_version=6;
+    CHECK(!timeline.append(regressed_manifest,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_HISTORY_WATERMARK_REGRESSION");
 
     auto partial=observation;
     partial.complete=false;
