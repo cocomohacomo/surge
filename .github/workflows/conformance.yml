@@ -310,6 +310,13 @@ jobs:
           SURGE_MODEL_BENCH_REPORT: ${{ runner.temp }}/surge-cpu-projector-benchmark.json
           SURGE_MODEL_THREADS: "2"
         run: python tools/benchmark_cpu_projectors.py
+      - name: Evaluate semantic candidate and relation coverage
+        env:
+          INPUT_REPORT: ${{ runner.temp }}/surge-cpu-projector-benchmark.json
+          OUTPUT_REPORT: ${{ runner.temp }}/surge-cpu-projector-semantic-evaluation.json
+        run: |
+          python tools/evaluate_projector_semantics.py "$INPUT_REPORT" "$OUTPUT_REPORT" | tee "$RUNNER_TEMP/surge-projector-semantic-evaluation.txt"
+          cat "$RUNNER_TEMP/surge-projector-semantic-evaluation.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish CPU model benchmark summary
         env:
           REPORT: ${{ runner.temp }}/surge-cpu-projector-benchmark.json
