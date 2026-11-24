@@ -27,7 +27,8 @@ complete evaluation, and deferred information remains logically in scope.
 | ProjectionBatch shared typed path / atomic packet+projection route | Implemented in current code/docs | Runtime cross-adapter and real provider contract tests |
 | Dependency evaluation inside staged transaction and journal replay | Implemented in current main code | Fault injection and concurrency tests remain |
 | Dependency evaluation readout through C ABI and Python bridge | Implemented in current main code | Public API compatibility tests and documentation |
-| Focus observation integration with completed cognition Snapshot/Diff | Not yet implemented as a unified contract | Design and implementation stage below |
+| Completed Focus evaluation Snapshot manifest / codec / durable Store round-trip | Implemented on PR #149 | Cross-platform CI and API review |
+| Focus-vs-Graph change classification | Implemented on PR #149 | Validate graph-digest production at real ContextGraph capture boundary |
 | Context partition identity on graph records/retrieval | Backlog | Explicit identity, migration and isolation tests |
 | Retrieval snapshot fixed ceiling / resumable query | Backlog | Replace cap with versioned cursor/query contract |
 | Predicate grammar versioning and typed AST | Backlog | AST migration, version compatibility |
@@ -49,14 +50,15 @@ mistakenly treat a partial page as a finalized cognition state.
 1. Partial traversal remains an observation only. It cannot create a completed
    evaluation snapshot.
 2. Snapshot provenance binds to the graph state version, logical Focus digest,
-   traversal configuration/depth, and deterministic observation digest.
+   graph digest independent of Focus, and deterministic observation digest.
 3. A completed snapshot must contain the full logical Focus roots, all
    processed roots, and no deferred roots.
 4. Repeating an identical completed snapshot request is idempotent.
 5. A changed graph version or Focus digest is rejected as stale; it must not
    be silently rebased.
-6. Diff compares only compatible completed snapshots. Incompatible provenance
-   yields a stable error rather than a misleading change list.
+6. Diff compares completed snapshots in the same Context. It reports Focus
+   provenance changes separately from Graph changes. Graph changes are detected
+   through the Focus-independent graph digest and root/node/relation ID sets.
 7. Snapshot and Diff remain detached read-only outputs; neither mutates Focus,
    clusters, relations, cursor, or resource budget.
 
@@ -68,14 +70,17 @@ mistakenly treat a partial page as a finalized cognition state.
   nodes/relations, and root/relation endpoints).
 - [x] Add regression assertions for partial/deferred rejection, complete
   acceptance, state-version mismatch, missing provenance, and duplicate roots/nodes.
-- [ ] Add tests for duplicate relations and missing root/relation endpoints.
+- [x] Add tests for duplicate relations and missing root/relation endpoints.
 - [x] Connect completed Focus evaluation manifests to the existing SnapshotDocument / SnapshotCodec / SnapshotStore path without adding a second graph store.
 - [x] Implement deterministic root/node/relation ID Diff for snapshots with matching context and Focus provenance.
-- [ ] Add persistence round-trip tests through SnapshotStore and reject malformed/duplicate manifest payloads.
+- [x] Add real SnapshotStore file save/load plus SnapshotCodec restore round-trip.
+- [x] Reject truncated and duplicate-ID manifest payloads.
+- [x] Report Focus provenance changes separately from Graph digest/ID changes.
+- [x] Test Focus-only and Graph-only change classifications.
 
 ### Exit criteria
 
-The slice is complete only when the validator/API, tests, documentation, CI,
-and compatibility review are present. Contract-only success is not runtime
-completion. The current PR #148 stays Draft and unmerged until its own
-conformance and review requirements are satisfied.
+The implementation slice now includes validator/API, durable manifest persistence,
+adversarial manifest validation, independent Focus/Graph change reporting, and
+regression tests. CI evidence must be checked against the current PR head SHA;
+this does not imply that PR #149 or its base PR #148 is merged.
