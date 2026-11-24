@@ -47,6 +47,12 @@ struct PacketAdmissionResult {
   std::uint64_t watermark{};
   std::string packet_status;
   std::string error;
+  AdmissionFailureStage failure_stage{AdmissionFailureStage::None};
+  std::string failure_code;
+  std::string projection_error;
+  std::string packet_error;
+  std::string journal_error;
+  std::string graph_error;
 };
 
 // Coordinates SourceSequencer + RangeLedger + EventJournal. In-memory state
@@ -62,7 +68,7 @@ class PacketAdmissionCoordinator {
   std::size_t packet_count() const;
   std::size_t estimated_resident_bytes() const noexcept;
   bool contains_packet(const std::string& packet_id) const;
-  const EventJournal& journal() const noexcept { return journal_; }\n  const EventJournal& journal() const noexcept { return journal_; }
+  const EventJournal& journal() const noexcept { return journal_; }
 
  private:
   struct DocumentStreamState {
