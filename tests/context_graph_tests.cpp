@@ -345,8 +345,7 @@ int main(){
     ContextGraph target(target_journal);CHECK(target.open());
     ContextGraphSnapshotDomain target_domain(target);
     auto prepared=target_domain.prepare_restore_with_tail(snapshot,tail.events,&error);
-    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"
-";
+    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"\n";
     CHECK(prepared!=nullptr);
     prepared->commit();
     CHECK(target.nodes().count("snapshot-entity")==0);
@@ -1038,8 +1037,7 @@ int main(){
     CHECK(conflict_delta.relations.size()==relation_count_before);
     CHECK(!classified_cluster_id.empty());
     const auto classified_commit = graph.apply(delta);
-    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '
-';
+    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\n';
     CHECK(classified_commit.committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
     const auto classified_relations = graph.relations();
