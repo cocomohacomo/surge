@@ -681,60 +681,6 @@ int main(){
     }
   }
 
-  // Completed Focus evaluations can be promoted to snapshot metadata only
-  // when every logical root is processed and provenance is present.
-  {
-    CognitionObservation observation;
-    observation.state_version=7;
-    observation.complete=true;
-    observation.logical_region_cluster_ids={"root-a","root-b"};
-    observation.processed_region_cluster_ids={"root-b","root-a"};
-    observation.nodes={{{"root-a",NodeKind::Cluster,"A",{}}},{{"root-b",NodeKind::Cluster,"B",{}}}};
-    observation.relations={{{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}}};
-    FocusEvaluationSnapshotMetadata metadata;
-    metadata.evaluated_state_version=7;
-    metadata.focus_digest="focus-digest";
-    metadata.observation_digest="observation-digest";
-    std::string snapshot_error;
-    CHECK(validate_completed_focus_evaluation(observation,metadata,snapshot_error));
-    CHECK(snapshot_error.empty());
-
-    auto partial=observation;
-    partial.complete=false;
-    CHECK(!validate_completed_focus_evaluation(partial,metadata,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_INCOMPLETE");
-
-    auto deferred=observation;
-    deferred.deferred_region_cluster_ids={"root-b"};
-    CHECK(!validate_completed_focus_evaluation(deferred,metadata,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_DEFERRED_ROOTS");
-
-    auto mismatched=observation;
-    mismatched.processed_region_cluster_ids={"root-a"};
-    CHECK(!validate_completed_focus_evaluation(mismatched,metadata,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_ROOT_SET_MISMATCH");
-
-    auto stale=metadata;
-    stale.evaluated_state_version=6;
-    CHECK(!validate_completed_focus_evaluation(observation,stale,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_STATE_VERSION_MISMATCH");
-
-    auto missing_provenance=metadata;
-    missing_provenance.focus_digest.clear();
-    CHECK(!validate_completed_focus_evaluation(observation,missing_provenance,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_PROVENANCE_MISSING");
-
-    auto duplicate_roots=observation;
-    duplicate_roots.logical_region_cluster_ids.push_back("root-a");
-    CHECK(!validate_completed_focus_evaluation(duplicate_roots,metadata,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_ROOT");
-
-    auto duplicate_nodes=observation;
-    duplicate_nodes.nodes.push_back(duplicate_nodes.nodes.front());
-    CHECK(!validate_completed_focus_evaluation(duplicate_nodes,metadata,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_NODE");
-  }
-
   std::filesystem::remove_all(root);const auto path=(root/"context.sgj").string();
   {
     ContextGraph graph(path);CHECK(graph.open());
@@ -1356,6 +1302,61 @@ int main(){
     const auto stale_page=graph.recall_focused_cognition_candidates(
         "incoming-input",{"river"},stale_cursor,8,2,8);
     CHECK(stale_page.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
+  }
+
+  // Completed Focus evaluations can be promoted to snapshot metadata only
+  // when every logical root is processed and provenance is present.
+  {
+    CognitionObservation observation;
+    observation.state_version=7;
+    observation.complete=true;
+    observation.logical_region_cluster_ids={"root-a","root-b"};
+    observation.processed_region_cluster_ids={"root-b","root-a"};
+    observation.nodes={{{"root-a",NodeKind::Cluster,"A",{}}},
+                        {{"root-b",NodeKind::Cluster,"B",{}}}};
+    observation.relations={{{"rel-a",RelationKind::Contains,"root-a","member-a",1.0}}};
+    FocusEvaluationSnapshotMetadata metadata;
+    metadata.evaluated_state_version=7;
+    metadata.focus_digest="focus-digest";
+    metadata.observation_digest="observation-digest";
+    std::string snapshot_error;
+    CHECK(validate_completed_focus_evaluation(observation,metadata,snapshot_error));
+    CHECK(snapshot_error.empty());
+
+    auto partial=observation;
+    partial.complete=false;
+    CHECK(!validate_completed_focus_evaluation(partial,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_INCOMPLETE");
+
+    auto deferred=observation;
+    deferred.deferred_region_cluster_ids={"root-b"};
+    CHECK(!validate_completed_focus_evaluation(deferred,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DEFERRED_ROOTS");
+
+    auto mismatched=observation;
+    mismatched.processed_region_cluster_ids={"root-a"};
+    CHECK(!validate_completed_focus_evaluation(mismatched,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_ROOT_SET_MISMATCH");
+
+    auto stale=metadata;
+    stale.evaluated_state_version=6;
+    CHECK(!validate_completed_focus_evaluation(observation,stale,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_STATE_VERSION_MISMATCH");
+
+    auto missing_provenance=metadata;
+    missing_provenance.focus_digest.clear();
+    CHECK(!validate_completed_focus_evaluation(observation,missing_provenance,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_PROVENANCE_MISSING");
+
+    auto duplicate_roots=observation;
+    duplicate_roots.logical_region_cluster_ids.push_back("root-a");
+    CHECK(!validate_completed_focus_evaluation(duplicate_roots,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_ROOT");
+
+    auto duplicate_nodes=observation;
+    duplicate_nodes.nodes.push_back(duplicate_nodes.nodes.front());
+    CHECK(!validate_completed_focus_evaluation(duplicate_nodes,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_NODE");
   }
 
   std::filesystem::remove_all(root);
