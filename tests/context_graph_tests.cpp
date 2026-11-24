@@ -2,6 +2,7 @@
 #include "surge/context_graph.hpp"
 #include "surge/focus_evaluation_snapshot.hpp"
 #include "surge/snapshot_domains.hpp"
+#include "surge/snapshot_store.hpp"
 #include "surge/event_journal.hpp"
 #include "surge/snapshot_domains.hpp"
 #include <algorithm>
@@ -1334,6 +1335,22 @@ int main(){
     SnapshotDocument decoded_snapshot;
     CHECK(SnapshotCodec::decode(encoded_snapshot,snapshot_limits,
                                  &decoded_snapshot,&snapshot_error));
+
+    // Persist the encoded Focus manifest through the real durable store and
+    // restore it before decoding. This exercises the file boundary, not only
+    // the in-memory codec.
+    const auto manifest_path=(root/"focus-evaluation-manifest.snapshot").string();
+    SnapshotStore manifest_store(manifest_path);
+    CHECK(manifest_store.save(encoded_snapshot,&snapshot_error));
+    const auto stored_manifest=manifest_store.load();
+    CHECK(stored_manifest.ok && !stored_manifest.used_backup);
+    CHECK(stored_manifest.bytes==encoded_snapshot);
+    SnapshotDocument restored_manifest;
+    CHECK(SnapshotCodec::decode(stored_manifest.bytes,snapshot_limits,
+                                &restored_manifest,&snapshot_error));
+    CHECK(restored_manifest.context_id=="test-context");
+    CHECK(restored_manifest.state_version==7);
+
     FocusEvaluationSnapshotDiff no_change;
     CHECK(diff_completed_focus_snapshots(first_manifest,decoded_snapshot,
                                           &no_change,snapshot_error));
@@ -1369,10 +1386,30 @@ int main(){
     CHECK(make_completed_focus_snapshot_document(
         later_observation,other_focus_metadata,"test-context",13,
         &other_focus,snapshot_error));
-    CHECK(!diff_completed_focus_snapshots(first_manifest,other_focus,
-                                           &changed,snapshot_error));
-    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_FOCUS_MISMATCH");
+    CHECK(diff_completed_focus_snapshots(first_manifest,other_focus,
+                                          &changed,snapshot_error));
+    CHECK(changed.focus_changed);
+    CHECK(!changed.graph_changed);
+    CHECK(changed.added_node_ids.empty());
+    CHECK(changed.added_relation_ids.empty());
 
+    // Malformed and duplicate-ID payloads must never be interpreted as a
+    // valid graph delta, even when wrapped in a valid SnapshotDocument.
+    auto malformed_manifest=first_manifest;
+    malformed_manifest.payload.pop_back();
+    CHECK(!diff_completed_focus_snapshots(first_manifest,malformed_manifest,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID");
+    auto duplicate_manifest=first_manifest;
+    duplicate_manifest.payload="FES1";
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"focus-digest");
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"observation-digest");
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"root-a","root-b"});
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"member-a","member-a"});
+    focus_snapshot_detail::append_set(duplicate_manifest.payload,{"rel-a"});
+    CHECK(!diff_completed_focus_snapshots(first_manifest,duplicate_manifest,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID");
 
     auto partial=observation;
     partial.complete=false;
@@ -1408,6 +1445,21 @@ int main(){
     duplicate_nodes.nodes.push_back(duplicate_nodes.nodes.front());
     CHECK(!validate_completed_focus_evaluation(duplicate_nodes,metadata,snapshot_error));
     CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_NODE");
+
+    auto duplicate_relations=observation;
+    duplicate_relations.relations.push_back(duplicate_relations.relations.front());
+    CHECK(!validate_completed_focus_evaluation(duplicate_relations,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_DUPLICATE_OR_INVALID_RELATION");
+
+    auto missing_root_node=observation;
+    missing_root_node.nodes.erase(missing_root_node.nodes.begin());
+    CHECK(!validate_completed_focus_evaluation(missing_root_node,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_ROOT_NODE_MISSING");
+
+    auto missing_relation_endpoint=observation;
+    missing_relation_endpoint.relations.front().to="absent-node";
+    CHECK(!validate_completed_focus_evaluation(missing_relation_endpoint,metadata,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_EVALUATION_RELATION_ENDPOINT_MISSING");
   }
 
   std::filesystem::remove_all(root);
