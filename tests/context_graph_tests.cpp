@@ -345,7 +345,8 @@ int main(){
     ContextGraph target(target_journal);CHECK(target.open());
     ContextGraphSnapshotDomain target_domain(target);
     auto prepared=target_domain.prepare_restore_with_tail(snapshot,tail.events,&error);
-    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"\n";
+    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"
+";
     CHECK(prepared!=nullptr);
     prepared->commit();
     CHECK(target.nodes().count("snapshot-entity")==0);
@@ -1037,7 +1038,8 @@ int main(){
     CHECK(conflict_delta.relations.size()==relation_count_before);
     CHECK(!classified_cluster_id.empty());
     const auto classified_commit = graph.apply(delta);
-    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '\n';
+    if (!classified_commit.committed) std::cerr << "cluster classification commit failed: " << classified_commit.error << '
+';
     CHECK(classified_commit.committed);
     CHECK(graph.nodes().at(classified_cluster_id).kind==NodeKind::Cluster);
     const auto classified_relations = graph.relations();
@@ -1584,7 +1586,9 @@ int main(){
         ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}},live_error));
     CHECK(live_graph.apply(seed).committed);
 
-    const auto live_observation=live_graph.observe_focused_cognition(\n        FocusRegion{{0.0,0.0,0.0},{1.0,1.0,1.0}},\n        {ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}}}, {}, 32,64,0);
+    const auto live_observation=live_graph.observe_focused_cognition(
+        FocusRegion{{0.0,0.0,0.0},{1.0,1.0,1.0}},
+        {ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}}}, {}, 32,64,0);
     CHECK(live_observation.complete);
     CHECK(live_observation.logical_region_cluster_ids==
           std::vector<std::string>{"live-root"});
@@ -1655,5 +1659,6 @@ int main(){
   }
 
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
+  std::cout<<"SURGE ContextGraph tests: retention event ownership passed
+";
 }
