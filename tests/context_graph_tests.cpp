@@ -1460,12 +1460,14 @@ int main(){
 
     auto other_focus=later_manifest;
     // Rebuild a valid manifest under another Focus provenance.
-    auto other_focus_metadata=later_metadata;
+    auto focus_only_observation=observation;
+    focus_only_observation.state_version=8;
+    auto other_focus_metadata=metadata;
+    other_focus_metadata.evaluated_state_version=8;
     other_focus_metadata.focus_digest="different-focus";
-    // Isolate Focus provenance from the Graph digest change in later_manifest.
-    other_focus_metadata.graph_digest=metadata.graph_digest;
+    other_focus_metadata.observation_digest="focus-only-observation";
     CHECK(make_completed_focus_snapshot_document(
-        later_observation,other_focus_metadata,"test-context",13,
+        focus_only_observation,other_focus_metadata,"test-context",13,
         &other_focus,snapshot_error));
     CHECK(diff_completed_focus_snapshots(first_manifest,other_focus,
                                           &changed,snapshot_error));
