@@ -117,7 +117,7 @@ jobs:
           print("isolated wheel + installed native Core discovery passed")
           PY
       - name: Retain CycloneDX SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surge-sbom
           path: dist/surge-sbom.cdx.json
@@ -219,7 +219,7 @@ jobs:
           SURGE_SIMULATION_REPORT: ${{ runner.temp }}/surge-projection-simulation.json
         run: python -m unittest discover -s tests -p test_projection_simulation.py -v
       - name: Retain machine-readable simulation report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surge-projection-simulation
           path: ${{ runner.temp }}/surge-projection-simulation.json
@@ -243,7 +243,7 @@ jobs:
           SURGE_LONG_DOCUMENT_REPORT: ${{ runner.temp }}/surge-projection-long-document.json
         run: python -m unittest discover -s tests -p test_projection_long_document.py -v
       - name: Retain machine-readable long-document report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surge-projection-long-document
           path: ${{ runner.temp }}/surge-projection-long-document.json
@@ -278,7 +278,7 @@ jobs:
           SURGE_CONTINUITY_REPORT: ${{ runner.temp }}/surge-projection-continuity.json
         run: python -m unittest discover -s tests -p test_projection_continuity.py -v
       - name: Retain continuity simulation report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surge-projection-continuity
           path: ${{ runner.temp }}/surge-projection-continuity.json
@@ -337,7 +337,7 @@ jobs:
           PY
           cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain raw model outputs and measurements
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surge-cpu-projector-model-benchmark
           path: ${{ runner.temp }}/surge-cpu-projector-benchmark.json
