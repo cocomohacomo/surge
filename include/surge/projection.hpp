@@ -196,9 +196,15 @@ inline PacketAdmissionResult apply_projection_batch(
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult packet_result;
   packet_result.state_version = graph.state_version();
+  if (graph.state_version() != packets.state_version()) {
+    packet_result.failure_stage = AdmissionFailureStage::StateConsistency;
+    packet_result.failure_code = packet_result.error = packet_result.graph_error = "JOURNAL_GRAPH_VERSION_MISMATCH";
+    return packet_result;
+  }
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
-    packet_result.error = validation.error;
+    packet_result.failure_stage = AdmissionFailureStage::ProjectionValidation;
+    packet_result.failure_code = packet_result.error = packet_result.projection_error = validation.error;
     return packet_result;
   }
   if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
@@ -210,19 +216,22 @@ inline PacketAdmissionResult apply_projection_batch(
   SemanticDelta delta;
   std::string error;
   if (!build_projection_delta(batch, delta, error)) {
-    packet_result.error = error;
+    packet_result.failure_stage = AdmissionFailureStage::GraphPreparation;
+    packet_result.failure_code = packet_result.error = packet_result.graph_error = error;
     return packet_result;
   }
   std::size_t packet_resident_bytes = 0, packet_staging_bytes = 0;
   if (!estimate_projection_packet_resources(packet, normalized_source_snapshot,
       packet_resident_bytes, packet_staging_bytes)) {
-    packet_result.error = "PROJECTION_PACKET_BUDGET_SIZE_OVERFLOW";
+    packet_result.failure_stage = AdmissionFailureStage::PacketValidation;
+    packet_result.failure_code = packet_result.error = packet_result.packet_error = "PROJECTION_PACKET_BUDGET_SIZE_OVERFLOW";
     return packet_result;
   }
   const auto budgeted = graph.apply_with_external_commit(delta,
       [&](const std::vector<JournalEvent>& semantic_events) {
         if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
-          packet_result.error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
+          packet_result.failure_stage = AdmissionFailureStage::Idempotency;
+          packet_result.failure_code = packet_result.error = packet_result.packet_error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
           packet_result.state_version = graph.state_version();
           return DeltaResult{false, false, graph.state_version(), packet_result.error};
         }
@@ -230,12 +239,19 @@ inline PacketAdmissionResult apply_projection_batch(
         return DeltaResult{packet_result.admitted, packet_result.duplicate,
             packet_result.state_version, packet_result.error};
       }, packet_resident_bytes, 1, packet_staging_bytes);
-  if (!budgeted.committed && packet_result.error.empty())
-    packet_result.error = budgeted.error;
+  if (!budgeted.committed && packet_result.error.empty()) {
+    packet_result.failure_stage = AdmissionFailureStage::JournalCommit;
+    packet_result.failure_code = packet_result.error = packet_result.journal_error = budgeted.error;
+  }
   if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
     packet_result.failure_stage = AdmissionFailureStage::StateConsistency;
     packet_result.failure_code = packet_result.error = packet_result.graph_error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
     packet_result.admitted = false;
+  }
+  if (budgeted.committed && graph.state_version() != packets.state_version()) {
+    packet_result.admitted = false;
+    packet_result.failure_stage = AdmissionFailureStage::StateConsistency;
+    packet_result.failure_code = packet_result.error = packet_result.graph_error = "JOURNAL_GRAPH_VERSION_MISMATCH_AFTER_COMMIT";
   }
   return packet_result;
 }
@@ -292,9 +308,15 @@ inline PacketAdmissionResult apply_projection_batch(
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult rejected;
   rejected.state_version = graph.state_version();
+  if (graph.state_version() != packets.state_version()) {
+    rejected.failure_stage = AdmissionFailureStage::StateConsistency;
+    rejected.failure_code = rejected.error = rejected.graph_error = "JOURNAL_GRAPH_VERSION_MISMATCH";
+    return rejected;
+  }
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
-    rejected.error = validation.error;
+    rejected.failure_stage = AdmissionFailureStage::ProjectionValidation;
+    rejected.failure_code = rejected.error = rejected.projection_error = validation.error;
     return rejected;
   }
   if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
@@ -307,12 +329,14 @@ inline PacketAdmissionResult apply_projection_batch(
   SemanticDelta delta;
   std::string error;
   if (!build_projection_delta(batch, delta, error)) {
-    rejected.error = error;
+    rejected.failure_stage = AdmissionFailureStage::GraphPreparation;
+    rejected.failure_code = rejected.error = rejected.graph_error = error;
     return rejected;
   }
   std::vector<JournalEvent> semantic_events;
   if (!graph.prepare_events(delta, semantic_events, error)) {
-    rejected.error = error;
+    rejected.failure_stage = AdmissionFailureStage::GraphPreparation;
+    rejected.failure_code = rejected.error = rejected.graph_error = error;
     return rejected;
   }
   if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
@@ -321,9 +345,20 @@ inline PacketAdmissionResult apply_projection_batch(
     return rejected;
   }
   auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
+  if (!admitted.admitted && admitted.failure_stage == AdmissionFailureStage::None) {
+    admitted.failure_stage = AdmissionFailureStage::JournalCommit;
+    admitted.failure_code = admitted.error;
+    admitted.journal_error = admitted.error;
+  }
   if (admitted.admitted && !graph.open()) {
     admitted.admitted = false;
-    admitted.error = "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED";
+    admitted.failure_stage = AdmissionFailureStage::GraphReplay;
+    admitted.failure_code = admitted.error = admitted.graph_error = "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED";
+  }
+  if (admitted.admitted && graph.state_version() != packets.state_version()) {
+    admitted.admitted = false;
+    admitted.failure_stage = AdmissionFailureStage::StateConsistency;
+    admitted.failure_code = admitted.error = admitted.graph_error = "JOURNAL_GRAPH_VERSION_MISMATCH_AFTER_REPLAY";
   }
   return admitted;
 }
