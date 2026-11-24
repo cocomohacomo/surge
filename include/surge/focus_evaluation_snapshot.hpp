@@ -227,24 +227,63 @@ inline bool validate_focus_snapshot_against_graph(
     error = "FOCUS_SNAPSHOT_GRAPH_MANIFEST_INVALID";
     return false;
   }
+
+  std::string focus, graph_digest, observation;
+  std::vector<std::string> roots, nodes, relations;
+  if (!focus_snapshot_detail::decode_manifest(manifest, focus, graph_digest,
+      observation, roots, nodes, relations) ||
+      focus.empty() || graph_digest.empty() || observation.empty()) {
+    error = "FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID";
+    return false;
+  }
+
   const auto version_before = graph.state_version();
   if (manifest.state_version != version_before) {
     error = "FOCUS_SNAPSHOT_GRAPH_STATE_VERSION_MISMATCH";
     return false;
   }
+
+  // The manifest is a focused projection of the graph, not a second graph
+  // store. Its IDs must therefore be a valid subset of the live graph.
+  // Digest equality alone is insufficient: a payload could retain the
+  // correct graph digest while its projection ID lists are edited.
+  const auto& graph_nodes = graph.nodes();
+  const auto& graph_relations = graph.relations();
+  const std::set<std::string> manifest_nodes(nodes.begin(), nodes.end());
+  for (const auto& id : nodes) {
+    if (id.empty() || graph_nodes.find(id) == graph_nodes.end()) {
+      error = "FOCUS_SNAPSHOT_GRAPH_NODE_MISSING";
+      return false;
+    }
+  }
+  for (const auto& id : roots) {
+    const auto found = graph_nodes.find(id);
+    if (found == graph_nodes.end() || !manifest_nodes.count(id) ||
+        (found->second.kind != NodeKind::Cluster &&
+         found->second.kind != NodeKind::ChaosCluster)) {
+      error = "FOCUS_SNAPSHOT_GRAPH_ROOT_INVALID";
+      return false;
+    }
+  }
+  for (const auto& id : relations) {
+    const auto found = graph_relations.find(id);
+    if (id.empty() || found == graph_relations.end()) {
+      error = "FOCUS_SNAPSHOT_GRAPH_RELATION_MISSING";
+      return false;
+    }
+    if (!manifest_nodes.count(found->second.from) ||
+        !manifest_nodes.count(found->second.to)) {
+      error = "FOCUS_SNAPSHOT_GRAPH_RELATION_ENDPOINT_MISSING";
+      return false;
+    }
+  }
+
   ContextGraphSnapshotDomain domain(graph);
   std::string digest;
   if (!domain.canonical_digest(&digest, &error)) return false;
   const auto version_after = graph.state_version();
   if (version_before != version_after) {
     error = "FOCUS_SNAPSHOT_GRAPH_CHANGED_DURING_VALIDATION";
-    return false;
-  }
-  std::string focus, graph_digest, observation;
-  std::vector<std::string> roots, nodes, relations;
-  if (!focus_snapshot_detail::decode_manifest(manifest, focus, graph_digest,
-      observation, roots, nodes, relations)) {
-    error = "FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID";
     return false;
   }
   if (digest != graph_digest) {
