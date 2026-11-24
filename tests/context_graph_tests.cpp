@@ -345,7 +345,7 @@ int main(){
     ContextGraph target(target_journal);CHECK(target.open());
     ContextGraphSnapshotDomain target_domain(target);
     auto prepared=target_domain.prepare_restore_with_tail(snapshot,tail.events,&error);
-    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"\\n";
+    if(!prepared)std::cerr<<"entity reclamation snapshot-tail restore failed: "<<error<<"\n";
     CHECK(prepared!=nullptr);
     prepared->commit();
     CHECK(target.nodes().count("snapshot-entity")==0);
