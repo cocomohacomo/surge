@@ -4,6 +4,8 @@
 #include "surge/snapshot.hpp"
 #include <algorithm>
 #include <iterator>
+#include <cstdint>
+#include <vector>
 #include <set>
 #include <string>
 
@@ -86,6 +88,129 @@ inline bool validate_completed_focus_evaluation(
     }
   }
   return true;
+}
+
+
+struct FocusEvaluationSnapshotDiff {
+  std::vector<std::string> added_roots, removed_roots;
+  std::vector<std::string> added_node_ids, removed_node_ids;
+  std::vector<std::string> added_relation_ids, removed_relation_ids;
+};
+
+namespace focus_snapshot_detail {
+inline void append_u32(std::string& out, std::uint32_t value) {
+  for (int shift=24; shift>=0; shift-=8)
+    out.push_back(static_cast<char>((value >> shift) & 0xff));
+}
+inline void append_string(std::string& out, const std::string& value) {
+  append_u32(out, static_cast<std::uint32_t>(value.size()));
+  out.append(value);
+}
+inline void append_set(std::string& out, std::vector<std::string> values) {
+  std::sort(values.begin(), values.end());
+  append_u32(out, static_cast<std::uint32_t>(values.size()));
+  for (const auto& value : values) append_string(out, value);
+}
+inline bool read_u32(const std::string& in, std::size_t& pos, std::uint32_t& value) {
+  if (pos > in.size() || in.size()-pos < 4) return false;
+  value=0;
+  for(int i=0;i<4;++i) value=(value<<8)|static_cast<unsigned char>(in[pos++]);
+  return true;
+}
+inline bool read_string(const std::string& in, std::size_t& pos, std::string& value) {
+  std::uint32_t size=0;
+  if(!read_u32(in,pos,size) || size>in.size()-pos) return false;
+  value.assign(in.data()+pos,size); pos+=size; return true;
+}
+inline bool read_set(const std::string& in, std::size_t& pos,
+                     std::vector<std::string>& values) {
+  std::uint32_t count=0;
+  if(!read_u32(in,pos,count) || count>1000000U) return false;
+  values.clear(); values.reserve(count);
+  for(std::uint32_t i=0;i<count;++i) {
+    std::string value;
+    if(!read_string(in,pos,value)) return false;
+    values.push_back(std::move(value));
+  }
+  return std::is_sorted(values.begin(),values.end()) &&
+      std::adjacent_find(values.begin(),values.end())==values.end();
+}
+inline bool decode_manifest(const SnapshotDocument& doc, std::string& focus,
+    std::string& observation, std::vector<std::string>& roots,
+    std::vector<std::string>& nodes, std::vector<std::string>& relations) {
+  if(doc.schema_id!="surge.focus-evaluation.v1" || doc.payload.size()<4 ||
+     doc.payload.compare(0,4,"FES1")!=0) return false;
+  std::size_t pos=4;
+  return read_string(doc.payload,pos,focus) &&
+      read_string(doc.payload,pos,observation) &&
+      read_set(doc.payload,pos,roots) && read_set(doc.payload,pos,nodes) &&
+      read_set(doc.payload,pos,relations) && pos==doc.payload.size();
+}
+}  // namespace focus_snapshot_detail
+
+// Produces a compact evaluation manifest. Full graph state remains owned by
+// ContextGraphSnapshotDomain, so this reuses SnapshotCodec/Store without a
+// parallel graph persistence mechanism.
+inline bool make_completed_focus_snapshot_document(
+    const CognitionObservation& observation,
+    const FocusEvaluationSnapshotMetadata& metadata,
+    const std::string& context_id, std::uint64_t journal_sequence,
+    SnapshotDocument* output, std::string& error) {
+  error.clear();
+  if(!output || context_id.empty()) {
+    error="FOCUS_SNAPSHOT_ARGUMENT_REQUIRED"; return false;
+  }
+  if(!validate_completed_focus_evaluation(observation,metadata,error)) return false;
+  SnapshotDocument candidate;
+  candidate.schema_id="surge.focus-evaluation.v1";
+  candidate.context_id=context_id;
+  candidate.state_version=observation.state_version;
+  candidate.journal_sequence=journal_sequence;
+  candidate.payload="FES1";
+  focus_snapshot_detail::append_string(candidate.payload,metadata.focus_digest);
+  focus_snapshot_detail::append_string(candidate.payload,metadata.observation_digest);
+  focus_snapshot_detail::append_set(candidate.payload,observation.logical_region_cluster_ids);
+  std::vector<std::string> nodes,relations;
+  for(const auto& node:observation.nodes) nodes.push_back(node.id);
+  for(const auto& relation:observation.relations) relations.push_back(relation.id);
+  focus_snapshot_detail::append_set(candidate.payload,std::move(nodes));
+  focus_snapshot_detail::append_set(candidate.payload,std::move(relations));
+  *output=std::move(candidate); return true;
+}
+
+inline bool diff_completed_focus_snapshots(
+    const SnapshotDocument& before, const SnapshotDocument& after,
+    FocusEvaluationSnapshotDiff* output, std::string& error) {
+  error.clear();
+  if(!output) { error="FOCUS_SNAPSHOT_DIFF_ARGUMENT_REQUIRED"; return false; }
+  if(before.context_id.empty() || before.context_id!=after.context_id) {
+    error="FOCUS_SNAPSHOT_DIFF_CONTEXT_MISMATCH"; return false;
+  }
+  if(before.state_version>after.state_version ||
+     before.journal_sequence>after.journal_sequence) {
+    error="FOCUS_SNAPSHOT_DIFF_WATERMARK_REGRESSION"; return false;
+  }
+  std::string bf,af,bo,ao;
+  std::vector<std::string> br,ar,bn,an,be,ae;
+  if(!focus_snapshot_detail::decode_manifest(before,bf,bo,br,bn,be) ||
+     !focus_snapshot_detail::decode_manifest(after,af,ao,ar,an,ae)) {
+    error="FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID"; return false;
+  }
+  if(bf!=af) { error="FOCUS_SNAPSHOT_DIFF_FOCUS_MISMATCH"; return false; }
+  FocusEvaluationSnapshotDiff candidate;
+  auto diff=[](const std::vector<std::string>& old_values,
+               const std::vector<std::string>& new_values,
+               std::vector<std::string>& added,
+               std::vector<std::string>& removed) {
+    std::set_difference(new_values.begin(),new_values.end(),
+        old_values.begin(),old_values.end(),std::back_inserter(added));
+    std::set_difference(old_values.begin(),old_values.end(),
+        new_values.begin(),new_values.end(),std::back_inserter(removed));
+  };
+  diff(br,ar,candidate.added_roots,candidate.removed_roots);
+  diff(bn,an,candidate.added_node_ids,candidate.removed_node_ids);
+  diff(be,ae,candidate.added_relation_ids,candidate.removed_relation_ids);
+  *output=std::move(candidate); return true;
 }
 
 }  // namespace surge
