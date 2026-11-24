@@ -203,7 +203,7 @@ inline PacketAdmissionResult apply_projection_batch(
   }
   if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
       batch.source_event_refs.front() != packet.packet_id) {
-    packet_result.error = "PROJECTION_SOURCE_PACKET_MISMATCH";
+    packet_result.failure_stage = AdmissionFailureStage::ProjectionBinding;\n    packet_result.failure_code = packet_result.error = packet_result.projection_error = "PROJECTION_SOURCE_PACKET_MISMATCH";
     return packet_result;
   }
   SemanticDelta delta;
@@ -232,7 +232,7 @@ inline PacketAdmissionResult apply_projection_batch(
   if (!budgeted.committed && packet_result.error.empty())
     packet_result.error = budgeted.error;
   if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
-    packet_result.error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
+    packet_result.failure_stage = AdmissionFailureStage::StateConsistency;\n    packet_result.failure_code = packet_result.error = packet_result.graph_error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
     packet_result.admitted = false;
   }
   return packet_result;
@@ -297,7 +297,7 @@ inline PacketAdmissionResult apply_projection_batch(
   }
   if (batch.context_id != packet.context_id || batch.source_event_refs.size() != 1 ||
       batch.source_event_refs.front() != packet.packet_id) {
-    rejected.error = "PROJECTION_SOURCE_PACKET_MISMATCH";
+    rejected.failure_stage = AdmissionFailureStage::ProjectionBinding;\n    rejected.failure_code = rejected.error = rejected.projection_error = "PROJECTION_SOURCE_PACKET_MISMATCH";
     return rejected;
   }
 
@@ -313,7 +313,7 @@ inline PacketAdmissionResult apply_projection_batch(
     return rejected;
   }
   if (semantic_events.empty() && !packets.contains_packet(packet.packet_id)) {
-    rejected.error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
+    rejected.failure_stage = AdmissionFailureStage::Idempotency;\n    rejected.failure_code = rejected.error = rejected.packet_error = "PROJECTION_IDEMPOTENCY_KEY_REUSED";
     return rejected;
   }
   auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
