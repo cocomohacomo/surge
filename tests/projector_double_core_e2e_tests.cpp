@@ -80,7 +80,7 @@ int main() {
       "evidence-tuesday", "cluster-meeting",
       "会議日程 meeting schedule Tuesday", "claim-tuesday", 0.73);
   const auto first_result = commit_projection(first, "会議日程 meeting schedule Tuesday", 1);
-  CHECK(first_result.admitted && !first_result.duplicate);
+  CHECK(first_result.admitted && !first_result.duplicate);\n  CHECK(first_result.failure_stage == surge::AdmissionFailureStage::None);
   CHECK(first_result.state_version == 1);
   CHECK(graph.nodes().at("evidence-tuesday").content ==
       "会議日程 meeting schedule Tuesday");
@@ -165,7 +165,7 @@ int main() {
   };
   const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
   if (!correction_result.admitted) std::cerr << "correction admission rejected: " << correction_result.error << "\\n";
-  CHECK(correction_result.admitted);
+  CHECK(correction_result.admitted);\n  CHECK(correction_result.failure_stage == surge::AdmissionFailureStage::None);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
   CHECK(packets.packet_count() == 3);
   CHECK(graph.nodes().count("evidence-wednesday") == 1);
