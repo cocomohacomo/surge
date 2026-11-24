@@ -1651,6 +1651,19 @@ bool ContextGraphSnapshotDomain::capture(std::string* payload,
   return true;
 }
 
+bool ContextGraphSnapshotDomain::canonical_digest(std::string* digest,
+                                                   std::string* error) const {
+  if (!digest) {
+    if (error) *error = "SNAPSHOT_OUTPUT_REQUIRED";
+    return false;
+  }
+  std::string canonical_payload;
+  if (!capture(&canonical_payload, error)) return false;
+  *digest = sha256_hex(canonical_payload);
+  if (error) error->clear();
+  return true;
+}
+
 std::unique_ptr<PreparedSnapshotRestore>
 ContextGraphSnapshotDomain::prepare_restore(const std::string& payload,
                                              std::string* error) {
