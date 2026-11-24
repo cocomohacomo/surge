@@ -1323,6 +1323,56 @@ int main(){
     std::string snapshot_error;
     CHECK(validate_completed_focus_evaluation(observation,metadata,snapshot_error));
     CHECK(snapshot_error.empty());
+    SnapshotDocument first_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        observation,metadata,"test-context",12,&first_manifest,snapshot_error));
+    CHECK(first_manifest.schema_id=="surge.focus-evaluation.v1");
+    SnapshotLimits snapshot_limits;
+    std::string encoded_snapshot;
+    CHECK(SnapshotCodec::encode(first_manifest,snapshot_limits,
+                                &encoded_snapshot,&snapshot_error));
+    SnapshotDocument decoded_snapshot;
+    CHECK(SnapshotCodec::decode(encoded_snapshot,snapshot_limits,
+                                 &decoded_snapshot,&snapshot_error));
+    FocusEvaluationSnapshotDiff no_change;
+    CHECK(diff_completed_focus_snapshots(first_manifest,decoded_snapshot,
+                                          &no_change,snapshot_error));
+    CHECK(no_change.added_node_ids.empty());
+    CHECK(no_change.removed_node_ids.empty());
+
+    auto later_observation=observation;
+    later_observation.state_version=8;
+    later_observation.nodes.push_back({"member-b",NodeKind::Evidence,"new member",{}});
+    auto later_metadata=metadata;
+    later_metadata.evaluated_state_version=8;
+    later_metadata.observation_digest="later-observation";
+    SnapshotDocument later_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        later_observation,later_metadata,"test-context",13,
+        &later_manifest,snapshot_error));
+    FocusEvaluationSnapshotDiff changed;
+    CHECK(diff_completed_focus_snapshots(first_manifest,later_manifest,
+                                          &changed,snapshot_error));
+    CHECK(changed.added_node_ids.size()==1);
+    CHECK(changed.added_node_ids.front()=="member-b");
+
+    auto other_context=later_manifest;
+    other_context.context_id="other-context";
+    CHECK(!diff_completed_focus_snapshots(first_manifest,other_context,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_CONTEXT_MISMATCH");
+
+    auto other_focus=later_manifest;
+    // Rebuild a valid manifest under another Focus provenance.
+    auto other_focus_metadata=later_metadata;
+    other_focus_metadata.focus_digest="different-focus";
+    CHECK(make_completed_focus_snapshot_document(
+        later_observation,other_focus_metadata,"test-context",13,
+        &other_focus,snapshot_error));
+    CHECK(!diff_completed_focus_snapshots(first_manifest,other_focus,
+                                           &changed,snapshot_error));
+    CHECK(snapshot_error=="FOCUS_SNAPSHOT_DIFF_FOCUS_MISMATCH");
+
 
     auto partial=observation;
     partial.complete=false;
