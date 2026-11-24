@@ -8,6 +8,32 @@
 
 namespace surge {
 namespace {
+void set_failure(PacketAdmissionResult& result, AdmissionFailureStage stage,
+                 const std::string& code) {
+  result.failure_stage = stage;
+  result.failure_code = code;
+  result.error = code;
+  if (stage == AdmissionFailureStage::PacketValidation ||
+      stage == AdmissionFailureStage::SourceValidation ||
+      stage == AdmissionFailureStage::Idempotency ||
+      stage == AdmissionFailureStage::SequenceValidation)
+    result.packet_error = code;
+  if (stage == AdmissionFailureStage::JournalCommit)
+    result.journal_error = code;
+}
+AdmissionFailureStage stage_for_packet_error(const std::string& code) {
+  if (code == "PACKET_COORDINATOR_NOT_RECOVERED") return AdmissionFailureStage::Recovery;
+  if (code.find("SOURCE_SEQUENCE_") == 0 || code.find("DOCUMENT_") == 0 ||
+      code.find("REVISION_") == 0 || code.find("RANGE_") == 0)
+    return AdmissionFailureStage::SequenceValidation;
+  if (code.find("SOURCE_") == 0) return AdmissionFailureStage::SourceValidation;
+  if (code.find("IDEMPOTENCY_") == 0 || code == "PACKET_ID_REUSED" ||
+      code.find("PACKET_ALREADY_") == 0) return AdmissionFailureStage::Idempotency;
+  if (code.find("SEMANTIC_") == 0 || code == "STATE_VERSION_CONFLICT")
+    return AdmissionFailureStage::SemanticValidation;
+  if (code.find("JOURNAL_") == 0) return AdmissionFailureStage::JournalCommit;
+  return AdmissionFailureStage::PacketValidation;
+}
 std::string key_part(const std::string& value) {
   return std::to_string(value.size()) + ":" + value;
 }
