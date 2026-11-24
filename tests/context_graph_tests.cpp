@@ -1377,6 +1377,25 @@ int main(){
     CHECK(changed.graph_changed);
     CHECK(!changed.focus_changed);
 
+    // Graph content can change without changing any visible IDs. The
+    // Focus-independent graph digest must still surface that mutation.
+    auto graph_only_observation=observation;
+    graph_only_observation.state_version=8;
+    auto graph_only_metadata=metadata;
+    graph_only_metadata.evaluated_state_version=8;
+    graph_only_metadata.graph_digest="graph-v2";
+    graph_only_metadata.observation_digest="graph-content-updated";
+    SnapshotDocument graph_only_manifest;
+    CHECK(make_completed_focus_snapshot_document(
+        graph_only_observation,graph_only_metadata,"test-context",13,
+        &graph_only_manifest,snapshot_error));
+    CHECK(diff_completed_focus_snapshots(first_manifest,graph_only_manifest,
+                                          &changed,snapshot_error));
+    CHECK(changed.graph_changed);
+    CHECK(!changed.focus_changed);
+    CHECK(changed.added_node_ids.empty());
+    CHECK(changed.removed_node_ids.empty());
+
     auto other_context=later_manifest;
     other_context.context_id="other-context";
     CHECK(!diff_completed_focus_snapshots(first_manifest,other_context,
