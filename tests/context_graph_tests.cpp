@@ -1145,6 +1145,47 @@ int main(){
     CHECK(second_page.complete);
     CHECK(second_page.next_root_index==2);
 
+    // Restore full support visibility so this pagination assertion isolates
+    // the output cap rather than the earlier depth-zero deferral case.
+    SemanticDelta restore_candidate_depth;
+    restore_candidate_depth.delta_id="focused-recall-restore-depth";
+    restore_candidate_depth.idempotency_key="focused-recall-restore-depth";
+    restore_candidate_depth.expected_state_version=graph.state_version();
+    CHECK(graph.append_cluster_focus_depth_update(restore_candidate_depth,
+        {"focus-recall-a",1},focus_error));
+    CHECK(graph.apply(restore_candidate_depth).committed);
+
+    // A candidate output cap must not consume later Focus roots. Both roots
+    // fit in the observation budget, but the caller asks for one candidate
+    // per page and must be able to retrieve the second root on the next call.
+    FocusedCognitionCursor limited_cursor;
+    const auto limited_first=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},limited_cursor,1,16,32);
+    CHECK(limited_first.error.empty());
+    CHECK(limited_first.candidates.size()==1);
+    CHECK(limited_first.candidates.front().cluster_id=="focus-recall-a");
+    CHECK(!limited_first.complete);
+    CHECK(limited_first.next_root_index==1);
+    const auto limited_second=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},limited_cursor,1,16,32);
+    CHECK(limited_second.error.empty());
+    CHECK(limited_second.candidates.size()==1);
+    CHECK(limited_second.candidates.front().cluster_id=="focus-recall-b");
+    CHECK(limited_second.complete);
+    CHECK(limited_second.next_root_index==2);
+
+    // A zero candidate cap is a no-op and leaves the cursor untouched.
+    FocusedCognitionCursor zero_cap_cursor;
+    const auto zero_cap=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},zero_cap_cursor,0,16,32);
+    CHECK(zero_cap.candidates.empty());
+    CHECK(zero_cap.next_root_index==0);
+    const auto after_zero_cap=graph.recall_focused_cognition_candidates(
+        "incoming-input",{"river"},zero_cap_cursor,1,16,32);
+    CHECK(after_zero_cap.candidates.size()==1);
+    CHECK(after_zero_cap.candidates.front().cluster_id=="focus-recall-a");
+    CHECK(after_zero_cap.next_root_index==1);
+
     FocusedCognitionCursor query_cursor;
     const auto query_page=graph.recall_focused_cognition_candidates(
         "incoming-input",{"river"},query_cursor,8,2,8);
