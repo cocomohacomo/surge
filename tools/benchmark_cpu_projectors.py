@@ -161,7 +161,8 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
         "expected_marker_hits": expected_hits,
         "expected_marker_total": len(case["must_contain"]),
         "expected_candidate_markers": case.get("expected_candidate_markers", []),
-        "expected_relation_types": case.get("expected_relation_types", []),\n        "parsed_output": parsed,
+        "expected_relation_types": case.get("expected_relation_types", []),
+        "parsed_output": parsed,
         "output_excerpt": output[:1600],
         "stderr_excerpt": proc.stderr[-1200:],
     }

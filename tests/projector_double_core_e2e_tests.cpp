@@ -79,8 +79,20 @@ int main() {
   auto first = projector.project("fixed-projection-1", 0, "event-1",
       "evidence-tuesday", "cluster-meeting",
       "会議日程 meeting schedule Tuesday", "claim-tuesday", 0.73);
+  auto invalid_projection = first;
+  invalid_projection.producer_id.clear();
+  const auto invalid_projection_result = commit_projection(
+      invalid_projection, "会議日程 meeting schedule Tuesday", 1);
+  CHECK(!invalid_projection_result.admitted);
+  CHECK(invalid_projection_result.failure_stage == surge::AdmissionFailureStage::ProjectionValidation);
+  CHECK(invalid_projection_result.projection_error == "MISSING_REQUIRED_METADATA");
+  CHECK(invalid_projection.producer_id.empty());
+  CHECK(first.producer_id == "fixed-projector-double");
+  CHECK(graph.state_version() == 0 && packets.packet_count() == 0);
+
   const auto first_result = commit_projection(first, "会議日程 meeting schedule Tuesday", 1);
   CHECK(first_result.admitted && !first_result.duplicate);
+  CHECK(first_result.failure_stage == surge::AdmissionFailureStage::None);
   CHECK(first_result.state_version == 1);
   CHECK(graph.nodes().at("evidence-tuesday").content ==
       "会議日程 meeting schedule Tuesday");
@@ -147,25 +159,29 @@ int main() {
     {"claim-wednesday", surge::NodeKind::Claim,
       "meeting schedule Wednesday", {"evidence-wednesday"}},
     {"question-date", surge::NodeKind::Question,
-      "Which meeting date is applicable?", {"claim-tuesday", "claim-wednesday"}},
+      "Which meeting date is applicable?", {}},
+    {"question-aspect-date", surge::NodeKind::QuestionAspect,
+      "meeting date", {"question-date"}},
     {"interest-date", surge::NodeKind::Interest,
-      "meeting date discrepancy", {"question-date"}}
+      "meeting date discrepancy", {"question-aspect-date", "cluster-meeting"}}
   };
   correction.relations = {
     {"relation-date-conflict", surge::RelationKind::Contradicts,
       "claim-tuesday", "claim-wednesday", 0.88},
-    {"relation-question-interest", surge::RelationKind::About,
-      "interest-date", "question-date", 1.0}
+    {"relation-question-meeting-cluster", surge::RelationKind::About,
+      "question-date", "cluster-meeting", 1.0}
   };
   correction.memberships = {
     {"correction-evidence-member", "evidence-wednesday", "cluster-meeting", 0.91},
     {"correction-claim-member", "claim-wednesday", "cluster-meeting", 0.91},
     {"correction-question-member", "question-date", "cluster-meeting", 0.80},
+    {"correction-question-aspect-member", "question-aspect-date", "cluster-meeting", 0.80},
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
   const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
   if (!correction_result.admitted) std::cerr << "correction admission rejected: " << correction_result.error << "\\n";
   CHECK(correction_result.admitted);
+  CHECK(correction_result.failure_stage == surge::AdmissionFailureStage::None);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
   CHECK(packets.packet_count() == 3);
   CHECK(graph.nodes().count("evidence-wednesday") == 1);
