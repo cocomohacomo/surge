@@ -1,6 +1,7 @@
 #pragma once
 #include "surge/context_graph.hpp"
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 namespace surge {
@@ -19,7 +20,10 @@ class QuestionInterestFocusController {
  explicit QuestionInterestFocusController(SpatialVector3 half_extents={1.0,1.0,1.0}):half_extents_(half_extents){}
  QuestionInterestFocusDecision evaluate(const std::vector<QuestionInterestFocusInput>& inputs) const {
   std::vector<QuestionInterestFocusInput> eligible;
-  for(const auto& x:inputs) if(x.active&&!x.question_id.empty()&&!x.interest_id.empty()&&!x.target_cluster_id.empty()) eligible.push_back(x);
+  for(const auto& x:inputs) if(x.active&&!x.question_id.empty()&&!x.interest_id.empty()&&!x.target_cluster_id.empty()&&
+      std::isfinite(x.priority)&&std::isfinite(x.target_position.x)&&
+      std::isfinite(x.target_position.y)&&std::isfinite(x.target_position.z)&&
+      valid_half_extents()) eligible.push_back(x);
   std::stable_sort(eligible.begin(),eligible.end(),[](const auto&a,const auto&b){
    if(a.priority!=b.priority)return a.priority>b.priority;
    if(a.question_id!=b.question_id)return a.question_id<b.question_id;
@@ -34,6 +38,12 @@ class QuestionInterestFocusController {
   delta.focus_region=SetFocusRegion{d.region};delta.cluster_position_updates.push_back({d.target_cluster_id,d.region.center});
   return graph.apply(delta);
  }
- private: SpatialVector3 half_extents_;
+ private:
+ bool valid_half_extents() const noexcept {
+  return std::isfinite(half_extents_.x)&&std::isfinite(half_extents_.y)&&
+      std::isfinite(half_extents_.z)&&half_extents_.x>0.0&&
+      half_extents_.y>0.0&&half_extents_.z>0.0;
+ }
+ SpatialVector3 half_extents_;
 };
 } // namespace surge
