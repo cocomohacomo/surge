@@ -1561,6 +1561,99 @@ int main(){
     CHECK(snapshot_error=="FOCUS_EVALUATION_RELATION_ENDPOINT_MISSING");
   }
 
+  // Exercise the complete Focus Snapshot lifecycle against a live graph:
+  // project a spatially focused root, capture a graph-bound manifest, then
+  // mutate only the manifest's projection IDs while preserving its digest.
+  {
+    ContextGraph live_graph((root/"focus-live-manifest-validation.sgj").string());
+    CHECK(live_graph.open());
+    SemanticDelta seed;
+    seed.delta_id="focus-live-seed";
+    seed.idempotency_key=seed.delta_id;
+    seed.expected_state_version=live_graph.state_version();
+    seed.nodes={
+      {{"live-root",NodeKind::Cluster,"live focus root",{}}},
+      {{"live-member",NodeKind::Evidence,"live evidence member",{}}}
+    };
+    seed.relations={{{"live-membership",RelationKind::Contains,
+        "live-root","live-member",1.0}}};
+    std::string live_error;
+    CHECK(live_graph.append_focus_region_update(seed,
+        FocusRegion{{0.0,0.0,0.0},{1.0,1.0,1.0}},live_error));
+    CHECK(live_graph.append_cluster_spatial_position_update(seed,
+        ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}},live_error));
+    CHECK(live_graph.apply(seed).committed);
+
+    const auto live_observation=live_graph.observe_focused_cognition(32,64);
+    CHECK(live_observation.complete);
+    CHECK(live_observation.logical_region_cluster_ids==
+          std::vector<std::string>{"live-root"});
+    CHECK(live_observation.processed_region_cluster_ids==
+          std::vector<std::string>{"live-root"});
+    SnapshotDocument live_manifest;
+    CHECK(make_completed_focus_snapshot_document(live_graph,live_observation,
+        "live-focus-digest","live-observation-digest","live-context",1,
+        &live_manifest,live_error));
+    CHECK(validate_focus_snapshot_against_graph(
+        live_manifest,live_graph,live_error));
+
+    std::string focus_value, graph_value, observation_value;
+    std::vector<std::string> roots_value, nodes_value, relations_value;
+    CHECK(focus_snapshot_detail::decode_manifest(live_manifest,focus_value,
+        graph_value,observation_value,roots_value,nodes_value,relations_value));
+
+    auto unknown_node=live_manifest;
+    unknown_node.payload="FES1";
+    focus_snapshot_detail::append_string(unknown_node.payload,focus_value);
+    focus_snapshot_detail::append_string(unknown_node.payload,graph_value);
+    focus_snapshot_detail::append_string(unknown_node.payload,observation_value);
+    focus_snapshot_detail::append_set(unknown_node.payload,roots_value);
+    nodes_value.push_back("ghost-node");
+    focus_snapshot_detail::append_set(unknown_node.payload,nodes_value);
+    focus_snapshot_detail::append_set(unknown_node.payload,relations_value);
+    CHECK(!validate_focus_snapshot_against_graph(
+        unknown_node,live_graph,live_error));
+    CHECK(live_error=="FOCUS_SNAPSHOT_GRAPH_NODE_MISSING");
+
+    nodes_value.erase(std::remove(nodes_value.begin(),nodes_value.end(),
+        "ghost-node"),nodes_value.end());
+    auto unknown_relation=live_manifest;
+    unknown_relation.payload="FES1";
+    focus_snapshot_detail::append_string(unknown_relation.payload,focus_value);
+    focus_snapshot_detail::append_string(unknown_relation.payload,graph_value);
+    focus_snapshot_detail::append_string(unknown_relation.payload,observation_value);
+    focus_snapshot_detail::append_set(unknown_relation.payload,roots_value);
+    focus_snapshot_detail::append_set(unknown_relation.payload,nodes_value);
+    focus_snapshot_detail::append_set(unknown_relation.payload,{"ghost-relation"});
+    CHECK(!validate_focus_snapshot_against_graph(
+        unknown_relation,live_graph,live_error));
+    CHECK(live_error=="FOCUS_SNAPSHOT_GRAPH_RELATION_MISSING");
+
+    auto missing_endpoint=live_manifest;
+    missing_endpoint.payload="FES1";
+    focus_snapshot_detail::append_string(missing_endpoint.payload,focus_value);
+    focus_snapshot_detail::append_string(missing_endpoint.payload,graph_value);
+    focus_snapshot_detail::append_string(missing_endpoint.payload,observation_value);
+    focus_snapshot_detail::append_set(missing_endpoint.payload,roots_value);
+    focus_snapshot_detail::append_set(missing_endpoint.payload,{"live-root"});
+    focus_snapshot_detail::append_set(missing_endpoint.payload,relations_value);
+    CHECK(!validate_focus_snapshot_against_graph(
+        missing_endpoint,live_graph,live_error));
+    CHECK(live_error=="FOCUS_SNAPSHOT_GRAPH_RELATION_ENDPOINT_MISSING");
+
+    auto invalid_root=live_manifest;
+    invalid_root.payload="FES1";
+    focus_snapshot_detail::append_string(invalid_root.payload,focus_value);
+    focus_snapshot_detail::append_string(invalid_root.payload,graph_value);
+    focus_snapshot_detail::append_string(invalid_root.payload,observation_value);
+    focus_snapshot_detail::append_set(invalid_root.payload,{"live-member"});
+    focus_snapshot_detail::append_set(invalid_root.payload,nodes_value);
+    focus_snapshot_detail::append_set(invalid_root.payload,relations_value);
+    CHECK(!validate_focus_snapshot_against_graph(
+        invalid_root,live_graph,live_error));
+    CHECK(live_error=="FOCUS_SNAPSHOT_GRAPH_ROOT_INVALID");
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
