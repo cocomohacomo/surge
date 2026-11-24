@@ -5,6 +5,13 @@ int main(){
  const auto path=(std::filesystem::temp_directory_path()/"surge-question-interest-focus-controller.sgj").string();
  std::filesystem::remove(path); surge::ContextGraph graph(path); CHECK(graph.open());
  surge::QuestionInterestFocusController controller({2.0,1.5,1.0});
+ // Focus updates require the target Cluster to exist in the graph.
+ surge::SemanticDelta setup;
+ setup.delta_id="setup-focus-target";
+ setup.idempotency_key=setup.delta_id;
+ setup.expected_state_version=graph.state_version();
+ setup.nodes.push_back({"cluster-new",surge::NodeKind::Cluster,"target cluster",{}});
+ CHECK(graph.apply(setup).committed);
  std::vector<surge::QuestionInterestFocusInput> inputs={
   {"q-old","i-old","cluster-old",0.2,true,{0,0,0}},
   {"q-new","i-new","cluster-new",0.9,true,{4,2,1}},
