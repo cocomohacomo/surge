@@ -67,9 +67,19 @@ inline bool validate_completed_focus_evaluation(
       return false;
     }
   }
+  for (const auto& root_id : logical) {
+    if (!node_ids.count(root_id)) {
+      error = "FOCUS_EVALUATION_ROOT_NODE_MISSING";
+      return false;
+    }
+  }
   for (const auto& relation : observation.relations) {
     if (relation.id.empty() || !relation_ids.insert(relation.id).second) {
       error = "FOCUS_EVALUATION_DUPLICATE_OR_INVALID_RELATION";
+      return false;
+    }
+    if (!node_ids.count(relation.from) || !node_ids.count(relation.to)) {
+      error = "FOCUS_EVALUATION_RELATION_ENDPOINT_MISSING";
       return false;
     }
   }
