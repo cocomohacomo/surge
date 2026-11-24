@@ -1320,6 +1320,7 @@ int main(){
     FocusEvaluationSnapshotMetadata metadata;
     metadata.evaluated_state_version=7;
     metadata.focus_digest="focus-digest";
+    metadata.graph_digest="graph-v1";
     metadata.observation_digest="observation-digest";
     std::string snapshot_error;
     CHECK(validate_completed_focus_evaluation(observation,metadata,snapshot_error));
@@ -1362,6 +1363,7 @@ int main(){
     later_observation.nodes.push_back({"member-b",NodeKind::Evidence,"new member",{}});
     auto later_metadata=metadata;
     later_metadata.evaluated_state_version=8;
+    later_metadata.graph_digest="graph-v2";
     later_metadata.observation_digest="later-observation";
     SnapshotDocument later_manifest;
     CHECK(make_completed_focus_snapshot_document(
@@ -1372,6 +1374,8 @@ int main(){
                                           &changed,snapshot_error));
     CHECK(changed.added_node_ids.size()==1);
     CHECK(changed.added_node_ids.front()=="member-b");
+    CHECK(changed.graph_changed);
+    CHECK(!changed.focus_changed);
 
     auto other_context=later_manifest;
     other_context.context_id="other-context";
@@ -1403,6 +1407,7 @@ int main(){
     auto duplicate_manifest=first_manifest;
     duplicate_manifest.payload="FES1";
     focus_snapshot_detail::append_string(duplicate_manifest.payload,"focus-digest");
+    focus_snapshot_detail::append_string(duplicate_manifest.payload,"graph-v1");
     focus_snapshot_detail::append_string(duplicate_manifest.payload,"observation-digest");
     focus_snapshot_detail::append_set(duplicate_manifest.payload,{"root-a","root-b"});
     focus_snapshot_detail::append_set(duplicate_manifest.payload,{"member-a","member-a"});
