@@ -1462,6 +1462,8 @@ int main(){
     // Rebuild a valid manifest under another Focus provenance.
     auto other_focus_metadata=later_metadata;
     other_focus_metadata.focus_digest="different-focus";
+    // Isolate Focus provenance from the Graph digest change in later_manifest.
+    other_focus_metadata.graph_digest=metadata.graph_digest;
     CHECK(make_completed_focus_snapshot_document(
         later_observation,other_focus_metadata,"test-context",13,
         &other_focus,snapshot_error));
