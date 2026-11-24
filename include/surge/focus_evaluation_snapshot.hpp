@@ -3,6 +3,7 @@
 #include "surge/context_graph.hpp"
 #include "surge/snapshot.hpp"
 #include <algorithm>
+#include <iterator>
 #include <set>
 #include <string>
 
