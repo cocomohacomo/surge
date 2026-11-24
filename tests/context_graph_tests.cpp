@@ -1584,7 +1584,7 @@ int main(){
         ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}},live_error));
     CHECK(live_graph.apply(seed).committed);
 
-    const auto live_observation=live_graph.observe_focused_cognition(32,64);
+    const auto live_observation=live_graph.observe_focused_cognition(\n        FocusRegion{{0.0,0.0,0.0},{1.0,1.0,1.0}},\n        {ClusterSpatialPosition{"live-root",{0.0,0.0,0.0}}}, {}, 32,64,0);
     CHECK(live_observation.complete);
     CHECK(live_observation.logical_region_cluster_ids==
           std::vector<std::string>{"live-root"});
