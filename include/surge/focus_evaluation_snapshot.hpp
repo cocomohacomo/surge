@@ -1,6 +1,7 @@
 #pragma once
 
 #include "surge/context_graph.hpp"
+#include "surge/snapshot.hpp"
 #include <algorithm>
 #include <set>
 #include <string>
