@@ -3,12 +3,14 @@
 #include "surge/context_graph.hpp"
 #include "surge/snapshot.hpp"
 #include "surge/snapshot_domains.hpp"
+#include "surge/sha256.hpp"
 #include <algorithm>
 #include <iterator>
 #include <cstdint>
 #include <vector>
 #include <set>
 #include <string>
+#include <cstring>
 
 namespace surge {
 
@@ -155,6 +157,70 @@ inline bool decode_manifest(const SnapshotDocument& doc, std::string& focus,
       read_set(doc.payload,pos,roots) && read_set(doc.payload,pos,nodes) &&
       read_set(doc.payload,pos,relations) && pos==doc.payload.size();
 }
+
+inline void append_u64(std::string& out, std::uint64_t value) {
+  for(int shift=56;shift>=0;shift-=8) out.push_back(static_cast<char>((value>>shift)&0xff));
+}
+inline void append_double(std::string& out, double value) {
+  std::uint64_t bits=0;
+  static_assert(sizeof(bits)==sizeof(value),"double width");
+  std::memcpy(&bits,&value,sizeof(bits));
+  for(int shift=56;shift>=0;shift-=8)
+    out.push_back(static_cast<char>((bits>>shift)&0xff));
+}
+inline std::string observation_bytes(const CognitionObservation& o) {
+  std::string b="SURGE-OBSERVATION-v1";
+  append_u64(b,o.state_version);
+  append_u64(b,static_cast<std::uint64_t>(o.next_root_index));
+  append_u32(b,o.complete?1U:0U);
+  auto strings=[&](const std::vector<std::string>& v){append_set(b,v);};
+  append_u32(b,static_cast<std::uint32_t>(o.nodes.size()));
+  for(const auto& n:o.nodes){append_string(b,n.id);append_u32(b,static_cast<std::uint32_t>(n.kind));append_string(b,n.content);strings(n.references);}
+  append_u32(b,static_cast<std::uint32_t>(o.relations.size()));
+  for(const auto& r:o.relations){append_string(b,r.id);append_u32(b,static_cast<std::uint32_t>(r.kind));append_string(b,r.from);append_string(b,r.to);append_double(b,r.weight);}
+  append_u32(b,static_cast<std::uint32_t>(o.memberships.size()));
+  for(const auto& m:o.memberships){append_string(b,m.member_node_id);append_string(b,m.cluster_node_id);append_double(b,m.upstream_weight);}
+  strings(o.unresolved_member_ids);strings(o.active_question_ids);strings(o.active_interest_ids);
+  append_u32(b,o.current_focus?1U:0U);
+  auto focus=[&](const FocusRecord& f){append_string(b,f.cluster_id);append_string(b,f.interest_id);append_u32(b,f.chaos_cluster?1U:0U);};
+  if(o.current_focus) focus(*o.current_focus);
+  append_u32(b,static_cast<std::uint32_t>(o.focus_history.size()));
+  for(const auto& f:o.focus_history) focus(f);
+  append_u32(b,o.focus_region?1U:0U);
+  auto vec=[&](const SpatialVector3& v){append_double(b,v.x);append_double(b,v.y);append_double(b,v.z);};
+  if(o.focus_region){vec(o.focus_region->center);vec(o.focus_region->half_extents);}
+  append_u32(b,static_cast<std::uint32_t>(o.cluster_focus_depths.size()));
+  for(const auto& d:o.cluster_focus_depths){append_string(b,d.cluster_id);append_u64(b,static_cast<std::uint64_t>(d.depth));}
+  append_u32(b,static_cast<std::uint32_t>(o.cluster_spatial_positions.size()));
+  for(const auto& p:o.cluster_spatial_positions){append_string(b,p.cluster_id);vec(p.position);}
+  strings(o.logical_region_cluster_ids);strings(o.processed_region_cluster_ids);strings(o.deferred_region_cluster_ids);
+  append_u32(b,static_cast<std::uint32_t>(o.unresolved_scope_count));
+  append_u32(b,static_cast<std::uint32_t>(o.dependency_evaluation_count));
+  return b;
+}
+inline std::string focus_bytes(const CognitionObservation& o) {
+  std::string b="SURGE-FOCUS-v1";
+  append_u32(b,o.focus_region?1U:0U);
+  auto vec=[&](const SpatialVector3& v){append_double(b,v.x);append_double(b,v.y);append_double(b,v.z);};
+  if(o.focus_region){vec(o.focus_region->center);vec(o.focus_region->half_extents);}
+  auto positions=o.cluster_spatial_positions;
+  std::sort(positions.begin(),positions.end(),[](const auto& a,const auto& c){return a.cluster_id<c.cluster_id;});
+  append_u32(b,static_cast<std::uint32_t>(positions.size()));
+  for(const auto& p:positions){append_string(b,p.cluster_id);vec(p.position);}
+  auto depths=o.cluster_focus_depths;
+  std::sort(depths.begin(),depths.end(),[](const auto& a,const auto& c){return a.cluster_id<c.cluster_id;});
+  append_u32(b,static_cast<std::uint32_t>(depths.size()));
+  for(const auto& d:depths){append_string(b,d.cluster_id);append_u32(b,static_cast<std::uint32_t>(d.depth));}
+  append_set(b,o.logical_region_cluster_ids);
+  return b;
+}
+inline std::string observation_digest(const CognitionObservation& o) {
+  return sha256_hex(observation_bytes(o));
+}
+inline std::string focus_digest(const CognitionObservation& o) {
+  return sha256_hex(focus_bytes(o));
+}
+
 }  // namespace focus_snapshot_detail
 
 // Produces a compact evaluation manifest. Full graph state remains owned by
@@ -216,6 +282,51 @@ inline bool make_completed_focus_snapshot_document(
   metadata.observation_digest = observation_digest;
   return make_completed_focus_snapshot_document(observation, metadata,
       context_id, journal_sequence, output, error);
+}
+
+
+ 
+// Core-owned provenance path. It replays the same Focus query against the live
+// graph, compares the complete detached observation (including node content,
+// relation kinds/endpoints/weights and memberships), and derives both digests
+// internally. Caller-supplied digest strings are intentionally not accepted.
+inline bool make_completed_focus_snapshot_document(
+    ContextGraph& graph, const CognitionObservation& observation,
+    const std::string& context_id, std::uint64_t journal_sequence,
+    SnapshotDocument* output, std::string& error) {
+  error.clear();
+  if (!observation.focus_region) {
+    error = "FOCUS_SNAPSHOT_FOCUS_PROVENANCE_MISSING";
+    return false;
+  }
+  if (observation.state_version != graph.state_version()) {
+    error = "FOCUS_SNAPSHOT_GRAPH_STATE_VERSION_MISMATCH";
+    return false;
+  }
+  const auto fresh = graph.observe_focused_cognition(
+      *observation.focus_region, observation.cluster_spatial_positions,
+      observation.cluster_focus_depths,
+      observation.focus_work.max_nodes ? observation.focus_work.max_nodes : 10000,
+      observation.focus_work.max_relations ? observation.focus_work.max_relations : 20000,
+      0);
+  if (!fresh.complete || !fresh.error.empty()) {
+    error = "FOCUS_SNAPSHOT_LIVE_OBSERVATION_INCOMPLETE";
+    return false;
+  }
+  if (focus_snapshot_detail::observation_digest(fresh) !=
+      focus_snapshot_detail::observation_digest(observation)) {
+    error = "FOCUS_SNAPSHOT_OBSERVATION_MISMATCH";
+    return false;
+  }
+  const auto version_after = graph.state_version();
+  if (version_after != observation.state_version) {
+    error = "FOCUS_SNAPSHOT_GRAPH_CHANGED_DURING_CAPTURE";
+    return false;
+  }
+  return make_completed_focus_snapshot_document(
+      graph, observation, focus_snapshot_detail::focus_digest(observation),
+      focus_snapshot_detail::observation_digest(observation), context_id,
+      journal_sequence, output, error);
 }
 
 inline bool validate_focus_snapshot_against_graph(

@@ -44,6 +44,8 @@ CASES = [
         "context": "会議で担当者が『明日までに提出できますか』と質問した。",
         "input": "うん",
         "must_contain": ["うん"],
+        "expected_candidate_markers": ["承諾", "同意", "了承", "回答"],
+        "expected_relation_types": [],
         "task": "短い応答を文脈付きで候補化する。断定しすぎない。",
     },
     {
@@ -51,6 +53,8 @@ CASES = [
         "context": "同じ会議について、前半では『締切は火曜日』、後半では『締切は水曜日』と発言された。",
         "input": "締切は水曜日です。",
         "must_contain": ["水曜日"],
+        "expected_candidate_markers": ["水曜日"],
+        "expected_relation_types": ["contradicts"],
         "task": "既存候補と新規候補を両方保持し、矛盾候補の関係を出す。",
     },
     {
@@ -58,6 +62,8 @@ CASES = [
         "context": "原則は申請期限を30日とする。ただし災害時はこの限りではない。",
         "input": "災害時は申請期限の例外とする。",
         "must_contain": ["災害", "例外"],
+        "expected_candidate_markers": ["災害", "例外"],
+        "expected_relation_types": ["exception_of"],
         "task": "一般規則と例外の適用範囲を分離する。",
     },
     {
@@ -65,6 +71,8 @@ CASES = [
         "context": "旧制度は4月1日から適用。改正制度は翌年4月1日から適用。",
         "input": "改正制度の適用開始日は2027年4月1日です。",
         "must_contain": ["2027年4月1日"],
+        "expected_candidate_markers": ["2027年4月1日"],
+        "expected_relation_types": ["temporal_qualifier"],
         "task": "制度と適用時期を混同せず候補化する。",
     },
     {
@@ -72,6 +80,8 @@ CASES = [
         "context": "第1ブロック: A地区の工事費は120万円。第2ブロック: この費用は補助対象外とする。",
         "input": "この費用は補助対象外です。",
         "must_contain": ["補助対象外"],
+        "expected_candidate_markers": ["補助対象外", "120万円", "A地区"],
+        "expected_relation_types": ["refers_to"],
         "task": "指示語の参照先候補を明示し、根拠が不足する場合は不確実性を残す。",
     },
 ]
@@ -150,6 +160,9 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
         "uncertainty_count": len(uncertainties) if isinstance(uncertainties, list) else None,
         "expected_marker_hits": expected_hits,
         "expected_marker_total": len(case["must_contain"]),
+        "expected_candidate_markers": case.get("expected_candidate_markers", []),
+        "expected_relation_types": case.get("expected_relation_types", []),
+        "parsed_output": parsed,
         "output_excerpt": output[:1600],
         "stderr_excerpt": proc.stderr[-1200:],
     }
