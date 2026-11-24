@@ -117,6 +117,9 @@ int main() {
       ContextGraph recovered(journal);CHECK(recovered.open());
       PacketAdmissionCoordinator coordinator(journal);CHECK(coordinator.recover());
       CHECK(journal.state_version()==1&&coordinator.packet_count()==1);
+      const auto restart_retry=coordinator.admit(
+          packet("atomic-packet","atomic-packet-key",1,"abc"),"abc");
+      CHECK(restart_retry.admitted&&restart_retry.duplicate);
       CHECK(recovered.dependency_evaluations().count("atomic-delta")==1);
       CHECK(recovered.dependency_evaluations().at("atomic-delta").triggered[0].dependency_id==
           "atomic-dependency");
