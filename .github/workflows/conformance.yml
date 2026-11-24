@@ -292,6 +292,8 @@ jobs:
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.6.0
         with:
           python-version: "3.12"
+      - name: Test semantic evaluator independently from model JSON output
+        run: python -m unittest discover -s tests -p "test_projector_semantic_evaluation.py" -v
       - name: Install CPU inference build dependencies
         run: |
           sudo apt-get update
