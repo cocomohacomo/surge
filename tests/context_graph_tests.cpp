@@ -1657,6 +1657,5 @@ int main(){
   }
 
   std::filesystem::remove_all(root);
-  std::cout<<"SURGE ContextGraph tests: retention event ownership passed
-";
+  std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
