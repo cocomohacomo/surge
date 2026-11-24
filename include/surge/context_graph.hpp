@@ -147,6 +147,8 @@ struct CognitionObservation {
   FocusWorkMetrics focus_work;
   std::size_t unresolved_scope_count{0};
   std::size_t dependency_evaluation_count{0};
+  // Stable cursor invalidation reason; empty for valid observations.
+  std::string error;
   // Snapshot semantics: detached copies, safe for external read-only inspection.
 };
 struct CognitionCandidate {
@@ -161,6 +163,31 @@ struct CognitionStateSnapshot {
   std::uint64_t evaluated_state_version{0};
   double recall_score{0.0};
   std::vector<std::string> supporting_member_ids, matched_terms;
+};
+// Caller-owned continuation state for traversal inside a logical Focus root.
+struct FocusTraversalFrontierEntry {
+  std::string cluster_id, origin_root_id;
+  std::size_t level{0};
+  // Next outgoing adjacency slot to inspect when a node is suspended by the
+  // relation budget. Keeping this offset avoids rescanning already-accounted
+  // edges when the caller resumes the same traversal.
+  std::size_t next_relation_index{0};
+};
+struct FocusTraversalCursor {
+  std::uint32_t schema_version{1};
+  std::uint64_t state_version{0};
+  std::string query_digest, focus_digest;
+  std::size_t next_root_index{0};
+  std::string active_root_id;
+  std::vector<FocusTraversalFrontierEntry> frontier;
+  // Expansion state is origin-root scoped to preserve independent depth limits.
+  std::vector<std::string> visited_expansion_keys;
+  std::vector<std::string> inspected_relation_ids;
+  // Materialization state is retained separately from expansion state so a
+  // shared node can be emitted once while still being expanded per origin root.
+  std::vector<std::string> visible_node_ids;
+  std::vector<std::string> completed_root_ids;
+  bool initialized{false}, complete{false};
 };
 struct FocusedCognitionCursor {
   std::uint64_t state_version{0};
@@ -243,6 +270,15 @@ class ContextGraph {
       std::size_t max_nodes = 10000,
       std::size_t max_relations = 20000,
       std::size_t start_root_index = 0) const;
+  // Resumable observation. The caller owns the cursor; budgets apply per call.
+  // A cursor is rejected when the committed graph or logical Focus changes.
+  CognitionObservation observe_focused_cognition(
+      const FocusRegion& region,
+      const std::vector<ClusterSpatialPosition>& positions,
+      const std::vector<ClusterFocusDepth>& depths,
+      FocusTraversalCursor& cursor,
+      std::size_t max_nodes = 10000,
+      std::size_t max_relations = 20000) const;
   // Add a new cognition cluster with explicit lineage to the activated source clusters.
   // The caller supplies the recognized content; Core validates and journals the structure.
   bool append_derived_cognition_cluster(SemanticDelta& delta,
@@ -351,6 +387,15 @@ class ContextGraph {
     std::map<std::string, DependencyEvaluationRecord> dependency_evaluations;
     std::map<std::string, std::vector<TemporalReassessmentRecord>> reassessment_history;
   };
+  // Shared implementation for legacy root paging and resumable Focus traversal.
+  // The legacy API remains a thin wrapper; cursor-aware entry points reuse this
+  // engine rather than maintaining a second graph-walk implementation.
+  CognitionObservation observe_focused_cognition_impl(
+      const FocusRegion& region,
+      const std::vector<ClusterSpatialPosition>& positions,
+      const std::vector<ClusterFocusDepth>& depths,
+      std::size_t max_nodes, std::size_t max_relations,
+      std::size_t start_root_index, FocusTraversalCursor* cursor = nullptr) const;
   bool apply_node(State&, const GraphNode&, std::string&) const;
   bool apply_relation(State&, const GraphRelation&, std::string&) const;
   bool apply_relation_removal(State&, const std::string&, std::string&) const;

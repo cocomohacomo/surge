@@ -475,6 +475,100 @@ int main(){
     CHECK(!local_budget.focus_work.budget_exhausted);
     CHECK(local_budget.focus_work.relations_examined<10);
 
+    // The same nested cluster is reachable from two roots with different
+    // depth limits. Expansion must be tracked per origin root, not globally.
+    SemanticDelta shared_path;
+    shared_path.delta_id="spatial-shared-root-path";
+    shared_path.idempotency_key="spatial-shared-root-path";
+    shared_path.expected_state_version=graph.state_version();
+    shared_path.relations={{{"spatial-b-shared-nested",RelationKind::Contains,
+        "spatial-b","spatial-nested"}}};
+    CHECK(graph.apply(shared_path).committed);
+    const std::vector<ClusterFocusDepth> shared_depths={
+      {"spatial-a",1},{"spatial-b",2},{"spatial-nested",2}};
+    const auto shared_unbounded=graph.observe_focused_cognition(
+        compact,positions,shared_depths,1000,1000);
+    CHECK(std::any_of(shared_unbounded.nodes.begin(),shared_unbounded.nodes.end(),
+        [](const auto& node){return node.id=="spatial-deep";}));
+
+    // Resumable traversal must converge to the same graph projection as one
+    // unbounded pass. Tiny independent budgets force suspension inside a root.
+    const auto unbounded_focus = shared_unbounded;
+    FocusTraversalCursor node_limited_cursor;
+    const auto node_limited = graph.observe_focused_cognition(
+        compact,positions,shared_depths,node_limited_cursor,1,100);
+    CHECK(node_limited.focus_work.nodes_processed<=1);
+    CHECK(node_limited.focus_work.relations_examined<=100);
+    FocusTraversalCursor relation_limited_cursor;
+    const auto relation_limited = graph.observe_focused_cognition(
+        compact,positions,shared_depths,relation_limited_cursor,100,1);
+    CHECK(relation_limited.focus_work.relations_examined<=1);
+    CHECK(relation_limited.focus_work.nodes_processed>1);
+    FocusTraversalCursor traversal_cursor;
+    CognitionObservation resumed_focus;
+    std::size_t continuation_calls=0;
+    do {
+      resumed_focus=graph.observe_focused_cognition(
+          compact,positions,shared_depths,traversal_cursor,1,1);
+      CHECK(++continuation_calls<64);
+    } while(!resumed_focus.complete);
+    std::vector<std::string> expected_nodes,actual_nodes;
+    std::vector<std::string> expected_relations,actual_relations;
+    for(const auto& node:unbounded_focus.nodes) expected_nodes.push_back(node.id);
+    for(const auto& node:resumed_focus.nodes) actual_nodes.push_back(node.id);
+    for(const auto& relation:unbounded_focus.relations) expected_relations.push_back(relation.id);
+    for(const auto& relation:resumed_focus.relations) actual_relations.push_back(relation.id);
+    std::sort(expected_nodes.begin(),expected_nodes.end());
+    std::sort(actual_nodes.begin(),actual_nodes.end());
+    std::sort(expected_relations.begin(),expected_relations.end());
+    std::sort(actual_relations.begin(),actual_relations.end());
+    CHECK(actual_nodes==expected_nodes);
+    CHECK(actual_relations==expected_relations);
+    CHECK(resumed_focus.complete);
+    CHECK(traversal_cursor.complete);
+    CHECK(continuation_calls>1);
+    CHECK(std::adjacent_find(actual_nodes.begin(),actual_nodes.end())==actual_nodes.end());
+    CHECK(std::adjacent_find(actual_relations.begin(),actual_relations.end())==actual_relations.end());
+
+    // A zero budget must not even start a previously untouched root.
+    FocusTraversalCursor untouched_cursor;
+    const auto untouched=graph.observe_focused_cognition(
+        compact,positions,shared_depths,untouched_cursor,0,0);
+    CHECK(!untouched.complete);
+    CHECK(!untouched_cursor.initialized);
+    CHECK(untouched_cursor.next_root_index==0);
+    CHECK(untouched_cursor.active_root_id.empty());
+    CHECK(untouched_cursor.frontier.empty());
+
+    // A zero budget is a true no-op for an initialized continuation cursor.
+    const auto saved_frontier_size=traversal_cursor.frontier.size();
+    const auto saved_next_root=traversal_cursor.next_root_index;
+    const auto zero_budget=graph.observe_focused_cognition(
+        compact,positions,shared_depths,traversal_cursor,0,0);
+    CHECK(zero_budget.complete);
+    CHECK(traversal_cursor.frontier.size()==saved_frontier_size);
+    CHECK(traversal_cursor.next_root_index==saved_next_root);
+
+    // Graph mutation invalidates a partial cursor without mutating that cursor.
+    FocusTraversalCursor stale_cursor;
+    const auto partial_before_mutation=graph.observe_focused_cognition(
+        compact,positions,shared_depths,stale_cursor,1,1);
+    CHECK(!partial_before_mutation.complete);
+    const auto stale_version=stale_cursor.state_version;
+    const auto stale_frontier_size=stale_cursor.frontier.size();
+    SemanticDelta graph_change;
+    graph_change.delta_id="spatial-cursor-invalidation";
+    graph_change.idempotency_key="spatial-cursor-invalidation";
+    graph_change.expected_state_version=graph.state_version();
+    graph_change.nodes={{{"spatial-cursor-version-bump",NodeKind::Entity,
+        "cursor invalidation probe",{}}}};
+    CHECK(graph.apply(graph_change).committed);
+    const auto invalidated=graph.observe_focused_cognition(
+        compact,positions,shared_depths,stale_cursor,10,10);
+    CHECK(invalidated.error=="FOCUS_CURSOR_STALE_STATE_VERSION");
+    CHECK(stale_cursor.state_version==stale_version);
+    CHECK(stale_cursor.frontier.size()==stale_frontier_size);
+
     // A zero node budget defers all work without hiding any cluster from the
     // logical region. The geometric region is not a budget-sized prefix.
     const auto no_node_budget =
