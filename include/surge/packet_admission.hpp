@@ -38,7 +38,7 @@ struct ValidatedRecognitionPacket {
   std::uint64_t revision_sequence{};
 };
 
-struct PacketAdmissionResult {
+enum class AdmissionFailureStage { None, Recovery, PacketValidation, SourceValidation, Idempotency, SequenceValidation, SemanticValidation, ProjectionValidation, ProjectionBinding, GraphPreparation, JournalCommit, GraphReplay, StateConsistency };\n\nstruct PacketAdmissionResult {
   bool admitted{false};
   bool duplicate{false};
   std::uint64_t state_version{};
@@ -59,7 +59,7 @@ class PacketAdmissionCoordinator {
   std::uint64_t state_version() const;
   std::size_t packet_count() const;
   std::size_t estimated_resident_bytes() const noexcept;
-  bool contains_packet(const std::string& packet_id) const;
+  bool contains_packet(const std::string& packet_id) const;\n  const EventJournal& journal() const noexcept { return journal_; }
 
  private:
   struct DocumentStreamState {
