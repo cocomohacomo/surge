@@ -99,7 +99,9 @@ int main() {
       CHECK(semantic_events.size()==5);
       const auto admitted=coordinator.admit(packet("atomic-packet","atomic-packet-key",1,"abc"),
           "abc",semantic_events);
-      CHECK(admitted.admitted&&!admitted.duplicate&&admitted.state_version==1);\n      const auto retry=coordinator.admit(packet("atomic-packet","atomic-packet-key",1,"abc"),"abc");\n      CHECK(retry.admitted&&retry.duplicate&&retry.failure_stage==AdmissionFailureStage::None);
+      CHECK(admitted.admitted&&!admitted.duplicate&&admitted.state_version==1);
+      const auto retry=coordinator.admit(packet("atomic-packet","atomic-packet-key",1,"abc"),"abc");
+      CHECK(retry.admitted&&retry.duplicate&&retry.failure_stage==AdmissionFailureStage::None);
       CHECK(graph.open());
       CHECK(graph.state_version()==1);
       CHECK(graph.dependency_evaluations().count("atomic-delta")==1);
