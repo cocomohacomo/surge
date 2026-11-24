@@ -2,6 +2,7 @@
 
 #include "surge/context_graph.hpp"
 #include "surge/snapshot.hpp"
+#include "surge/snapshot_domains.hpp"
 #include <algorithm>
 #include <iterator>
 #include <cstdint>
@@ -186,6 +187,116 @@ inline bool make_completed_focus_snapshot_document(
   focus_snapshot_detail::append_set(candidate.payload,std::move(relations));
   *output=std::move(candidate); return true;
 }
+
+// Captures a Focus manifest using the canonical full-graph digest. The
+// state version is sampled on both sides of capture to reject concurrent writes.
+inline bool make_completed_focus_snapshot_document(
+    ContextGraph& graph, const CognitionObservation& observation,
+    const std::string& focus_digest, const std::string& observation_digest,
+    const std::string& context_id, std::uint64_t journal_sequence,
+    SnapshotDocument* output, std::string& error) {
+  error.clear();
+  const auto before_version = graph.state_version();
+  if (observation.state_version != before_version) {
+    error = "FOCUS_SNAPSHOT_GRAPH_STATE_VERSION_MISMATCH";
+    return false;
+  }
+  ContextGraphSnapshotDomain domain(graph);
+  std::string graph_digest;
+  if (!domain.canonical_digest(&graph_digest, &error)) return false;
+  const auto after_version = graph.state_version();
+  if (before_version != after_version) {
+    error = "FOCUS_SNAPSHOT_GRAPH_CHANGED_DURING_CAPTURE";
+    return false;
+  }
+  FocusEvaluationSnapshotMetadata metadata;
+  metadata.evaluated_state_version = observation.state_version;
+  metadata.focus_digest = focus_digest;
+  metadata.graph_digest = graph_digest;
+  metadata.observation_digest = observation_digest;
+  return make_completed_focus_snapshot_document(observation, metadata,
+      context_id, journal_sequence, output, error);
+}
+
+inline bool validate_focus_snapshot_against_graph(
+    const SnapshotDocument& manifest, ContextGraph& graph,
+    std::string& error) {
+  error.clear();
+  if (manifest.context_id.empty() || manifest.schema_id !=
+      "surge.focus-evaluation.v1") {
+    error = "FOCUS_SNAPSHOT_GRAPH_MANIFEST_INVALID";
+    return false;
+  }
+  const auto version_before = graph.state_version();
+  if (manifest.state_version != version_before) {
+    error = "FOCUS_SNAPSHOT_GRAPH_STATE_VERSION_MISMATCH";
+    return false;
+  }
+  ContextGraphSnapshotDomain domain(graph);
+  std::string digest;
+  if (!domain.canonical_digest(&digest, &error)) return false;
+  const auto version_after = graph.state_version();
+  if (version_before != version_after) {
+    error = "FOCUS_SNAPSHOT_GRAPH_CHANGED_DURING_VALIDATION";
+    return false;
+  }
+  std::string focus, graph_digest, observation;
+  std::vector<std::string> roots, nodes, relations;
+  if (!focus_snapshot_detail::decode_manifest(manifest, focus, graph_digest,
+      observation, roots, nodes, relations)) {
+    error = "FOCUS_SNAPSHOT_DIFF_MANIFEST_INVALID";
+    return false;
+  }
+  if (digest != graph_digest) {
+    error = "FOCUS_SNAPSHOT_GRAPH_DIGEST_MISMATCH";
+    return false;
+  }
+  return true;
+}
+
+// Append-only in-memory timeline. Every append must be a compatible,
+ // monotonic completed snapshot; history never mutates the underlying graph.
+class FocusSnapshotHistory {
+ public:
+  bool append(const SnapshotDocument& snapshot, std::string& error) {
+    error.clear();
+    std::string focus, graph, observation;
+    std::vector<std::string> roots, nodes, relations;
+    if (!focus_snapshot_detail::decode_manifest(snapshot, focus, graph,
+        observation, roots, nodes, relations)) {
+      error = "FOCUS_SNAPSHOT_HISTORY_MANIFEST_INVALID";
+      return false;
+    }
+    if (!snapshots_.empty()) {
+      const auto& previous = snapshots_.back();
+      if (previous.context_id != snapshot.context_id) {
+        error = "FOCUS_SNAPSHOT_HISTORY_CONTEXT_MISMATCH";
+        return false;
+      }
+      if (previous.state_version > snapshot.state_version ||
+          previous.journal_sequence > snapshot.journal_sequence) {
+        error = "FOCUS_SNAPSHOT_HISTORY_WATERMARK_REGRESSION";
+        return false;
+      }
+    }
+    snapshots_.push_back(snapshot);
+    return true;
+  }
+  std::size_t size() const { return snapshots_.size(); }
+  const std::vector<SnapshotDocument>& snapshots() const { return snapshots_; }
+  bool diff(std::size_t earlier, std::size_t later,
+            FocusEvaluationSnapshotDiff* output, std::string& error) const {
+    if (earlier >= snapshots_.size() || later >= snapshots_.size() ||
+        earlier >= later) {
+      error = "FOCUS_SNAPSHOT_HISTORY_RANGE_INVALID";
+      return false;
+    }
+    return diff_completed_focus_snapshots(
+        snapshots_[earlier], snapshots_[later], output, error);
+  }
+ private:
+  std::vector<SnapshotDocument> snapshots_;
+};
 
 inline bool diff_completed_focus_snapshots(
     const SnapshotDocument& before, const SnapshotDocument& after,
