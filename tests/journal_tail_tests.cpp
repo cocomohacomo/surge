@@ -10,6 +10,23 @@
 int main() {
   using namespace surge;
   const auto root = std::filesystem::temp_directory_path() / "surge-journal-tail-tests";
+  {
+    const auto audit_path = (root / "audit.sgj").string();
+    EventJournal journal(audit_path);
+    CHECK(journal.open());
+    ContextGraph graph(journal);
+    CHECK(graph.open());
+    PacketAdmissionCoordinator coordinator(journal);
+    CHECK(coordinator.recover());
+    const auto digest = graph.node_relation_digest();
+    const auto audit = audit_journal_replay(journal, coordinator, graph, digest);
+    CHECK(audit.ok);
+    CHECK(audit.journal_packet_count == 0);
+    CHECK(audit.coordinator_packet_count == 0);
+    CHECK(audit.node_count == 0 && audit.relation_count == 0);
+    CHECK(audit_journal_replay(journal, coordinator, graph, "wrong-digest").error ==
+          "AUDIT_NODE_RELATION_DIGEST_MISMATCH");
+  }
   std::filesystem::remove_all(root);
   std::filesystem::create_directories(root);
   const auto path = (root / "events.sgj").string();
