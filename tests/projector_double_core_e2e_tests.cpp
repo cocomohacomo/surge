@@ -89,7 +89,7 @@ int main() {
   CHECK(first_result.admitted && !first_result.duplicate);
   CHECK(first_result.state_version == 1);
   CHECK(graph.nodes().at("evidence-tuesday").content ==
-      "会議日程 meeting schedule Tuesday");
+      "会議日程 meeting schedule 2026-11-24");
   CHECK(std::abs(graph.relations().at("fixed-projection-1-membership-evidence").weight
       - 0.73) < 1e-12);
   CHECK(graph.relations().at("fixed-projection-1-membership-evidence").kind ==
@@ -171,9 +171,9 @@ int main() {
     {"correction-question-member", "question-date", "cluster-meeting", 0.80},
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
-  const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
+  const auto correction_result = commit_projection(correction, "会議日程 meeting schedule 2026-11-25", 3);
   if (!correction_result.admitted) {
-    std::cerr << "Correction admission rejected: " << correction_result.error << '\\n';
+    std::cerr << "Correction admission rejected: " << correction_result.error << '\n';
   }
   CHECK(correction_result.admitted);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
