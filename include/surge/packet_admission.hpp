@@ -40,6 +40,7 @@ struct ValidatedRecognitionPacket {
 
 enum class AdmissionCommitState {
   NotCommitted,
+  CommitOutcomeUnknown,
   Committed,
   CommittedProjectionPending
 };
