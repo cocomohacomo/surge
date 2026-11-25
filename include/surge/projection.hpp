@@ -195,6 +195,7 @@ inline PacketAdmissionResult apply_projection_batch(
     const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult packet_result;
+  PacketAdmissionFailureFinalizer failure_finalizer{packet_result};
   packet_result.state_version = graph.state_version();
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
@@ -292,6 +293,7 @@ inline PacketAdmissionResult apply_projection_batch(
     const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult rejected;
+  PacketAdmissionFailureFinalizer failure_finalizer{rejected};
   rejected.state_version = graph.state_version();
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
