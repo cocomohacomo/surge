@@ -226,10 +226,40 @@ bool PacketAdmissionCoordinator::recover() {
   return true;
 }
 
+namespace {
+void classify_admission_failure(PacketAdmissionResult& result) {
+  if (result.error.empty()) return;
+  result.failure_code = result.error;
+  const auto& code = result.error;
+  if (code.find("JOURNAL") != std::string::npos ||
+      code.find("STATE_VERSION") != std::string::npos)
+    result.failure_stage = "JOURNAL_COMMIT";
+  else if (code.find("SOURCE") != std::string::npos ||
+           code.find("UTF8") != std::string::npos)
+    result.failure_stage = "SOURCE_VALIDATION";
+  else if (code.find("DOCUMENT") != std::string::npos ||
+           code.find("REVISION") != std::string::npos ||
+           code.find("SEQUENCE") != std::string::npos ||
+           code.find("RANGE") != std::string::npos)
+    result.failure_stage = "PACKET_SEQUENCE_VALIDATION";
+  else if (code.find("IDEMPOTENCY") != std::string::npos ||
+           code.find("PACKET_ID") != std::string::npos)
+    result.failure_stage = "IDENTITY_VALIDATION";
+  else if (code.find("RECOVER") != std::string::npos)
+    result.failure_stage = "RECOVERY_PRECONDITION";
+  else
+    result.failure_stage = "PACKET_VALIDATION";
+}
+struct AdmissionFailureFinalizer {
+  PacketAdmissionResult& result;
+  ~AdmissionFailureFinalizer() { classify_admission_failure(result); }
+};
+}  // namespace
+
 PacketAdmissionResult PacketAdmissionCoordinator::admit(
     const ValidatedRecognitionPacket& p,
     const std::string& normalized_source_snapshot,
-    const std::vector<JournalEvent>& semantic_events) {
+    const std::vector<JournalEvent>& semantic_events) {\n  AdmissionFailureFinalizer failure_finalizer{result};
   PacketAdmissionResult result;
   result.state_version = journal_.state_version();
   if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
