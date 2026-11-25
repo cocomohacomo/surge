@@ -70,6 +70,18 @@ int main() {
     CHECK(audit_journal_replay(journal, coordinator, graph, "wrong-digest").error ==
           "AUDIT_NODE_RELATION_DIGEST_MISMATCH");
   }
+  {
+    const auto incomplete_path = (root / "incomplete-semantic.sgj").string();
+    EventJournal journal(incomplete_path);
+    CHECK(journal.open());
+    const auto committed = journal.commit("tx-incomplete", "idem-incomplete", 0, {
+        {"packet-event", "SEMANTIC_PACKET_ADMITTED", ""},
+        {"delta-meta", "DELTA_META", "incomplete"}
+    });
+    CHECK(committed.committed);
+    PacketAdmissionCoordinator coordinator(journal);
+    CHECK(!coordinator.recover());
+  }
   std::filesystem::remove_all(root);
   std::cout << "SURGE journal tail watermark tests passed\n";
   return 0;
