@@ -384,6 +384,8 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   transaction_events.insert(transaction_events.end(), semantic_events.begin(), semantic_events.end());
   const auto committed = journal_.commit(tx, p.idempotency_key, expected, transaction_events);
   if (!committed.committed) {
+    if (committed.error == "JOURNAL_COMMIT_OUTCOME_UNKNOWN")
+      result.commit_state = AdmissionCommitState::CommitOutcomeUnknown;
     result.error = committed.error;
     result.state_version = committed.state_version;
     return result;
