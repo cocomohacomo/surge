@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -83,8 +84,8 @@ int main() {
   // evidence, membership weights and placement; Core must preserve them.
   auto first = projector.project("fixed-projection-1", 0, "event-1",
       "evidence-tuesday", "cluster-meeting",
-      "会議日程 meeting schedule Tuesday", "claim-tuesday", 0.73);
-  const auto first_result = commit_projection(first, "会議日程 meeting schedule Tuesday", 1);
+      "会議日程 meeting schedule 2026-11-24", "claim-tuesday", 0.73);
+  const auto first_result = commit_projection(first, "会議日程 meeting schedule 2026-11-24", 1);
   CHECK(first_result.admitted && !first_result.duplicate);
   CHECK(first_result.state_version == 1);
   CHECK(graph.nodes().at("evidence-tuesday").content ==
@@ -148,9 +149,9 @@ int main() {
   correction.evidence_refs = {"evidence-wednesday"};
   correction.nodes = {
     {"evidence-wednesday", surge::NodeKind::Evidence,
-      "会議日程 meeting schedule Wednesday", {}},
+      "会議日程 meeting schedule 2026-11-25", {}},
     {"claim-wednesday", surge::NodeKind::Claim,
-      "meeting schedule Wednesday", {"evidence-wednesday"}},
+      "meeting schedule 2026-11-25", {"evidence-wednesday"}},
     {"question-date", surge::NodeKind::Question,
       "Which meeting date is applicable?", {}},
     {"question-aspect-date", surge::NodeKind::QuestionAspect,
@@ -171,6 +172,9 @@ int main() {
     {"correction-interest-member", "interest-date", "cluster-meeting", 0.80}
   };
   const auto correction_result = commit_projection(correction, "会議日程 meeting schedule Wednesday", 3);
+  if (!correction_result.admitted) {
+    std::cerr << "Correction admission rejected: " << correction_result.error << '\\n';
+  }
   CHECK(correction_result.admitted);
   CHECK(graph.nodes().count("evidence-tuesday") == 1);
   CHECK(packets.packet_count() == 3);
