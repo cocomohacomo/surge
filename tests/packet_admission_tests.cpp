@@ -44,14 +44,20 @@ int main() {
     CHECK(coordinator.admit(changed,"abd").error=="RANGE_CONTENT_CONFLICT");
     auto tampered=packet("p5","i5",6,"abc"); tampered.block_ref="b5";
     tampered.source_range_digest=std::string(64,'e');
-    CHECK(coordinator.admit(tampered,"abc").error=="SOURCE_RANGE_DIGEST_MISMATCH");
+    const auto bad_range=coordinator.admit(tampered,"abc");
+    CHECK(bad_range.error=="SOURCE_RANGE_DIGEST_MISMATCH");
+    CHECK(bad_range.failure_stage=="SOURCE_VALIDATION");
+    CHECK(bad_range.failure_code=="SOURCE_RANGE_DIGEST_MISMATCH");
     auto wrong_snapshot=packet("p5b","i5b",6,"abc"); wrong_snapshot.block_ref="b5b";
     CHECK(coordinator.admit(wrong_snapshot,"abd").error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
     auto bad_utf8=packet("p5c","i5c",6,"abc"); bad_utf8.block_ref="b5c";
     CHECK(coordinator.admit(bad_utf8,std::string(1, static_cast<char>(0xff))).error=="SOURCE_SNAPSHOT_INVALID_UTF8");
     auto collision=packet("p1","i-new",7,"abc"); collision.block_ref="b6";
     collision.canonical_request_digest="changed-canonical-request";
-    CHECK(coordinator.admit(collision,"abc").error=="PACKET_ID_REUSED");
+    const auto reused=coordinator.admit(collision,"abc");
+    CHECK(reused.error=="PACKET_ID_REUSED");
+    CHECK(reused.failure_stage=="IDENTITY_VALIDATION");
+    CHECK(reused.failure_code=="PACKET_ID_REUSED");
     // A caller-controlled digest must not make a different envelope look identical.
     auto forged_digest=packet("p1","i-forged",7,"abc"); forged_digest.block_ref="b7";
     forged_digest.canonical_request_digest="canonical-p1";
@@ -75,7 +81,10 @@ int main() {
     CHECK(coordinator.admit(original,"abc").admitted);
     auto wrong=packet("wrong-parent","rev-i2",2,"abd"); wrong.block_ref="revision-block";
     wrong.revision=true; wrong.revision_sequence=1; wrong.revision_of_packet_id="not-original";
-    CHECK(coordinator.admit(wrong,"abd").error=="REVISION_TARGET_MISMATCH");
+    const auto wrong_revision=coordinator.admit(wrong,"abd");
+    CHECK(wrong_revision.error=="REVISION_TARGET_MISMATCH");
+    CHECK(wrong_revision.failure_stage=="PACKET_SEQUENCE_VALIDATION");
+    CHECK(wrong_revision.failure_code=="REVISION_TARGET_MISMATCH");
     auto revision=packet("revision-1","rev-i3",2,"abd"); revision.block_ref="revision-block";
     revision.revision=true; revision.revision_sequence=1; revision.revision_of_packet_id="original";
     CHECK(coordinator.admit(revision,"abd").admitted);
