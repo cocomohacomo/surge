@@ -259,8 +259,9 @@ struct AdmissionFailureFinalizer {
 PacketAdmissionResult PacketAdmissionCoordinator::admit(
     const ValidatedRecognitionPacket& p,
     const std::string& normalized_source_snapshot,
-    const std::vector<JournalEvent>& semantic_events) {\n  AdmissionFailureFinalizer failure_finalizer{result};
+    const std::vector<JournalEvent>& semantic_events) {
   PacketAdmissionResult result;
+  AdmissionFailureFinalizer failure_finalizer{result};
   result.state_version = journal_.state_version();
   if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
    if (p.packet_id.empty() || p.idempotency_key.empty() || p.context_id.empty() ||
