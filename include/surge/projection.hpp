@@ -328,6 +328,7 @@ inline PacketAdmissionResult apply_projection_batch(
     admitted.commit_state = AdmissionCommitState::CommittedProjectionPending;
     admitted.error = "PROJECTION_REPLAY_PENDING_AFTER_DURABLE_COMMIT";
   }
+  classify_packet_admission_failure(admitted);
   return admitted;
 }
 
