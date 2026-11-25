@@ -154,14 +154,61 @@ bool PacketAdmissionCoordinator::recover() {
   packet_digests_.clear();
   packet_encodings_.clear();
   idempotency_packets_.clear();
-  if (journal_.state_version() == 0 && journal_.committed_events().empty()) {
+  const auto events = journal_.committed_events();
+  if (journal_.state_version() == 0 && events.empty()) {
     recovered_ = true;
     return true;
   }
-  for (const auto& event : journal_.committed_events()) {
-    if (event.kind != "RECOGNITION_PACKET_ADMITTED" && event.kind != "SEMANTIC_PACKET_ADMITTED") continue;
+
+  std::size_t index = 0;
+  while (index < events.size()) {
+    const auto version = events[index].state_version;
+    if (version == 0) {
+      recovered_ = false;
+      return false;
+    }
+    const auto begin = index;
+    while (index < events.size() && events[index].state_version == version)
+      ++index;
+
+    std::size_t packet_index = index;
+    std::size_t packet_count = 0;
+    for (std::size_t i = begin; i < index; ++i) {
+      if (events[i].kind == "RECOGNITION_PACKET_ADMITTED" ||
+          events[i].kind == "SEMANTIC_PACKET_ADMITTED") {
+        packet_index = i;
+        ++packet_count;
+      }
+    }
+    if (packet_count > 1) {
+      recovered_ = false;
+      return false;
+    }
+    if (packet_count == 0) continue;
+
+    const auto& packet_event = events[packet_index];
+    if (packet_event.kind == "SEMANTIC_PACKET_ADMITTED") {
+      // Packet and semantic events are one Journal transaction. Recovery
+      // rejects a truncated or reordered semantic sequence rather than
+      // admitting the packet while silently losing its projection.
+      if (packet_index + 2 >= index ||
+          events[packet_index + 1].kind != "DELTA_META" ||
+          events[packet_index + 1].state_version != version ||
+          events[packet_index + 2].state_version != version) {
+        recovered_ = false;
+        return false;
+      }
+    } else {
+      for (std::size_t i = begin; i < index; ++i) {
+        if (events[i].kind == "DELTA_META") {
+          recovered_ = false;
+          return false;
+        }
+      }
+    }
+
     ValidatedRecognitionPacket packet;
-    if (!decode(event.payload, packet) || !apply_recovered(packet)) {
+    if (!decode(packet_event.payload, packet) || !apply_recovered(packet)) {
       recovered_ = false;
       return false;
     }
