@@ -1,4 +1,7 @@
 #include "surge/event_journal.hpp"
+#include "surge/context_graph.hpp"
+#include "surge/packet_admission.hpp"
+#include "surge/journal_replay_audit.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
