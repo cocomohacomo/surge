@@ -38,7 +38,16 @@ struct ValidatedRecognitionPacket {
   std::uint64_t revision_sequence{};
 };
 
+enum class AdmissionCommitState {
+  NotCommitted,
+  Committed,
+  CommittedProjectionPending
+};
+
 struct PacketAdmissionResult {
+  // admitted means the durable packet transaction exists in Journal.
+  // Projection application is tracked independently by commit_state.
+  AdmissionCommitState commit_state{AdmissionCommitState::NotCommitted};
   bool admitted{false};
   bool duplicate{false};
   std::uint64_t state_version{};
