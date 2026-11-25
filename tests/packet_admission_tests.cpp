@@ -197,6 +197,13 @@ int main() {
     }
     {
       EventJournal journal(restart_path); CHECK(journal.open());
+      {
+        ContextGraph failed_replay(journal);
+        failed_replay.set_replay_gate_for_testing([] { return false; });
+        CHECK(!failed_replay.open());
+      }
+      // A fresh process-equivalent Graph instance must recover the durable
+      // transaction after the injected transient projection replay failure.
       ContextGraph graph(journal); CHECK(graph.open());
       PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
       CHECK(coordinator.packet_count()==1);
