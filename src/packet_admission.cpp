@@ -185,26 +185,35 @@ bool PacketAdmissionCoordinator::recover() {
       return false;
     }
     if (packet_count == 0) continue;
+    if (packet_index != begin) {
+      recovered_ = false;
+      return false;
+    }
+
+    std::size_t delta_meta_count = 0;
+    std::size_t delta_meta_index = index;
+    for (std::size_t i = begin; i < index; ++i) {
+      if (events[i].kind == "DELTA_META") {
+        ++delta_meta_count;
+        delta_meta_index = i;
+      }
+    }
 
     const auto& packet_event = events[packet_index];
     if (packet_event.kind == "SEMANTIC_PACKET_ADMITTED") {
       // Packet and semantic events are one Journal transaction. Recovery
       // rejects a truncated or reordered semantic sequence rather than
       // admitting the packet while silently losing its projection.
-      if (packet_index + 2 >= index ||
-          events[packet_index + 1].kind != "DELTA_META" ||
+      if (delta_meta_count != 1 || delta_meta_index != packet_index + 1 ||
+          packet_index + 2 >= index ||
           events[packet_index + 1].state_version != version ||
           events[packet_index + 2].state_version != version) {
         recovered_ = false;
         return false;
       }
-    } else {
-      for (std::size_t i = begin; i < index; ++i) {
-        if (events[i].kind == "DELTA_META") {
-          recovered_ = false;
-          return false;
-        }
-      }
+    } else if (delta_meta_count != 0) {
+      recovered_ = false;
+      return false;
     }
 
     ValidatedRecognitionPacket packet;
