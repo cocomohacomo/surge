@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <utility>
 
@@ -319,6 +320,35 @@ class ContextGraph {
       const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
       const std::string& relation_id, std::string& error) const;
   std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
+  // Canonical digest of the complete persisted graph projection. The
+  // ordered maps provide deterministic traversal; length-prefixing prevents
+  // ambiguous concatenations and hexfloat preserves exact binary weights.
+  std::string graph_digest() const {
+    std::ostringstream canonical;
+    auto field = [&](const std::string& value) {
+      canonical << value.size() << ':' << value << ';';
+    };
+    canonical << "SURGE_GRAPH_DIGEST_V1;";
+    canonical << "NODES;" << state_.nodes.size() << ';';
+    for (const auto& entry : state_.nodes) {
+      const auto& node = entry.second;
+      field(node.id);
+      canonical << static_cast<unsigned int>(node.kind) << ';';
+      field(node.content);
+      canonical << node.references.size() << ';';
+      for (const auto& reference : node.references) field(reference);
+    }
+    canonical << "RELATIONS;" << state_.relations.size() << ';';
+    for (const auto& entry : state_.relations) {
+      const auto& relation = entry.second;
+      field(relation.id);
+      canonical << static_cast<unsigned int>(relation.kind) << ';';
+      field(relation.from);
+      field(relation.to);
+      canonical << std::hexfloat << relation.weight << std::defaultfloat << ';';
+    }
+    return sha256_hex(canonical.str());
+  }
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
   // Counts active Cluster/ChaosCluster Contains references to a canonical member.
