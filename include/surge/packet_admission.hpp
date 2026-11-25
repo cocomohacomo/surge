@@ -93,6 +93,8 @@ class PacketAdmissionCoordinator {
  public:
   explicit PacketAdmissionCoordinator(EventJournal& journal);
   bool recover();
+  const std::string& recovery_failure_stage() const noexcept { return recovery_failure_stage_; }
+  const std::string& recovery_failure_code() const noexcept { return recovery_failure_code_; }
   PacketAdmissionResult admit(const ValidatedRecognitionPacket& packet,
                               const std::string& normalized_source_snapshot,
                               const std::vector<JournalEvent>& semantic_events = {});
@@ -131,5 +133,7 @@ class PacketAdmissionCoordinator {
   std::map<std::string, std::string> packet_encodings_;
   std::map<std::string, std::string> idempotency_packets_;
   bool recovered_{false};
+  std::string recovery_failure_stage_;
+  std::string recovery_failure_code_;
 };
 }  // namespace surge
