@@ -320,15 +320,16 @@ class ContextGraph {
       const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
       const std::string& relation_id, std::string& error) const;
   std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
-  // Canonical digest of the complete persisted graph projection. The
+  // Canonical digest of Node and Relation records only. Other persisted
+  // projection domains are intentionally excluded from this digest version.
   // ordered maps provide deterministic traversal; length-prefixing prevents
   // ambiguous concatenations and hexfloat preserves exact binary weights.
-  std::string graph_digest() const {
+  std::string node_relation_digest() const {
     std::ostringstream canonical;
     auto field = [&](const std::string& value) {
       canonical << value.size() << ':' << value << ';';
     };
-    canonical << "SURGE_GRAPH_DIGEST_V1;";
+    canonical << "SURGE_NODE_RELATION_DIGEST_V1;";
     canonical << "NODES;" << state_.nodes.size() << ';';
     for (const auto& entry : state_.nodes) {
       const auto& node = entry.second;
