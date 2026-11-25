@@ -2,6 +2,7 @@
 #include "surge/packet_admission.hpp"
 #include "surge/context_graph.hpp"
 #include "surge/sha256.hpp"
+#include "surge/journal_replay_audit.hpp"
 #include <filesystem>
 #include <iostream>
 using namespace surge;
@@ -216,6 +217,12 @@ int main() {
       std::string expected,error;
       CHECK(graph.journal_expected_full_state_digest(expected,error));
       CHECK(digest==expected);
+      const auto audit=audit_journal_replay(
+          journal,coordinator,graph,graph.node_relation_digest());
+      CHECK(audit.ok);
+      CHECK(audit.journal_packet_count==1);
+      CHECK(audit.coordinator_packet_count==1);
+      CHECK(audit.semantic_packet_count==1);
     }
   }
   std::filesystem::remove_all(root);
