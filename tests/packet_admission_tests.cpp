@@ -5,6 +5,15 @@
 #include "surge/journal_replay_audit.hpp"
 #include <filesystem>
 #include <iostream>
+#include <cstdlib>
+#include <string>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 using namespace surge;
 static ValidatedRecognitionPacket packet(const std::string& id,const std::string& idem,
                                          std::uint64_t seq,const std::string& source) {
@@ -17,7 +26,23 @@ static ValidatedRecognitionPacket packet(const std::string& id,const std::string
   p.canonical_request_digest="canonical-"+id;
   return p;
 }
-int main() {
+int main(int argc, char** argv) {
+  if (argc == 3 && std::string(argv[1]) == "--commit-and-crash") {
+    EventJournal journal(argv[2]); if (!journal.open()) return 2;
+    ContextGraph graph(journal); if (!graph.open()) return 3;
+    PacketAdmissionCoordinator coordinator(journal); if (!coordinator.recover()) return 4;
+    SemanticDelta delta; delta.delta_id="crash-delta";
+    delta.idempotency_key="crash-delta-idem"; delta.expected_state_version=0;
+    delta.nodes={{{"crash-cluster",NodeKind::Cluster,"durable-before-crash",{}}}};
+    std::vector<JournalEvent> semantic; std::string error;
+    if (!graph.prepare_events(delta,semantic,error)) return 5;
+    const auto admitted=coordinator.admit(
+        packet("crash-packet","crash-packet-idem",1,"abc"),"abc",semantic);
+    if (!admitted.admitted || admitted.commit_state!=AdmissionCommitState::Committed) return 6;
+    // Simulate abrupt process termination after the durable Journal commit,
+    // before ContextGraph receives/replays the committed transaction.
+    std::_Exit(0);
+  }
   CHECK(sha256_hex("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   CHECK(sha256_hex("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   CHECK(is_valid_utf8("日本語"));
@@ -233,6 +258,43 @@ int main() {
       CHECK(audit.coordinator_packet_count==1);
       CHECK(audit.semantic_packet_count==1);
     }
+  }
+
+  {
+    const auto crash_path=(root/"actual-process-crash.sgj").string();
+    const auto executable=std::filesystem::absolute(argv[0]).string();
+#ifdef _WIN32
+    STARTUPINFOA startup{}; startup.cb=sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::string command="\"" + executable + "\" --commit-and-crash \"" + crash_path + "\"";
+    std::vector<char> buffer(command.begin(),command.end()); buffer.push_back('\\0');
+    CHECK(CreateProcessA(nullptr,buffer.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,
+        nullptr,nullptr,&startup,&process)!=0);
+    CHECK(WaitForSingleObject(process.hProcess,10000)==WAIT_OBJECT_0);
+    DWORD exit_code=1; CHECK(GetExitCodeProcess(process.hProcess,&exit_code)!=0);
+    CHECK(exit_code==0);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+#else
+    const pid_t child=fork(); CHECK(child>=0);
+    if(child==0) {
+      execl(executable.c_str(),executable.c_str(),"--commit-and-crash",
+          crash_path.c_str(),static_cast<char*>(nullptr));
+      _exit(127);
+    }
+    int status=0; CHECK(waitpid(child,&status,0)==child);
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status)==0);
+#endif
+    EventJournal recovered_journal(crash_path); CHECK(recovered_journal.open());
+    ContextGraph recovered_graph(recovered_journal); CHECK(recovered_graph.open());
+    PacketAdmissionCoordinator recovered_packets(recovered_journal);
+    CHECK(recovered_packets.recover());
+    CHECK(recovered_journal.state_version()==1);
+    CHECK(recovered_packets.packet_count()==1);
+    CHECK(recovered_graph.nodes().count("crash-cluster")==1);
+    const auto retry=recovered_packets.admit(
+        packet("crash-packet","crash-packet-idem",1,"abc"),"abc");
+    CHECK(retry.admitted && retry.duplicate);
+    CHECK(recovered_packets.packet_count()==1 && recovered_journal.state_version()==1);
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE PacketAdmission + SHA-256 tests passed\\n";
