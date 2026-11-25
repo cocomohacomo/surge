@@ -162,8 +162,8 @@ int main() {
   correction.relations = {
     {"relation-date-conflict", surge::RelationKind::Contradicts,
       "claim-tuesday", "claim-wednesday", 0.88},
-    {"relation-question-interest", surge::RelationKind::About,
-      "interest-date", "question-date", 1.0}
+    {"relation-question-cluster", surge::RelationKind::About,
+      "question-date", "cluster-meeting", 1.0}
   };
   correction.memberships = {
     {"correction-evidence-member", "evidence-wednesday", "cluster-meeting", 0.91},
