@@ -232,6 +232,12 @@ inline PacketAdmissionResult apply_projection_batch(
       }, packet_resident_bytes, 1, packet_staging_bytes);
   if (!budgeted.committed && packet_result.error.empty())
     packet_result.error = budgeted.error;
+  if (budgeted.committed &&
+      budgeted.error == "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED" &&
+      packet_result.commit_state == AdmissionCommitState::Committed) {
+    packet_result.commit_state = AdmissionCommitState::CommittedProjectionPending;
+    packet_result.error = "PROJECTION_REPLAY_PENDING_AFTER_DURABLE_COMMIT";
+  }
   if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
     packet_result.error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
     packet_result.admitted = false;
