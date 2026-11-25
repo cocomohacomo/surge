@@ -25,6 +25,8 @@ struct JournalReplayAuditResult {
   std::size_t node_count{0};
   std::size_t relation_count{0};
   std::string node_relation_digest;
+  std::string full_state_digest;
+  std::string journal_expected_full_state_digest;
   std::string error;
 };
 
@@ -40,6 +42,9 @@ inline JournalReplayAuditResult audit_journal_replay(
   result.node_count = graph.nodes().size();
   result.relation_count = graph.relations().size();
   result.node_relation_digest = graph.node_relation_digest();
+  result.full_state_digest = graph.full_state_digest();
+  if (!graph.journal_expected_full_state_digest(
+          result.journal_expected_full_state_digest, result.error)) return result;
 
   const auto checkpoint = journal.checkpoint_info();
   const auto events = journal.committed_events();
@@ -134,6 +139,10 @@ inline JournalReplayAuditResult audit_journal_replay(
   if (expected_node_relation_digest.empty() ||
       result.node_relation_digest != expected_node_relation_digest) {
     result.error = "AUDIT_NODE_RELATION_DIGEST_MISMATCH";
+    return result;
+  }
+  if (result.full_state_digest != result.journal_expected_full_state_digest) {
+    result.error = "AUDIT_JOURNAL_EXPECTED_GRAPH_DIGEST_MISMATCH";
     return result;
   }
 
