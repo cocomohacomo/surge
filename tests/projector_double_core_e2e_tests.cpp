@@ -63,6 +63,12 @@ int main() {
     packet.source_id = "fixed-projector-source";
     packet.source_generation = "fixture-session-1";
     packet.block_ref = packet.packet_id;
+    if (sequence == 3) {
+      packet.block_ref = "event-1";
+      packet.revision = true;
+      packet.revision_sequence = 1;
+      packet.revision_of_packet_id = "event-1";
+    }
     packet.offset_basis = "UTF8_BYTE_NFC";
     packet.start_offset = 0;
     packet.end_offset = source.size();
