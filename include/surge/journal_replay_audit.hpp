@@ -85,12 +85,18 @@ inline JournalReplayAuditResult audit_journal_replay(
       result.error = "AUDIT_MULTIPLE_PACKET_ADMISSIONS_IN_TRANSACTION";
       return result;
     }
+    if (packet_events == 1 && packet_index != begin) {
+      result.error = "AUDIT_PACKET_ADMISSION_NOT_FIRST_EVENT";
+      return result;
+    }
 
     bool has_delta_meta = false;
+    std::size_t delta_meta_count = 0;
     std::size_t delta_meta_index = index;
     for (std::size_t i = begin; i < index; ++i) {
       if (events[i].kind == "DELTA_META") {
         has_delta_meta = true;
+        ++delta_meta_count;
         delta_meta_index = i;
         ++result.semantic_event_count;
       } else if (has_delta_meta) {
@@ -100,8 +106,8 @@ inline JournalReplayAuditResult audit_journal_replay(
 
     if (packet_events == 1 &&
         events[packet_index].kind == "SEMANTIC_PACKET_ADMITTED") {
-      if (!has_delta_meta || delta_meta_index != packet_index + 1 ||
-          delta_meta_index + 1 >= index) {
+      if (!has_delta_meta || delta_meta_count != 1 ||
+          delta_meta_index != packet_index + 1 || delta_meta_index + 1 >= index) {
         result.error = "AUDIT_SEMANTIC_PACKET_EVENT_SEQUENCE_INCOMPLETE";
         return result;
       }
