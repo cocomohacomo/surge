@@ -218,6 +218,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
         encoded == packet_encodings_.end() || encoded->second != encode(p)) {
       result.error = "PACKET_ID_REUSED"; return result;
     }
+    result.commit_state = AdmissionCommitState::Committed;
     result.admitted = true;
     result.duplicate = true;
     result.packet_status = "DUPLICATE";
@@ -342,6 +343,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   packet_digests_[p.packet_id] = p.canonical_request_digest;
   packet_encodings_[p.packet_id] = encode(p);
   idempotency_packets_[p.idempotency_key] = p.packet_id;
+  result.commit_state = AdmissionCommitState::Committed;
   result.admitted = true;
   result.state_version = committed.state_version;
   result.watermark = streams_.at(skey).sequencer.watermark();
