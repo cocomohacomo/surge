@@ -149,6 +149,14 @@ bool PacketAdmissionCoordinator::apply_recovered(
 }
 
 bool PacketAdmissionCoordinator::recover() {
+  recovery_failure_stage_.clear();
+  recovery_failure_code_.clear();
+  auto fail_recovery = [&](const std::string& code) {
+    recovered_ = false;
+    recovery_failure_stage_ = "JOURNAL_RECOVERY";
+    recovery_failure_code_ = code;
+    return false;
+  };
   streams_.clear();
   document_streams_.clear();
   packet_digests_.clear();
@@ -164,8 +172,7 @@ bool PacketAdmissionCoordinator::recover() {
   while (index < events.size()) {
     const auto version = events[index].state_version;
     if (version == 0) {
-      recovered_ = false;
-      return false;
+      return fail_recovery("RECOVERY_EVENT_VERSION_INVALID");
     }
     const auto begin = index;
     while (index < events.size() && events[index].state_version == version)
@@ -181,13 +188,11 @@ bool PacketAdmissionCoordinator::recover() {
       }
     }
     if (packet_count > 1) {
-      recovered_ = false;
-      return false;
+      return fail_recovery("RECOVERY_MULTIPLE_PACKET_ADMISSIONS");
     }
     if (packet_count == 0) continue;
     if (packet_index != begin) {
-      recovered_ = false;
-      return false;
+      return fail_recovery("RECOVERY_PACKET_ADMISSION_NOT_FIRST");
     }
 
     std::size_t delta_meta_count = 0;
@@ -208,20 +213,19 @@ bool PacketAdmissionCoordinator::recover() {
           packet_index + 2 >= index ||
           events[packet_index + 1].state_version != version ||
           events[packet_index + 2].state_version != version) {
-        recovered_ = false;
-        return false;
+        return fail_recovery("RECOVERY_SEMANTIC_EVENT_SEQUENCE_INCOMPLETE");
       }
     } else if (delta_meta_count != 0) {
-      recovered_ = false;
-      return false;
+      return fail_recovery("RECOVERY_UNEXPECTED_SEMANTIC_EVENTS");
     }
 
     ValidatedRecognitionPacket packet;
     if (!decode(packet_event.payload, packet) || !apply_recovered(packet)) {
-      recovered_ = false;
-      return false;
+      return fail_recovery("RECOVERY_PACKET_DECODE_OR_STATE_INVALID");
     }
   }
+  if (expected_version != journal_.state_version())
+    return fail_recovery("RECOVERY_JOURNAL_STATE_VERSION_MISMATCH");
   recovered_ = true;
   return true;
 }
