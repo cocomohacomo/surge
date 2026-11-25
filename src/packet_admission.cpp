@@ -168,12 +168,15 @@ bool PacketAdmissionCoordinator::recover() {
     return true;
   }
 
+  std::uint64_t expected_version = journal_.checkpoint_info().base_state_version;
   std::size_t index = 0;
   while (index < events.size()) {
     const auto version = events[index].state_version;
-    if (version == 0) {
+    if (version == 0 || expected_version == std::numeric_limits<std::uint64_t>::max() ||
+        version != expected_version + 1) {
       return fail_recovery("RECOVERY_EVENT_VERSION_INVALID");
     }
+    expected_version = version;
     const auto begin = index;
     while (index < events.size() && events[index].state_version == version)
       ++index;
