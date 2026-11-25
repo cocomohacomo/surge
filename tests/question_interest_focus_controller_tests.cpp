@@ -1,0 +1,37 @@
+#include "test_support.hpp"
+#include "surge/question_interest_focus_controller.hpp"
+#include <filesystem>
+#include <limits>
+int main(){
+ const auto path=(std::filesystem::temp_directory_path()/"surge-question-interest-focus-controller.sgj").string();
+ std::filesystem::remove(path); surge::ContextGraph graph(path); CHECK(graph.open());
+ surge::QuestionInterestFocusController controller({2.0,1.5,1.0});
+ // Focus updates require the target Cluster to exist in the graph.
+ surge::SemanticDelta setup;
+ setup.delta_id="setup-focus-target";
+ setup.idempotency_key=setup.delta_id;
+ setup.expected_state_version=graph.state_version();
+ setup.nodes.push_back({"cluster-new",surge::NodeKind::Cluster,"target cluster",{}});
+ CHECK(graph.apply(setup).committed);
+ std::vector<surge::QuestionInterestFocusInput> inputs={
+  {"q-old","i-old","cluster-old",0.2,true,{0,0,0}},
+  {"q-new","i-new","cluster-new",0.9,true,{4,2,1}},
+  {"q-closed","i-closed","cluster-closed",1.0,false,{9,9,9}},
+  {"","","cluster-invalid",2.0,true,{8,8,8}}
+ };
+ auto d=controller.evaluate(inputs); CHECK(d.changed); CHECK(d.selected_question_id=="q-new");
+ CHECK(d.selected_interest_id=="i-new"); CHECK(d.target_cluster_id=="cluster-new");
+ CHECK(d.priority==0.9); CHECK(d.region.center.x==4.0); CHECK(d.region.half_extents.y==1.5);
+ auto applied=controller.apply(graph,inputs,"focus-policy-1"); CHECK(applied.committed);
+ auto obs=graph.observe_cognition(); CHECK(obs.focus_region.has_value());
+ CHECK(obs.focus_region->center.x==4.0); CHECK(obs.focus_region->center.y==2.0);
+ auto invalid=controller.evaluate({
+  {"q-nan","i-nan","cluster-new",std::numeric_limits<double>::quiet_NaN(),true,{0,0,0}},
+  {"q-inf","i-inf","cluster-new",0.8,true,{std::numeric_limits<double>::infinity(),0,0}}
+ }); CHECK(!invalid.changed);
+ auto empty=controller.evaluate({}); CHECK(!empty.changed);
+ auto inactive=controller.evaluate({{"q","i","cluster",1.0,false,{1,2,3}}}); CHECK(!inactive.changed);
+ auto tie=controller.evaluate({{"q-b","i-b","c-b",0.5,true,{1,0,0}},{"q-a","i-a","c-a",0.5,true,{2,0,0}}});
+ CHECK(tie.target_cluster_id=="c-a");
+ std::filesystem::remove(path); return 0;
+}
