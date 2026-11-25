@@ -248,6 +248,7 @@ struct ProjectionStreamResult {
   bool complete{false};
   std::size_t committed_packets{0};
   std::size_t duplicate_packets{0};
+  std::size_t projection_pending_packets{0};
   std::size_t next_index{0};
   std::uint64_t state_version{0};
   std::string error;
@@ -272,6 +273,8 @@ inline ProjectionStreamResult apply_projection_stream(
     }
     ++result.committed_packets;
     if (committed.duplicate) ++result.duplicate_packets;
+    if (committed.commit_state == AdmissionCommitState::CommittedProjectionPending)
+      ++result.projection_pending_packets;
     result.next_index = i + 1;
     result.state_version = committed.state_version;
   }
@@ -317,9 +320,11 @@ inline PacketAdmissionResult apply_projection_batch(
     return rejected;
   }
   auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
-  if (admitted.admitted && !graph.open()) {
-    admitted.admitted = false;
-    admitted.error = "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED";
+  if (admitted.commit_state == AdmissionCommitState::Committed && !graph.open()) {
+    // The Journal commit is durable and cannot be rolled back by a failed
+    // in-memory replay. Keep admitted=true and expose the projection lag.
+    admitted.commit_state = AdmissionCommitState::CommittedProjectionPending;
+    admitted.error = "PROJECTION_REPLAY_PENDING_AFTER_DURABLE_COMMIT";
   }
   return admitted;
 }
