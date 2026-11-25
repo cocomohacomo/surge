@@ -55,6 +55,8 @@ struct PacketAdmissionResult {
   std::uint64_t watermark{};
   std::string packet_status;
   std::string error;
+  std::string failure_stage;
+  std::string failure_code;
 };
 
 // Coordinates SourceSequencer + RangeLedger + EventJournal. In-memory state
