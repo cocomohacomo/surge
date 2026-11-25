@@ -457,6 +457,10 @@ class ContextGraph {
   // return its complete persisted-state digest for projection comparison.
   bool journal_expected_full_state_digest(std::string& digest, std::string& error) const {
     if (!journal_) { error = "GRAPH_JOURNAL_UNAVAILABLE"; return false; }
+    if (journal_->checkpoint_info().compacted) {
+      error = "GRAPH_AUDIT_SNAPSHOT_BASELINE_REQUIRED";
+      return false;
+    }
     ContextGraph expected(*journal_);
     if (!expected.open()) { error = "GRAPH_JOURNAL_EXPECTED_REPLAY_FAILED"; return false; }
     digest = expected.full_state_digest();
