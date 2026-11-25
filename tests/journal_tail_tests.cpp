@@ -81,6 +81,8 @@ int main() {
     CHECK(committed.committed);
     PacketAdmissionCoordinator coordinator(journal);
     CHECK(!coordinator.recover());
+    CHECK(coordinator.recovery_failure_stage()=="JOURNAL_RECOVERY");
+    CHECK(coordinator.recovery_failure_code()=="RECOVERY_SEMANTIC_EVENT_SEQUENCE_INCOMPLETE");
   }
   std::filesystem::remove_all(root);
   std::cout << "SURGE journal tail watermark tests passed\n";
