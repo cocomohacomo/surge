@@ -10,6 +10,7 @@
 #include <vector>
 #include <utility>
 #include <type_traits>
+#include <functional>
 
 namespace surge {
 enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
@@ -225,6 +226,8 @@ class ContextGraph {
   explicit ContextGraph(std::string journal_path);
   explicit ContextGraph(EventJournal& shared_journal);
   bool open();
+  using ReplayGate = std::function<bool()>;
+  void set_replay_gate_for_testing(ReplayGate gate) { replay_gate_for_testing_ = std::move(gate); }
   DeltaResult apply(const SemanticDelta& delta);
   // Core-owned classification: persist a member beneath a deterministic typed
   // child cluster, creating the cluster and parent edge in the same delta.
@@ -576,5 +579,6 @@ class ContextGraph {
   mutable std::map<std::string, std::vector<std::string>> spatial_outgoing_relation_ids_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
+  ReplayGate replay_gate_for_testing_;
 };
 }  // namespace surge
