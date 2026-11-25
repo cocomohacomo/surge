@@ -161,6 +161,56 @@ int main() {
       CHECK(recovered.admit(next,"abc").admitted);
     }
   }
+
+  {
+    const auto fault_path=(root/"append-fault.sgj").string();
+    EventJournal failing(fault_path, [](std::size_t frame_index) {
+      return frame_index != 0;  // fail before BEGIN frame reaches the Journal
+    });
+    CHECK(failing.open());
+    PacketAdmissionCoordinator coordinator(failing); CHECK(coordinator.recover());
+    const auto rejected=coordinator.admit(packet("fault-p1","fault-i1",1,"abc"),"abc");
+    CHECK(!rejected.admitted);
+    CHECK(rejected.commit_state==AdmissionCommitState::NotCommitted);
+    CHECK(rejected.failure_stage=="JOURNAL_COMMIT");
+    CHECK(rejected.failure_code=="JOURNAL_INJECTED_APPEND_FAILURE");
+    CHECK(failing.state_version()==0);
+  }
+  {
+    const auto restart_path=(root/"commit-before-projection-restart.sgj").string();
+    std::string committed_digest;
+    {
+      EventJournal journal(restart_path); CHECK(journal.open());
+      ContextGraph graph(journal); CHECK(graph.open());
+      PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
+      SemanticDelta delta; delta.delta_id="restart-delta";
+      delta.idempotency_key="restart-delta-idem"; delta.expected_state_version=0;
+      delta.nodes={{{"restart-cluster",NodeKind::Cluster,"recovered",{}}}};
+      std::vector<JournalEvent> semantic; std::string error;
+      CHECK(graph.prepare_events(delta,semantic,error));
+      const auto admitted=coordinator.admit(
+          packet("restart-packet","restart-packet-idem",1,"abc"),"abc",semantic);
+      CHECK(admitted.admitted && admitted.commit_state==AdmissionCommitState::Committed);
+      // Deliberately leave the live Graph projection unapplied before restart.
+      CHECK(graph.nodes().empty());
+      CHECK(journal.state_version()==1);
+    }
+    {
+      EventJournal journal(restart_path); CHECK(journal.open());
+      ContextGraph graph(journal); CHECK(graph.open());
+      PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
+      CHECK(coordinator.packet_count()==1);
+      CHECK(graph.nodes().count("restart-cluster")==1);
+      const auto duplicate=coordinator.admit(
+          packet("restart-packet","restart-packet-idem",1,"abc"),"abc");
+      CHECK(duplicate.admitted && duplicate.duplicate);
+      CHECK(journal.state_version()==1 && coordinator.packet_count()==1);
+      const auto digest=graph.full_state_digest();
+      std::string expected,error;
+      CHECK(graph.journal_expected_full_state_digest(expected,error));
+      CHECK(digest==expected);
+    }
+  }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE PacketAdmission + SHA-256 tests passed\\n";
 }
