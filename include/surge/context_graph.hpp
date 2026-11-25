@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 #include <utility>
+#include <type_traits>
 
 namespace surge {
 enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
@@ -411,7 +412,7 @@ class ContextGraph {
         str(item.first); num(item.second.size());
         for (const auto& record : item.second) {
           const auto& v = record.validity;
-          str(v.claim_id.empty() ? v.evidence_id : v.claim_id);
+          if constexpr (std::is_same_v<std::decay_t<decltype(v)>, ClaimValidity>) str(v.claim_id);\n          else str(v.evidence_id);
           str(v.valid_from); str(v.valid_until); str(v.basis_evidence_id);
           num(v.revision); str(v.review_evidence_id); str(v.reviewer_id);
           num(record.recorded_state_version);
