@@ -146,9 +146,11 @@ int main() {
     {"claim-wednesday", surge::NodeKind::Claim,
       "meeting schedule Wednesday", {"evidence-wednesday"}},
     {"question-date", surge::NodeKind::Question,
-      "Which meeting date is applicable?", {"claim-tuesday", "claim-wednesday"}},
+      "Which meeting date is applicable?", {}},
+    {"question-aspect-date", surge::NodeKind::QuestionAspect,
+      "meeting date discrepancy", {"question-date"}},
     {"interest-date", surge::NodeKind::Interest,
-      "meeting date discrepancy", {"question-date"}}
+      "meeting date discrepancy", {"question-aspect-date", "cluster-meeting"}}
   };
   correction.relations = {
     {"relation-date-conflict", surge::RelationKind::Contradicts,
