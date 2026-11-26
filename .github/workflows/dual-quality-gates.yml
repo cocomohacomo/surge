@@ -28,7 +28,7 @@ jobs:
           corpus=json.loads(p.read_text(encoding="utf-8"))
           profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
           report={"core_integrity_gate":"NOT_RUN","reason":"Core workflow did not complete","commit_sha":os.environ["COMMIT_SHA"],"profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
-          Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+chr(10))
           PY
       - name: Install Python test dependencies
         run: python -m pip install -r requirements-dev.txt
@@ -80,7 +80,7 @@ jobs:
           corpus=json.loads(p.read_text(encoding="utf-8"))
           profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
           report={"recognition_quality_gate":"NOT_RUN","reason":"Recognition workflow did not complete","commit_sha":os.environ["COMMIT_SHA"],"profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
-          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+chr(10))
           PY
       - name: Install model-matrix dependencies
         run: |
@@ -186,8 +186,8 @@ jobs:
           core=Path("evidence/core/core-integrity-evidence.json")
           rec=Path("evidence/recognition/recognition-quality-evidence.json")
           core.parent.mkdir(parents=True,exist_ok=True); rec.parent.mkdir(parents=True,exist_ok=True)
-          if not core.exists(): core.write_text(json.dumps({"core_integrity_gate":"NOT_RUN",**identity},indent=2)+"\\n")
-          if not rec.exists(): rec.write_text(json.dumps({"recognition_quality_gate":"NOT_RUN",**identity},indent=2)+"\\n")
+          if not core.exists(): core.write_text(json.dumps({"core_integrity_gate":"NOT_RUN",**identity},indent=2)+chr(10))
+          if not rec.exists(): rec.write_text(json.dumps({"recognition_quality_gate":"NOT_RUN",**identity},indent=2)+chr(10))
           PY
       - name: Construct expected immutable identity
         run: |
