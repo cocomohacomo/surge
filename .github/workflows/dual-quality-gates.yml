@@ -1,0 +1,121 @@
+name: SURGE dual mandatory quality gates
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-integrity-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+      - name: Build and run Core integrity tests
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel 2
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Run Python evaluator and adapter tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Produce Core Integrity evidence
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          corpus=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
+          data=json.loads(corpus.read_text(encoding="utf-8"))
+          profile=json.dumps(data.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
+          report={"core_integrity_gate":"PASS","commit_sha":os.environ["COMMIT_SHA"],
+            "profile_sha256":hashlib.sha256(profile).hexdigest(),
+            "corpus_sha256":hashlib.sha256(corpus.read_bytes()).hexdigest(),
+            "evidence_kind":"cpp-ctest-and-python-suite","limitations":"This report covers this workflow's CTest and Python suite; it is not a claim that every production recovery scenario is independently certified."}
+          Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: surge-core-integrity-evidence
+          path: core-integrity-evidence.json
+          if-no-files-found: error
+
+  recognition-quality-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+      - name: Run semantic evaluator tests
+        run: python -m unittest discover -s tests -p 'test_gold_corpus_evaluator.py' -v
+      - name: Evaluate held-out independent corpus
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
+          corpus=json.loads(p.read_text(encoding="utf-8"))
+          profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
+          Path("empty-predictions.json").write_text("{}")
+          Path("profile.json").write_bytes(profile)
+          PY
+          python tools/evaluate_gold_corpus.py tests/fixtures/semantic/gold_seed_v0.1.json empty-predictions.json recognition-quality-evidence.json || test "$?" -eq 1
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path("recognition-quality-evidence.json"); report=json.loads(p.read_text())
+          report["commit_sha"]=os.environ["COMMIT_SHA"]
+          p.write_text(json.dumps(report,indent=2)+"\\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: surge-recognition-quality-evidence
+          path: recognition-quality-evidence.json
+          if-no-files-found: error
+
+  aggregate-mandatory-gate:
+    runs-on: ubuntu-latest
+    needs: [core-integrity-evidence, recognition-quality-evidence]
+    if: always()
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: surge-core-integrity-evidence
+          path: evidence/core
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: surge-recognition-quality-evidence
+          path: evidence/recognition
+      - name: Construct expected immutable identity
+        run: |
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
+          c=json.loads(p.read_text(encoding="utf-8"))
+          profile=json.dumps(c.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
+          identity={"commit_sha":"${{ github.sha }}","profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
+          Path("expected-identity.json").write_text(json.dumps(identity,indent=2))
+          PY
+      - name: Enforce both-track evidence identity and PASS
+        run: |
+          python tools/aggregate_quality_gate.py evidence/core/core-integrity-evidence.json evidence/recognition/recognition-quality-evidence.json expected-identity.json aggregate-gate.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: surge-aggregate-quality-gate
+          path: aggregate-gate.json
+          if-no-files-found: warn
