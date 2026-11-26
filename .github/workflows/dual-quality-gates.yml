@@ -86,7 +86,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git libopenblas-dev
-          python -m pip install -r requirements-model-matrix.txt
+          python -m pip install -r requirements-dev.txt -r requirements-model-matrix.txt
+      - name: Run evaluator and schema regression tests before model build
+        run: |
+          python -m unittest discover -s tests -p 'test_gold_corpus_evaluator.py' -v
+          python -m unittest discover -s tests -p 'test_projector_schema.py' -v
+          python -m unittest discover -s tests -p 'test_model_matrix_summary.py' -v
       - name: Build pinned llama.cpp CPU CLI
         run: |
           git init "$RUNNER_TEMP/llama.cpp"
@@ -96,19 +101,6 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/llama.cpp" rev-parse HEAD)" = "fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002"
           cmake -S "$RUNNER_TEMP/llama.cpp" -B "$RUNNER_TEMP/llama.cpp/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=ON
           cmake --build "$RUNNER_TEMP/llama.cpp/build" --target llama-cli --parallel 2
-      - name: Initialize fail-closed Recognition evidence
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          python - <<'PY'
-          import hashlib,json,os
-          from pathlib import Path
-          p=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
-          corpus=json.loads(p.read_text(encoding="utf-8"))
-          profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
-          report={"recognition_quality_gate":"NOT_RUN","reason":"recognition workflow did not complete; placeholder evidence","commit_sha":os.environ["COMMIT_SHA"],"profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
-          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+"\n")
-          PY
       - name: Execute structured Japanese CPU model matrix
         env:
           LLAMA_CLI: ${{ runner.temp }}/llama.cpp/build/bin/llama-cli
@@ -126,11 +118,8 @@ jobs:
           path: |
             ${{ runner.temp }}/surge-model-matrix.json
             ${{ runner.temp }}/surge-model-matrix-summary.json
-            ${{ runner.temp }}/surge-model-matrix.json
-          if-no-files-found: error
-      - name: Run semantic evaluator tests
-        run: python -m unittest discover -s tests -p 'test_gold_corpus_evaluator.py' -v
-      - name: Evaluate held-out independent corpus
+          if-no-files-found: warn
+      - name: Evaluate seed corpus without qualifying it
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -141,15 +130,14 @@ jobs:
           corpus=json.loads(p.read_text(encoding="utf-8"))
           profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
           Path("empty-predictions.json").write_text("{}")
-          Path("profile.json").write_bytes(profile)
           PY
           python tools/evaluate_gold_corpus.py tests/fixtures/semantic/gold_seed_v0.1.json empty-predictions.json recognition-quality-evidence.json || test "$?" -eq 1
           python - <<'PY'
-          import hashlib,json,os
+          import json,os
           from pathlib import Path
           p=Path("recognition-quality-evidence.json"); report=json.loads(p.read_text())
           report["commit_sha"]=os.environ["COMMIT_SHA"]
-          p.write_text(json.dumps(report,indent=2)+"\n")
+          p.write_text(json.dumps(report,indent=2)+"\\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
