@@ -9,10 +9,11 @@ from pathlib import Path
 def _valid_metric(metric):
     if not isinstance(metric, dict):
         return False
-    if not all(isinstance(metric.get(key), int) and metric[key] >= 0
-               for key in ("tp", "fp", "fn")):
+    if not all(isinstance(metric.get(key), int) and not isinstance(metric.get(key), bool)
+               and metric[key] >= 0 for key in ("tp", "fp", "fn")):
         return False
     return all(isinstance(metric.get(key), (int, float))
+               and not isinstance(metric.get(key), bool)
                and math.isfinite(metric[key]) and 0.0 <= metric[key] <= 1.0
                for key in ("precision", "recall", "f1"))
 
@@ -36,7 +37,7 @@ def summarize(report):
     models = report.get("models")
     expected_count = report.get("expected_model_count")
     expected_case_ids = report.get("expected_case_ids")
-    if not isinstance(models, list) or not isinstance(expected_count, int) or expected_count < 1:
+    if not isinstance(models, list) or not isinstance(expected_count, int) or isinstance(expected_count, bool) or expected_count < 1:
         models = models if isinstance(models, list) else []
         expected_count = expected_count
     case_contract_valid = (isinstance(expected_case_ids, list)
@@ -46,7 +47,7 @@ def summarize(report):
     expected_cases = set(expected_case_ids) if case_contract_valid else set()
     names = [model.get("name") for model in models if isinstance(model, dict)]
     model_set_valid = (
-        isinstance(expected_count, int) and expected_count > 0
+        isinstance(expected_count, int) and not isinstance(expected_count, bool) and expected_count > 0
         and len(models) == expected_count
         and len(names) == len(models)
         and all(isinstance(name, str) and name for name in names)
@@ -98,7 +99,14 @@ def summarize(report):
             and all(_valid_metric(metric) for metric in item["phenomenon_metrics"].values())
             for item in semantic
         )
-        complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid
+        counter_fields = ("unsupported_attribute_count", "duplicate_attribute_count",
+                          "duplicate_relation_count", "duplicate_evidence_span_count", "malformed_count")
+        counters_valid = all(
+            isinstance(item.get(key), int) and not isinstance(item.get(key), bool)
+            and item[key] >= 0
+            for item in semantic for key in counter_fields
+        )
+        complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid and counters_valid
         execution_pass = (
             bool(rows) and case_coverage_valid and not invalid_json and not invalid_schema
             and not timeouts and not missing_rss and not nonzero_exit and complete_metrics
@@ -110,7 +118,7 @@ def summarize(report):
             "invalid_json": invalid_json, "invalid_schema": invalid_schema,
             "timeouts": timeouts,
             "missing_rss": missing_rss, "nonzero_exit": nonzero_exit,
-            "metrics_complete": complete_metrics,
+            "metrics_complete": complete_metrics, "counters_valid": counters_valid,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
             "categories": {
