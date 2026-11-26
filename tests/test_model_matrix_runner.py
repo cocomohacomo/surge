@@ -15,7 +15,7 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         self.assertIsNone(extract_json('Prompt {not-json}\n{"attributes":[],"relations":[]}'))
 
     def test_rejects_markdown_fence(self):
-        self.assertIsNone(extract_json('```json\\n{"attributes":[],"relations":[]}\\n```'))
+        self.assertIsNone(extract_json('```json\n{"attributes":[],"relations":[]}\n```'))
 
     def test_rejects_multiple_objects(self):
         self.assertIsNone(extract_json('{"a":1}{"b":2}'))
