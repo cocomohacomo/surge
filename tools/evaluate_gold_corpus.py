@@ -47,7 +47,22 @@ def evaluate_case(case, pred):
     source_text = case.get("text", "")
     if not isinstance(context, str) or not isinstance(source_text, str):
         raise ValueError(f"{case_id}: context/text must be strings")
+    source_parts = {"context": context, "text": source_text}
     source = norm(context + " " + source_text)
+
+    def span_key(span, parts):
+        if not isinstance(span, dict):
+            return None
+        source_name = span.get("source")
+        start, end, quote = span.get("start"), span.get("end"), span.get("quote")
+        if source_name not in parts or not isinstance(start, int) or isinstance(start, bool) or not isinstance(end, int) or isinstance(end, bool):
+            return None
+        segment = parts[source_name]
+        if start < 0 or end <= start or end > len(segment) or not isinstance(quote, str) or not quote:
+            return None
+        if segment[start:end] != quote:
+            return None
+        return source_name, start, end, quote
 
     gold_attrs = gold.get("attributes", [])
     gold_rels = gold.get("relations", [])
@@ -55,6 +70,17 @@ def evaluate_case(case, pred):
         raise ValueError(f"{case_id}: gold attributes/relations must be arrays")
     ga = {_attribute(item) for item in gold_attrs}
     ga.discard(None)
+    gold_spans = set()
+    for item in gold_attrs:
+        if isinstance(item, dict):
+            spans = item.get("evidence_spans", [])
+            if not isinstance(spans, list):
+                raise ValueError(f"{case_id}: gold evidence_spans must be an array")
+            for span in spans:
+                key = span_key(span, source_parts)
+                if key is None:
+                    raise ValueError(f"{case_id}: invalid gold evidence span")
+                gold_spans.add(key)
 
     schema_errors = 0
     raw_attrs = pred.get("attributes")
@@ -63,14 +89,29 @@ def evaluate_case(case, pred):
         schema_errors += 1
     parsed_attrs, unsupported = [], 0
     evidence_supported = 0
+    predicted_spans = []
     for item in raw_attrs:
         attr = _attribute(item)
         if attr is None:
             schema_errors += 1
             continue
         parsed_attrs.append((attr, item))
+        spans = item.get("evidence_spans", [])
+        if not isinstance(spans, list):
+            schema_errors += 1
+            spans = []
+        valid_spans = []
+        for span in spans:
+            key = span_key(span, source_parts)
+            if key is None:
+                schema_errors += 1
+                continue
+            valid_spans.append(key)
+            predicted_spans.append(key)
         quote = norm(item.get("evidence_quote", item.get("evidence", "")))
-        if quote and quote in source:
+        if valid_spans:
+            evidence_supported += 1
+        elif quote and quote in source:
             evidence_supported += 1
         else:
             unsupported += 1
@@ -137,12 +178,21 @@ def evaluate_case(case, pred):
             len(category_pred - category_gold) + category_duplicates,
             len(category_gold - category_pred))
 
+    unique_spans = set(predicted_spans)
+    duplicate_spans = len(predicted_spans) - len(unique_spans)
+    span_metrics = counts(len(gold_spans & unique_spans),
+                          len(unique_spans - gold_spans) + duplicate_spans,
+                          len(gold_spans - unique_spans))
     evidence_total = len(parsed_attrs)
     return {
         "case_id": case_id,
         "attribute_metrics": attr_metrics, "relation_metrics": rel_metrics,
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
+        "evidence_span_metrics": span_metrics,
+        "gold_evidence_span_count": len(gold_spans),
+        "predicted_evidence_span_count": len(predicted_spans),
+        "duplicate_evidence_span_count": duplicate_spans,
         "duplicate_attribute_count": duplicate_attrs,
         "duplicate_relation_count": duplicate_rels,
         "malformed_count": schema_errors,
@@ -218,6 +268,11 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
     evidence_total = sum(row["evidence_total"] for row in results)
     evidence_supported = sum(row["evidence_supported"] for row in results)
     evidence_rate = evidence_supported / evidence_total if evidence_total else 0.0
+    span_metrics = counts(
+        sum(row["evidence_span_metrics"]["tp"] for row in results),
+        sum(row["evidence_span_metrics"]["fp"] for row in results),
+        sum(row["evidence_span_metrics"]["fn"] for row in results))
+    span_gold_total = sum(row["gold_evidence_span_count"] for row in results)
     predicted_relations = sum(row["relation_metrics"]["tp"] + row["relation_metrics"]["fp"]
                               for row in results)
     relation_fp = sum(row["relation_metrics"]["fp"] for row in results)
@@ -241,6 +296,13 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         failures.append("macro_f1_min")
     if "evidence_support_min" in profile and evidence_rate < profile["evidence_support_min"]:
         failures.append("evidence_support_min")
+    if corpus.get("evidence_span_evaluation") is True:
+        if "evidence_span_f1_min" not in profile:
+            failures.append("profile_missing:evidence_span_f1_min")
+        elif span_metrics["f1"] < profile["evidence_span_f1_min"]:
+            failures.append("evidence_span_f1_min")
+        if span_gold_total == 0:
+            failures.append("evidence_span_gold_empty")
     if "schema_valid_rate_min" in profile and schema_valid_rate < profile["schema_valid_rate_min"]:
         failures.append("schema_valid_rate_min")
     if "false_positive_relation_rate_max" not in profile:
@@ -265,6 +327,10 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         "category_gold_support": supported_categories,
         "macro_f1": macro_f1, "schema_valid_rate": schema_valid_rate,
         "evidence_support_rate": evidence_rate,
+        "evidence_span_metrics": span_metrics,
+        "gold_evidence_span_count": span_gold_total,
+        "predicted_evidence_span_count": sum(row["predicted_evidence_span_count"] for row in results),
+        "duplicate_evidence_span_count": sum(row["duplicate_evidence_span_count"] for row in results),
         "false_positive_relation_rate": fp_relation_rate,
         "unsupported_attribute_count": sum(row["unsupported_attribute_count"] for row in results),
         "duplicate_attribute_count": sum(row["duplicate_attribute_count"] for row in results),
