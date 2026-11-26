@@ -97,8 +97,8 @@
               {
                 "source": "text",
                 "start": 2,
-                "end": 4,
-                "quote": "参加"
+                "end": 8,
+                "quote": "参加しません"
               }
             ]
           }
@@ -141,6 +141,12 @@
             "target": "meeting_day:火曜日",
             "evidence_spans": [
               {
+                "source": "context",
+                "start": 9,
+                "end": 12,
+                "quote": "火曜日"
+              },
+              {
                 "source": "text",
                 "start": 3,
                 "end": 6,
@@ -151,7 +157,8 @@
         ]
       },
       "phenomena": [
-        "contradiction"
+        "contradiction",
+        "temporal_supersession"
       ]
     },
     {
@@ -297,16 +304,24 @@
             "target": "construction_cost:A地区:120万円",
             "evidence_spans": [
               {
+                "source": "context",
+                "start": 4,
+                "end": 13,
+                "quote": "工事費は120万円"
+              },
+              {
                 "source": "text",
                 "start": 0,
-                "end": 12,
-                "quote": "この費用は補助対象外です"
+                "end": 10,
+                "quote": "この費用は補助対象外"
               }
             ]
           }
         ]
       },
-      "phenomena": []
+      "phenomena": [
+        "negation"
+      ]
     },
     {
       "case_id": "topic-shift-01",
