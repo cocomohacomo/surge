@@ -46,7 +46,7 @@ def evaluate_case(case,pred):
  return {"case_id":case["case_id"],"attribute":am,"relation":rm,"attribute_metrics":am,"relation_metrics":rm,"categories":cats,
  "duplicate_attribute_count":duplicate_count,"duplicate_relation_count":rel_dups,
  "malformed_count":malformed+rel_malformed,"unsupported_attribute_count":unsupported,
- "evidence_total":evidence_total,"evidence_supported":evidence_supported}
+ "evidence_total":evidence_total,"evidence_supported":evidence_supported,"evidence_support_rate":evidence_supported/evidence_total if evidence_total else 0.0}
 
 def evaluate(corpus,predictions,corpus_sha,profile_sha=None,commit_sha=None):
  test=[c for c in corpus.get("cases",[]) if c.get("split")=="test"]
