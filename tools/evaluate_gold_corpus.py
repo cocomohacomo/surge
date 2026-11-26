@@ -341,7 +341,11 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
             return {"recognition_quality_gate": "FAIL",
                     "reason": "held-out Gold annotation does not conform to Canonical Projector Schema v1.0",
                     "case_id": case["case_id"], **identity}
-    results = [evaluate_case(case, predictions[case["case_id"]]) for case in test_cases]
+    try:
+        results = [evaluate_case(case, predictions[case["case_id"]]) for case in test_cases]
+    except ValueError as error:
+        return {"recognition_quality_gate": "FAIL",
+                "reason": "invalid Gold or prediction evidence data: " + str(error), **identity}
 
     def aggregate(field):
         return counts(sum(row[field]["tp"] for row in results),
