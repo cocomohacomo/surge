@@ -5,7 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from jsonschema import Draft202012Validator
 from pathlib import Path
+
+
+_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "surge-projector-output-v1.0.schema.json"
+_PROJECTOR_SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+_PROJECTOR_VALIDATOR = Draft202012Validator(_PROJECTOR_SCHEMA)
 
 
 def norm(value):
@@ -83,6 +89,9 @@ def evaluate_case(case, pred):
                 gold_spans.add(key)
 
     schema_errors = 0
+    canonical_schema_errors = list(_PROJECTOR_VALIDATOR.iter_errors(pred))
+    if canonical_schema_errors:
+        schema_errors += 1
     raw_attrs = pred.get("attributes")
     if not isinstance(raw_attrs, list):
         raw_attrs = []
@@ -227,7 +236,8 @@ def evaluate_case(case, pred):
         "duplicate_attribute_count": duplicate_attrs,
         "duplicate_relation_count": duplicate_rels,
         "malformed_count": schema_errors,
-        "schema_valid": schema_errors == 0,
+        "schema_valid": not canonical_schema_errors and schema_errors == 0,
+        "canonical_schema_error_count": len(canonical_schema_errors),
         "unsupported_attribute_count": unsupported,
         "evidence_total": evidence_total,
         "evidence_supported": evidence_supported,
@@ -372,6 +382,7 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         "duplicate_attribute_count": sum(row["duplicate_attribute_count"] for row in results),
         "duplicate_relation_count": sum(row["duplicate_relation_count"] for row in results),
         "malformed_count": sum(row["malformed_count"] for row in results),
+        "canonical_schema_error_count": sum(row["canonical_schema_error_count"] for row in results),
         "case_count": len(results), "per_case": results, **identity,
     }
 
