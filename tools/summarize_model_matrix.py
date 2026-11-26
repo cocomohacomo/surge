@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strictly summarize model-matrix outputs; execution success is not qualification."""
+"""Strict model-matrix execution audit; this never certifies semantic quality."""
 import json
 import sys
 from pathlib import Path
@@ -19,27 +19,76 @@ def _aggregate(metrics, key):
 
 
 def summarize(report):
+    if not isinstance(report, dict):
+        raise ValueError("model matrix report must be an object")
+    models = report.get("models")
+    expected_count = report.get("expected_model_count")
+    expected_case_ids = report.get("expected_case_ids")
+    if not isinstance(models, list) or not isinstance(expected_count, int) or expected_count < 1:
+        models = models if isinstance(models, list) else []
+        expected_count = expected_count
+    case_contract_valid = (isinstance(expected_case_ids, list)
+                           and bool(expected_case_ids)
+                           and all(isinstance(x, str) and x for x in expected_case_ids)
+                           and len(expected_case_ids) == len(set(expected_case_ids)))
+    expected_cases = set(expected_case_ids) if case_contract_valid else set()
+    names = [model.get("name") for model in models if isinstance(model, dict)]
+    model_set_valid = (
+        isinstance(expected_count, int) and expected_count > 0
+        and len(models) == expected_count
+        and len(names) == len(models)
+        and all(isinstance(name, str) and name for name in names)
+        and len(names) == len(set(names))
+        and case_contract_valid
+    )
+
     model_reports = []
-    for model in report.get("models", []):
+    for model in models:
+        if not isinstance(model, dict):
+            model = {}
         rows = model.get("results", [])
-        invalid_json = sum(not row.get("json_valid", False) for row in rows)
-        timeouts = sum(bool(row.get("timeout")) for row in rows)
-        missing_rss = sum(row.get("peak_rss_kib") is None for row in rows
-                          if not row.get("timeout"))
+        if not isinstance(rows, list):
+            rows = []
+        case_ids = [row.get("case_id") for row in rows if isinstance(row, dict)]
+        case_coverage_valid = (
+            len(case_ids) == len(rows)
+            and all(isinstance(x, str) and x for x in case_ids)
+            and len(case_ids) == len(set(case_ids))
+            and set(case_ids) == expected_cases
+        ) if case_contract_valid else False
+        invalid_json = sum(not row.get("json_valid", False) for row in rows
+                           if isinstance(row, dict))
+        timeouts = sum(bool(row.get("timeout")) for row in rows if isinstance(row, dict))
+        missing_rss = sum(
+            row.get("peak_rss_kib") is None for row in rows
+            if isinstance(row, dict) and not row.get("timeout")
+        )
+        nonzero_exit = sum(
+            row.get("return_code") != 0 for row in rows
+            if isinstance(row, dict) and not row.get("timeout")
+        )
         semantic = [row.get("engineering_semantic_metrics") for row in rows
-                    if isinstance(row.get("engineering_semantic_metrics"), dict)]
+                    if isinstance(row, dict)
+                    and isinstance(row.get("engineering_semantic_metrics"), dict)]
         metric_shape_valid = all(
             isinstance(item.get(key), dict)
             and all(name in item[key] for name in ("tp", "fp", "fn", "precision", "recall", "f1"))
+            and all(isinstance(item[key][name], (int, float))
+                    for name in ("tp", "fp", "fn", "precision", "recall", "f1"))
             for item in semantic for key in ("attribute_metrics", "relation_metrics")
         )
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid
-        execution_pass = bool(rows) and not invalid_json and not timeouts and not missing_rss and complete_metrics
+        execution_pass = (
+            bool(rows) and case_coverage_valid and not invalid_json and not timeouts
+            and not missing_rss and not nonzero_exit and complete_metrics
+        )
         model_reports.append({
             "name": model.get("name"), "cases": len(rows),
+            "case_coverage_valid": case_coverage_valid,
             "coverage": len(semantic) / len(rows) if rows else 0.0,
             "invalid_json": invalid_json, "timeouts": timeouts,
-            "missing_rss": missing_rss, "metrics_complete": complete_metrics,
+            "missing_rss": missing_rss, "nonzero_exit": nonzero_exit,
+            "metrics_complete": complete_metrics,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
             "unsupported_attributes": sum(item.get("unsupported_attribute_count", 0) for item in semantic),
@@ -49,20 +98,18 @@ def summarize(report):
             "execution_gate": "PASS" if execution_pass else "FAIL",
         })
 
-    expected_count = report.get("expected_model_count")
-    model_set_valid = bool(model_reports) and (
-        expected_count is None or len(model_reports) == expected_count
-    )
     execution_pass = model_set_valid and all(
         model["execution_gate"] == "PASS" for model in model_reports
     )
+    corpus_status = report.get("corpus_status")
     return {
         "model_matrix_execution_gate": "PASS" if execution_pass else "FAIL",
         "recognition_quality_gate": "NOT_RUN"
-        if report.get("corpus_status") == "SEED_NOT_INDEPENDENT" else "PENDING",
+        if corpus_status == "SEED_NOT_INDEPENDENT" else "PENDING",
         "model_count": len(model_reports), "expected_model_count": expected_count,
         "model_set_valid": model_set_valid,
-        "models": model_reports, "corpus_status": report.get("corpus_status"),
+        "expected_case_count": len(expected_cases),
+        "corpus_status": corpus_status, "models": model_reports,
     }
 
 
