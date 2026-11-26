@@ -321,6 +321,16 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         if len(labels) != len(set(labels)):
             return {"recognition_quality_gate": "FAIL",
                     "reason": "duplicate phenomenon annotation", "case_id": case["case_id"], **identity}
+        gold = case.get("gold", {})
+        for field in ("attributes", "relations"):
+            entries = gold.get(field, []) if isinstance(gold, dict) else []
+            if not isinstance(entries, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("evidence_spans"), list)
+                or not item["evidence_spans"] for item in entries
+            ):
+                return {"recognition_quality_gate": "FAIL",
+                        "reason": "every held-out Gold attribute and relation requires Evidence Spans",
+                        "case_id": case["case_id"], "field": field, **identity}
     results = [evaluate_case(case, predictions[case["case_id"]]) for case in test_cases]
 
     def aggregate(field):
