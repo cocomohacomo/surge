@@ -87,6 +87,12 @@ def summarize(report):
         metric_shape_valid = all(
             _valid_metric(item.get(key))
             for item in semantic for key in ("attribute_metrics", "relation_metrics")
+        ) and all(
+            isinstance(item.get("categories"), dict)
+            and all(_valid_metric(metric) for metric in item["categories"].values())
+            and isinstance(item.get("phenomenon_metrics"), dict)
+            and all(_valid_metric(metric) for metric in item["phenomenon_metrics"].values())
+            for item in semantic
         )
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid
         execution_pass = (
@@ -103,6 +109,16 @@ def summarize(report):
             "metrics_complete": complete_metrics,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
+            "categories": {
+                category: _aggregate([{"metric": item["categories"][category]} for item in semantic
+                                       if category in item["categories"]], "metric")
+                for category in sorted({name for item in semantic for name in item.get("categories", {})})
+            } if semantic and metric_shape_valid else None,
+            "phenomena": {
+                phenomenon: _aggregate([{"metric": item["phenomenon_metrics"][phenomenon]}
+                                        for item in semantic if phenomenon in item["phenomenon_metrics"]], "metric")
+                for phenomenon in sorted({name for item in semantic for name in item.get("phenomenon_metrics", {})})
+            } if semantic and metric_shape_valid else None,
             "evidence_spans": _aggregate(semantic, "evidence_span_metrics")
             if semantic and metric_shape_valid and all("evidence_span_metrics" in item for item in semantic) else None,
             "unsupported_attributes": sum(item.get("unsupported_attribute_count", 0) for item in semantic),
