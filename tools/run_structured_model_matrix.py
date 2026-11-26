@@ -14,6 +14,7 @@ from huggingface_hub import hf_hub_download
 # Import the sibling module without requiring tools/ to be a Python package.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluate_gold_corpus import evaluate_case
+from validate_projector_output import validate as validate_projector_output
 
 MODELS=[
  {"name":"qwen3-0.6b-q4_k_m","repo":"gvij/qwen3-0.6b-gguf","file":"qwen3-0.6b-q4_k_m.gguf","format":"chatml"},
@@ -68,6 +69,9 @@ def main():
    r=run(m,path,case)
    if r.get("return_code",0)!=0 and not r.get("timeout"): raise RuntimeError(f"model command failed: {m['name']} {case['case_id']}")
    if r.get("parsed_output") is not None:
+    schema_errors=validate_projector_output(r["parsed_output"])
+    r["projector_schema_valid"]=not schema_errors
+    r["projector_schema_errors"]=schema_errors
     r["engineering_semantic_metrics"]=evaluate_case(case,r["parsed_output"])
    mr["results"].append(r)
   timed=sum(bool(r.get("timeout")) for r in mr["results"])
