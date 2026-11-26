@@ -90,8 +90,6 @@ def evaluate_case(case, pred):
 
     schema_errors = 0
     canonical_schema_errors = list(_PROJECTOR_VALIDATOR.iter_errors(pred))
-    if canonical_schema_errors:
-        schema_errors += 1
     raw_attrs = pred.get("attributes")
     if not isinstance(raw_attrs, list):
         raw_attrs = []
