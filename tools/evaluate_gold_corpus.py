@@ -42,12 +42,14 @@ def evaluate_case(case: dict, prediction: dict) -> dict:
     attrs = score_counts(len(gold_attributes & pred_attributes), len(pred_attributes - gold_attributes) + malformed, len(gold_attributes - pred_attributes))
     gold_rel = {(norm(r.get("type")), norm(r.get("source")), norm(r.get("target"))) for r in gold.get("relations", [])}
     pred_rel = set()
+    malformed_rel = 0
     for r in prediction.get("relations", []):
-        if isinstance(r, dict) and all(isinstance(r.get(k), str) for k in ("type", "source", "target")):
+        if isinstance(r, dict) and all(isinstance(r.get(k), str) and r.get(k).strip() for k in ("type", "source", "target")):
             pred_rel.add((norm(r["type"]), norm(r["source"]), norm(r["target"])))
         else:
+            malformed_rel += 1
             malformed += 1
-    relations = score_counts(len(gold_rel & pred_rel), len(pred_rel - gold_rel), len(gold_rel - pred_rel))
+    relations = score_counts(len(gold_rel & pred_rel), len(pred_rel - gold_rel) + malformed_rel, len(gold_rel - pred_rel)))
     return {"case_id":case["case_id"],"attribute_metrics":attrs,"relation_metrics":relations,
             "evidence_supported":sum(evidence_flags),"evidence_total":len(evidence_flags),
             "evidence_support_rate":sum(evidence_flags)/len(evidence_flags) if evidence_flags else 0.0,
