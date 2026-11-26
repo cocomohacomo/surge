@@ -100,9 +100,12 @@ def summarize(report):
             "metrics_complete": complete_metrics,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
+            "evidence_spans": _aggregate(semantic, "evidence_span_metrics")
+            if semantic and metric_shape_valid and all("evidence_span_metrics" in item for item in semantic) else None,
             "unsupported_attributes": sum(item.get("unsupported_attribute_count", 0) for item in semantic),
             "duplicate_attributes": sum(item.get("duplicate_attribute_count", 0) for item in semantic),
             "duplicate_relations": sum(item.get("duplicate_relation_count", 0) for item in semantic),
+            "duplicate_evidence_spans": sum(item.get("duplicate_evidence_span_count", 0) for item in semantic),
             "malformed": sum(item.get("malformed_count", 0) for item in semantic),
             "execution_gate": "PASS" if execution_pass else "FAIL",
         })
