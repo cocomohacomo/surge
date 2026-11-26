@@ -1,0 +1,195 @@
+{
+  "schema_version": "surge-gold-corpus-v0.1",
+  "corpus_id": "ja-attribute-relation-evidence-seed",
+  "annotation": {
+    "independent_adjudication": false,
+    "annotators": 0,
+    "adjudication_status": "seed-only-not-independent",
+    "notes": "Synthetic seed examples authored for evaluator plumbing. Must be independently annotated/adjudicated before held-out qualification."
+  },
+  "profile": {
+    "attribute_f1_min": 0.8,
+    "relation_f1_min": 0.8,
+    "evidence_support_min": 0.95
+  },
+  "cases": [
+    {
+      "case_id": "ack-context-01",
+      "split": "seed",
+      "categories": [
+        "ambiguity"
+      ],
+      "context": "会議で「明日までに資料を提出できますか」と依頼された。",
+      "text": "うん。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "response_intent",
+            "value": "ambiguous_acknowledgement",
+            "polarity": "uncertain",
+            "category": "ambiguity"
+          }
+        ],
+        "relations": []
+      }
+    },
+    {
+      "case_id": "negation-01",
+      "split": "seed",
+      "categories": [
+        "negation"
+      ],
+      "context": "対象事業について参加予定を確認している。",
+      "text": "私は参加しません。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "participation",
+            "value": "参加",
+            "polarity": "negative",
+            "category": "negation"
+          }
+        ],
+        "relations": []
+      }
+    },
+    {
+      "case_id": "contradiction-01",
+      "split": "seed",
+      "categories": [
+        "contradiction"
+      ],
+      "context": "前の発言: 会議は火曜日に開催する。",
+      "text": "会議は水曜日に変更します。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "meeting_day",
+            "value": "水曜日",
+            "polarity": "positive",
+            "category": "contradiction"
+          }
+        ],
+        "relations": [
+          {
+            "type": "supersedes",
+            "source": "meeting_day:水曜日",
+            "target": "meeting_day:火曜日"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "temporal-01",
+      "split": "seed",
+      "categories": [
+        "temporal_update"
+      ],
+      "context": "現行規則の期限は2026年3月31日。",
+      "text": "改正後は2027年4月1日から適用します。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "effective_date",
+            "value": "2027年4月1日",
+            "polarity": "positive",
+            "category": "temporal_update"
+          }
+        ],
+        "relations": [
+          {
+            "type": "supersedes",
+            "source": "effective_date:2027年4月1日",
+            "target": "effective_date:2026年3月31日"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "evidence-unsupported-01",
+      "split": "seed",
+      "categories": [
+        "unsupported_evidence"
+      ],
+      "context": "資料には予算額の記載がない。",
+      "text": "予算額はまだ決まっていません。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "budget",
+            "value": "undetermined",
+            "polarity": "uncertain",
+            "category": "unsupported_evidence"
+          }
+        ],
+        "relations": []
+      }
+    },
+    {
+      "case_id": "ambiguous-01",
+      "split": "seed",
+      "categories": [
+        "ambiguity"
+      ],
+      "context": "A案とB案の両方について検討している。",
+      "text": "それで進めましょう。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "decision_target",
+            "value": "unresolved",
+            "polarity": "uncertain",
+            "category": "ambiguity"
+          }
+        ],
+        "relations": []
+      }
+    },
+    {
+      "case_id": "relation-01",
+      "split": "seed",
+      "categories": [
+        "relation"
+      ],
+      "context": "A地区の工事費は120万円。",
+      "text": "この費用は補助対象外です。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "subsidy_eligibility",
+            "value": "excluded",
+            "polarity": "negative",
+            "category": "relation"
+          }
+        ],
+        "relations": [
+          {
+            "type": "refers_to",
+            "source": "subsidy_eligibility",
+            "target": "construction_cost:A地区:120万円"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "topic-shift-01",
+      "split": "seed",
+      "categories": [
+        "topic_shift"
+      ],
+      "context": "先ほどは会議日程を話していた。",
+      "text": "ところで端末の購入予算は10万円です。",
+      "gold": {
+        "attributes": [
+          {
+            "key": "device_budget",
+            "value": "10万円",
+            "polarity": "positive",
+            "category": "topic_shift"
+          }
+        ],
+        "relations": []
+      }
+    }
+  ]
+}
