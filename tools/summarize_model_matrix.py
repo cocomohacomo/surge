@@ -88,7 +88,10 @@ def summarize(report):
             _valid_metric(item.get(key))
             for item in semantic for key in ("attribute_metrics", "relation_metrics")
         ) and all(
-            isinstance(item.get("categories"), dict)
+            _valid_metric(item.get("evidence_span_metrics"))
+            and _valid_metric(item.get("attribute_evidence_span_metrics"))
+            and _valid_metric(item.get("relation_evidence_span_metrics"))
+            and isinstance(item.get("categories"), dict)
             and all(_valid_metric(metric) for metric in item["categories"].values())
             and isinstance(item.get("phenomenon_metrics"), dict)
             and all(_valid_metric(metric) for metric in item["phenomenon_metrics"].values())
