@@ -672,6 +672,10 @@ bool ContextGraph::replay_event(State& s,const JournalEvent& e,std::string& erro
  error="JOURNAL_EVENT_KIND_UNKNOWN";return false;
 }
 bool ContextGraph::replay(){
+ if (replay_gate_for_testing_ && !replay_gate_for_testing_()) {
+  last_error_ = "GRAPH_REPLAY_INJECTED_FAILURE";
+  return false;
+ }
  State rebuilt;idempotency_.clear();std::string key;std::uint64_t version=0;bool have_meta=false;
  bool semantic_packet_waiting_for_delta=false;
  for(const auto& e:journal_->committed_events()){

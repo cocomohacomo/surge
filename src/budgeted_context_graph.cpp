@@ -480,7 +480,9 @@ DeltaResult BudgetedContextGraph::apply_with_external_commit(
   auto result = commit(prepared);
   if (!result.committed || result.duplicate) return result;
   if (!graph_.open())
-    return {false, false, graph_.state_version(), "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED"};
+    // The external callback already committed the Journal transaction.
+    // Preserve that durable fact and report the projection lag separately.
+    return {true, false, graph_.state_version(), "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED"};
 
   if (resident) resident_leases_.push_back(std::move(resident));
   if (external_resident)

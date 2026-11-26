@@ -6,8 +6,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <utility>
+#include <type_traits>
+#include <functional>
 
 namespace surge {
 enum class NodeKind { Cluster, ChaosCluster, Entity, Evidence, Claim, Question, QuestionAspect, Dependency, Interest, ClusterLifecycle };
@@ -223,6 +226,8 @@ class ContextGraph {
   explicit ContextGraph(std::string journal_path);
   explicit ContextGraph(EventJournal& shared_journal);
   bool open();
+  using ReplayGate = std::function<bool()>;
+  void set_replay_gate_for_testing(ReplayGate gate) { replay_gate_for_testing_ = std::move(gate); }
   DeltaResult apply(const SemanticDelta& delta);
   // Core-owned classification: persist a member beneath a deterministic typed
   // child cluster, creating the cluster and parent edge in the same delta.
@@ -319,6 +324,150 @@ class ContextGraph {
       const ClusterLifecycleRecord& record, const std::string& lifecycle_node_id,
       const std::string& relation_id, std::string& error) const;
   std::optional<ClusterLifecycleRecord> cluster_lifecycle(const std::string& cluster_id) const;
+  // Canonical digest of Node and Relation records only. Other persisted
+  // projection domains are intentionally excluded from this digest version.
+  // ordered maps provide deterministic traversal; length-prefixing prevents
+  // ambiguous concatenations and hexfloat preserves exact binary weights.
+  std::string node_relation_digest() const {
+    std::ostringstream canonical;
+    auto field = [&](const std::string& value) {
+      canonical << value.size() << ':' << value << ';';
+    };
+    canonical << "SURGE_NODE_RELATION_DIGEST_V1;";
+    canonical << "NODES;" << state_.nodes.size() << ';';
+    for (const auto& entry : state_.nodes) {
+      const auto& node = entry.second;
+      field(node.id);
+      canonical << static_cast<unsigned int>(node.kind) << ';';
+      field(node.content);
+      canonical << node.references.size() << ';';
+      for (const auto& reference : node.references) field(reference);
+    }
+    canonical << "RELATIONS;" << state_.relations.size() << ';';
+    for (const auto& entry : state_.relations) {
+      const auto& relation = entry.second;
+      field(relation.id);
+      canonical << static_cast<unsigned int>(relation.kind) << ';';
+      field(relation.from);
+      field(relation.to);
+      canonical << std::hexfloat << relation.weight << std::defaultfloat << ';';
+    }
+    return sha256_hex(canonical.str());
+  }
+
+  // Canonical digest of every persisted ContextGraph state domain.
+  std::string full_state_digest() const {
+    std::ostringstream out;
+    auto str = [&](const std::string& v) { out << v.size() << ':' << v << ';'; };
+    auto num = [&](std::uint64_t v) { out << v << ';'; };
+    auto real = [&](double v) { out << std::hexfloat << v << std::defaultfloat << ';'; };
+    auto vector_strings = [&](const std::vector<std::string>& values) {
+      num(values.size()); for (const auto& v : values) str(v);
+    };
+    out << "SURGE_CONTEXT_GRAPH_STATE_V1;";
+    num(state_.nodes.size());
+    for (const auto& item : state_.nodes) {
+      const auto& n = item.second; str(n.id); num(static_cast<unsigned>(n.kind));
+      str(n.content); vector_strings(n.references);
+    }
+    num(state_.relations.size());
+    for (const auto& item : state_.relations) {
+      const auto& r = item.second; str(r.id); num(static_cast<unsigned>(r.kind));
+      str(r.from); str(r.to); real(r.weight);
+    }
+    num(state_.scope_spans.size());
+    for (const auto& item : state_.scope_spans) {
+      str(item.first); const auto& r = item.second;
+      const auto& p = r.proposal; str(p.span_id); num(static_cast<unsigned>(p.kind));
+      str(p.source_digest); str(p.offset_basis);
+      auto anchor = [&](const ScopeAnchor& a) {
+        str(a.anchor_id); str(a.source_digest); str(a.offset_basis);
+        num(a.start_offset); num(a.end_offset); str(a.exact_text); str(a.packet_ref);
+      };
+      anchor(p.opener); out << (p.closer ? 1 : 0) << ';'; if (p.closer) anchor(*p.closer);
+      vector_strings(p.target_refs); vector_strings(p.antecedent_refs);
+      str(p.attribution_ref); str(p.modality_kind); str(p.temporal_role); str(p.parent_ref);
+      vector_strings(p.packet_refs); num(static_cast<unsigned>(r.status));
+      num(static_cast<unsigned>(r.effect)); out << r.may_emit_unconditional_claim << ';';
+    }
+    out << (state_.focus ? 1 : 0) << ';';
+    if (state_.focus) { str(state_.focus->cluster_id); str(state_.focus->interest_id); out << state_.focus->chaos_cluster << ';'; }
+    num(state_.focus_history.size());
+    for (const auto& f : state_.focus_history) { str(f.cluster_id); str(f.interest_id); out << f.chaos_cluster << ';'; }
+    out << (state_.focus_region ? 1 : 0) << ';';
+    auto spatial = [&](const SpatialVector3& p) { real(p.x); real(p.y); real(p.z); };
+    if (state_.focus_region) { spatial(state_.focus_region->center); spatial(state_.focus_region->half_extents); }
+    num(state_.cluster_positions.size());
+    for (const auto& item : state_.cluster_positions) { str(item.first); spatial(item.second); }
+    num(state_.cluster_focus_depths.size());
+    for (const auto& item : state_.cluster_focus_depths) { str(item.first); num(item.second); }
+    num(state_.question_aspect_statuses.size());
+    for (const auto& item : state_.question_aspect_statuses) { str(item.first); num(static_cast<unsigned>(item.second)); }
+    num(state_.question_memory_states.size());
+    for (const auto& item : state_.question_memory_states) { str(item.first); num(static_cast<unsigned>(item.second)); }
+    num(state_.question_reference_counts.size());
+    for (const auto& item : state_.question_reference_counts) { str(item.first); num(item.second); }
+    num(state_.claim_statuses.size());
+    for (const auto& item : state_.claim_statuses) { str(item.first); num(static_cast<unsigned>(item.second)); }
+    auto validity = [&](const auto& map) {
+      num(map.size());
+      for (const auto& item : map) {
+        str(item.first); num(item.second.size());
+        for (const auto& record : item.second) {
+          const auto& v = record.validity;
+          if constexpr (std::is_same_v<std::decay_t<decltype(v)>, ClaimValidity>) str(v.claim_id);
+          else str(v.evidence_id);
+          str(v.valid_from); str(v.valid_until); str(v.basis_evidence_id);
+          num(v.revision); str(v.review_evidence_id); str(v.reviewer_id);
+          num(record.recorded_state_version);
+        }
+      }
+    };
+    validity(state_.claim_validity_history); validity(state_.evidence_validity_history);
+    num(state_.dependency_evaluations.size());
+    for (const auto& item : state_.dependency_evaluations) {
+      const auto& d = item.second; str(item.first); str(d.delta_id);
+      num(d.triggered.size()); for (const auto& t : d.triggered) { str(t.dependency_id); str(t.prerequisite_id); str(t.dependent_id); }
+      vector_strings(d.impacted_nodes); vector_strings(d.rejected_dependencies);
+    }
+    num(state_.reassessment_history.size());
+    for (const auto& item : state_.reassessment_history) {
+      str(item.first); num(item.second.size());
+      for (const auto& r : item.second) {
+        str(r.trace_id); str(r.claim_id); str(r.reference_at); str(r.decision);
+        str(r.claim_valid_from); str(r.claim_valid_until); str(r.claim_validity_basis_evidence_id);
+        str(r.reason_code); num(r.claim_validity_revision); num(r.claim_validity_recorded_state_version);
+        num(r.evaluated_state_version); num(r.recorded_state_version); num(r.sequence);
+        num(static_cast<unsigned>(r.lifecycle)); num(static_cast<unsigned>(r.claim_temporal_state));
+        num(r.evidence.size());
+        for (const auto& e : r.evidence) {
+          str(e.evidence_id); str(e.relation_id); num(static_cast<unsigned>(e.relation));
+          num(e.validity_revision); num(e.validity_recorded_state_version);
+          str(e.valid_from); str(e.valid_until); str(e.basis_evidence_id);
+          num(static_cast<unsigned>(e.temporal_state)); out << e.eligible << ';';
+        }
+        vector_strings(r.active_support_ids); vector_strings(r.active_contradiction_ids);
+        str(r.previous_hash); str(r.snapshot_digest); str(r.chain_hash);
+      }
+    }
+    return sha256_hex(out.str());
+  }
+
+  // Rebuild an independent graph instance from the committed Journal and
+  // return its complete persisted-state digest for projection comparison.
+  bool journal_expected_full_state_digest(std::string& digest, std::string& error) const {
+    if (!journal_) { error = "GRAPH_JOURNAL_UNAVAILABLE"; return false; }
+    if (journal_->checkpoint_info().compacted) {
+      error = "GRAPH_AUDIT_SNAPSHOT_BASELINE_REQUIRED";
+      return false;
+    }
+    ContextGraph expected(*journal_);
+    if (!expected.open()) { error = "GRAPH_JOURNAL_EXPECTED_REPLAY_FAILED"; return false; }
+    digest = expected.full_state_digest();
+    error.clear();
+    return true;
+  }
+
   const std::map<std::string, GraphNode>& nodes() const { return state_.nodes; }
   const std::map<std::string, GraphRelation>& relations() const { return state_.relations; }
   // Counts active Cluster/ChaosCluster Contains references to a canonical member.
@@ -434,5 +583,6 @@ class ContextGraph {
   mutable std::map<std::string, std::vector<std::string>> spatial_outgoing_relation_ids_;
   std::map<std::string, std::string> idempotency_;
   std::string last_error_;
+  ReplayGate replay_gate_for_testing_;
 };
 }  // namespace surge

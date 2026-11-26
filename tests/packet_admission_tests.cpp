@@ -2,8 +2,18 @@
 #include "surge/packet_admission.hpp"
 #include "surge/context_graph.hpp"
 #include "surge/sha256.hpp"
+#include "surge/journal_replay_audit.hpp"
 #include <filesystem>
 #include <iostream>
+#include <cstdlib>
+#include <string>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 using namespace surge;
 static ValidatedRecognitionPacket packet(const std::string& id,const std::string& idem,
                                          std::uint64_t seq,const std::string& source) {
@@ -16,7 +26,23 @@ static ValidatedRecognitionPacket packet(const std::string& id,const std::string
   p.canonical_request_digest="canonical-"+id;
   return p;
 }
-int main() {
+int main(int argc, char** argv) {
+  if (argc == 3 && std::string(argv[1]) == "--commit-and-crash") {
+    EventJournal journal(argv[2]); if (!journal.open()) return 2;
+    ContextGraph graph(journal); if (!graph.open()) return 3;
+    PacketAdmissionCoordinator coordinator(journal); if (!coordinator.recover()) return 4;
+    SemanticDelta delta; delta.delta_id="crash-delta";
+    delta.idempotency_key="crash-delta-idem"; delta.expected_state_version=0;
+    delta.nodes={{{"crash-cluster",NodeKind::Cluster,"durable-before-crash",{}}}};
+    std::vector<JournalEvent> semantic; std::string error;
+    if (!graph.prepare_events(delta,semantic,error)) return 5;
+    const auto admitted=coordinator.admit(
+        packet("crash-packet","crash-packet-idem",1,"abc"),"abc",semantic);
+    if (!admitted.admitted || admitted.commit_state!=AdmissionCommitState::Committed) return 6;
+    // Simulate abrupt process termination after the durable Journal commit,
+    // before ContextGraph receives/replays the committed transaction.
+    std::_Exit(0);
+  }
   CHECK(sha256_hex("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   CHECK(sha256_hex("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   CHECK(is_valid_utf8("日本語"));
@@ -43,14 +69,20 @@ int main() {
     CHECK(coordinator.admit(changed,"abd").error=="RANGE_CONTENT_CONFLICT");
     auto tampered=packet("p5","i5",6,"abc"); tampered.block_ref="b5";
     tampered.source_range_digest=std::string(64,'e');
-    CHECK(coordinator.admit(tampered,"abc").error=="SOURCE_RANGE_DIGEST_MISMATCH");
+    const auto bad_range=coordinator.admit(tampered,"abc");
+    CHECK(bad_range.error=="SOURCE_RANGE_DIGEST_MISMATCH");
+    CHECK(bad_range.failure_stage=="SOURCE_VALIDATION");
+    CHECK(bad_range.failure_code=="SOURCE_RANGE_DIGEST_MISMATCH");
     auto wrong_snapshot=packet("p5b","i5b",6,"abc"); wrong_snapshot.block_ref="b5b";
     CHECK(coordinator.admit(wrong_snapshot,"abd").error=="SOURCE_SNAPSHOT_DIGEST_MISMATCH");
     auto bad_utf8=packet("p5c","i5c",6,"abc"); bad_utf8.block_ref="b5c";
     CHECK(coordinator.admit(bad_utf8,std::string(1, static_cast<char>(0xff))).error=="SOURCE_SNAPSHOT_INVALID_UTF8");
     auto collision=packet("p1","i-new",7,"abc"); collision.block_ref="b6";
     collision.canonical_request_digest="changed-canonical-request";
-    CHECK(coordinator.admit(collision,"abc").error=="PACKET_ID_REUSED");
+    const auto reused=coordinator.admit(collision,"abc");
+    CHECK(reused.error=="PACKET_ID_REUSED");
+    CHECK(reused.failure_stage=="IDENTITY_VALIDATION");
+    CHECK(reused.failure_code=="PACKET_ID_REUSED");
     // A caller-controlled digest must not make a different envelope look identical.
     auto forged_digest=packet("p1","i-forged",7,"abc"); forged_digest.block_ref="b7";
     forged_digest.canonical_request_digest="canonical-p1";
@@ -74,12 +106,15 @@ int main() {
     CHECK(coordinator.admit(original,"abc").admitted);
     auto wrong=packet("wrong-parent","rev-i2",2,"abd"); wrong.block_ref="revision-block";
     wrong.revision=true; wrong.revision_sequence=1; wrong.revision_of_packet_id="not-original";
-    CHECK(coordinator.admit(wrong,"abd").error=="REVISION_TARGET_MISMATCH");
+    const auto wrong_revision=coordinator.admit(wrong,"abd");
+    CHECK(wrong_revision.error=="REVISION_TARGET_MISMATCH");
+    CHECK(wrong_revision.failure_stage=="PACKET_SEQUENCE_VALIDATION");
+    CHECK(wrong_revision.failure_code=="REVISION_TARGET_MISMATCH");
     auto revision=packet("revision-1","rev-i3",2,"abd"); revision.block_ref="revision-block";
     revision.revision=true; revision.revision_sequence=1; revision.revision_of_packet_id="original";
     CHECK(coordinator.admit(revision,"abd").admitted);
-    auto far=packet("too-far","rev-i4",5000,"abc"); far.block_ref="far-block";
-    CHECK(coordinator.admit(far,"abc").error=="SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
+    auto far_packet=packet("too-far","rev-i4",5000,"abc"); far_packet.block_ref="far-block";
+    CHECK(coordinator.admit(far_packet,"abc").error=="SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
     CHECK(coordinator.packet_count()==2);
   }
   {
@@ -160,6 +195,106 @@ int main() {
       next.global_end_offset=12;
       CHECK(recovered.admit(next,"abc").admitted);
     }
+  }
+
+  {
+    const auto fault_path=(root/"append-fault.sgj").string();
+    EventJournal failing(fault_path, [](std::size_t frame_index) {
+      return frame_index != 0;  // fail before BEGIN frame reaches the Journal
+    });
+    CHECK(failing.open());
+    PacketAdmissionCoordinator coordinator(failing); CHECK(coordinator.recover());
+    const auto rejected=coordinator.admit(packet("fault-p1","fault-i1",1,"abc"),"abc");
+    CHECK(!rejected.admitted);
+    CHECK(rejected.commit_state==AdmissionCommitState::NotCommitted);
+    CHECK(rejected.failure_stage=="JOURNAL_COMMIT");
+    CHECK(rejected.failure_code=="JOURNAL_INJECTED_APPEND_FAILURE");
+    CHECK(failing.state_version()==0);
+  }
+  {
+    const auto restart_path=(root/"commit-before-projection-restart.sgj").string();
+    std::string committed_digest;
+    {
+      EventJournal journal(restart_path); CHECK(journal.open());
+      ContextGraph graph(journal); CHECK(graph.open());
+      PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
+      SemanticDelta delta; delta.delta_id="restart-delta";
+      delta.idempotency_key="restart-delta-idem"; delta.expected_state_version=0;
+      delta.nodes={{{"restart-cluster",NodeKind::Cluster,"recovered",{}}}};
+      std::vector<JournalEvent> semantic; std::string error;
+      CHECK(graph.prepare_events(delta,semantic,error));
+      const auto admitted=coordinator.admit(
+          packet("restart-packet","restart-packet-idem",1,"abc"),"abc",semantic);
+      CHECK(admitted.admitted && admitted.commit_state==AdmissionCommitState::Committed);
+      // Deliberately leave the live Graph projection unapplied before restart.
+      CHECK(graph.nodes().empty());
+      CHECK(journal.state_version()==1);
+    }
+    {
+      EventJournal journal(restart_path); CHECK(journal.open());
+      {
+        ContextGraph failed_replay(journal);
+        failed_replay.set_replay_gate_for_testing([] { return false; });
+        CHECK(!failed_replay.open());
+      }
+      // A fresh process-equivalent Graph instance must recover the durable
+      // transaction after the injected transient projection replay failure.
+      ContextGraph graph(journal); CHECK(graph.open());
+      PacketAdmissionCoordinator coordinator(journal); CHECK(coordinator.recover());
+      CHECK(coordinator.packet_count()==1);
+      CHECK(graph.nodes().count("restart-cluster")==1);
+      const auto duplicate=coordinator.admit(
+          packet("restart-packet","restart-packet-idem",1,"abc"),"abc");
+      CHECK(duplicate.admitted && duplicate.duplicate);
+      CHECK(journal.state_version()==1 && coordinator.packet_count()==1);
+      const auto digest=graph.full_state_digest();
+      std::string expected,error;
+      CHECK(graph.journal_expected_full_state_digest(expected,error));
+      CHECK(digest==expected);
+      const auto audit=audit_journal_replay(
+          journal,coordinator,graph,graph.node_relation_digest());
+      CHECK(audit.ok);
+      CHECK(audit.journal_packet_count==1);
+      CHECK(audit.coordinator_packet_count==1);
+      CHECK(audit.semantic_packet_count==1);
+    }
+  }
+
+  {
+    const auto crash_path=(root/"actual-process-crash.sgj").string();
+    const auto executable=std::filesystem::absolute(argv[0]).string();
+#ifdef _WIN32
+    STARTUPINFOA startup{}; startup.cb=sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::string command="\"" + executable + "\" --commit-and-crash \"" + crash_path + "\"";
+    std::vector<char> buffer(command.begin(),command.end()); buffer.push_back('\\0');
+    CHECK(CreateProcessA(nullptr,buffer.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,
+        nullptr,nullptr,&startup,&process)!=0);
+    CHECK(WaitForSingleObject(process.hProcess,10000)==WAIT_OBJECT_0);
+    DWORD exit_code=1; CHECK(GetExitCodeProcess(process.hProcess,&exit_code)!=0);
+    CHECK(exit_code==0);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+#else
+    const pid_t child=fork(); CHECK(child>=0);
+    if(child==0) {
+      execl(executable.c_str(),executable.c_str(),"--commit-and-crash",
+          crash_path.c_str(),static_cast<char*>(nullptr));
+      _exit(127);
+    }
+    int status=0; CHECK(waitpid(child,&status,0)==child);
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status)==0);
+#endif
+    EventJournal recovered_journal(crash_path); CHECK(recovered_journal.open());
+    ContextGraph recovered_graph(recovered_journal); CHECK(recovered_graph.open());
+    PacketAdmissionCoordinator recovered_packets(recovered_journal);
+    CHECK(recovered_packets.recover());
+    CHECK(recovered_journal.state_version()==1);
+    CHECK(recovered_packets.packet_count()==1);
+    CHECK(recovered_graph.nodes().count("crash-cluster")==1);
+    const auto retry=recovered_packets.admit(
+        packet("crash-packet","crash-packet-idem",1,"abc"),"abc");
+    CHECK(retry.admitted && retry.duplicate);
+    CHECK(recovered_packets.packet_count()==1 && recovered_journal.state_version()==1);
   }
   std::filesystem::remove_all(root);
   std::cout<<"SURGE PacketAdmission + SHA-256 tests passed\\n";

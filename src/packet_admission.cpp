@@ -149,23 +149,86 @@ bool PacketAdmissionCoordinator::apply_recovered(
 }
 
 bool PacketAdmissionCoordinator::recover() {
+  recovery_failure_stage_.clear();
+  recovery_failure_code_.clear();
+  auto fail_recovery = [&](const std::string& code) {
+    recovered_ = false;
+    recovery_failure_stage_ = "JOURNAL_RECOVERY";
+    recovery_failure_code_ = code;
+    return false;
+  };
   streams_.clear();
   document_streams_.clear();
   packet_digests_.clear();
   packet_encodings_.clear();
   idempotency_packets_.clear();
-  if (journal_.state_version() == 0 && journal_.committed_events().empty()) {
+  const auto events = journal_.committed_events();
+  if (journal_.state_version() == 0 && events.empty()) {
     recovered_ = true;
     return true;
   }
-  for (const auto& event : journal_.committed_events()) {
-    if (event.kind != "RECOGNITION_PACKET_ADMITTED" && event.kind != "SEMANTIC_PACKET_ADMITTED") continue;
+
+  std::uint64_t expected_version = journal_.checkpoint_info().base_state_version;
+  std::size_t index = 0;
+  while (index < events.size()) {
+    const auto version = events[index].state_version;
+    if (version == 0 || expected_version == std::numeric_limits<std::uint64_t>::max() ||
+        version != expected_version + 1) {
+      return fail_recovery("RECOVERY_EVENT_VERSION_INVALID");
+    }
+    expected_version = version;
+    const auto begin = index;
+    while (index < events.size() && events[index].state_version == version)
+      ++index;
+
+    std::size_t packet_index = index;
+    std::size_t packet_count = 0;
+    for (std::size_t i = begin; i < index; ++i) {
+      if (events[i].kind == "RECOGNITION_PACKET_ADMITTED" ||
+          events[i].kind == "SEMANTIC_PACKET_ADMITTED") {
+        packet_index = i;
+        ++packet_count;
+      }
+    }
+    if (packet_count > 1) {
+      return fail_recovery("RECOVERY_MULTIPLE_PACKET_ADMISSIONS");
+    }
+    if (packet_count == 0) continue;
+    if (packet_index != begin) {
+      return fail_recovery("RECOVERY_PACKET_ADMISSION_NOT_FIRST");
+    }
+
+    std::size_t delta_meta_count = 0;
+    std::size_t delta_meta_index = index;
+    for (std::size_t i = begin; i < index; ++i) {
+      if (events[i].kind == "DELTA_META") {
+        ++delta_meta_count;
+        delta_meta_index = i;
+      }
+    }
+
+    const auto& packet_event = events[packet_index];
+    if (packet_event.kind == "SEMANTIC_PACKET_ADMITTED") {
+      // Packet and semantic events are one Journal transaction. Recovery
+      // rejects a truncated or reordered semantic sequence rather than
+      // admitting the packet while silently losing its projection.
+      if (delta_meta_count != 1 || delta_meta_index != packet_index + 1 ||
+          packet_index + 2 >= index ||
+          events[packet_index + 1].state_version != version ||
+          events[packet_index + 2].state_version != version) {
+        return fail_recovery("RECOVERY_SEMANTIC_EVENT_SEQUENCE_INCOMPLETE");
+      }
+    } else if (delta_meta_count != 0) {
+      return fail_recovery("RECOVERY_UNEXPECTED_SEMANTIC_EVENTS");
+    }
+
     ValidatedRecognitionPacket packet;
-    if (!decode(event.payload, packet) || !apply_recovered(packet)) {
-      recovered_ = false;
-      return false;
+    if (!decode(packet_event.payload, packet) || !apply_recovered(packet)) {
+      return fail_recovery("RECOVERY_PACKET_DECODE_OR_STATE_INVALID");
     }
   }
+  if (expected_version != journal_.state_version())
+    return fail_recovery("RECOVERY_JOURNAL_STATE_VERSION_MISMATCH");
   recovered_ = true;
   return true;
 }
@@ -175,6 +238,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
     const std::string& normalized_source_snapshot,
     const std::vector<JournalEvent>& semantic_events) {
   PacketAdmissionResult result;
+  PacketAdmissionFailureFinalizer failure_finalizer{result};
   result.state_version = journal_.state_version();
   if (!recovered_) { result.error = "PACKET_COORDINATOR_NOT_RECOVERED"; return result; }
    if (p.packet_id.empty() || p.idempotency_key.empty() || p.context_id.empty() ||
@@ -218,6 +282,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
         encoded == packet_encodings_.end() || encoded->second != encode(p)) {
       result.error = "PACKET_ID_REUSED"; return result;
     }
+    result.commit_state = AdmissionCommitState::Committed;
     result.admitted = true;
     result.duplicate = true;
     result.packet_status = "DUPLICATE";
@@ -327,6 +392,8 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   transaction_events.insert(transaction_events.end(), semantic_events.begin(), semantic_events.end());
   const auto committed = journal_.commit(tx, p.idempotency_key, expected, transaction_events);
   if (!committed.committed) {
+    if (committed.error == "JOURNAL_COMMIT_OUTCOME_UNKNOWN")
+      result.commit_state = AdmissionCommitState::CommitOutcomeUnknown;
     result.error = committed.error;
     result.state_version = committed.state_version;
     return result;
@@ -342,6 +409,7 @@ PacketAdmissionResult PacketAdmissionCoordinator::admit(
   packet_digests_[p.packet_id] = p.canonical_request_digest;
   packet_encodings_[p.packet_id] = encode(p);
   idempotency_packets_[p.idempotency_key] = p.packet_id;
+  result.commit_state = AdmissionCommitState::Committed;
   result.admitted = true;
   result.state_version = committed.state_version;
   result.watermark = streams_.at(skey).sequencer.watermark();

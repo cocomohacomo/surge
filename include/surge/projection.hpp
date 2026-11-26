@@ -195,6 +195,7 @@ inline PacketAdmissionResult apply_projection_batch(
     const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult packet_result;
+  PacketAdmissionFailureFinalizer failure_finalizer{packet_result};
   packet_result.state_version = graph.state_version();
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
@@ -231,6 +232,12 @@ inline PacketAdmissionResult apply_projection_batch(
       }, packet_resident_bytes, 1, packet_staging_bytes);
   if (!budgeted.committed && packet_result.error.empty())
     packet_result.error = budgeted.error;
+  if (budgeted.committed &&
+      budgeted.error == "EXTERNAL_COMMIT_GRAPH_REPLAY_FAILED" &&
+      packet_result.commit_state == AdmissionCommitState::Committed) {
+    packet_result.commit_state = AdmissionCommitState::CommittedProjectionPending;
+    packet_result.error = "PROJECTION_REPLAY_PENDING_AFTER_DURABLE_COMMIT";
+  }
   if (budgeted.committed && !budgeted.duplicate && !packet_result.admitted) {
     packet_result.error = "PROJECTION_COMMIT_STATE_INCONSISTENT";
     packet_result.admitted = false;
@@ -248,6 +255,7 @@ struct ProjectionStreamResult {
   bool complete{false};
   std::size_t committed_packets{0};
   std::size_t duplicate_packets{0};
+  std::size_t projection_pending_packets{0};
   std::size_t next_index{0};
   std::uint64_t state_version{0};
   std::string error;
@@ -272,6 +280,8 @@ inline ProjectionStreamResult apply_projection_stream(
     }
     ++result.committed_packets;
     if (committed.duplicate) ++result.duplicate_packets;
+    if (committed.commit_state == AdmissionCommitState::CommittedProjectionPending)
+      ++result.projection_pending_packets;
     result.next_index = i + 1;
     result.state_version = committed.state_version;
   }
@@ -289,6 +299,7 @@ inline PacketAdmissionResult apply_projection_batch(
     const ProjectionBatch& batch, const ValidatedRecognitionPacket& packet,
     const std::string& normalized_source_snapshot) {
   PacketAdmissionResult rejected;
+  PacketAdmissionFailureFinalizer failure_finalizer{rejected};
   rejected.state_version = graph.state_version();
   const auto validation = validate_projection_batch(batch);
   if (!validation.valid) {
@@ -317,10 +328,13 @@ inline PacketAdmissionResult apply_projection_batch(
     return rejected;
   }
   auto admitted = packets.admit(packet, normalized_source_snapshot, semantic_events);
-  if (admitted.admitted && !graph.open()) {
-    admitted.admitted = false;
-    admitted.error = "PROJECTION_COMMIT_SUCCEEDED_GRAPH_REPLAY_FAILED";
+  if (admitted.commit_state == AdmissionCommitState::Committed && !graph.open()) {
+    // The Journal commit is durable and cannot be rolled back by a failed
+    // in-memory replay. Keep admitted=true and expose the projection lag.
+    admitted.commit_state = AdmissionCommitState::CommittedProjectionPending;
+    admitted.error = "PROJECTION_REPLAY_PENDING_AFTER_DURABLE_COMMIT";
   }
+  classify_packet_admission_failure(admitted);
   return admitted;
 }
 
