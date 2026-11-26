@@ -34,10 +34,10 @@ jobs:
           corpus=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
           data=json.loads(corpus.read_text(encoding="utf-8"))
           profile=json.dumps(data.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
-          report={"core_integrity_gate":"PASS","commit_sha":os.environ["COMMIT_SHA"],
+          report={"core_integrity_gate":"NOT_RUN","commit_sha":os.environ["COMMIT_SHA"],
             "profile_sha256":hashlib.sha256(profile).hexdigest(),
             "corpus_sha256":hashlib.sha256(corpus.read_bytes()).hexdigest(),
-            "evidence_kind":"cpp-ctest-and-python-suite","limitations":"This report covers this workflow's CTest and Python suite; it is not a claim that every production recovery scenario is independently certified."}
+            "evidence_kind":"cpp-ctest-and-python-suite-smoke-only","limitations":"This report covers this workflow's CTest and Python suite; it is not a claim that every production recovery scenario is independently certified."}
           Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
