@@ -2,6 +2,7 @@ import unittest
 import json
 from pathlib import Path
 from tools.evaluate_gold_corpus import evaluate_case, evaluate
+from tools.validate_projector_output import validate as validate_projector_output
 
 
 class GoldCorpusEvaluatorTests(unittest.TestCase):
@@ -218,6 +219,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(set(corpus["profile"]["category_recall_min"]),expected)
         self.assertFalse(corpus["annotation"]["independent_adjudication"])
         for case in corpus["cases"]:
+            self.assertEqual(validate_projector_output(case["gold"]),[])
             sources={"context":case.get("context",""),"text":case.get("text","")}
             for item in case["gold"]["attributes"]+case["gold"]["relations"]:
                 self.assertTrue(item["evidence_spans"],case["case_id"])
