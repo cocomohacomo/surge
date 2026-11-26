@@ -8,7 +8,8 @@ def valid_row(case_id="case-1"):
                 "unsupported_attribute_count": 0, "duplicate_attribute_count": 0,
                 "duplicate_relation_count": 0, "malformed_count": 0,
                 "categories": {"negation": metric},
-                "phenomenon_metrics": {"negation": metric},
+                "phenomenon_metrics": {"negation": metric, "contradiction": metric,
+                                     "temporal_supersession": metric, "ambiguity": metric},
                 "evidence_span_metrics": metric,
                 "attribute_evidence_span_metrics": metric,
                 "relation_evidence_span_metrics": metric}
