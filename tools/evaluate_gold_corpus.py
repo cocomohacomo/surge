@@ -124,6 +124,7 @@ def evaluate_case(case, pred):
                           len(ga - unique_attrs))
 
     gr = set()
+    gold_relation_spans = set()
     for item in gold_rels:
         if not isinstance(item, dict):
             raise ValueError(f"{case_id}: malformed gold relation")
@@ -131,11 +132,19 @@ def evaluate_case(case, pred):
         if not all(values):
             raise ValueError(f"{case_id}: incomplete gold relation")
         gr.add(values)
+        spans = item.get("evidence_spans", [])
+        if not isinstance(spans, list):
+            raise ValueError(f"{case_id}: gold relation evidence_spans must be an array")
+        for span in spans:
+            key = span_key(span, source_parts)
+            if key is None:
+                raise ValueError(f"{case_id}: invalid gold relation evidence span")
+            gold_relation_spans.add(key)
     raw_rels = pred.get("relations")
     if not isinstance(raw_rels, list):
         raw_rels = []
         schema_errors += 1
-    parsed_rels = []
+    parsed_rels, predicted_relation_spans = [], []
     for item in raw_rels:
         if not isinstance(item, dict) or not all(
                 isinstance(item.get(key), str) and item[key].strip()
@@ -143,6 +152,22 @@ def evaluate_case(case, pred):
             schema_errors += 1
             continue
         parsed_rels.append(tuple(norm(item[key]) for key in ("type", "source", "target")))
+        spans = item.get("evidence_spans", [])
+        if not isinstance(spans, list):
+            schema_errors += 1
+            continue
+        for span in spans:
+            key = span_key(span, source_parts)
+            if key is None:
+                schema_errors += 1
+            else:
+                predicted_relation_spans.append(key)
+    unique_relation_spans = set(predicted_relation_spans)
+    duplicate_relation_spans = len(predicted_relation_spans) - len(unique_relation_spans)
+    relation_span_metrics = counts(
+        len(gold_relation_spans & unique_relation_spans),
+        len(unique_relation_spans - gold_relation_spans) + duplicate_relation_spans,
+        len(gold_relation_spans - unique_relation_spans))
     unique_rels = set(parsed_rels)
     duplicate_rels = len(parsed_rels) - len(unique_rels)
     rel_metrics = counts(len(gr & unique_rels),
@@ -190,9 +215,10 @@ def evaluate_case(case, pred):
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
         "evidence_span_metrics": span_metrics,
-        "gold_evidence_span_count": len(gold_spans),
-        "predicted_evidence_span_count": len(predicted_spans),
-        "duplicate_evidence_span_count": duplicate_spans,
+        "relation_evidence_span_metrics": relation_span_metrics,
+        "gold_evidence_span_count": len(gold_spans) + len(gold_relation_spans),
+        "predicted_evidence_span_count": len(predicted_spans) + len(predicted_relation_spans),
+        "duplicate_evidence_span_count": duplicate_spans + duplicate_relation_spans,
         "duplicate_attribute_count": duplicate_attrs,
         "duplicate_relation_count": duplicate_rels,
         "malformed_count": schema_errors,
@@ -273,6 +299,10 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         sum(row["evidence_span_metrics"]["fp"] for row in results),
         sum(row["evidence_span_metrics"]["fn"] for row in results))
     span_gold_total = sum(row["gold_evidence_span_count"] for row in results)
+    relation_span_metrics = counts(
+        sum(row["relation_evidence_span_metrics"]["tp"] for row in results),
+        sum(row["relation_evidence_span_metrics"]["fp"] for row in results),
+        sum(row["relation_evidence_span_metrics"]["fn"] for row in results))
     predicted_relations = sum(row["relation_metrics"]["tp"] + row["relation_metrics"]["fp"]
                               for row in results)
     relation_fp = sum(row["relation_metrics"]["fp"] for row in results)
@@ -328,6 +358,7 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         "macro_f1": macro_f1, "schema_valid_rate": schema_valid_rate,
         "evidence_support_rate": evidence_rate,
         "evidence_span_metrics": span_metrics,
+        "relation_evidence_span_metrics": relation_span_metrics,
         "gold_evidence_span_count": span_gold_total,
         "predicted_evidence_span_count": sum(row["predicted_evidence_span_count"] for row in results),
         "duplicate_evidence_span_count": sum(row["duplicate_evidence_span_count"] for row in results),
