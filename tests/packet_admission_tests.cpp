@@ -113,8 +113,8 @@ int main(int argc, char** argv) {
     auto revision=packet("revision-1","rev-i3",2,"abd"); revision.block_ref="revision-block";
     revision.revision=true; revision.revision_sequence=1; revision.revision_of_packet_id="original";
     CHECK(coordinator.admit(revision,"abd").admitted);
-    auto far=packet("too-far","rev-i4",5000,"abc"); far.block_ref="far-block";
-    CHECK(coordinator.admit(far,"abc").error=="SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
+    auto far_packet=packet("too-far","rev-i4",5000,"abc"); far_packet.block_ref="far-block";
+    CHECK(coordinator.admit(far_packet,"abc").error=="SOURCE_SEQUENCE_GAP_EXCEEDS_LIMIT");
     CHECK(coordinator.packet_count()==2);
   }
   {
