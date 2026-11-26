@@ -43,7 +43,7 @@ def evaluate_case(case,pred):
   # Gold category positives vs all predicted attributes assigned to this category.
   assigned={ (norm(x.get("key",x.get("attribute",""))),norm(x.get("value",x.get("text",""))),norm(x.get("polarity","positive"))) for x in raw if isinstance(x,dict) and x.get("category")==cat and norm(x.get("key",x.get("attribute",""))) and norm(x.get("value",x.get("text",""))) }
   cats[cat]=counts(len(cga&assigned),len(assigned-cga)+sum(1 for x in raw if isinstance(x,dict) and x.get("category")==cat and not norm(x.get("key",x.get("attribute","")))),len(cga-assigned))
- return {"case_id":case["case_id"],"attribute":am,"relation":rm,"categories":cats,
+ return {"case_id":case["case_id"],"attribute":am,"relation":rm,"attribute_metrics":am,"relation_metrics":rm,"categories":cats,
  "duplicate_attribute_count":duplicate_count,"duplicate_relation_count":rel_dups,
  "malformed_count":malformed+rel_malformed,"unsupported_attribute_count":unsupported,
  "evidence_total":evidence_total,"evidence_supported":evidence_supported}
