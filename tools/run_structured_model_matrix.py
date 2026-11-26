@@ -16,17 +16,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluate_gold_corpus import evaluate_case
 from validate_projector_output import validate as validate_projector_output
 
-MODELS=[
- {"name":"qwen3-0.6b-q4_k_m","repo":"gvij/qwen3-0.6b-gguf","revision":"d86af45","tokenizer_repo":"gvij/qwen3-0.6b-gguf","tokenizer_revision":"d86af45","file":"qwen3-0.6b-q4_k_m.gguf","format":"chatml"},
- {"name":"smollm2-135m-instruct-q4_k_m","repo":"bartowski/SmolLM2-135M-Instruct-GGUF","revision":"09816ac","tokenizer_repo":"bartowski/SmolLM2-135M-Instruct-GGUF","tokenizer_revision":"09816ac","file":"SmolLM2-135M-Instruct-Q4_K_M.gguf","format":"chatml"},
-]
+LOCK_PATH=Path(os.environ.get("SURGE_MODEL_MATRIX_LOCK","config/model-matrix-lock-v1.0.json"))
+LOCK=json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+MODELS=LOCK["models"]
 ROOT=Path(os.environ.get("SURGE_MODEL_MATRIX_DIR","model-matrix"))
 OUT=Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT",ROOT/"model-matrix.json"))
 CLI=os.environ.get("LLAMA_CLI","llama-cli")
 THREADS=max(1,int(os.environ.get("SURGE_MODEL_THREADS","2")))
 LLAMA_CPP_COMMIT=os.environ.get("LLAMA_CPP_COMMIT","")
-if not re.fullmatch(r"[0-9a-f]{40}",LLAMA_CPP_COMMIT):
- raise SystemExit("LLAMA_CPP_COMMIT must be a full 40-character immutable commit SHA")
+LOCKED_LLAMA_COMMIT=LOCK["llama_cpp"]["commit"]
+if not re.fullmatch(r"[0-9a-f]{40}",LOCKED_LLAMA_COMMIT) or LLAMA_CPP_COMMIT != LOCKED_LLAMA_COMMIT:
+ raise SystemExit("LLAMA_CPP_COMMIT must match the full immutable commit in the model lock")
 SYSTEM="""SURGEの外部認識Projectorとして、真偽を決定せず入力から属性と関係を抽出する。
 Canonical JSON Schemaに完全準拠するJSONオブジェクトのみ出力する。
 トップレベル必須: schema_version=\"surge-projector-output-v1.0\", attributes配列, relations配列。
@@ -74,8 +74,8 @@ def main():
   "expected_model_count":len(MODELS),"expected_case_ids":[case["case_id"] for case in corpus.get("cases",[])],
   "corpus_sha256":corpus_digest,"profile_sha256":profile_digest,
   "experiment_manifest":{"manifest_version":"surge-experiment-manifest-v1.0",
-   "source_commit":os.environ.get("GITHUB_SHA","unknown"),"llama_cpp_repository":"https://github.com/ggml-org/llama.cpp",
-   "llama_cpp_commit":LLAMA_CPP_COMMIT,"llama_cli_path":str(Path(CLI).resolve()),
+   "source_commit":os.environ.get("GITHUB_SHA","unknown"),"llama_cpp_repository":LOCK["llama_cpp"]["repository"],
+   "llama_cpp_commit":LLAMA_CPP_COMMIT,"model_lock_sha256":sha256_file(LOCK_PATH),"llama_cli_path":str(Path(CLI).resolve()),
    "threads":THREADS,"generation":{"max_tokens":192,"temperature":0,"top_k":1,"timeout_seconds":240},
    "prompt_sha256":hashlib.sha256(SYSTEM.encode()).hexdigest(),
    "corpus_sha256":corpus_digest,"profile_sha256":profile_digest,
