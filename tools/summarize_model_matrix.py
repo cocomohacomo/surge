@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """Strict model-matrix execution audit; this never certifies semantic quality."""
 import json
+import math
 import sys
 from pathlib import Path
+
+
+def _valid_metric(metric):
+    if not isinstance(metric, dict):
+        return False
+    if not all(isinstance(metric.get(key), int) and metric[key] >= 0
+               for key in ("tp", "fp", "fn")):
+        return False
+    return all(isinstance(metric.get(key), (int, float))
+               and math.isfinite(metric[key]) and 0.0 <= metric[key] <= 1.0
+               for key in ("precision", "recall", "f1"))
 
 
 def _aggregate(metrics, key):
@@ -71,10 +83,7 @@ def summarize(report):
                     if isinstance(row, dict)
                     and isinstance(row.get("engineering_semantic_metrics"), dict)]
         metric_shape_valid = all(
-            isinstance(item.get(key), dict)
-            and all(name in item[key] for name in ("tp", "fp", "fn", "precision", "recall", "f1"))
-            and all(isinstance(item[key][name], (int, float))
-                    for name in ("tp", "fp", "fn", "precision", "recall", "f1"))
+            _valid_metric(item.get(key))
             for item in semantic for key in ("attribute_metrics", "relation_metrics")
         )
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid
