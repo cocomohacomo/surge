@@ -29,7 +29,7 @@
       "negation": 0.95,
       "contradiction": 0.9,
       "temporal_update": 0.9,
-      "unsupported_evidence": 0.85,
+      "unsupported_evidence": 0.9,
       "relation": 0.85,
       "topic_shift": 0.85
     },
