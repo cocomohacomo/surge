@@ -85,6 +85,14 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["recognition_quality_gate"], "FAIL")
         self.assertEqual(result["extra_case_ids"], ["unexpected"])
 
+
+    def test_legacy_candidates_alias_is_not_canonical_schema(self):
+        case = {"case_id": "schema", "text": "x",
+                "gold": {"attributes": [], "relations": []}}
+        result = evaluate_case(case, {"candidates": [], "relations": []})
+        self.assertFalse(result["schema_valid"])
+        self.assertEqual(result["malformed_count"], 1)
+
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
