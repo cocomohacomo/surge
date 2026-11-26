@@ -6,7 +6,10 @@ def valid_row(case_id="case-1"):
     metric = {"tp": 1, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0, "f1": 1.0}
     semantic = {"attribute_metrics": metric, "relation_metrics": metric,
                 "unsupported_attribute_count": 0, "duplicate_attribute_count": 0,
-                "duplicate_relation_count": 0, "malformed_count": 0}
+                "duplicate_relation_count": 0, "malformed_count": 0,
+                "categories": {"negation": metric},
+                "phenomenon_metrics": {"negation": metric},
+                "evidence_span_metrics": metric}
     return {"case_id": case_id, "json_valid": True, "projector_schema_valid": True, "timeout": False,
             "return_code": 0, "peak_rss_kib": 100,
             "engineering_semantic_metrics": semantic}
