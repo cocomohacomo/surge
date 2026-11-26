@@ -1,16 +1,38 @@
 {
-  "schema_version": "surge-gold-corpus-v0.1",
-  "corpus_id": "ja-attribute-relation-evidence-seed",
+  "schema_version": "surge-gold-corpus-v1.0",
+  "corpus_id": "ja-attribute-relation-evidence-seed-v1.0",
   "annotation": {
     "independent_adjudication": false,
     "annotators": 0,
     "adjudication_status": "seed-only-not-independent",
-    "notes": "Synthetic seed examples authored for evaluator plumbing. Must be independently annotated/adjudicated before held-out qualification."
+    "notes": "Synthetic engineering seed; exact spans added for evaluator plumbing only. Not independently adjudicated and never qualifies Recognition Quality."
   },
   "profile": {
     "attribute_f1_min": 0.8,
     "relation_f1_min": 0.8,
-    "evidence_support_min": 0.95
+    "macro_f1_min": 0.8,
+    "evidence_support_min": 0.95,
+    "evidence_span_f1_min": 0.9,
+    "schema_valid_rate_min": 1,
+    "false_positive_relation_rate_max": 0.05,
+    "category_precision_min": {
+      "ambiguity": 0.8,
+      "negation": 0.9,
+      "contradiction": 0.85,
+      "temporal_update": 0.85,
+      "unsupported_evidence": 0.8,
+      "relation": 0.8,
+      "topic_shift": 0.8
+    },
+    "category_recall_min": {
+      "ambiguity": 0.9,
+      "negation": 0.95,
+      "contradiction": 0.9,
+      "temporal_update": 0.9,
+      "unsupported_evidence": 0.85,
+      "relation": 0.85,
+      "topic_shift": 0.85
+    }
   },
   "cases": [
     {
@@ -27,11 +49,15 @@
             "key": "response_intent",
             "value": "ambiguous_acknowledgement",
             "polarity": "uncertain",
-            "category": "ambiguity"
+            "category": "ambiguity",
+            "evidence_spans": []
           }
         ],
         "relations": []
-      }
+      },
+      "phenomena": [
+        "ambiguity"
+      ]
     },
     {
       "case_id": "negation-01",
@@ -47,11 +73,22 @@
             "key": "participation",
             "value": "参加",
             "polarity": "negative",
-            "category": "negation"
+            "category": "negation",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 2,
+                "end": 4,
+                "quote": "参加"
+              }
+            ]
           }
         ],
         "relations": []
-      }
+      },
+      "phenomena": [
+        "negation"
+      ]
     },
     {
       "case_id": "contradiction-01",
@@ -67,17 +104,36 @@
             "key": "meeting_day",
             "value": "水曜日",
             "polarity": "positive",
-            "category": "contradiction"
+            "category": "contradiction",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 3,
+                "end": 6,
+                "quote": "水曜日"
+              }
+            ]
           }
         ],
         "relations": [
           {
             "type": "supersedes",
             "source": "meeting_day:水曜日",
-            "target": "meeting_day:火曜日"
+            "target": "meeting_day:火曜日",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 3,
+                "end": 6,
+                "quote": "水曜日"
+              }
+            ]
           }
         ]
-      }
+      },
+      "phenomena": [
+        "contradiction"
+      ]
     },
     {
       "case_id": "temporal-01",
@@ -93,17 +149,36 @@
             "key": "effective_date",
             "value": "2027年4月1日",
             "polarity": "positive",
-            "category": "temporal_update"
+            "category": "temporal_update",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 4,
+                "end": 13,
+                "quote": "2027年4月1日"
+              }
+            ]
           }
         ],
         "relations": [
           {
             "type": "supersedes",
             "source": "effective_date:2027年4月1日",
-            "target": "effective_date:2026年3月31日"
+            "target": "effective_date:2026年3月31日",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 4,
+                "end": 13,
+                "quote": "2027年4月1日"
+              }
+            ]
           }
         ]
-      }
+      },
+      "phenomena": [
+        "temporal_supersession"
+      ]
     },
     {
       "case_id": "evidence-unsupported-01",
@@ -119,11 +194,13 @@
             "key": "budget",
             "value": "undetermined",
             "polarity": "uncertain",
-            "category": "unsupported_evidence"
+            "category": "unsupported_evidence",
+            "evidence_spans": []
           }
         ],
         "relations": []
-      }
+      },
+      "phenomena": []
     },
     {
       "case_id": "ambiguous-01",
@@ -139,11 +216,15 @@
             "key": "decision_target",
             "value": "unresolved",
             "polarity": "uncertain",
-            "category": "ambiguity"
+            "category": "ambiguity",
+            "evidence_spans": []
           }
         ],
         "relations": []
-      }
+      },
+      "phenomena": [
+        "ambiguity"
+      ]
     },
     {
       "case_id": "relation-01",
@@ -159,17 +240,27 @@
             "key": "subsidy_eligibility",
             "value": "excluded",
             "polarity": "negative",
-            "category": "relation"
+            "category": "relation",
+            "evidence_spans": []
           }
         ],
         "relations": [
           {
             "type": "refers_to",
             "source": "subsidy_eligibility",
-            "target": "construction_cost:A地区:120万円"
+            "target": "construction_cost:A地区:120万円",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 0,
+                "end": 12,
+                "quote": "この費用は補助対象外です"
+              }
+            ]
           }
         ]
-      }
+      },
+      "phenomena": []
     },
     {
       "case_id": "topic-shift-01",
@@ -185,11 +276,21 @@
             "key": "device_budget",
             "value": "10万円",
             "polarity": "positive",
-            "category": "topic_shift"
+            "category": "topic_shift",
+            "evidence_spans": [
+              {
+                "source": "text",
+                "start": 12,
+                "end": 16,
+                "quote": "10万円"
+              }
+            ]
           }
         ],
         "relations": []
-      }
+      },
+      "phenomena": []
     }
-  ]
+  ],
+  "evidence_span_evaluation": true
 }
