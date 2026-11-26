@@ -6,7 +6,7 @@ def valid_row(case_id="case-1"):
     metric = {"tp": 1, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0, "f1": 1.0}
     semantic = {"attribute_metrics": metric, "relation_metrics": metric,
                 "unsupported_attribute_count": 0, "duplicate_attribute_count": 0,
-                "duplicate_relation_count": 0, "malformed_count": 0,
+                "duplicate_relation_count": 0, "duplicate_evidence_span_count": 0, "malformed_count": 0,
                 "categories": {"negation": metric},
                 "phenomenon_metrics": {"negation": metric, "contradiction": metric,
                                      "temporal_supersession": metric, "ambiguity": metric},
@@ -60,6 +60,20 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         self.assertEqual(summarize(data)["model_matrix_execution_gate"], "FAIL")
 
 
+
+
+    def test_boolean_metric_and_counter_values_fail(self):
+        row=valid_row()
+        row["engineering_semantic_metrics"]["attribute_metrics"]["tp"]=True
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"],"FAIL")
+        row=valid_row()
+        row["engineering_semantic_metrics"]["unsupported_attribute_count"]=True
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"],"FAIL")
+
+    def test_boolean_expected_model_count_fails(self):
+        data=report()
+        data["expected_model_count"]=True
+        self.assertEqual(summarize(data)["model_matrix_execution_gate"],"FAIL")
 
     def test_missing_phenomenon_dimension_fails(self):
         row=valid_row()
