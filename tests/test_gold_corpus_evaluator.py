@@ -149,6 +149,63 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertTrue(result["schema_valid"])
         self.assertEqual(result["canonical_schema_error_count"], 0)
 
+
+    def test_independent_phenomenon_metrics_are_separate(self):
+        cases = [
+            {"case_id":"n","split":"test","text":"参加しません","categories":["negation"],
+             "phenomena":["negation"],"gold":{"attributes":[{"key":"参加","value":"参加",
+             "polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":7,"quote":"しません"}]}],"relations":[]}},
+            {"case_id":"c","split":"test","context":"会議は火曜","text":"会議は水曜に変更",
+             "categories":["contradiction"],"phenomena":["contradiction"],
+             "gold":{"attributes":[{"key":"会議日","value":"水曜","polarity":"positive","category":"contradiction",
+             "evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}],
+             "relations":[{"type":"contradicts","source":"水曜","target":"火曜","evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}]}},
+            {"case_id":"t","split":"test","context":"期限は3月","text":"4月に更新",
+             "categories":["temporal_update"],"phenomena":["temporal_supersession"],
+             "gold":{"attributes":[{"key":"期限","value":"4月","polarity":"positive","category":"temporal_update",
+             "evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}],
+             "relations":[{"type":"supersedes","source":"4月","target":"3月","evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}]}},
+            {"case_id":"a","split":"test","text":"それで進めましょう","categories":["ambiguity"],
+             "phenomena":["ambiguity"],"gold":{"attributes":[{"key":"対象","value":"未確定","polarity":"uncertain","category":"ambiguity",
+             "evidence_spans":[{"source":"text","start":0,"end":9,"quote":"それで進めましょう"}]}],"relations":[]}}
+        ]
+        predictions = {
+            "n":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":7,"quote":"しません"}]}],"relations":[]},
+            "c":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"会議日","value":"水曜","polarity":"positive","category":"contradiction","evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}],"relations":[{"type":"contradicts","source":"水曜","target":"火曜","evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}]},
+            "t":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"期限","value":"4月","polarity":"positive","category":"temporal_update","evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}],"relations":[{"type":"supersedes","source":"4月","target":"3月","evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}]},
+            "a":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"対象","value":"未確定","polarity":"uncertain","category":"ambiguity","evidence_spans":[{"source":"text","start":0,"end":9,"quote":"それで進めましょう"}]}],"relations":[]}
+        }
+        profile={"attribute_f1_min":0,"relation_f1_min":0,"macro_f1_min":0,
+                 "evidence_support_min":0,"evidence_span_f1_min":0,"schema_valid_rate_min":1,
+                 "false_positive_relation_rate_max":1,
+                 "category_precision_min":{x:0 for x in ("negation","contradiction","temporal_update","ambiguity")},
+                 "category_recall_min":{x:0 for x in ("negation","contradiction","temporal_update","ambiguity")},
+                 "phenomenon_precision_min":{x:1 for x in ("negation","contradiction","temporal_supersession","ambiguity")},
+                 "phenomenon_recall_min":{x:1 for x in ("negation","contradiction","temporal_supersession","ambiguity")}}
+        result=evaluate({"cases":cases,"annotation":{"independent_adjudication":True},
+                         "profile":profile,"evidence_span_evaluation":True},predictions,"digest")
+        self.assertEqual(result["recognition_quality_gate"],"PASS",result.get("failures"))
+        for name in ("negation","contradiction","temporal_supersession","ambiguity"):
+            self.assertEqual(result["phenomenon_metrics"][name]["f1"],1.0)
+
+    def test_category_precision_floor_is_enforced(self):
+        case={"case_id":"p","split":"test","text":"参加する","categories":["affirmation"],
+              "gold":{"attributes":[{"key":"参加","value":"参加","polarity":"positive","category":"affirmation",
+              "evidence_spans":[{"source":"text","start":0,"end":4,"quote":"参加する"}]}],"relations":[]}}
+        pred={"p":{"schema_version":"surge-projector-output-v1.0","attributes":[
+              {"key":"参加","value":"参加","polarity":"positive","category":"wrong",
+               "evidence_spans":[{"source":"text","start":0,"end":4,"quote":"参加する"}]}],"relations":[]}}
+        floors={"affirmation":0.9}
+        profile={"attribute_f1_min":0,"relation_f1_min":0,"macro_f1_min":0,
+                 "evidence_support_min":0,"evidence_span_f1_min":0,"schema_valid_rate_min":1,
+                 "false_positive_relation_rate_max":1,"category_precision_min":floors,
+                 "category_recall_min":{"affirmation":0},
+                 "phenomenon_precision_min":{x:0 for x in ("negation","contradiction","temporal_supersession","ambiguity")},
+                 "phenomenon_recall_min":{x:0 for x in ("negation","contradiction","temporal_supersession","ambiguity")}}
+        result=evaluate({"cases":[case],"annotation":{"independent_adjudication":True},
+                         "profile":profile,"evidence_span_evaluation":True},pred,"digest")
+        self.assertIn("category_precision:affirmation",result["failures"])
+
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
