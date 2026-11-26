@@ -9,7 +9,9 @@ def valid_row(case_id="case-1"):
                 "duplicate_relation_count": 0, "malformed_count": 0,
                 "categories": {"negation": metric},
                 "phenomenon_metrics": {"negation": metric},
-                "evidence_span_metrics": metric}
+                "evidence_span_metrics": metric,
+                "attribute_evidence_span_metrics": metric,
+                "relation_evidence_span_metrics": metric}
     return {"case_id": case_id, "json_valid": True, "projector_schema_valid": True, "timeout": False,
             "return_code": 0, "peak_rss_kib": 100,
             "engineering_semantic_metrics": semantic}
