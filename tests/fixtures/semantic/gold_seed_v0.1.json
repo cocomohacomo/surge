@@ -72,7 +72,8 @@
             ]
           }
         ],
-        "relations": []
+        "relations": [],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "ambiguity"
@@ -103,7 +104,8 @@
             ]
           }
         ],
-        "relations": []
+        "relations": [],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "negation"
@@ -154,7 +156,8 @@
               }
             ]
           }
-        ]
+        ],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "contradiction",
@@ -206,7 +209,8 @@
               }
             ]
           }
-        ]
+        ],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "temporal_supersession"
@@ -237,7 +241,8 @@
             ]
           }
         ],
-        "relations": []
+        "relations": [],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": []
     },
@@ -266,7 +271,8 @@
             ]
           }
         ],
-        "relations": []
+        "relations": [],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "ambiguity"
@@ -317,7 +323,8 @@
               }
             ]
           }
-        ]
+        ],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": [
         "negation"
@@ -348,7 +355,8 @@
             ]
           }
         ],
-        "relations": []
+        "relations": [],
+        "schema_version": "surge-projector-output-v1.0"
       },
       "phenomena": []
     }
