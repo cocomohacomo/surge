@@ -134,6 +134,21 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         result = evaluate(corpus, pred, "corpus")
         self.assertIn("evidence_span_gold_empty", result["failures"])
 
+
+    def test_evaluator_schema_rate_uses_canonical_schema(self):
+        case = {"case_id": "canonical", "text": "期限は水曜",
+                "gold": {"attributes": [{"key": "期限", "value": "水曜"}],
+                         "relations": []}}
+        pred = {"schema_version": "surge-projector-output-v1.0",
+                "attributes": [{"key": "期限", "value": "水曜",
+                                "polarity": "positive", "category": "temporal",
+                                "evidence_spans": [{"source": "text", "start": 3,
+                                                    "end": 5, "quote": "水曜"}]}],
+                "relations": []}
+        result = evaluate_case(case, pred)
+        self.assertTrue(result["schema_valid"])
+        self.assertEqual(result["canonical_schema_error_count"], 0)
+
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
