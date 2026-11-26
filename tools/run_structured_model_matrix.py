@@ -59,7 +59,7 @@ def main():
  corpus_path=Path(os.environ.get("SURGE_GOLD_CORPUS","tests/fixtures/semantic/gold_seed_v0.1.json"))
  corpus=json.loads(corpus_path.read_text(encoding="utf-8"))
  ROOT.mkdir(parents=True,exist_ok=True)
- report={"matrix":"surge-structured-projector-matrix-v0.1","corpus_id":corpus.get("corpus_id"),"corpus_status":"SEED_NOT_INDEPENDENT","qualification_gate":"NOT_RUN","expected_model_count":len(MODELS),"models":[]}
+ report={"matrix":"surge-structured-projector-matrix-v0.1","corpus_id":corpus.get("corpus_id"),"corpus_status":"SEED_NOT_INDEPENDENT","qualification_gate":"NOT_RUN","expected_model_count":len(MODELS),"expected_case_ids":[case["case_id"] for case in corpus.get("cases",[])],"corpus_sha256":hashlib.sha256(corpus_path.read_bytes()).hexdigest(),"profile_sha256":hashlib.sha256(json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()).hexdigest(),"models":[]}
  for m in MODELS:
   dest=ROOT/m["name"];dest.mkdir(parents=True,exist_ok=True)
   path=Path(hf_hub_download(repo_id=m["repo"],filename=m["file"],local_dir=str(dest)))
