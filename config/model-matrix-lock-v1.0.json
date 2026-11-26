@@ -1,0 +1,27 @@
+{
+  "lock_version": "surge-model-matrix-lock-v1.0",
+  "llama_cpp": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "commit": "fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002"
+  },
+  "models": [
+    {
+      "name": "qwen3-0.6b-q4_k_m",
+      "repo": "gvij/qwen3-0.6b-gguf",
+      "revision": "d86af45",
+      "tokenizer_repo": "gvij/qwen3-0.6b-gguf",
+      "tokenizer_revision": "d86af45",
+      "file": "qwen3-0.6b-q4_k_m.gguf",
+      "format": "chatml"
+    },
+    {
+      "name": "smollm2-135m-instruct-q4_k_m",
+      "repo": "bartowski/SmolLM2-135M-Instruct-GGUF",
+      "revision": "09816ac",
+      "tokenizer_repo": "bartowski/SmolLM2-135M-Instruct-GGUF",
+      "tokenizer_revision": "09816ac",
+      "file": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+      "format": "chatml"
+    }
+  ]
+}
