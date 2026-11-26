@@ -122,7 +122,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
 
     def test_span_evaluation_requires_gold_spans_and_threshold(self):
         corpus = {"evidence_span_evaluation": True,
-                  "cases": [{"case_id": "span-profile", "split": "test", "text": "期限は水曜",
+                  "cases": [{"case_id": "span-profile", "split": "test", "text": "期限は水曜", "phenomena": [],
                              "gold": {"attributes": [{"key": "期限", "value": "水曜"}],
                                       "relations": []}}],
                   "annotation": {"independent_adjudication": True},
