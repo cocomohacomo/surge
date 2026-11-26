@@ -4,7 +4,7 @@
 Uses the seed corpus for engineering smoke metrics only. Since its annotation is
 not independent, semantic qualification is explicitly NOT_RUN.
 """
-import json, os, re, shutil, subprocess, time
+import hashlib, json, os, re, shutil, subprocess, time
 import sys
 from pathlib import Path
 from statistics import median
@@ -52,11 +52,11 @@ def main():
  corpus_path=Path(os.environ.get("SURGE_GOLD_CORPUS","tests/fixtures/semantic/gold_seed_v0.1.json"))
  corpus=json.loads(corpus_path.read_text(encoding="utf-8"))
  ROOT.mkdir(parents=True,exist_ok=True)
- report={"matrix":"surge-structured-projector-matrix-v0.1","corpus_id":corpus.get("corpus_id"),"corpus_status":"SEED_NOT_INDEPENDENT","qualification_gate":"NOT_RUN","models":[]}
+ report={"matrix":"surge-structured-projector-matrix-v0.1","corpus_id":corpus.get("corpus_id"),"corpus_status":"SEED_NOT_INDEPENDENT","qualification_gate":"NOT_RUN","expected_model_count":len(MODELS),"models":[]}
  for m in MODELS:
   dest=ROOT/m["name"];dest.mkdir(parents=True,exist_ok=True)
   path=Path(hf_hub_download(repo_id=m["repo"],filename=m["file"],local_dir=str(dest)))
-  mr={"name":m["name"],"file_bytes":path.stat().st_size,"results":[]}
+  mr={"name":m["name"],"repository":m["repo"],"model_file":m["file"],"file_bytes":path.stat().st_size,"file_sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"results":[]}
   for case in corpus["cases"]:
    r=run(m,path,case)
    if r.get("return_code",0)!=0 and not r.get("timeout"): raise RuntimeError(f"model command failed: {m['name']} {case['case_id']}")
