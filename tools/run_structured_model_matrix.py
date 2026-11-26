@@ -37,7 +37,7 @@ Canonical JSON Schemaに完全準拠するJSONオブジェクトのみ出力す�
 関係必須: type,source,target,evidence_spans配列。
 Evidence Span必須: source(context|text),start,end,quote。start/endは各原文のUnicodeコードポイント位置、endは排他的。quoteはsource文字列の[start:end]と完全一致させる。
 判断保留はabstentions配列にreasonを記録する。根拠のない値は作らない。余分なキーやMarkdownは禁止。"""
-PROMPT_TEMPLATE="<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\nContext: {context}\nInput: {text}\nReturn structured JSON.<|im_end|>\n<|im_start|>assistant\n"
+PROMPT_TEMPLATE="<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\nContext: {context}\nInput: {text}\nReturn exactly one JSON object and no explanation. {mode_hint}<|im_end|>\n<|im_start|>assistant\n"
 
 def sha256_file(path):
  h=hashlib.sha256()
@@ -57,8 +57,8 @@ def extract_json(text):
  return None
 
 def run(model,model_path,case):
- prompt=PROMPT_TEMPLATE.format(system=SYSTEM,context=case.get("context",""),text=case.get("text",""))
- cmd=["/usr/bin/time","-v",CLI,"-m",str(model_path),"-p",prompt,"-n","192","--temp","0","--top-k","1","--threads",str(THREADS),"--no-display-prompt","--simple-io"]
+ prompt=PROMPT_TEMPLATE.format(system=SYSTEM,context=case.get("context",""),text=case.get("text",""),mode_hint="/no_think" if model.get("format") == "chatml_no_think" else "")
+ cmd=["/usr/bin/time","-v",CLI,"-m",str(model_path),"-p",prompt,"-n","512","--temp","0","--top-k","1","--threads",str(THREADS),"--no-display-prompt","--simple-io"]
  t=time.perf_counter()
  try: proc=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
  except subprocess.TimeoutExpired: return {"case_id":case["case_id"],"timeout":True,"elapsed_seconds":240}
@@ -88,7 +88,7 @@ def main():
    "runtime":{"python":sys.version,"platform":platform.platform(),"machine":platform.machine(),
               "processor":platform.processor(),"huggingface_hub":__import__("huggingface_hub").__version__,
               "llama_cli_version":(cli_version.stdout or cli_version.stderr).strip()},
-   "threads":THREADS,"generation":{"max_tokens":192,"temperature":0,"top_k":1,"timeout_seconds":240},
+   "threads":THREADS,"generation":{"max_tokens":512,"temperature":0,"top_k":1,"timeout_seconds":240},
    "system_prompt_sha256":hashlib.sha256(SYSTEM.encode()).hexdigest(),
    "prompt_template_sha256":hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest(),
    "corpus_sha256":corpus_digest,"profile_sha256":profile_digest,
