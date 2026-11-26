@@ -20,6 +20,7 @@ The earlier Gold objects omitted `schema_version`, so the seed could not be vali
 - Cross-context relations now cite source spans from both the earlier context and the new text where relevant.
 - Corrected a test's off-by-one predicted span.
 - Held-out evaluation rejects any Gold attribute or relation with no span.
+- Invalid Gold offsets/quotes now return a structured FAIL report instead of an uncaught evaluator exception.
 - Attribute and relation span metrics remain separately reported and are combined only for the overall span score.
 
 ### Critical: Category gate was recall-only
