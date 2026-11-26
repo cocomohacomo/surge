@@ -44,7 +44,7 @@ Recognition Quality requires an independently adjudicated held-out corpus, a pre
 
 ## 9. Seed corpus migration and phenomenon annotations
 
-The engineering seed corpus uses corpus schema version `surge-gold-corpus-v1.0`. Every Gold attribute and relation carries one or more exact Evidence Spans. These examples are synthetic engineering fixtures only; their spans are not independently adjudicated and do not qualify Recognition Quality.
+The engineering seed corpus uses corpus schema version `surge-gold-corpus-v1.0`. Each case's `gold` object is itself a `surge-projector-output-v1.0` envelope. Every Gold attribute and relation carries one or more exact Evidence Spans. Held-out evaluation rejects unsupported corpus versions, non-canonical Gold envelopes, and any Gold attribute or relation without at least one exact Evidence Span. These examples are synthetic engineering fixtures only; their spans are not independently adjudicated and do not qualify Recognition Quality.
 
 Held-out test cases MUST carry an explicit `phenomena` array drawn from:
 - `negation`
