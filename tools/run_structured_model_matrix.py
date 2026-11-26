@@ -37,6 +37,7 @@ Canonical JSON Schemaに完全準拠するJSONオブジェクトのみ出力す�
 関係必須: type,source,target,evidence_spans配列。
 Evidence Span必須: source(context|text),start,end,quote。start/endは各原文のUnicodeコードポイント位置、endは排他的。quoteはsource文字列の[start:end]と完全一致させる。
 判断保留はabstentions配列にreasonを記録する。根拠のない値は作らない。余分なキーやMarkdownは禁止。"""
+PROMPT_TEMPLATE="<|im_start|>system\\n{system}<|im_end|>\\n<|im_start|>user\\nContext: {context}\\nInput: {text}\\nReturn structured JSON.<|im_end|>\\n<|im_start|>assistant\\n"
 
 def sha256_file(path):
  h=hashlib.sha256()
@@ -88,7 +89,8 @@ def main():
               "processor":platform.processor(),"huggingface_hub":__import__("huggingface_hub").__version__,
               "llama_cli_version":(cli_version.stdout or cli_version.stderr).strip()},
    "threads":THREADS,"generation":{"max_tokens":192,"temperature":0,"top_k":1,"timeout_seconds":240},
-   "prompt_sha256":hashlib.sha256(SYSTEM.encode()).hexdigest(),
+   "system_prompt_sha256":hashlib.sha256(SYSTEM.encode()).hexdigest(),
+   "prompt_template_sha256":hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest(),
    "corpus_sha256":corpus_digest,"profile_sha256":profile_digest,
    "models":[{"repository":m["repo"],"revision":m["revision"],"tokenizer_repository":m["tokenizer_repo"],
               "tokenizer_revision":m["tokenizer_revision"],"file":m["file"]} for m in MODELS]},
