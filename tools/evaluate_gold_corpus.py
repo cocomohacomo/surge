@@ -380,50 +380,60 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
                 "evidence_support_min", "schema_valid_rate_min",
                 "category_precision_min", "category_recall_min",
                 "phenomenon_precision_min", "phenomenon_recall_min")
+    def valid_threshold(value):
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value) and 0.0 <= value <= 1.0)
     for key in required:
         if key not in profile:
             failures.append("profile_missing:" + key)
         elif key not in ("category_precision_min", "category_recall_min",
-                         "phenomenon_precision_min", "phenomenon_recall_min"):
-            value = profile[key]
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
-                failures.append("profile_invalid:" + key)
+                         "phenomenon_precision_min", "phenomenon_recall_min") and not valid_threshold(profile[key]):
+            failures.append("profile_invalid:" + key)
     for key, metric in (("attribute_f1_min", attr_metrics),
-                        ("relation_f1_min", rel_metrics)):
-        if key in profile and metric["f1"] < profile[key]:
+                        ("relation_f1_min", rel_metrics),
+                        ("macro_f1_min", {"f1": macro_f1}),
+                        ("evidence_support_min", {"f1": evidence_rate}),
+                        ("schema_valid_rate_min", {"f1": schema_valid_rate})):
+        if key in profile and valid_threshold(profile[key]) and metric["f1"] < profile[key]:
             failures.append(key)
-    if isinstance(profile.get("macro_f1_min"), (int, float)) and not isinstance(profile.get("macro_f1_min"), bool) and "macro_f1_min" in profile and macro_f1 < profile["macro_f1_min"]:
-        failures.append("macro_f1_min")
-    if isinstance(profile.get("evidence_support_min"), (int, float)) and not isinstance(profile.get("evidence_support_min"), bool) and evidence_rate < profile["evidence_support_min"]:
-        failures.append("evidence_support_min")
     if corpus.get("evidence_span_evaluation") is True:
         if "evidence_span_f1_min" not in profile:
             failures.append("profile_missing:evidence_span_f1_min")
-        elif not isinstance(profile["evidence_span_f1_min"], (int, float)) or isinstance(profile["evidence_span_f1_min"], bool) or not math.isfinite(profile["evidence_span_f1_min"]) or not 0 <= profile["evidence_span_f1_min"] <= 1:
+        elif not valid_threshold(profile["evidence_span_f1_min"]):
             failures.append("profile_invalid:evidence_span_f1_min")
         elif span_metrics["f1"] < profile["evidence_span_f1_min"]:
             failures.append("evidence_span_f1_min")
         if span_gold_total == 0:
             failures.append("evidence_span_gold_empty")
-    if "schema_valid_rate_min" in profile and schema_valid_rate < profile["schema_valid_rate_min"]:
-        failures.append("schema_valid_rate_min")
     if "false_positive_relation_rate_max" not in profile:
         failures.append("profile_missing:false_positive_relation_rate_max")
-    elif not isinstance(profile["false_positive_relation_rate_max"], (int, float)) or isinstance(profile["false_positive_relation_rate_max"], bool) or not math.isfinite(profile["false_positive_relation_rate_max"]) or not 0 <= profile["false_positive_relation_rate_max"] <= 1:
+    elif not valid_threshold(profile["false_positive_relation_rate_max"]):
         failures.append("profile_invalid:false_positive_relation_rate_max")
     elif fp_relation_rate > profile["false_positive_relation_rate_max"]:
         failures.append("false_positive_relation_rate_max")
+
+    expected_categories = {
+        norm(item.get("category", "")) for case in test_cases
+        for item in case.get("gold", {}).get("attributes", [])
+        if isinstance(item, dict) and norm(item.get("category", ""))
+    }
     precision_floors = profile.get("category_precision_min", {})
     recall_floors = profile.get("category_recall_min", {})
     for label, floors in (("precision", precision_floors), ("recall", recall_floors)):
         if not isinstance(floors, dict) or not floors:
             failures.append("profile_missing:category_" + label + "_min")
             continue
+        missing = sorted(expected_categories - set(floors))
+        extra = sorted(set(floors) - expected_categories)
+        if missing:
+            failures.append("profile_category_" + label + "_missing:" + ",".join(missing))
+        if extra:
+            failures.append("profile_category_" + label + "_unexpected:" + ",".join(extra))
         for category, floor in floors.items():
             metric = category_metrics.get(category)
             if metric is None or supported_categories.get(category, 0) == 0:
                 failures.append("category_without_gold_support:" + category)
-            elif not isinstance(floor, (int, float)) or isinstance(floor, bool) or not 0 <= floor <= 1:
+            elif not valid_threshold(floor):
                 failures.append("invalid_category_" + label + "_floor:" + category)
             elif metric[label] < floor:
                 failures.append("category_" + label + ":" + category)
@@ -438,7 +448,7 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
             metric = phenomenon_metrics[phenomenon]
             if floor is None:
                 failures.append("profile_missing:phenomenon_" + label + ":" + phenomenon)
-            elif not isinstance(floor, (int, float)) or isinstance(floor, bool) or not 0 <= floor <= 1:
+            elif not valid_threshold(floor):
                 failures.append("invalid_phenomenon_" + label + ":" + phenomenon)
             elif metric[label] < floor:
                 failures.append("phenomenon_" + label + ":" + phenomenon)
