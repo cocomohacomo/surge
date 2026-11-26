@@ -302,6 +302,12 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
                 "reason": "no independently adjudicated held-out test corpus",
                 "case_count": len(test_cases), **identity}
 
+    if corpus.get("schema_version") != "surge-gold-corpus-v1.0":
+        return {"recognition_quality_gate": "FAIL",
+                "reason": "unsupported Gold Corpus schema version",
+                "expected_schema_version": "surge-gold-corpus-v1.0",
+                "actual_schema_version": corpus.get("schema_version"), **identity}
+
     expected_ids = {case["case_id"] for case in test_cases}
     extra_ids = sorted(set(predictions) - expected_ids)
     missing_ids = sorted(expected_ids - set(predictions))
