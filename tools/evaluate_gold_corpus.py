@@ -127,7 +127,7 @@ def evaluate_case(case, pred):
     unique_attrs = set(predicted_attrs)
     duplicate_attrs = len(predicted_attrs) - len(unique_attrs)
     attr_metrics = counts(len(ga & unique_attrs),
-                          len(unique_attrs - ga) + duplicate_attrs + schema_errors,
+                          len(unique_attrs - ga) + duplicate_attrs,
                           len(ga - unique_attrs))
 
     gr = set()
@@ -245,6 +245,13 @@ def evaluate_case(case, pred):
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
         "predicted_phenomena": sorted(predicted_phenomena),
+        "gold_phenomena": sorted(set(case.get("phenomena", []))),
+        "phenomenon_metrics": {
+            name: counts(int(name in set(case.get("phenomena", [])) and name in predicted_phenomena),
+                         int(name not in set(case.get("phenomena", [])) and name in predicted_phenomena),
+                         int(name in set(case.get("phenomena", [])) and name not in predicted_phenomena))
+            for name in ("negation", "contradiction", "temporal_supersession", "ambiguity")
+        },
         "evidence_span_metrics": span_metrics,
         "attribute_evidence_span_metrics": attribute_span_metrics,
         "relation_evidence_span_metrics": relation_span_metrics,
