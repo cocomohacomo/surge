@@ -37,7 +37,7 @@ Canonical JSON Schemaに完全準拠するJSONオブジェクトのみ出力す�
 関係必須: type,source,target,evidence_spans配列。
 Evidence Span必須: source(context|text),start,end,quote。start/endは各原文のUnicodeコードポイント位置、endは排他的。quoteはsource文字列の[start:end]と完全一致させる。
 判断保留はabstentions配列にreasonを記録する。根拠のない値は作らない。余分なキーやMarkdownは禁止。"""
-PROMPT_TEMPLATE="<|im_start|>system\\n{system}<|im_end|>\\n<|im_start|>user\\nContext: {context}\\nInput: {text}\\nReturn structured JSON.<|im_end|>\\n<|im_start|>assistant\\n"
+PROMPT_TEMPLATE="<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\nContext: {context}\nInput: {text}\nReturn structured JSON.<|im_end|>\n<|im_start|>assistant\n"
 
 def sha256_file(path):
  h=hashlib.sha256()
@@ -57,7 +57,7 @@ def extract_json(text):
  return None
 
 def run(model,model_path,case):
- prompt=f"<|im_start|>system\n{SYSTEM}<|im_end|>\n<|im_start|>user\nContext: {case.get('context','')}\nInput: {case.get('text','')}\nReturn structured JSON.<|im_end|>\n<|im_start|>assistant\n"
+ prompt=PROMPT_TEMPLATE.format(system=SYSTEM,context=case.get("context",""),text=case.get("text",""))
  cmd=["/usr/bin/time","-v",CLI,"-m",str(model_path),"-p",prompt,"-n","192","--temp","0","--top-k","1","--threads",str(THREADS),"--no-display-prompt","--simple-io"]
  t=time.perf_counter()
  try: proc=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
