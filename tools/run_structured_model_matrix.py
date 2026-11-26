@@ -25,8 +25,12 @@ OUT=Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT",ROOT/"model-matrix.json"))
 CLI=os.environ.get("LLAMA_CLI","llama-cli")
 THREADS=max(1,int(os.environ.get("SURGE_MODEL_THREADS","2")))
 SYSTEM="""SURGEの外部認識Projectorとして、真偽を決定せず入力から属性と関係を抽出する。
-JSONのみ出力: {"attributes":[{"key":"属性名","value":"値","polarity":"positive|negative|uncertain","evidence_quote":"原文抜粋"}],"relations":[{"type":"supports|contradicts|supersedes|refers_to|exception_of","source":"属性/対象","target":"属性/対象"}],"uncertainties":["曖昧な点"]}。
-否定表現、矛盾、時間更新、曖昧性を明示し、根拠がない値は作らない。"""
+Canonical JSON Schemaに完全準拠するJSONオブジェクトのみ出力する。
+トップレベル必須: schema_version=\"surge-projector-output-v1.0\", attributes配列, relations配列。
+属性必須: key,value,polarity(positive|negative|uncertain|unknown),category,evidence_spans配列。
+関係必須: type,source,target,evidence_spans配列。
+Evidence Span必須: source(context|text),start,end,quote。start/endは各原文のUnicodeコードポイント位置、endは排他的。quoteはsource文字列の[start:end]と完全一致させる。
+判断保留はabstentions配列にreasonを記録する。根拠のない値は作らない。余分なキーやMarkdownは禁止。"""
 
 def sha256_file(path):
  h=hashlib.sha256()
