@@ -193,7 +193,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
             self.assertEqual(result["phenomenon_metrics"][name]["f1"],1.0)
 
     def test_category_precision_floor_is_enforced(self):
-        case={"case_id":"p","split":"test","text":"参加する","categories":["affirmation"],
+        case={"case_id":"p","split":"test","text":"参加する","categories":["affirmation"],"phenomena":[],
               "gold":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"参加","value":"参加","polarity":"positive","category":"affirmation",
               "evidence_spans":[{"source":"text","start":0,"end":4,"quote":"参加する"}]}],"relations":[]}}
         pred={"p":{"schema_version":"surge-projector-output-v1.0","attributes":[
