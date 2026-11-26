@@ -39,7 +39,7 @@ Held-out cases must explicitly annotate the four-label vocabulary. Profiles must
 
 ### High: Model Matrix did not enforce the new dimensions
 - Summary validation now requires category, all four phenomenon, attribute span and relation span metrics per case.
-- Missing or malformed metric dimensions fail execution.
+- Missing or malformed metric dimensions, Boolean-as-integer values, negative counters and incomplete expected model counts fail execution.
 - Category and phenomenon metrics are aggregated per model.
 
 ### High: Model/runtime provenance was mutable or incomplete
