@@ -203,11 +203,13 @@ def evaluate_case(case, pred):
             len(category_pred - category_gold) + category_duplicates,
             len(category_gold - category_pred))
 
-    unique_spans = set(predicted_spans)
-    duplicate_spans = len(predicted_spans) - len(unique_spans)
-    span_metrics = counts(len(gold_spans & unique_spans),
-                          len(unique_spans - gold_spans) + duplicate_spans,
-                          len(gold_spans - unique_spans))
+    unique_spans = set(predicted_spans) | unique_relation_spans
+    all_gold_spans = gold_spans | gold_relation_spans
+    duplicate_spans = (len(predicted_spans) - len(set(predicted_spans))
+                       + duplicate_relation_spans)
+    span_metrics = counts(len(all_gold_spans & unique_spans),
+                          len(unique_spans - all_gold_spans) + duplicate_spans,
+                          len(all_gold_spans - unique_spans))
     evidence_total = len(parsed_attrs)
     return {
         "case_id": case_id,
