@@ -60,6 +60,12 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         self.assertEqual(summarize(data)["model_matrix_execution_gate"], "FAIL")
 
 
+
+    def test_missing_phenomenon_dimension_fails(self):
+        row=valid_row()
+        del row["engineering_semantic_metrics"]["phenomenon_metrics"]["ambiguity"]
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"],"FAIL")
+
     def test_non_finite_or_negative_metrics_fail(self):
         row = valid_row()
         row["engineering_semantic_metrics"]["attribute_metrics"]["f1"] = float("nan")
