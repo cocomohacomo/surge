@@ -22,4 +22,19 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         corpus={"cases":[{"case_id":"test","split":"test","gold":{"attributes":[],"relations":[]}}],"annotation":{"independent_adjudication":True},"profile":{}}
         result=evaluate(corpus,{}, "digest")
         self.assertEqual(result["recognition_quality_gate"],"FAIL")
-if __name__=="__main__": unittest.main()
+
+    def test_duplicate_attributes_count_as_false_positives(self):
+        case={"case_id":"dup","text":"期限は水曜","gold":{"attributes":[{"key":"期限","value":"水曜"}],"relations":[]}}
+        pred={"attributes":[{"key":"期限","value":"水曜","evidence_quote":"期限は水曜"},{"key":"期限","value":"水曜","evidence_quote":"期限は水曜"}],"relations":[]}
+        result=evaluate_case(case,pred)
+        self.assertEqual(result["duplicate_attribute_count"],1)
+        self.assertEqual(result["attribute"]["fp"],1)
+    def test_missing_evidence_is_unsupported(self):
+        case={"case_id":"ev","text":"期限は水曜","gold":{"attributes":[{"key":"期限","value":"水曜"}],"relations":[]}}
+        result=evaluate_case(case,{"attributes":[{"key":"期限","value":"水曜"}],"relations":[]})
+        self.assertEqual(result["unsupported_attribute_count"],1)
+    def test_category_metrics_are_separate(self):
+        case={"case_id":"neg","categories":["negation"],"text":"参加しない","gold":{"attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation"}],"relations":[]}}
+        result=evaluate_case(case,{"attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation","evidence_quote":"参加しない"}],"relations":[]})
+        self.assertEqual(result["categories"]["negation"]["recall"],1.0)
+\nif __name__=="__main__": unittest.main()
