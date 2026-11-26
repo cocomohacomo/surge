@@ -1,4 +1,6 @@
 import unittest
+import json
+from pathlib import Path
 from tools.evaluate_gold_corpus import evaluate_case, evaluate
 
 
@@ -205,6 +207,30 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         result=evaluate({"cases":[case],"annotation":{"independent_adjudication":True},
                          "profile":profile,"evidence_span_evaluation":True},pred,"digest")
         self.assertIn("category_precision:affirmation",result["failures"])
+
+
+    def test_seed_v1_gold_spans_and_category_threshold_coverage(self):
+        corpus=json.loads((Path(__file__).parent/"fixtures/semantic/gold_seed_v0.1.json").read_text(encoding="utf-8"))
+        self.assertEqual(corpus["schema_version"],"surge-gold-corpus-v1.0")
+        expected={a["category"] for case in corpus["cases"] for a in case["gold"]["attributes"]}
+        self.assertEqual(set(corpus["profile"]["category_precision_min"]),expected)
+        self.assertEqual(set(corpus["profile"]["category_recall_min"]),expected)
+        self.assertFalse(corpus["annotation"]["independent_adjudication"])
+        for case in corpus["cases"]:
+            sources={"context":case.get("context",""),"text":case.get("text","")}
+            for item in case["gold"]["attributes"]+case["gold"]["relations"]:
+                self.assertTrue(item["evidence_spans"],case["case_id"])
+                for span in item["evidence_spans"]:
+                    self.assertEqual(sources[span["source"]][span["start"]:span["end"]],span["quote"])
+
+    def test_test_cases_require_explicit_phenomenon_annotations(self):
+        case={"case_id":"no-phenomena","split":"test","text":"x",
+              "gold":{"attributes":[],"relations":[]}}
+        result=evaluate({"cases":[case],"annotation":{"independent_adjudication":True},
+                         "profile":{}},{"no-phenomena":{"schema_version":"surge-projector-output-v1.0",
+                         "attributes":[],"relations":[]}},"digest")
+        self.assertEqual(result["recognition_quality_gate"],"FAIL")
+        self.assertIn("phenomena",result["reason"])
 
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"attributes": [], "relations": []}}
