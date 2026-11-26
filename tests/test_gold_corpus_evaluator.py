@@ -71,17 +71,17 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["unsupported_attribute_count"], 1)
 
     def test_unadjudicated_seed_is_not_run(self):
-        corpus = {"cases": [{"case_id": "seed", "split": "seed", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
+        corpus = {"schema_version": "surge-gold-corpus-v1.0", "cases": [{"case_id": "seed", "split": "seed", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
                   "annotation": {"independent_adjudication": False}, "profile": {}}
         self.assertEqual(evaluate(corpus, {}, "digest")["recognition_quality_gate"], "NOT_RUN")
 
     def test_missing_test_prediction_fails_closed(self):
-        corpus = {"cases": [{"case_id": "test", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
+        corpus = {"schema_version": "surge-gold-corpus-v1.0", "cases": [{"case_id": "test", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
                   "annotation": {"independent_adjudication": True}, "profile": {}}
         self.assertEqual(evaluate(corpus, {}, "digest")["recognition_quality_gate"], "FAIL")
 
     def test_extra_prediction_case_fails_closed(self):
-        corpus = {"cases": [{"case_id": "test", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
+        corpus = {"schema_version": "surge-gold-corpus-v1.0", "cases": [{"case_id": "test", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
                   "annotation": {"independent_adjudication": True}, "profile": {}}
         result = evaluate(corpus, {"test": {"attributes": [], "relations": []},
                                    "unexpected": {"attributes": [], "relations": []}}, "digest")
@@ -186,7 +186,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
                  "category_recall_min":{x:0 for x in ("negation","contradiction","temporal_update","ambiguity")},
                  "phenomenon_precision_min":{x:1 for x in ("negation","contradiction","temporal_supersession","ambiguity")},
                  "phenomenon_recall_min":{x:1 for x in ("negation","contradiction","temporal_supersession","ambiguity")}}
-        result=evaluate({"cases":cases,"annotation":{"independent_adjudication":True},
+        result=evaluate({"schema_version":"surge-gold-corpus-v1.0","cases":cases,"annotation":{"independent_adjudication":True},
                          "profile":profile,"evidence_span_evaluation":True},predictions,"digest")
         self.assertEqual(result["recognition_quality_gate"],"PASS",result.get("failures"))
         for name in ("negation","contradiction","temporal_supersession","ambiguity"):
@@ -206,7 +206,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
                  "category_recall_min":{"affirmation":0},
                  "phenomenon_precision_min":{x:0 for x in ("negation","contradiction","temporal_supersession","ambiguity")},
                  "phenomenon_recall_min":{x:0 for x in ("negation","contradiction","temporal_supersession","ambiguity")}}
-        result=evaluate({"cases":[case],"annotation":{"independent_adjudication":True},
+        result=evaluate({"schema_version":"surge-gold-corpus-v1.0","cases":[case],"annotation":{"independent_adjudication":True},
                          "profile":profile,"evidence_span_evaluation":True},pred,"digest")
         self.assertIn("category_precision:affirmation",result["failures"])
 
@@ -229,7 +229,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
     def test_test_cases_require_explicit_phenomenon_annotations(self):
         case={"case_id":"no-phenomena","split":"test","text":"x",
               "gold":{"schema_version":"surge-projector-output-v1.0","attributes":[],"relations":[]}}
-        result=evaluate({"cases":[case],"annotation":{"independent_adjudication":True},
+        result=evaluate({"schema_version":"surge-gold-corpus-v1.0","cases":[case],"annotation":{"independent_adjudication":True},
                          "profile":{}},{"no-phenomena":{"schema_version":"surge-projector-output-v1.0",
                          "attributes":[],"relations":[]}},"digest")
         self.assertEqual(result["recognition_quality_gate"],"FAIL")
@@ -238,7 +238,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
-            evaluate({"cases": [case, case], "annotation": {"independent_adjudication": True}},
+            evaluate({"schema_version":"surge-gold-corpus-v1.0","cases": [case, case], "annotation": {"independent_adjudication": True}},
                      {"same": {"attributes": [], "relations": []}}, "digest")
 
 
