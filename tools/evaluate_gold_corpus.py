@@ -62,7 +62,7 @@ def evaluate_case(case, pred):
             return None
         source_name = span.get("source")
         start, end, quote = span.get("start"), span.get("end"), span.get("quote")
-        if source_name not in parts or not isinstance(start, int) or isinstance(start, bool) or not isinstance(end, int) or isinstance(end, bool):
+        if not isinstance(source_name, str) or source_name not in parts or not isinstance(start, int) or isinstance(start, bool) or not isinstance(end, int) or isinstance(end, bool):
             return None
         segment = parts[source_name]
         if start < 0 or end <= start or end > len(segment) or not isinstance(quote, str) or not quote:
@@ -246,11 +246,13 @@ def evaluate_case(case, pred):
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
         "predicted_phenomena": sorted(predicted_phenomena),
-        "gold_phenomena": sorted(set(case.get("phenomena", []))),
+        "gold_phenomena": sorted(case.get("phenomena", []))
+        if isinstance(case.get("phenomena", []), list)
+        and all(isinstance(label, str) for label in case.get("phenomena", [])) else [],
         "phenomenon_metrics": {
-            name: counts(int(name in set(case.get("phenomena", [])) and name in predicted_phenomena),
-                         int(name not in set(case.get("phenomena", [])) and name in predicted_phenomena),
-                         int(name in set(case.get("phenomena", [])) and name not in predicted_phenomena))
+            name: counts(int(name in (case.get("phenomena", []) if isinstance(case.get("phenomena", []), list) else []) and name in predicted_phenomena),
+                         int(name not in (case.get("phenomena", []) if isinstance(case.get("phenomena", []), list) else []) and name in predicted_phenomena),
+                         int(name in (case.get("phenomena", []) if isinstance(case.get("phenomena", []), list) else []) and name not in predicted_phenomena))
             for name in ("negation", "contradiction", "temporal_supersession", "ambiguity")
         },
         "evidence_span_metrics": span_metrics,
@@ -312,7 +314,7 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
     valid_phenomena = {"negation", "contradiction", "temporal_supersession", "ambiguity"}
     for case in test_cases:
         labels = case.get("phenomena")
-        if not isinstance(labels, list) or any(label not in valid_phenomena for label in labels):
+        if not isinstance(labels, list) or any(not isinstance(label, str) or label not in valid_phenomena for label in labels):
             return {"recognition_quality_gate": "FAIL",
                     "reason": "missing or invalid independently annotated phenomena",
                     "case_id": case["case_id"], **identity}
