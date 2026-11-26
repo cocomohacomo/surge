@@ -9,10 +9,10 @@ class StructuredRunnerOutputTests(unittest.TestCase):
                          {"attributes": [], "relations": []})
 
     def test_rejects_banner_before_json(self):
-        self.assertIsNone(extract_json('llama.cpp banner\\n{"attributes":[],"relations":[]}'))
+        self.assertIsNone(extract_json('llama.cpp banner\n{"attributes":[],"relations":[]}'))
 
     def test_rejects_prompt_echo_with_stray_braces(self):
-        self.assertIsNone(extract_json('Prompt {not-json}\\n{"attributes":[],"relations":[]}'))
+        self.assertIsNone(extract_json('Prompt {not-json}\n{"attributes":[],"relations":[]}'))
 
     def test_rejects_markdown_fence(self):
         self.assertIsNone(extract_json('```json\\n{"attributes":[],"relations":[]}\\n```'))
