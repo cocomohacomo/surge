@@ -7,7 +7,7 @@ def valid_row(case_id="case-1"):
     semantic = {"attribute_metrics": metric, "relation_metrics": metric,
                 "unsupported_attribute_count": 0, "duplicate_attribute_count": 0,
                 "duplicate_relation_count": 0, "malformed_count": 0}
-    return {"case_id": case_id, "json_valid": True, "timeout": False,
+    return {"case_id": case_id, "json_valid": True, "projector_schema_valid": True, "timeout": False,
             "return_code": 0, "peak_rss_kib": 100,
             "engineering_semantic_metrics": semantic}
 
@@ -31,6 +31,11 @@ class ModelMatrixSummaryTests(unittest.TestCase):
 
     def test_missing_semantic_metrics_fail(self):
         row = valid_row() | {"engineering_semantic_metrics": None}
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"], "FAIL")
+
+
+    def test_invalid_projector_schema_fails(self):
+        row = valid_row() | {"projector_schema_valid": False}
         self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"], "FAIL")
 
     def test_nonzero_exit_fails(self):
