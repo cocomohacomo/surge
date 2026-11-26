@@ -99,7 +99,7 @@ def run(model, model_path, case):
         return {"case_id": case["case_id"], "timeout": True, "elapsed_seconds": 240}
     elapsed = time.perf_counter() - started
     parsed = extract_json(proc.stdout)
-    rss = re.findall(r"Maximum resident set size \\(kbytes\\):\\s*(\\d+)", proc.stderr)
+    rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
     result = {
         "case_id": case["case_id"], "return_code": proc.returncode,
         "elapsed_seconds": elapsed, "peak_rss_kib": int(rss[-1]) if rss else None,
