@@ -1,0 +1,56 @@
+# SURGE Dual-Gate Implementation Audit (2026-11-27)
+
+Target: docs/evaluation/SURGE_SPEC_CONFORMANCE_DUAL_GATES_v0.1.md and docs/surge/SPECIFICATION_v1.0.md.
+Scope: evaluator, model-matrix runner/summarizer, aggregate evidence path.
+This audit records code-level conformance only. It is not a Core Integrity or Recognition Quality qualification.
+
+## Findings fixed in this increment
+
+1. Empty gold/prediction sets no longer produce precision/recall 1.0. Undefined denominators score zero.
+2. Prediction case IDs must exactly equal held-out test case IDs. Missing and extra IDs fail closed.
+3. Duplicate corpus case IDs and train/development-to-test overlap are rejected.
+4. Missing predicted category is explicitly scored as __missing_category__, while the expected category receives a false negative.
+5. Model-matrix execution requires an explicit expected model count and exact expected case-ID coverage.
+6. Duplicate/missing model names, duplicate/missing/extra cases, invalid JSON, timeout, nonzero exit, missing RSS and incomplete semantic metrics fail execution.
+7. The runner now emits the expected case-ID set and corpus/profile digests.
+8. The strict prediction schema no longer accepts the legacy candidates alias in place of canonical attributes.
+
+## Remaining conformance gaps
+
+### Recognition Quality
+
+- The checked-in corpus is synthetic seed data with independent_adjudication=false; Recognition Quality MUST remain NOT_RUN.
+- The current corpus has no independently adjudicated evidence spans. Evidence quote containment/support is not a substitute for span precision and recall.
+- Explicit negation, contradiction, temporal supersession and ambiguity metrics are not yet independently scored as separate task-specific outcomes.
+- Category precision floors are not yet profile-pinned alongside category recall floors.
+- The profile does not yet declare all required thresholds, including macro-F1, schema-valid rate and false-positive relation rate. The evaluator therefore fails a future independent corpus closed until the profile is completed.
+- Model/runtime reproducibility is incomplete: llama.cpp is cloned from a moving shallow default branch, and Hugging Face downloads do not pin immutable repository revisions. Model hashes are recorded only after download.
+- Environment provenance (compiler/CMake flags, llama.cpp commit, dependency lock, CPU feature set, model/tokenizer/template revisions and generation parameters) is not yet emitted as one immutable experiment manifest.
+- Candidate recall quality from the cognition specification (recall@k, diversity, ranking quality, ambiguity preservation, cross-cluster recovery and pinned-state determinism) is outside the current projector matrix.
+
+### Core Integrity
+
+- The workflow runs CTest and Python smoke tests but deliberately emits core_integrity_gate=NOT_RUN.
+- Full specification audit remains outstanding: all ingress routes, atomic Admission/ChaosCluster membership, producer-label/weight preservation, Packet-to-Semantic Journal correlation, full Graph digest, trusted Snapshot baseline restore, suffix replay, compaction crash windows, backup fallback, reference closure and allocator/RSS separation.
+- PR #156 replay-integrity work and Snapshot baseline integration require reconciliation against current main and a single end-to-end fault-injection suite.
+
+### Aggregate gate
+
+- The aggregate script requires both track statuses to be exactly PASS and checks commit/profile/corpus identity equality.
+- Aggregate PASS remains prohibited until both independent evidence tracks are complete and use the same immutable experiment identity.
+
+## Next recommended implementation sequence
+
+1. Define and version the canonical projector JSON Schema, including category, polarity, relation endpoints and evidence-span representation; validate it independently of metric scoring.
+2. Extend independent annotation with exact evidence spans, category precision/recall floors, explicit negation/contradiction/temporal labels and ambiguity/abstention labels.
+3. Freeze a benchmark profile with every mandatory threshold before collecting held-out results; missing or invalid thresholds must never pass.
+4. Pin llama.cpp to a reviewed commit and each Hugging Face model to an immutable revision; emit an experiment manifest with hashes and runtime parameters.
+5. Add case-level candidate recall/ranking benchmarks from the cognition specification, keeping candidate proposals distinct from committed memberships.
+6. In Core, complete Snapshot baseline trust/restore plus Journal suffix replay and full Graph digest reconciliation, then add crash injection across commit, projection, compaction and backup fallback.
+7. Only then run the independent held-out corpus and full Core integrity suite; aggregate qualification remains fail-closed until both pass.
+
+## Current qualification status
+
+- Core Integrity: NOT_RUN
+- Recognition Quality: NOT_RUN
+- Aggregate: FAIL by design until both evidence tracks are independently complete.
