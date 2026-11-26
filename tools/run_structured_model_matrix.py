@@ -34,7 +34,7 @@ def extract_json(text):
  return None
 
 def run(model,model_path,case):
- prompt=f"<|im_start|>system\\n{SYSTEM}<|im_end|>\\n<|im_start|>user\\nContext: {case.get('context','')}\\nInput: {case.get('text','')}\\nReturn structured JSON.<|im_end|>\\n<|im_start|>assistant\\n"
+ prompt=f"<|im_start|>system\n{SYSTEM}<|im_end|>\n<|im_start|>user\nContext: {case.get('context','')}\nInput: {case.get('text','')}\nReturn structured JSON.<|im_end|>\n<|im_start|>assistant\n"
  cmd=["/usr/bin/time","-v",CLI,"-m",str(model_path),"-p",prompt,"-n","192","--temp","0","--top-k","1","--threads",str(THREADS),"--no-display-prompt","--simple-io"]
  t=time.perf_counter()
  try: proc=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
@@ -64,7 +64,7 @@ def main():
   rss=[r["peak_rss_kib"] for r in mr["results"] if r.get("peak_rss_kib") is not None]
   mr.update({"json_valid_cases":sum(bool(r.get("json_valid")) for r in mr["results"]),"coverage":sum(bool(r.get("parsed_output")) for r in mr["results"])/len(mr["results"]) if mr["results"] else 0.0,"timeouts":timed,"latency_mean_seconds":sum(elapsed)/len(elapsed) if elapsed else None,"latency_p50_seconds":median(elapsed) if elapsed else None,"latency_max_seconds":max(elapsed) if elapsed else None,"peak_rss_kib_max":max(rss) if rss else None})
   report["models"].append(mr)
- OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+ OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
  print(json.dumps(report,ensure_ascii=False,indent=2))
  return 0
 if __name__=="__main__": raise SystemExit(main())
