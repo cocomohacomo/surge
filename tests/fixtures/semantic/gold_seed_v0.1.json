@@ -32,6 +32,18 @@
       "unsupported_evidence": 0.85,
       "relation": 0.85,
       "topic_shift": 0.85
+    },
+    "phenomenon_precision_min": {
+      "negation": 0.8,
+      "contradiction": 0.8,
+      "temporal_supersession": 0.8,
+      "ambiguity": 0.8
+    },
+    "phenomenon_recall_min": {
+      "negation": 0.9,
+      "contradiction": 0.9,
+      "temporal_supersession": 0.9,
+      "ambiguity": 0.9
     }
   },
   "cases": [
