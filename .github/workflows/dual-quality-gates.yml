@@ -137,7 +137,7 @@ jobs:
           from pathlib import Path
           p=Path("recognition-quality-evidence.json"); report=json.loads(p.read_text())
           report["commit_sha"]=os.environ["COMMIT_SHA"]
-          p.write_text(json.dumps(report,indent=2)+"\\n")
+          p.write_text(json.dumps(report,indent=2)+"\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
