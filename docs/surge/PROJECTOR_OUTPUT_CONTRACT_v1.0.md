@@ -41,3 +41,19 @@ Legacy `evidence_quote`, `evidence`, `candidates`, implicit category and missing
 ## 8. Qualification
 
 Recognition Quality requires an independently adjudicated held-out corpus, a pre-registered benchmark profile, complete case coverage and passing schema, semantic and evidence-span thresholds. Missing Gold evidence spans or missing thresholds fail closed when evidence-span evaluation is enabled.
+
+## 9. Seed corpus migration and phenomenon annotations
+
+The engineering seed corpus uses corpus schema version `surge-gold-corpus-v1.0`. Every Gold attribute and relation carries one or more exact Evidence Spans. These examples are synthetic engineering fixtures only; their spans are not independently adjudicated and do not qualify Recognition Quality.
+
+Held-out test cases MUST carry an explicit `phenomena` array drawn from:
+- `negation`
+- `contradiction`
+- `temporal_supersession`
+- `ambiguity`
+
+The evaluator reports case-level and aggregate Precision, Recall and F1 independently for each phenomenon. The operational detector mapping is fixed: negative-polarity attributes indicate negation; contradiction-category attributes or `contradicts` relations indicate contradiction; temporal-update attributes or `supersedes` relations indicate temporal supersession; ambiguity-category attributes or explicit abstentions indicate ambiguity. This is a benchmark annotation contract, not a Core-side semantic inference rule.
+
+## 10. Category thresholds
+
+The benchmark profile MUST declare both `category_precision_min` and `category_recall_min`. Their key sets MUST exactly equal the Gold-supported attribute categories in the held-out test split. Every threshold is a finite number in [0,1]. Missing, extra, malformed or unsupported category floors fail closed.
