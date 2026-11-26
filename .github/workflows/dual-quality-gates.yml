@@ -40,7 +40,7 @@ jobs:
             "profile_sha256":hashlib.sha256(profile).hexdigest(),
             "corpus_sha256":hashlib.sha256(corpus.read_bytes()).hexdigest(),
             "evidence_kind":"cpp-ctest-and-python-suite-smoke-only","limitations":"This report covers this workflow's CTest and Python suite; it is not a claim that every production recovery scenario is independently certified."}
-          Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          Path("core-integrity-evidence.json").write_text(json.dumps(report,indent=2)+"\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -76,7 +76,7 @@ jobs:
           from pathlib import Path
           p=Path("recognition-quality-evidence.json"); report=json.loads(p.read_text())
           report["commit_sha"]=os.environ["COMMIT_SHA"]
-          p.write_text(json.dumps(report,indent=2)+"\\n")
+          p.write_text(json.dumps(report,indent=2)+"\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
