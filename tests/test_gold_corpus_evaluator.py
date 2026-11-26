@@ -154,7 +154,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         cases = [
             {"case_id":"n","split":"test","text":"参加しません","categories":["negation"],
              "phenomena":["negation"],"gold":{"attributes":[{"key":"参加","value":"参加",
-             "polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":7,"quote":"しません"}]}],"relations":[]}},
+             "polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":6,"quote":"しません"}]}],"relations":[]}},
             {"case_id":"c","split":"test","context":"会議は火曜","text":"会議は水曜に変更",
              "categories":["contradiction"],"phenomena":["contradiction"],
              "gold":{"attributes":[{"key":"会議日","value":"水曜","polarity":"positive","category":"contradiction",
