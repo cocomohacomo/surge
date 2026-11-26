@@ -71,7 +71,7 @@ def evaluate(corpus,predictions,corpus_sha,profile_sha=None,commit_sha=None):
  failures=[]
  for key,metric in (("attribute_f1_min",attr),("relation_f1_min",rel)):
   if metric["f1"]<profile.get(key,1.1): failures.append(key)
- if evs/evn if evn else 0 < profile.get("evidence_support_min",1.1): failures.append("evidence_support_min")
+ if (evs/evn if evn else 0.0) < profile.get("evidence_support_min",1.1): failures.append("evidence_support_min")
  for cat,m in category_metrics.items():
   floor=profile.get("category_recall_min",{}).get(cat)
   if floor is None or m["recall"]<floor: failures.append("category_recall:"+cat)
