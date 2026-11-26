@@ -37,4 +37,5 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         case={"case_id":"neg","categories":["negation"],"text":"参加しない","gold":{"attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation"}],"relations":[]}}
         result=evaluate_case(case,{"attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation","evidence_quote":"参加しない"}],"relations":[]})
         self.assertEqual(result["categories"]["negation"]["recall"],1.0)
-\nif __name__=="__main__": unittest.main()
+
+if __name__=="__main__": unittest.main()
