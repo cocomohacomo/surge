@@ -27,6 +27,13 @@ SYSTEM="""SURGEの外部認識Projectorとして、真偽を決定せず入力�
 JSONのみ出力: {"attributes":[{"key":"属性名","value":"値","polarity":"positive|negative|uncertain","evidence_quote":"原文抜粋"}],"relations":[{"type":"supports|contradicts|supersedes|refers_to|exception_of","source":"属性/対象","target":"属性/対象"}],"uncertainties":["曖昧な点"]}。
 否定表現、矛盾、時間更新、曖昧性を明示し、根拠がない値は作らない。"""
 
+def sha256_file(path):
+ h=hashlib.sha256()
+ with path.open("rb") as stream:
+  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+   h.update(chunk)
+ return h.hexdigest()
+
 def extract_json(text):
  decoder=json.JSONDecoder()
  for i,c in enumerate(text):
@@ -56,7 +63,7 @@ def main():
  for m in MODELS:
   dest=ROOT/m["name"];dest.mkdir(parents=True,exist_ok=True)
   path=Path(hf_hub_download(repo_id=m["repo"],filename=m["file"],local_dir=str(dest)))
-  mr={"name":m["name"],"repository":m["repo"],"model_file":m["file"],"file_bytes":path.stat().st_size,"file_sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"results":[]}
+  mr={"name":m["name"],"repository":m["repo"],"model_file":m["file"],"file_bytes":path.stat().st_size,"file_sha256":sha256_file(path),"results":[]}
   for case in corpus["cases"]:
    r=run(m,path,case)
    if r.get("return_code",0)!=0 and not r.get("timeout"): raise RuntimeError(f"model command failed: {m['name']} {case['case_id']}")
