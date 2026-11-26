@@ -40,7 +40,7 @@ def run(model,model_path,case):
  try: proc=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
  except subprocess.TimeoutExpired: return {"case_id":case["case_id"],"timeout":True,"elapsed_seconds":240}
  elapsed=time.perf_counter()-t; parsed=extract_json(proc.stdout)
- rss=re.findall(r"Maximum resident set size \\(kbytes\\):\\s*(\\d+)",proc.stderr)
+ rss=re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)",proc.stderr)
  return {"case_id":case["case_id"],"return_code":proc.returncode,"elapsed_seconds":elapsed,"peak_rss_kib":int(rss[-1]) if rss else None,"json_valid":parsed is not None,"parsed_output":parsed,"raw_output":proc.stdout[:4000],"stderr":proc.stderr[-1000:]}
 
 def main():
