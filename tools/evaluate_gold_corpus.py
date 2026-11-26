@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sys
 from jsonschema import Draft202012Validator
 from pathlib import Path
@@ -308,6 +309,16 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
                 "missing_case_ids": missing_ids, "extra_case_ids": extra_ids,
                 "case_count": len(test_cases), **identity}
 
+    valid_phenomena = {"negation", "contradiction", "temporal_supersession", "ambiguity"}
+    for case in test_cases:
+        labels = case.get("phenomena")
+        if not isinstance(labels, list) or any(label not in valid_phenomena for label in labels):
+            return {"recognition_quality_gate": "FAIL",
+                    "reason": "missing or invalid independently annotated phenomena",
+                    "case_id": case["case_id"], **identity}
+        if len(labels) != len(set(labels)):
+            return {"recognition_quality_gate": "FAIL",
+                    "reason": "duplicate phenomenon annotation", "case_id": case["case_id"], **identity}
     results = [evaluate_case(case, predictions[case["case_id"]]) for case in test_cases]
 
     def aggregate(field):
@@ -372,17 +383,24 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
     for key in required:
         if key not in profile:
             failures.append("profile_missing:" + key)
+        elif key not in ("category_precision_min", "category_recall_min",
+                         "phenomenon_precision_min", "phenomenon_recall_min"):
+            value = profile[key]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
+                failures.append("profile_invalid:" + key)
     for key, metric in (("attribute_f1_min", attr_metrics),
                         ("relation_f1_min", rel_metrics)):
         if key in profile and metric["f1"] < profile[key]:
             failures.append(key)
-    if "macro_f1_min" in profile and macro_f1 < profile["macro_f1_min"]:
+    if isinstance(profile.get("macro_f1_min"), (int, float)) and not isinstance(profile.get("macro_f1_min"), bool) and "macro_f1_min" in profile and macro_f1 < profile["macro_f1_min"]:
         failures.append("macro_f1_min")
-    if "evidence_support_min" in profile and evidence_rate < profile["evidence_support_min"]:
+    if isinstance(profile.get("evidence_support_min"), (int, float)) and not isinstance(profile.get("evidence_support_min"), bool) and evidence_rate < profile["evidence_support_min"]:
         failures.append("evidence_support_min")
     if corpus.get("evidence_span_evaluation") is True:
         if "evidence_span_f1_min" not in profile:
             failures.append("profile_missing:evidence_span_f1_min")
+        elif not isinstance(profile["evidence_span_f1_min"], (int, float)) or isinstance(profile["evidence_span_f1_min"], bool) or not math.isfinite(profile["evidence_span_f1_min"]) or not 0 <= profile["evidence_span_f1_min"] <= 1:
+            failures.append("profile_invalid:evidence_span_f1_min")
         elif span_metrics["f1"] < profile["evidence_span_f1_min"]:
             failures.append("evidence_span_f1_min")
         if span_gold_total == 0:
@@ -391,6 +409,8 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         failures.append("schema_valid_rate_min")
     if "false_positive_relation_rate_max" not in profile:
         failures.append("profile_missing:false_positive_relation_rate_max")
+    elif not isinstance(profile["false_positive_relation_rate_max"], (int, float)) or isinstance(profile["false_positive_relation_rate_max"], bool) or not math.isfinite(profile["false_positive_relation_rate_max"]) or not 0 <= profile["false_positive_relation_rate_max"] <= 1:
+        failures.append("profile_invalid:false_positive_relation_rate_max")
     elif fp_relation_rate > profile["false_positive_relation_rate_max"]:
         failures.append("false_positive_relation_rate_max")
     precision_floors = profile.get("category_precision_min", {})
