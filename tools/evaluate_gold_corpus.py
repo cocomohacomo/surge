@@ -418,6 +418,8 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
                         ("schema_valid_rate_min", {"f1": schema_valid_rate})):
         if key in profile and valid_threshold(profile[key]) and metric["f1"] < profile[key]:
             failures.append(key)
+    if corpus.get("evidence_span_evaluation") is not True:
+        failures.append("evidence_span_evaluation_required")
     if corpus.get("evidence_span_evaluation") is True:
         if "evidence_span_f1_min" not in profile:
             failures.append("profile_missing:evidence_span_f1_min")
@@ -465,6 +467,12 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         if not isinstance(floors, dict):
             failures.append("invalid_phenomenon_" + label + "_min")
             continue
+        missing_phenomena = sorted(set(phenomenon_names) - set(floors))
+        extra_phenomena = sorted(set(floors) - set(phenomenon_names))
+        if missing_phenomena:
+            failures.append("profile_phenomenon_" + label + "_missing:" + ",".join(missing_phenomena))
+        if extra_phenomena:
+            failures.append("profile_phenomenon_" + label + "_unexpected:" + ",".join(extra_phenomena))
         for phenomenon in phenomenon_names:
             floor = floors.get(phenomenon)
             metric = phenomenon_metrics[phenomenon]
