@@ -48,6 +48,15 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         data["expected_model_count"] = 2
         self.assertEqual(summarize(data)["model_matrix_execution_gate"], "FAIL")
 
+
+    def test_non_finite_or_negative_metrics_fail(self):
+        row = valid_row()
+        row["engineering_semantic_metrics"]["attribute_metrics"]["f1"] = float("nan")
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"], "FAIL")
+        row = valid_row()
+        row["engineering_semantic_metrics"]["relation_metrics"]["tp"] = -1
+        self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"], "FAIL")
+
     def test_complete_model_matrix_passes_execution_only(self):
         result = summarize(report())
         self.assertEqual(result["model_matrix_execution_gate"], "PASS")
