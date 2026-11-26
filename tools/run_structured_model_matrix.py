@@ -5,11 +5,15 @@ Uses the seed corpus for engineering smoke metrics only. Since its annotation is
 not independent, semantic qualification is explicitly NOT_RUN.
 """
 import json, os, re, shutil, subprocess, time
+import sys
 from pathlib import Path
 from statistics import median
 from huggingface_hub import hf_hub_download
 
-from tools.evaluate_gold_corpus import evaluate_case
+# Direct script execution sets sys.path[0] to tools/, not the repository root.
+# Import the sibling module without requiring tools/ to be a Python package.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evaluate_gold_corpus import evaluate_case
 
 MODELS=[
  {"name":"qwen3-0.6b-q4_k_m","repo":"gvij/qwen3-0.6b-gguf","file":"qwen3-0.6b-q4_k_m.gguf","format":"chatml"},
