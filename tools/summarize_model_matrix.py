@@ -91,9 +91,10 @@ def summarize(report):
             _valid_metric(item.get("evidence_span_metrics"))
             and _valid_metric(item.get("attribute_evidence_span_metrics"))
             and _valid_metric(item.get("relation_evidence_span_metrics"))
-            and isinstance(item.get("categories"), dict)
+            and isinstance(item.get("categories"), dict) and bool(item["categories"])
             and all(_valid_metric(metric) for metric in item["categories"].values())
             and isinstance(item.get("phenomenon_metrics"), dict)
+            and set(item["phenomenon_metrics"]) == {"negation", "contradiction", "temporal_supersession", "ambiguity"}
             and all(_valid_metric(metric) for metric in item["phenomenon_metrics"].values())
             for item in semantic
         )
