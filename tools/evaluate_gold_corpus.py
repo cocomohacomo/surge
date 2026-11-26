@@ -57,7 +57,7 @@ def evaluate_case(case, pred):
     ga.discard(None)
 
     schema_errors = 0
-    raw_attrs = pred.get("attributes", pred.get("candidates"))
+    raw_attrs = pred.get("attributes")
     if not isinstance(raw_attrs, list):
         raw_attrs = []
         schema_errors += 1
