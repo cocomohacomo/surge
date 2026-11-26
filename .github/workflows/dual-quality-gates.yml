@@ -76,7 +76,7 @@ jobs:
           corpus=json.loads(p.read_text(encoding="utf-8"))
           profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
           report={"recognition_quality_gate":"NOT_RUN","reason":"recognition workflow did not complete; placeholder evidence","commit_sha":os.environ["COMMIT_SHA"],"profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
-          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+"\n")
           PY
       - name: Execute structured Japanese CPU model matrix
         env:
