@@ -219,12 +219,32 @@ def evaluate_case(case, pred):
         attribute_span_metrics["tp"] + relation_span_metrics["tp"],
         attribute_span_metrics["fp"] + relation_span_metrics["fp"],
         attribute_span_metrics["fn"] + relation_span_metrics["fn"])
+    predicted_phenomena = set()
+    for _, item in parsed_attrs:
+        category = norm(item.get("category", ""))
+        polarity = norm(item.get("polarity", ""))
+        if polarity == "negative":
+            predicted_phenomena.add("negation")
+        if category == "contradiction":
+            predicted_phenomena.add("contradiction")
+        if category == "temporal_update":
+            predicted_phenomena.add("temporal_supersession")
+        if category == "ambiguity":
+            predicted_phenomena.add("ambiguity")
+    if any(item[0] == "contradicts" for item in parsed_rels):
+        predicted_phenomena.add("contradiction")
+    if any(item[0] == "supersedes" for item in parsed_rels):
+        predicted_phenomena.add("temporal_supersession")
+    if pred.get("abstentions"):
+        predicted_phenomena.add("ambiguity")
+
     evidence_total = len(parsed_attrs)
     return {
         "case_id": case_id,
         "attribute_metrics": attr_metrics, "relation_metrics": rel_metrics,
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
+        "predicted_phenomena": sorted(predicted_phenomena),
         "evidence_span_metrics": span_metrics,
         "attribute_evidence_span_metrics": attribute_span_metrics,
         "relation_evidence_span_metrics": relation_span_metrics,
@@ -322,12 +342,26 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
     fp_relation_rate = relation_fp / predicted_relations if predicted_relations else 0.0
     schema_valid_count = sum(row["schema_valid"] for row in results)
     schema_valid_rate = schema_valid_count / len(results)
+    phenomenon_names = ("negation", "contradiction", "temporal_supersession", "ambiguity")
+    phenomenon_metrics = {}
+    for phenomenon in phenomenon_names:
+        tp = fp = fn = 0
+        for case, row in zip(test_cases, results):
+            gold_set = set(case.get("phenomena", []))
+            pred_set = set(row["predicted_phenomena"])
+            tp += int(phenomenon in gold_set and phenomenon in pred_set)
+            fp += int(phenomenon not in gold_set and phenomenon in pred_set)
+            fn += int(phenomenon in gold_set and phenomenon not in pred_set)
+        phenomenon_metrics[phenomenon] = counts(tp, fp, fn)
+
     profile = corpus.get("profile", {})
     if not isinstance(profile, dict):
         raise ValueError("corpus.profile must be an object")
     failures = []
     required = ("attribute_f1_min", "relation_f1_min", "macro_f1_min",
-                "evidence_support_min", "schema_valid_rate_min")
+                "evidence_support_min", "schema_valid_rate_min",
+                "category_precision_min", "category_recall_min",
+                "phenomenon_precision_min", "phenomenon_recall_min")
     for key in required:
         if key not in profile:
             failures.append("profile_missing:" + key)
@@ -352,21 +386,41 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         failures.append("profile_missing:false_positive_relation_rate_max")
     elif fp_relation_rate > profile["false_positive_relation_rate_max"]:
         failures.append("false_positive_relation_rate_max")
-    floors = profile.get("category_recall_min", {})
-    if not isinstance(floors, dict) or not floors:
-        failures.append("profile_missing:category_recall_min")
-        floors = {}
-    for category, floor in floors.items():
-        metric = category_metrics.get(category)
-        if metric is None or supported_categories.get(category, 0) == 0:
-            failures.append("category_without_gold_support:" + category)
-        elif metric["recall"] < floor:
-            failures.append("category_recall:" + category)
+    precision_floors = profile.get("category_precision_min", {})
+    recall_floors = profile.get("category_recall_min", {})
+    for label, floors in (("precision", precision_floors), ("recall", recall_floors)):
+        if not isinstance(floors, dict) or not floors:
+            failures.append("profile_missing:category_" + label + "_min")
+            continue
+        for category, floor in floors.items():
+            metric = category_metrics.get(category)
+            if metric is None or supported_categories.get(category, 0) == 0:
+                failures.append("category_without_gold_support:" + category)
+            elif not isinstance(floor, (int, float)) or isinstance(floor, bool) or not 0 <= floor <= 1:
+                failures.append("invalid_category_" + label + "_floor:" + category)
+            elif metric[label] < floor:
+                failures.append("category_" + label + ":" + category)
+
+    for label in ("precision", "recall"):
+        floors = profile.get("phenomenon_" + label + "_min", {})
+        if not isinstance(floors, dict):
+            failures.append("invalid_phenomenon_" + label + "_min")
+            continue
+        for phenomenon in phenomenon_names:
+            floor = floors.get(phenomenon)
+            metric = phenomenon_metrics[phenomenon]
+            if floor is None:
+                failures.append("profile_missing:phenomenon_" + label + ":" + phenomenon)
+            elif not isinstance(floor, (int, float)) or isinstance(floor, bool) or not 0 <= floor <= 1:
+                failures.append("invalid_phenomenon_" + label + ":" + phenomenon)
+            elif metric[label] < floor:
+                failures.append("phenomenon_" + label + ":" + phenomenon)
 
     return {
         "recognition_quality_gate": "PASS" if not failures else "FAIL",
         "failures": failures, "attribute_metrics": attr_metrics,
         "relation_metrics": rel_metrics, "category_metrics": category_metrics,
+        "phenomenon_metrics": phenomenon_metrics,
         "category_gold_support": supported_categories,
         "macro_f1": macro_f1, "schema_valid_rate": schema_valid_rate,
         "evidence_support_rate": evidence_rate,
