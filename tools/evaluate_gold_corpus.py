@@ -331,6 +331,10 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
                 return {"recognition_quality_gate": "FAIL",
                         "reason": "every held-out Gold attribute and relation requires Evidence Spans",
                         "case_id": case["case_id"], "field": field, **identity}
+        if list(_PROJECTOR_VALIDATOR.iter_errors(gold)):
+            return {"recognition_quality_gate": "FAIL",
+                    "reason": "held-out Gold annotation does not conform to Canonical Projector Schema v1.0",
+                    "case_id": case["case_id"], **identity}
     results = [evaluate_case(case, predictions[case["case_id"]]) for case in test_cases]
 
     def aggregate(field):
