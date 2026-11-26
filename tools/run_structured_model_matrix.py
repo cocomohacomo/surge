@@ -8,7 +8,6 @@ import hashlib, json, os, platform, re, shutil, subprocess, time
 import sys
 from pathlib import Path
 from statistics import median
-from huggingface_hub import hf_hub_download
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -118,6 +117,10 @@ def run(model, model_path, case):
     return result
 
 def main():
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as error:
+        raise SystemExit("model matrix requires huggingface_hub; install requirements-model-matrix.txt") from error
     if not MODELS:
         raise SystemExit("model lock has no enabled candidates")
     if not shutil.which(CLI):
