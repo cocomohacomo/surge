@@ -65,6 +65,19 @@ jobs:
           git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/llama.cpp"
           cmake -S "$RUNNER_TEMP/llama.cpp" -B "$RUNNER_TEMP/llama.cpp/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=ON
           cmake --build "$RUNNER_TEMP/llama.cpp/build" --target llama-cli --parallel 2
+      - name: Initialize fail-closed Recognition evidence
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path("tests/fixtures/semantic/gold_seed_v0.1.json")
+          corpus=json.loads(p.read_text(encoding="utf-8"))
+          profile=json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()
+          report={"recognition_quality_gate":"NOT_RUN","reason":"recognition workflow did not complete; placeholder evidence","commit_sha":os.environ["COMMIT_SHA"],"profile_sha256":hashlib.sha256(profile).hexdigest(),"corpus_sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
+          Path("recognition-quality-evidence.json").write_text(json.dumps(report,indent=2)+"\\n")
+          PY
       - name: Execute structured Japanese CPU model matrix
         env:
           LLAMA_CLI: ${{ runner.temp }}/llama.cpp/build/bin/llama-cli
@@ -75,6 +88,7 @@ jobs:
           python tools/run_structured_model_matrix.py
           python tools/summarize_model_matrix.py "$SURGE_MODEL_MATRIX_REPORT" "$RUNNER_TEMP/surge-model-matrix-summary.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: surge-structured-model-matrix
           path: |
@@ -105,6 +119,7 @@ jobs:
           p.write_text(json.dumps(report,indent=2)+"\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: surge-recognition-quality-evidence
           path: recognition-quality-evidence.json
