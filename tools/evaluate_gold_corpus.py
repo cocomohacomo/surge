@@ -49,7 +49,7 @@ def evaluate_case(case: dict, prediction: dict) -> dict:
         else:
             malformed_rel += 1
             malformed += 1
-    relations = score_counts(len(gold_rel & pred_rel), len(pred_rel - gold_rel) + malformed_rel, len(gold_rel - pred_rel)))
+    relations = score_counts(len(gold_rel & pred_rel), len(pred_rel - gold_rel) + malformed_rel, len(gold_rel - pred_rel))
     return {"case_id":case["case_id"],"attribute_metrics":attrs,"relation_metrics":relations,
             "evidence_supported":sum(evidence_flags),"evidence_total":len(evidence_flags),
             "evidence_support_rate":sum(evidence_flags)/len(evidence_flags) if evidence_flags else 0.0,
