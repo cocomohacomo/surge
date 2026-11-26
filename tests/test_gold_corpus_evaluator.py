@@ -93,6 +93,47 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertFalse(result["schema_valid"])
         self.assertEqual(result["malformed_count"], 1)
 
+
+    def test_exact_evidence_span_precision_recall(self):
+        span = {"source": "text", "start": 3, "end": 6, "quote": "水曜日"}
+        case = {"case_id": "span", "text": "締切は水曜日",
+                "gold": {"attributes": [{"key": "deadline", "value": "水曜日",
+                                         "polarity": "positive", "category": "temporal",
+                                         "evidence_spans": [span]}], "relations": []}}
+        pred = {"attributes": [{"key": "deadline", "value": "水曜日",
+                                "polarity": "positive", "category": "temporal",
+                                "evidence_spans": [span]}], "relations": []}
+        result = evaluate_case(case, pred)
+        self.assertEqual(result["evidence_span_metrics"]["precision"], 1.0)
+        self.assertEqual(result["evidence_span_metrics"]["recall"], 1.0)
+
+    def test_invalid_evidence_span_is_malformed_and_unsupported(self):
+        case = {"case_id": "span-invalid", "text": "期限は水曜",
+                "gold": {"attributes": [{"key": "期限", "value": "水曜"}], "relations": []}}
+        pred = {"attributes": [{"key": "期限", "value": "水曜",
+                                "evidence_spans": [{"source": "text", "start": 0,
+                                                    "end": 2, "quote": "誤った引用"}]}],
+                "relations": []}
+        result = evaluate_case(case, pred)
+        self.assertEqual(result["malformed_count"], 1)
+        self.assertEqual(result["unsupported_attribute_count"], 1)
+
+    def test_span_evaluation_requires_gold_spans_and_threshold(self):
+        corpus = {"evidence_span_evaluation": True,
+                  "cases": [{"case_id": "span-profile", "split": "test", "text": "期限は水曜",
+                             "gold": {"attributes": [{"key": "期限", "value": "水曜"}],
+                                      "relations": []}}],
+                  "annotation": {"independent_adjudication": True},
+                  "profile": {"attribute_f1_min": 0, "relation_f1_min": 0,
+                              "macro_f1_min": 0, "evidence_support_min": 0,
+                              "schema_valid_rate_min": 0,
+                              "false_positive_relation_rate_max": 1,
+                              "category_recall_min": {"temporal": 0}}}
+        pred = {"span-profile": {"attributes": [{"key": "期限", "value": "水曜"}],
+                                 "relations": []}}
+        result = evaluate(corpus, pred, "corpus")
+        self.assertIn("evidence_span_gold_empty", result["failures"])
+
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
