@@ -203,13 +203,15 @@ def evaluate_case(case, pred):
             len(category_pred - category_gold) + category_duplicates,
             len(category_gold - category_pred))
 
-    unique_spans = set(predicted_spans) | unique_relation_spans
-    all_gold_spans = gold_spans | gold_relation_spans
-    duplicate_spans = (len(predicted_spans) - len(set(predicted_spans))
-                       + duplicate_relation_spans)
-    span_metrics = counts(len(all_gold_spans & unique_spans),
-                          len(unique_spans - all_gold_spans) + duplicate_spans,
-                          len(all_gold_spans - unique_spans))
+    unique_spans = set(predicted_spans)
+    duplicate_spans = len(predicted_spans) - len(unique_spans)
+    attribute_span_metrics = counts(len(gold_spans & unique_spans),
+                                     len(unique_spans - gold_spans) + duplicate_spans,
+                                     len(gold_spans - unique_spans))
+    span_metrics = counts(
+        attribute_span_metrics["tp"] + relation_span_metrics["tp"],
+        attribute_span_metrics["fp"] + relation_span_metrics["fp"],
+        attribute_span_metrics["fn"] + relation_span_metrics["fn"])
     evidence_total = len(parsed_attrs)
     return {
         "case_id": case_id,
@@ -217,6 +219,7 @@ def evaluate_case(case, pred):
         "attribute": attr_metrics, "relation": rel_metrics,
         "categories": categories,
         "evidence_span_metrics": span_metrics,
+        "attribute_evidence_span_metrics": attribute_span_metrics,
         "relation_evidence_span_metrics": relation_span_metrics,
         "gold_evidence_span_count": len(gold_spans) + len(gold_relation_spans),
         "predicted_evidence_span_count": len(predicted_spans) + len(predicted_relation_spans),
