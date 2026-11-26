@@ -235,6 +235,20 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["recognition_quality_gate"],"FAIL")
         self.assertIn("phenomena",result["reason"])
 
+
+    def test_invalid_gold_span_returns_structured_fail(self):
+        case={"case_id":"bad-span","split":"test","text":"期限は水曜","phenomena":[],
+              "gold":{"schema_version":"surge-projector-output-v1.0",
+                      "attributes":[{"key":"期限","value":"水曜","polarity":"positive",
+                                     "category":"temporal","evidence_spans":[
+                                         {"source":"text","start":0,"end":2,"quote":"違う"}]}],
+                      "relations":[]}}
+        pred={"bad-span":{"schema_version":"surge-projector-output-v1.0","attributes":[],"relations":[]}}
+        result=evaluate({"schema_version":"surge-gold-corpus-v1.0","cases":[case],
+                         "annotation":{"independent_adjudication":True}},pred,"digest")
+        self.assertEqual(result["recognition_quality_gate"],"FAIL")
+        self.assertIn("invalid Gold",result["reason"])
+
     def test_duplicate_corpus_case_id_rejected(self):
         case = {"case_id": "same", "split": "test", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}
         with self.assertRaises(ValueError):
