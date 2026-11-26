@@ -384,15 +384,22 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
     schema_valid_rate = schema_valid_count / len(results)
     phenomenon_names = ("negation", "contradiction", "temporal_supersession", "ambiguity")
     phenomenon_metrics = {}
+    phenomenon_support = {}
     for phenomenon in phenomenon_names:
         tp = fp = fn = 0
+        positive_cases = negative_cases = 0
         for case, row in zip(test_cases, results):
             gold_set = set(case.get("phenomena", []))
             pred_set = set(row["predicted_phenomena"])
+            positive_cases += int(phenomenon in gold_set)
+            negative_cases += int(phenomenon not in gold_set)
             tp += int(phenomenon in gold_set and phenomenon in pred_set)
             fp += int(phenomenon not in gold_set and phenomenon in pred_set)
             fn += int(phenomenon in gold_set and phenomenon not in pred_set)
         phenomenon_metrics[phenomenon] = counts(tp, fp, fn)
+        phenomenon_support[phenomenon] = {
+            "positive_cases": positive_cases, "negative_cases": negative_cases
+        }
 
     profile = corpus.get("profile", {})
     if not isinstance(profile, dict):
@@ -462,6 +469,9 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
             elif metric[label] < floor:
                 failures.append("category_" + label + ":" + category)
 
+    for phenomenon, support in phenomenon_support.items():
+        if support["positive_cases"] == 0 or support["negative_cases"] == 0:
+            failures.append("phenomenon_insufficient_gold_support:" + phenomenon)
     for label in ("precision", "recall"):
         floors = profile.get("phenomenon_" + label + "_min", {})
         if not isinstance(floors, dict):
@@ -488,6 +498,7 @@ def evaluate(corpus, predictions, corpus_sha, profile_sha=None, commit_sha=None)
         "failures": failures, "attribute_metrics": attr_metrics,
         "relation_metrics": rel_metrics, "category_metrics": category_metrics,
         "phenomenon_metrics": phenomenon_metrics,
+        "phenomenon_gold_support": phenomenon_support,
         "category_gold_support": supported_categories,
         "macro_f1": macro_f1, "schema_valid_rate": schema_valid_rate,
         "evidence_support_rate": evidence_rate,
