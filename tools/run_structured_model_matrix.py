@@ -4,7 +4,7 @@
 Uses the seed corpus for engineering smoke metrics only. Since its annotation is
 not independent, semantic qualification is explicitly NOT_RUN.
 """
-import hashlib, json, os, re, shutil, subprocess, time
+import hashlib, json, os, platform, re, shutil, subprocess, time
 import sys
 from pathlib import Path
 from statistics import median
@@ -67,6 +67,9 @@ def main():
  corpus_path=Path(os.environ.get("SURGE_GOLD_CORPUS","tests/fixtures/semantic/gold_seed_v0.1.json"))
  corpus=json.loads(corpus_path.read_text(encoding="utf-8"))
  ROOT.mkdir(parents=True,exist_ok=True)
+ cli_version=subprocess.run([CLI,"--version"],capture_output=True,text=True,timeout=30)
+ if cli_version.returncode != 0:
+  raise SystemExit("llama-cli --version failed")
  corpus_digest=hashlib.sha256(corpus_path.read_bytes()).hexdigest()
  profile_digest=hashlib.sha256(json.dumps(corpus.get("profile",{}),sort_keys=True,separators=(",",":")).encode()).hexdigest()
  report={"matrix":"surge-structured-projector-matrix-v1.0","corpus_id":corpus.get("corpus_id"),
@@ -76,6 +79,9 @@ def main():
   "experiment_manifest":{"manifest_version":"surge-experiment-manifest-v1.0",
    "source_commit":os.environ.get("GITHUB_SHA","unknown"),"llama_cpp_repository":LOCK["llama_cpp"]["repository"],
    "llama_cpp_commit":LLAMA_CPP_COMMIT,"model_lock_sha256":sha256_file(LOCK_PATH),"llama_cli_path":str(Path(CLI).resolve()),
+   "runtime":{"python":sys.version,"platform":platform.platform(),"machine":platform.machine(),
+              "processor":platform.processor(),"huggingface_hub":__import__("huggingface_hub").__version__,
+              "llama_cli_version":(cli_version.stdout or cli_version.stderr).strip()},
    "threads":THREADS,"generation":{"max_tokens":192,"temperature":0,"top_k":1,"timeout_seconds":240},
    "prompt_sha256":hashlib.sha256(SYSTEM.encode()).hexdigest(),
    "corpus_sha256":corpus_digest,"profile_sha256":profile_digest,
