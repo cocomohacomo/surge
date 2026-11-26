@@ -6,6 +6,12 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 ## Findings fixed in this increment
 
+9. Added canonical Projector Output JSON Schema v1.0 and independent Draft 2020-12 validator.
+10. Model Matrix prompt now requests schema-versioned canonical output and validates each parsed response before scoring.
+11. Added exact Evidence Span scoring using source-specific Unicode code-point offsets and exclusive end positions; invalid offsets/quotes are malformed.
+12. Attribute and relation Evidence Spans are measured independently and jointly with Precision/Recall/F1.
+13. Model Matrix execution fails when canonical schema validation fails.
+
 1. Empty gold/prediction sets no longer produce precision/recall 1.0. Undefined denominators score zero.
 2. Prediction case IDs must exactly equal held-out test case IDs. Missing and extra IDs fail closed.
 3. Duplicate corpus case IDs and train/development-to-test overlap are rejected.
@@ -20,7 +26,7 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 ### Recognition Quality
 
 - The checked-in corpus is synthetic seed data with independent_adjudication=false; Recognition Quality MUST remain NOT_RUN.
-- The current corpus has no independently adjudicated evidence spans. Evidence quote containment/support is not a substitute for span precision and recall.
+- The current corpus has no independently adjudicated evidence spans. The evaluator now measures spans when enabled, but the seed corpus is not yet annotated with Gold spans.
 - Explicit negation, contradiction, temporal supersession and ambiguity metrics are not yet independently scored as separate task-specific outcomes.
 - Category precision floors are not yet profile-pinned alongside category recall floors.
 - The profile does not yet declare all required thresholds, including macro-F1, schema-valid rate and false-positive relation rate. The evaluator therefore fails a future independent corpus closed until the profile is completed.
@@ -41,7 +47,7 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 ## Next recommended implementation sequence
 
-1. Define and version the canonical projector JSON Schema, including category, polarity, relation endpoints and evidence-span representation; validate it independently of metric scoring.
+1. Canonical Projector JSON Schema v1.0 and independent validation are implemented. Next, migrate every adapter/output fixture to the schema and add conformance tests for model-generated and externally supplied outputs.
 2. Extend independent annotation with exact evidence spans, category precision/recall floors, explicit negation/contradiction/temporal labels and ambiguity/abstention labels.
 3. Freeze a benchmark profile with every mandatory threshold before collecting held-out results; missing or invalid thresholds must never pass.
 4. Pin llama.cpp to a reviewed commit and each Hugging Face model to an immutable revision; emit an experiment manifest with hashes and runtime parameters.
