@@ -134,7 +134,8 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         pred = {"span-profile": {"attributes": [{"key": "期限", "value": "水曜"}],
                                  "relations": []}}
         result = evaluate(corpus, pred, "corpus")
-        self.assertIn("evidence_span_gold_empty", result["failures"])
+        self.assertEqual(result["recognition_quality_gate"], "FAIL")
+        self.assertIn("Evidence Spans", result["reason"])
 
 
     def test_evaluator_schema_rate_uses_canonical_schema(self):
