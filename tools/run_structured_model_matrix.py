@@ -43,7 +43,7 @@ relationsは原文が明示する二項関係だけを格納します。typeは�
 evidence_spansは各属性・関係を直接支持する最短の連続原文範囲です。sourceはtextまたはcontext、startは0始まりUnicodeコードポイント位置、endは排他的、quoteは原文[source][start:end]と完全一致させます。1つの属性に複数根拠が必要なら複数spanを付けます。
 具体例: textが「期限は水曜日です。」なら、期限属性はkey「期限」、value「水曜日」、polarity「positive」、category「temporal_update」、spanはsource「text」、start 3、end 6、quote「水曜日」です。
 具体例: textが「期限は水曜日ではありません。」なら、期限属性のpolarityは「negative」です。「水曜日」という値だけを見てpositiveにしてはいけません。
-具体例: textが「AはBに提出する。」なら、提出関係はtype「提出先」、source「A」、target「B」とし、関係全体を支持する最短spanを付けます。
+具体例: textが「期限は水曜日です。AはBに提出する。」なら、属性deadlineのspanはsource「text」、start 3、end 6、quote「水曜日」です。関係のspanはsource「text」、start 9、end 18、quote「AはBに提出する。」です。関係はtype「提出先」、source「A」、target「B」です。出力形の一部は次のとおりです: {"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"deadline","value":"水曜日","polarity":"positive","category":"temporal_update","evidence_spans":[{"source":"text","start":3,"end":6,"quote":"水曜日"}]}],"relations":[{"type":"提出先","source":"A","target":"B","evidence_spans":[{"source":"text","start":9,"end":18,"quote":"AはBに提出する。"}]}]}
 空配列と判断保留を区別します。該当情報が入力に存在しない場合、その配列は空にします。情報は存在するが指示対象・値・極性・関係が曖昧、矛盾、または確定不能な場合は、推測で属性や関係を作らずabstentionsにreasonを記録します。単に情報がないことをabstentionにしません。
 Evidenceが取れない属性・関係は出力しません。空配列は許容されます。"""
 
