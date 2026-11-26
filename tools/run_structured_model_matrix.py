@@ -16,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluate_gold_corpus import evaluate_case
 from validate_projector_output import validate as validate_projector_output
 
+REPO_ROOT=Path(__file__).resolve().parents[1]
 LOCK_PATH=Path(os.environ.get("SURGE_MODEL_MATRIX_LOCK","config/model-matrix-lock-v1.0.json"))
+if not LOCK_PATH.is_absolute():
+ LOCK_PATH=REPO_ROOT/LOCK_PATH
 LOCK=json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 MODELS=LOCK["models"]
 ROOT=Path(os.environ.get("SURGE_MODEL_MATRIX_DIR","model-matrix"))
@@ -65,6 +68,8 @@ def run(model,model_path,case):
 def main():
  if not shutil.which(CLI): raise SystemExit(f"llama-cli missing: {CLI}")
  corpus_path=Path(os.environ.get("SURGE_GOLD_CORPUS","tests/fixtures/semantic/gold_seed_v0.1.json"))
+ if not corpus_path.is_absolute():
+  corpus_path=REPO_ROOT/corpus_path
  corpus=json.loads(corpus_path.read_text(encoding="utf-8"))
  ROOT.mkdir(parents=True,exist_ok=True)
  cli_version=subprocess.run([CLI,"--version"],capture_output=True,text=True,timeout=30)
