@@ -172,7 +172,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
              "evidence_spans":[{"source":"text","start":0,"end":9,"quote":"それで進めましょう"}]}],"relations":[]}}
         ]
         predictions = {
-            "n":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":7,"quote":"しません"}]}],"relations":[]},
+            "n":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"参加","value":"参加","polarity":"negative","category":"negation","evidence_spans":[{"source":"text","start":2,"end":6,"quote":"しません"}]}],"relations":[]},
             "c":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"会議日","value":"水曜","polarity":"positive","category":"contradiction","evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}],"relations":[{"type":"contradicts","source":"水曜","target":"火曜","evidence_spans":[{"source":"text","start":3,"end":5,"quote":"水曜"}]}]},
             "t":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"期限","value":"4月","polarity":"positive","category":"temporal_update","evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}],"relations":[{"type":"supersedes","source":"4月","target":"3月","evidence_spans":[{"source":"text","start":0,"end":2,"quote":"4月"}]}]},
             "a":{"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"対象","value":"未確定","polarity":"uncertain","category":"ambiguity","evidence_spans":[{"source":"text","start":0,"end":9,"quote":"それで進めましょう"}]}],"relations":[]}
