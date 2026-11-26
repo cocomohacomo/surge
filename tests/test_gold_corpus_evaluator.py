@@ -122,7 +122,7 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["unsupported_attribute_count"], 1)
 
     def test_span_evaluation_requires_gold_spans_and_threshold(self):
-        corpus = {"evidence_span_evaluation": True,
+        corpus = {"schema_version": "surge-gold-corpus-v1.0", "evidence_span_evaluation": True,
                   "cases": [{"case_id": "span-profile", "split": "test", "text": "期限は水曜", "phenomena": [],
                              "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [{"key": "期限", "value": "水曜"}],
                                       "relations": []}}],
