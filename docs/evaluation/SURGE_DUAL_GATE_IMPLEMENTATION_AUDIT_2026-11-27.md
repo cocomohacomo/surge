@@ -33,11 +33,11 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 - The checked-in corpus is synthetic seed data with independent_adjudication=false; Recognition Quality MUST remain NOT_RUN.
 - The migrated seed corpus has exact spans, but they are synthetic engineering annotations, not independently adjudicated. Recognition Quality MUST remain NOT_RUN.
-- Explicit negation, contradiction, temporal supersession and ambiguity metrics are not yet independently scored as separate task-specific outcomes.
-- Category precision floors are not yet profile-pinned alongside category recall floors.
-- The profile does not yet declare all required thresholds, including macro-F1, schema-valid rate and false-positive relation rate. The evaluator therefore fails a future independent corpus closed until the profile is completed.
+- Four phenomenon dimensions now have independent binary Precision/Recall/F1. They remain engineering-only until a genuinely independent held-out annotation set is adjudicated.
+- Both category Precision and Recall floors are profile-pinned with exact Gold-category coverage. A production profile still requires domain-owner review before benchmark qualification.
+- Required aggregate, schema, evidence, category and phenomenon thresholds are now validated as finite bounded values; missing or unexpected category/phenomenon floors fail closed.
 - Model/runtime sources are now pinned through `config/model-matrix-lock-v1.0.json`; Hugging Face revisions are short commit identifiers and should be upgraded to full 40-character SHAs if the Hub API metadata is available in the execution environment. The report records downloaded file hashes.
-- Environment provenance (compiler/CMake flags, llama.cpp commit, dependency lock, CPU feature set, model/tokenizer/template revisions and generation parameters) is not yet emitted as one immutable experiment manifest.
+- The experiment manifest records model/runtime revisions, runtime versions, prompt/template hashes, generation settings and corpus/profile identities. Compiler/CMake flags and CPU feature flags should be added to the manifest in a follow-up.
 - Candidate recall quality from the cognition specification (recall@k, diversity, ranking quality, ambiguity preservation, cross-cluster recovery and pinned-state determinism) is outside the current projector matrix.
 
 ### Core Integrity
@@ -55,8 +55,8 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 1. Canonical Projector JSON Schema v1.0 and independent validation are implemented. Remaining work: migrate all external adapters/output fixtures and require schema conformance for every ingestion route.
 2. Extend independent annotation with exact evidence spans, category precision/recall floors, explicit negation/contradiction/temporal labels and ambiguity/abstention labels.
-3. Freeze a benchmark profile with every mandatory threshold before collecting held-out results; missing or invalid thresholds must never pass.
-4. Pin llama.cpp to a reviewed commit and each Hugging Face model to an immutable revision; emit an experiment manifest with hashes and runtime parameters.
+3. Review and freeze production benchmark thresholds against the independently annotated task distribution before collecting held-out results.
+4. Expand Hugging Face short commit prefixes to full commit SHAs when available; add compiler/CMake/CPU feature provenance to the manifest.
 5. Add case-level candidate recall/ranking benchmarks from the cognition specification, keeping candidate proposals distinct from committed memberships.
 6. In Core, complete Snapshot baseline trust/restore plus Journal suffix replay and full Graph digest reconciliation, then add crash injection across commit, projection, compaction and backup fallback.
 7. Only then run the independent held-out corpus and full Core integrity suite; aggregate qualification remains fail-closed until both pass.
