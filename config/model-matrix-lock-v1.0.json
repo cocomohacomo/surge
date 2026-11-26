@@ -12,7 +12,7 @@
       "tokenizer_repo": "gvij/qwen3-0.6b-gguf",
       "tokenizer_revision": "d86af45",
       "file": "qwen3-0.6b-q4_k_m.gguf",
-      "format": "chatml"
+      "format": "chatml_no_think"
     },
     {
       "name": "smollm2-135m-instruct-q4_k_m",
