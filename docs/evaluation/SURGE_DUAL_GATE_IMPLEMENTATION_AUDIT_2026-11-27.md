@@ -6,6 +6,12 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 ## Findings fixed in this increment
 
+14. Migrated the eight-case synthetic seed corpus to `surge-gold-corpus-v1.0`; every Gold attribute and relation now has exact source-specific Evidence Span annotations.
+15. Added independently scored Negation, Contradiction, Temporal Supersession and Ambiguity case labels with per-case and aggregate Precision/Recall/F1.
+16. Benchmark profiles now require both category Precision and Recall floors, with exact Gold-category coverage and bounded finite thresholds.
+17. Added an immutable model lock for llama.cpp, model and embedded-tokenizer revisions; CI checks out the exact llama.cpp SHA and the runner downloads each GGUF at its pinned revision.
+18. Experiment manifests record source/runtime identity, model and tokenizer revisions, downloaded file hashes, prompt hash, generation settings, environment and corpus/profile hashes.
+
 9. Added canonical Projector Output JSON Schema v1.0 and independent Draft 2020-12 validator.
 10. Model Matrix prompt now requests schema-versioned canonical output and validates each parsed response before scoring.
 11. Added exact Evidence Span scoring using source-specific Unicode code-point offsets and exclusive end positions; invalid offsets/quotes are malformed.
@@ -26,11 +32,11 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 ### Recognition Quality
 
 - The checked-in corpus is synthetic seed data with independent_adjudication=false; Recognition Quality MUST remain NOT_RUN.
-- The current corpus has no independently adjudicated evidence spans. The evaluator now measures spans when enabled, but the seed corpus is not yet annotated with Gold spans.
+- The migrated seed corpus has exact spans, but they are synthetic engineering annotations, not independently adjudicated. Recognition Quality MUST remain NOT_RUN.
 - Explicit negation, contradiction, temporal supersession and ambiguity metrics are not yet independently scored as separate task-specific outcomes.
 - Category precision floors are not yet profile-pinned alongside category recall floors.
 - The profile does not yet declare all required thresholds, including macro-F1, schema-valid rate and false-positive relation rate. The evaluator therefore fails a future independent corpus closed until the profile is completed.
-- Model/runtime reproducibility is incomplete: llama.cpp is cloned from a moving shallow default branch, and Hugging Face downloads do not pin immutable repository revisions. Model hashes are recorded only after download.
+- Model/runtime sources are now pinned through `config/model-matrix-lock-v1.0.json`; Hugging Face revisions are short commit identifiers and should be upgraded to full 40-character SHAs if the Hub API metadata is available in the execution environment. The report records downloaded file hashes.
 - Environment provenance (compiler/CMake flags, llama.cpp commit, dependency lock, CPU feature set, model/tokenizer/template revisions and generation parameters) is not yet emitted as one immutable experiment manifest.
 - Candidate recall quality from the cognition specification (recall@k, diversity, ranking quality, ambiguity preservation, cross-cluster recovery and pinned-state determinism) is outside the current projector matrix.
 
@@ -47,7 +53,7 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 
 ## Next recommended implementation sequence
 
-1. Canonical Projector JSON Schema v1.0 and independent validation are implemented. Next, migrate every adapter/output fixture to the schema and add conformance tests for model-generated and externally supplied outputs.
+1. Canonical Projector JSON Schema v1.0 and independent validation are implemented. Remaining work: migrate all external adapters/output fixtures and require schema conformance for every ingestion route.
 2. Extend independent annotation with exact evidence spans, category precision/recall floors, explicit negation/contradiction/temporal labels and ambiguity/abstention labels.
 3. Freeze a benchmark profile with every mandatory threshold before collecting held-out results; missing or invalid thresholds must never pass.
 4. Pin llama.cpp to a reviewed commit and each Hugging Face model to an immutable revision; emit an experiment manifest with hashes and runtime parameters.
