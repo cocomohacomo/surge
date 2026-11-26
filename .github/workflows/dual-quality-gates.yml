@@ -86,10 +86,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git libopenblas-dev
-          python -m pip install "huggingface_hub>=0.30,<2"
+          python -m pip install -r requirements-model-matrix.txt
       - name: Build pinned llama.cpp CPU CLI
         run: |
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/llama.cpp"
+          git init "$RUNNER_TEMP/llama.cpp"
+          git -C "$RUNNER_TEMP/llama.cpp" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$RUNNER_TEMP/llama.cpp" fetch --depth 1 origin fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002
+          git -C "$RUNNER_TEMP/llama.cpp" checkout --detach fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002
+          test "$(git -C "$RUNNER_TEMP/llama.cpp" rev-parse HEAD)" = "fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002"
           cmake -S "$RUNNER_TEMP/llama.cpp" -B "$RUNNER_TEMP/llama.cpp/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=ON
           cmake --build "$RUNNER_TEMP/llama.cpp/build" --target llama-cli --parallel 2
       - name: Initialize fail-closed Recognition evidence
@@ -108,6 +112,7 @@ jobs:
       - name: Execute structured Japanese CPU model matrix
         env:
           LLAMA_CLI: ${{ runner.temp }}/llama.cpp/build/bin/llama-cli
+          LLAMA_CPP_COMMIT: fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002
           SURGE_MODEL_MATRIX_DIR: ${{ runner.temp }}/surge-model-matrix
           SURGE_MODEL_MATRIX_REPORT: ${{ runner.temp }}/surge-model-matrix.json
           SURGE_MODEL_THREADS: "2"
@@ -121,6 +126,7 @@ jobs:
           path: |
             ${{ runner.temp }}/surge-model-matrix.json
             ${{ runner.temp }}/surge-model-matrix-summary.json
+            ${{ runner.temp }}/surge-model-matrix.json
           if-no-files-found: error
       - name: Run semantic evaluator tests
         run: python -m unittest discover -s tests -p 'test_gold_corpus_evaluator.py' -v
