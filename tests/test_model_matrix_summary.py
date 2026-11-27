@@ -207,6 +207,10 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         data = report([row])
         data["retry_policy"] = {
             "max_retries_per_case": 1,
+            "retryable_failure_reasons": [
+                "empty_output", "invalid_json", "non_json_output",
+                "json_not_object", "schema_validation_failed",
+            ],
             "preserve_initial_attempt": True,
             "evaluate_each_attempt_separately": True,
         }
@@ -236,6 +240,10 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         data = report([row])
         data["retry_policy"] = {
             "max_retries_per_case": 1,
+            "retryable_failure_reasons": [
+                "empty_output", "invalid_json", "non_json_output",
+                "json_not_object", "schema_validation_failed",
+            ],
             "preserve_initial_attempt": True,
             "evaluate_each_attempt_separately": True,
         }
@@ -260,6 +268,10 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         data = report([row])
         data["retry_policy"] = {
             "max_retries_per_case": 1,
+            "retryable_failure_reasons": [
+                "empty_output", "invalid_json", "non_json_output",
+                "json_not_object", "schema_validation_failed",
+            ],
             "preserve_initial_attempt": True,
             "evaluate_each_attempt_separately": True,
         }
