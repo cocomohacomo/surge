@@ -225,7 +225,7 @@ def summarize(report, identity_failures=None):
     execution_pass = model_set_valid and all(
         model["execution_gate"] == "PASS" for model in model_reports
     ) and identity_gate == "PASS"
-    evidence_pass = model_set_valid and all(model["evidence_gate"] == "PASS" for model in model_reports)"
+    evidence_pass = model_set_valid and all(model["evidence_gate"] == "PASS" for model in model_reports)
     corpus_status = report.get("corpus_status")
     return {
         "model_matrix_execution_gate": "PASS" if execution_pass else "FAIL",
