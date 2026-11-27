@@ -138,6 +138,16 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         prediction["attributes"][0]["evidence_spans"] = []
         self.assertFalse(validate_evidence_spans(prediction, case)["valid"])
 
+    def test_evidence_offsets_are_source_specific_for_context(self):
+        from tools.run_structured_model_matrix import validate_evidence_spans
+        case = {"text": "締切は水曜日。", "context": "旧期限は火曜日。"}
+        prediction = {"attributes": [{"key": "old_deadline", "value": "火曜日",
+            "evidence_spans": [{"source": "context", "start": 4, "end": 7, "quote": "火曜日"}]}],
+            "relations": [], "phenomena": [], "abstentions": []}
+        self.assertTrue(validate_evidence_spans(prediction, case)["valid"])
+        prediction["attributes"][0]["evidence_spans"][0]["source"] = "text"
+        self.assertFalse(validate_evidence_spans(prediction, case)["valid"])
+
     def test_prompt_content_is_not_exposed_in_process_arguments(self):
         command = build_completion_command("model.gguf", "/tmp/prompt.txt", threads=2)
         self.assertNotIn("-p", command)
