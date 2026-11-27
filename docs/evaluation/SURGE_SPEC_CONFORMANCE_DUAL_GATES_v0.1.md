@@ -51,7 +51,8 @@ Core Integrity artifacts: machine-readable report with each check ID, status (PA
 
 ### Mandatory gates
 - Structural validity: 100% on frozen suite; malformed outputs must be rejected or explicitly abstained, not partially accepted.
-- Critical safety/context categories (negation, contradiction, temporal supersession, unsupported evidence, uncertain classification): minimum per-category recall and precision thresholds must be declared in a benchmark profile before test run. Missing thresholds means NOT_RUN.
+- Critical safety/context categories (negation, contradiction, temporal supersession, unsupported evidence, uncertain classification): both per-category Precision and Recall thresholds must be declared in a benchmark profile before test run. The profile category key set must exactly match Gold-supported categories. Missing, extra or invalid thresholds means FAIL/NOT_RUN, never implicit acceptance.
+- Negation, Contradiction, Temporal Supersession and Ambiguity must also be scored as separate phenomenon-level binary tasks with independent Precision/Recall/F1. Every phenomenon requires positive and negative Gold support and explicit Precision/Recall floors.
 - Overall macro-F1 and evidence-support minimums are profile-pinned before evaluation; no post-hoc threshold tuning on held-out results.
 - Regression: any critical category below its floor or materially regressing versus accepted baseline blocks merge/release.
 - Model selection must not optimize only JSON validity or latency.
@@ -64,6 +65,7 @@ Core Integrity artifacts: machine-readable report with each check ID, status (PA
 - Macro-F1: >= 0.80.
 - Negation / contradiction / temporal supersession / unsupported-evidence critical category recall: >= 0.90 each.
 - False-positive relation rate: <= 0.05.
+- Evidence Span F1: profile-pinned minimum; every Gold attribute and relation must carry at least one exact source span.
 - Abstention: report coverage and selective risk; no fixed coverage target until corpus ambiguity is annotated.
 
 These thresholds are proposed qualification targets, not measured performance. They must be evaluated on independently annotated held-out data and may not be silently relaxed to make a model pass.
@@ -86,9 +88,14 @@ These thresholds are proposed qualification targets, not measured performance. T
 | Producer labels/weights preserved | Contract exists; route coverage incomplete | Cross-route tests |
 | Snapshot baseline restore after compaction | Gap | Trusted snapshot restore and suffix replay |
 | Full Graph digest audit | PR #156 draft only | Rebase/current-base review and merge gate |
-| External model structured output | Parse smoke exists | Parsing alone is not quality |
+| External model structured output | Canonical Schema v1.0 and independent validator implemented | Apply conformance to all external adapters/ingress routes |
+| Seed Gold corpus | Migrated to corpus v1.0 with canonical Gold envelopes and exact synthetic spans | Synthetic only; not independent and never qualifies Recognition Quality |
+| Phenomenon metrics | Negation / Contradiction / Temporal Supersession / Ambiguity per-case and aggregate metrics implemented | Independently annotate held-out corpus and validate mapping |
+| Category Precision / Recall floors | Both required with exact category coverage and bounded thresholds | Ratify production profile against independent data |
+| Model/runtime pinning | Immutable model lock and llama.cpp full SHA implemented | Expand Hub short commit prefixes to full SHAs when available |
+| Experiment provenance | Manifest records model/tokenizer revisions, hashes, runtime and prompt configuration | Add compiler/CMake and CPU feature provenance |
 | Independent semantic gold corpus | Absent/NOT_RUN | Create double-annotated corpus and adjudication |
-| Critical semantic quality gates | 0/6 markers in latest model smoke | Implement metrics and fail-closed thresholds |
+| Critical semantic quality gates | Evaluator and fail-closed thresholds implemented; qualification remains NOT_RUN | Independent Gold Corpus and held-out model results required |
 | Target-device RSS/latency qualification | Not measured | Declared device profile and sustained run |
 
 ## 6. Work sequencing (parallel)
@@ -101,12 +108,12 @@ These thresholds are proposed qualification targets, not measured performance. T
 5. Cross-platform and sanitizer gate.
 
 ### Track B
-1. Inventory current benchmark runner, prompts, fixture and output schema.
-2. Replace marker-only checks with case-level semantic scoring and strict gates.
-3. Add frozen test corpus format and corpus/profile digest.
-4. Add failure cases for invalid JSON, unsupported claims, missing evidence, wrong spans, negation, contradiction, temporal revisions and ambiguous context.
-5. Run model matrix with pinned settings; publish per-case/aggregate report and raw output artifacts.
-6. Keep quality gate separate from runner/infra success.
+1. Inventory current benchmark runner, prompts, fixture and output schema. (Implemented for current Projector path.)
+2. Replace marker-only checks with case-level semantic scoring and strict gates. (Implemented; still requires independent held-out validation.)
+3. Add frozen test corpus format and corpus/profile digest. (Seed format v1.0 implemented; independent Gold remains outstanding.)
+4. Add failure cases for invalid JSON, unsupported claims, missing evidence, wrong spans, negation, contradiction, temporal revisions and ambiguous context. (Evaluator tests implemented.)
+5. Run model matrix with pinned settings; publish per-case/aggregate report and raw output artifacts. (Pinned runner and manifest implemented; CI execution pending.)
+6. Keep quality gate separate from runner/infra success. (Maintained; seed qualification remains NOT_RUN.)
 
 ### Integration
 - Add final aggregate gate that depends on both track workflows and validates commit/profile/corpus digest equality.
