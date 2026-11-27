@@ -47,6 +47,12 @@ class ModelMatrixSummaryTests(unittest.TestCase):
     def test_nonzero_exit_fails(self):
         self.assertEqual(summarize(report([valid_row() | {"return_code": 2}]))["model_matrix_execution_gate"], "FAIL")
 
+    def test_execution_error_fails_even_with_valid_last_case_output(self):
+        row = valid_row() | {"execution_error": "sampler_initialization_failed"}
+        result = summarize(report([row]))
+        self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
+        self.assertEqual(result["models"][0]["execution_errors"], 1)
+
     def test_missing_or_duplicate_case_coverage_fails(self):
         self.assertEqual(summarize(report([]))["model_matrix_execution_gate"], "FAIL")
         self.assertEqual(summarize(report([valid_row("unexpected")]))["model_matrix_execution_gate"], "FAIL")

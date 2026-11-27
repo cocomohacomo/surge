@@ -144,6 +144,8 @@ def summarize(report, identity_failures=None):
                            if isinstance(row, dict))
         invalid_schema = sum(not row.get("projector_schema_valid", False) for row in rows
                              if isinstance(row, dict))
+        execution_errors = sum(bool(row.get("execution_error")) for row in rows
+                               if isinstance(row, dict))
         timeouts = sum(bool(row.get("timeout")) for row in rows if isinstance(row, dict))
         missing_rss = sum(
             row.get("peak_rss_kib") is None for row in rows
@@ -180,14 +182,15 @@ def summarize(report, identity_failures=None):
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid and counters_valid
         execution_pass = (
             bool(rows) and case_coverage_valid and not invalid_json and not invalid_schema
-            and not timeouts and not missing_rss and not nonzero_exit and complete_metrics
+            and not execution_errors and not timeouts and not missing_rss
+            and not nonzero_exit and complete_metrics
         )
         model_reports.append({
             "name": model.get("name"), "cases": len(rows),
             "case_coverage_valid": case_coverage_valid,
             "coverage": len(semantic) / len(rows) if rows else 0.0,
             "invalid_json": invalid_json, "invalid_schema": invalid_schema,
-            "timeouts": timeouts,
+            "execution_errors": execution_errors, "timeouts": timeouts,
             "missing_rss": missing_rss, "nonzero_exit": nonzero_exit,
             "metrics_complete": complete_metrics, "counters_valid": counters_valid,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,

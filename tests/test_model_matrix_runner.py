@@ -157,6 +157,17 @@ class StructuredRunnerOutputTests(unittest.TestCase):
             {"attributes": [], "relations": []},
         )
 
+    def test_accepts_pinned_completion_end_marker(self):
+        self.assertEqual(
+            extract_json('{"attributes":[],"relations":[]} [end of text]\n\n'),
+            {"attributes": [], "relations": []},
+        )
+
+    def test_rejects_unrecognized_text_before_completion_marker(self):
+        self.assertIsNone(
+            extract_json('llama.cpp banner\n{"attributes":[],"relations":[]} [end of text]')
+        )
+
     def test_rejects_banner_before_json(self):
         self.assertIsNone(extract_json('llama.cpp banner\n{"attributes":[],"relations":[]}'))
 

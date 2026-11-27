@@ -40,6 +40,9 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 - Regression tests cover the executable contract, version-specific arguments, invalid lock entries, corpus identity/evidence offsets, nonzero-exit JSON rejection and timeout process cleanup.
 - These changes repair the execution harness only. They do not claim improved model quality. The synthetic seed corpus remains non-independent, so Recognition Quality must remain NOT_RUN.
 
+- The pinned completion executable appends the literal ` [end of text]` stdout footer after EOS. The strict JSON parser now strips only this exact terminal marker and still rejects banners, prompt echoes, code fences and all other trailing or leading text. A dedicated regression test covers both acceptance of this known footer and rejection of preceding noise.
+- The Summarizer now counts any explicit per-case `execution_error` as a matrix execution failure, including a failure diagnostic returned alongside valid JSON in the final expected case. This closes a last-case-only fail-open edge case.
+
 ## Remaining conformance gaps
 
 ### Recognition Quality

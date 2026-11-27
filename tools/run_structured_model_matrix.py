@@ -167,7 +167,16 @@ def extract_json(text):
     try:
         value = json.loads(candidate)
     except json.JSONDecodeError:
-        return None
+        # The pinned llama-completion emits this exact non-JSON suffix after EOS.
+        # Remove only that terminal marker; all other output remains strict JSON input.
+        marker = " [end of text]"
+        if not candidate.endswith(marker):
+            return None
+        candidate = candidate[:-len(marker)].rstrip()
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
     return value if isinstance(value, dict) else None
 
 
