@@ -1,9 +1,16 @@
+import os
 import unittest
+from unittest.mock import patch
 
-from tools.run_structured_model_matrix import extract_json
+from tools.run_structured_model_matrix import extract_json, validate_runtime_config
 
 
 class StructuredRunnerOutputTests(unittest.TestCase):
+    def test_import_does_not_require_llama_cpp_commit(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "LLAMA_CPP_COMMIT"):
+                validate_runtime_config()
+
     def test_accepts_one_complete_json_object(self):
         self.assertEqual(extract_json('{"attributes":[],"relations":[]}'),
                          {"attributes": [], "relations": []})
