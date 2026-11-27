@@ -398,7 +398,7 @@ def validate_evidence_spans(prediction, case):
     return {"valid": not errors, "span_count": span_count, "errors": errors}
 
 
- def run(model, model_path, case):
+def run(model, model_path, case):
     prompt = PROMPT_TEMPLATE.format(
         system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
         mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
