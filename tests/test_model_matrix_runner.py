@@ -31,9 +31,6 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         self.assertIsNone(extract_json('[]'))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     def test_cli_diagnostics_are_never_merged_into_generation(self):
         result = parse_cli_streams('{"attributes":[],"relations":[]}', 'llama.cpp banner\\nsampler initialized')
         self.assertTrue(result["generation_stream_valid"])
@@ -44,3 +41,7 @@ if __name__ == "__main__":
         result = parse_cli_streams('llama.cpp banner\\n{"attributes":[],"relations":[]}', '')
         self.assertFalse(result["generation_stream_valid"])
         self.assertIsNone(result["parsed_output"])
+
+
+if __name__ == "__main__":
+    unittest.main()
