@@ -98,17 +98,21 @@ def parse_cli_streams(stdout, stderr):
         "stdout_rejected": generated is None,
     }
 
-def run(model, model_path, case):
-    prompt = PROMPT_TEMPLATE.format(
-        system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
-        mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
-    )
-    cmd = [
+def build_cli_command(model_path, prompt):
+    """Construct a stable CLI invocation. top-k=1 is greedy; temp stays valid for sampler initialization."""
+    return [
         "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
         "-n", "768", "--temp", "1", "--top-k", "1", "--threads", str(THREADS),
         "--no-display-prompt", "--simple-io", "--single-turn",
         "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
     ]
+
+def run(model, model_path, case):
+    prompt = PROMPT_TEMPLATE.format(
+        system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
+        mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
+    )
+    cmd = build_cli_command(model_path, prompt)
     started = time.perf_counter()
     try:
         # The pinned llama.cpp CLI supports --log-file. Route its logger away
