@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from tools.run_structured_model_matrix import build_cli_command, extract_json, parse_cli_streams, validate_runtime_config
+from tools.run_structured_model_matrix import build_cli_command, detect_execution_error, extract_json, parse_cli_streams, validate_runtime_config
 
 
 class StructuredRunnerOutputTests(unittest.TestCase):
@@ -15,6 +15,15 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         command = build_cli_command("model.gguf", "prompt")
         self.assertEqual(command[command.index("--temp") + 1], "0.8")
         self.assertNotIn("--top-k", command)
+
+    def test_detects_sampler_failure_even_when_cli_exits_zero(self):
+        self.assertEqual(
+            detect_execution_error("E srv send_error: Failed to initialize samplers: std::exception"),
+            "sampler_initialization_failed",
+        )
+
+    def test_nonfatal_diagnostics_do_not_fail_execution(self):
+        self.assertIsNone(detect_execution_error("model loaded; generation complete"))
 
     def test_accepts_one_complete_json_object(self):
         self.assertEqual(extract_json('{"attributes":[],"relations":[]}'),
