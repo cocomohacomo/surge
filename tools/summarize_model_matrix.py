@@ -81,12 +81,14 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
     for key, value in expected.items():
         if not value or manifest.get(key) != value:
             failures.append("manifest_mismatch:" + key)
-    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.2":
+    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.3":
         failures.append("manifest_version_mismatch")
     if manifest.get("execution_backend") != "llama-completion":
         failures.append("manifest_execution_backend_mismatch")
     if manifest.get("prompt_mode") != "preformatted-chatml-noninteractive":
         failures.append("manifest_prompt_mode_mismatch")
+    if manifest.get("prompt_transport") != "utf8-temporary-file":
+        failures.append("manifest_prompt_transport_mismatch")
     if not isinstance(manifest.get("llama_completion_path"), str) or not manifest["llama_completion_path"]:
         failures.append("manifest_completion_path_missing")
     runtime = manifest.get("runtime")

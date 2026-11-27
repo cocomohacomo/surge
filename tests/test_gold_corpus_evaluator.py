@@ -129,6 +129,72 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["malformed_count"], 1)
 
 
+    def test_attribute_evidence_span_is_bound_to_attribute_identity(self):
+        text = "甲赤乙青"
+        red = {"source": "text", "start": 1, "end": 2, "quote": "赤"}
+        blue = {"source": "text", "start": 3, "end": 4, "quote": "青"}
+        case = {"case_id": "attribute-binding", "text": text,
+                "gold": {"schema_version": "surge-projector-output-v1.0",
+                         "attributes": [
+                             {"key": "甲_色", "value": "赤", "polarity": "positive", "category": "fact", "evidence_spans": [red]},
+                             {"key": "乙_色", "value": "青", "polarity": "positive", "category": "fact", "evidence_spans": [blue]}],
+                         "relations": []}}
+        prediction = {"schema_version": "surge-projector-output-v1.0",
+                      "attributes": [{"key": "乙_色", "value": "青", "polarity": "positive", "category": "fact", "evidence_spans": [red]}],
+                      "relations": []}
+        result = evaluate_case(case, prediction)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["tp"], 0)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fp"], 1)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fn"], 2)
+        self.assertEqual(result["unsupported_attribute_count"], 1)
+
+    def test_relation_evidence_span_is_bound_to_relation_identity(self):
+        text = "甲→乙；丙→丁"
+        first = {"source": "text", "start": 0, "end": 3, "quote": "甲→乙"}
+        second = {"source": "text", "start": 4, "end": 7, "quote": "丙→丁"}
+        case = {"case_id": "relation-binding", "text": text,
+                "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [],
+                         "relations": [
+                             {"type": "supports", "source": "甲", "target": "乙", "evidence_spans": [first]},
+                             {"type": "supports", "source": "丙", "target": "丁", "evidence_spans": [second]}]}}
+        prediction = {"schema_version": "surge-projector-output-v1.0", "attributes": [],
+                      "relations": [{"type": "supports", "source": "丙", "target": "丁", "evidence_spans": [first]}]}
+        result = evaluate_case(case, prediction)
+        self.assertEqual(result["relation_metrics"]["tp"], 1)
+        self.assertEqual(result["relation_evidence_span_metrics"]["tp"], 0)
+        self.assertEqual(result["relation_evidence_span_metrics"]["fp"], 1)
+        self.assertEqual(result["relation_evidence_span_metrics"]["fn"], 2)
+
+    def test_same_source_span_can_support_distinct_attributes(self):
+        span = {"source": "text", "start": 0, "end": 2, "quote": "決定"}
+        attrs = [
+            {"key": "status", "value": "決定", "polarity": "positive", "category": "fact", "evidence_spans": [span]},
+            {"key": "action", "value": "決定", "polarity": "positive", "category": "fact", "evidence_spans": [span]}]
+        case = {"case_id": "shared-span", "text": "決定",
+                "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": attrs, "relations": []}}
+        prediction = {"schema_version": "surge-projector-output-v1.0", "attributes": attrs, "relations": []}
+        result = evaluate_case(case, prediction)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["tp"], 2)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fp"], 0)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fn"], 0)
+        self.assertEqual(result["duplicate_evidence_span_count"], 0)
+
+    def test_category_mismatch_does_not_receive_attribute_span_credit(self):
+        span = {"source": "text", "start": 0, "end": 2, "quote": "決定"}
+        case = {"case_id": "category-span-binding", "text": "決定",
+                "gold": {"schema_version": "surge-projector-output-v1.0",
+                         "attributes": [{"key": "status", "value": "決定", "polarity": "positive",
+                                         "category": "decision", "evidence_spans": [span]}],
+                         "relations": []}}
+        prediction = {"schema_version": "surge-projector-output-v1.0",
+                      "attributes": [{"key": "status", "value": "決定", "polarity": "positive",
+                                      "category": "fact", "evidence_spans": [span]}],
+                      "relations": []}
+        result = evaluate_case(case, prediction)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["tp"], 0)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fp"], 1)
+        self.assertEqual(result["attribute_evidence_span_metrics"]["fn"], 1)
+
     def test_exact_evidence_span_precision_recall(self):
         span = {"source": "text", "start": 3, "end": 6, "quote": "水曜日"}
         case = {"case_id": "span", "text": "締切は水曜日",

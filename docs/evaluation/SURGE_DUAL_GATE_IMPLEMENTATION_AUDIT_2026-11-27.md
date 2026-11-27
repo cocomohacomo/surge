@@ -82,3 +82,9 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 - Core Integrity: NOT_RUN
 - Recognition Quality: NOT_RUN
 - Aggregate: FAIL by design until both evidence tracks are independently complete.
+## Additional review findings (2026-11-27)
+
+- Prompt transport uses the pinned completion executable's -f UTF-8 file input. This avoids placing the full ChatML prompt in the process argument list and GNU time -v command-line diagnostics. The experiment manifest is v1.3 and records prompt_transport=utf8-temporary-file.
+- The pinned executable's exact ' [end of text]' footer is normalized before strict JSON parsing. No generic brace extraction or permissive trailing text is accepted.
+- Evidence span scoring binds every source span to the exact semantic object: attribute identity includes key/value/polarity/category, and relation identity includes type/source/target. Shared source spans across distinct attributes are supported without duplicate inflation.
+- Residual semantic gaps remain explicit: phenomenon Evidence Spans are not yet bound to label-specific Gold annotations, and abstention precision/coverage/selective-risk metrics are not yet defined. These gaps do not affect this synthetic execution-only run, but must be resolved before independent Recognition Quality qualification.

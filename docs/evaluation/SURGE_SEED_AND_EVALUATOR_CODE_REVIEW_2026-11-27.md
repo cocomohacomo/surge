@@ -5,7 +5,7 @@ Scope: Canonical Gold seed migration, evidence spans, phenomenon metrics, catego
 
 ## Review disposition
 
-Static detailed review completed. Findings in this review were corrected before the dedicated CI verification pass. No runtime or CI success is claimed by this document.
+Static detailed review completed. Earlier findings were corrected and verified by the d91ca31 CI run: the pinned completion binary built, 8/8 synthetic model cases produced valid schema-conforming JSON, and the Core Integrity C++/CTest/Python workflow succeeded. Recognition Quality and full Core Integrity qualification remain NOT_RUN by design.
 
 ## Findings and corrections
 
@@ -50,6 +50,21 @@ Held-out cases must explicitly annotate the four-label vocabulary. Profiles must
 - The experiment manifest records model file hashes, model/tokenizer revisions, llama.cpp commit, runtime/platform, CLI version, threads, generation settings, system prompt hash, full prompt-template hash, lock hash and corpus/profile hashes.
 - The runner now executes the same prompt template whose digest is recorded.
 - Lock and corpus paths resolve relative to the repository root.
+
+### Critical: Evidence spans must be bound to the exact attribute/relation
+- The earlier evaluator pooled all raw spans in each dimension. A prediction could attach a valid span from a different attribute or relation and still receive Evidence Span F1 credit.
+- Attribute span scoring now uses (key, value, polarity, category, source, start, end, quote) identity. Relation span scoring uses (type, source, target, source, start, end, quote).
+- Reusing one source span for distinct attributes is valid and is no longer counted as a duplicate. An evidence span attached to the wrong semantic object becomes an FP, while the missing correct link becomes an FN.
+- Regressions cover cross-attribute and cross-relation attachment, category mismatch, and valid reuse of a single span by distinct attributes.
+
+### High: Prompt contents were visible in process arguments and timing diagnostics
+- Passing ChatML through llama-completion -p placed the complete prompt in the operating-system process argument list. GNU time -v includes the command line in stderr, which the report persisted.
+- Runner now writes the prompt to a temporary UTF-8 file and passes -f <path>. The process arguments contain only the temporary file path, not the prompt text. The temporary directory is removed after generation and diagnostic collection.
+- The matrix report still contains model output and extracted content. CI currently uses a synthetic public seed corpus only; reports generated from private corpora must be handled as sensitive artifacts and must not be uploaded to public CI artifacts.
+
+### Remaining evaluator boundary
+- Phenomenon predictions are currently checked for an allowed label and valid source offsets, but their evidence is not yet linked to label-specific adjudicated Gold phenomenon spans.
+- Abstention outputs are schema-validated but do not yet have their own precision/coverage/selective-risk metrics. These require an explicit adjudication contract and must be completed before a held-out benchmark claims to measure abstention quality.
 
 ## Residual limitations
 

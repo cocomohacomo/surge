@@ -1,5 +1,8 @@
 import unittest
-from tools.summarize_model_matrix import summarize
+from tools.summarize_model_matrix import _identity_audit, summarize
+import hashlib
+import json
+from pathlib import Path
 
 
 def valid_row(case_id="case-1"):
@@ -99,6 +102,55 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         self.assertEqual(result["identity_gate"], "FAIL")
         self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
         self.assertIn("manifest_mismatch:model_lock_sha256", result["identity_failures"])
+
+    def test_identity_audit_requires_prompt_file_transport(self):
+        root = Path(__file__).resolve().parents[1]
+        lock_path = root / "config/model-matrix-lock-v1.0.json"
+        schema_path = root / "schemas/surge-projector-output-v1.0.schema.json"
+        corpus_path = root / "tests/fixtures/semantic/gold_seed_v0.1.json"
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+
+        def digest(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+
+        profile_digest = hashlib.sha256(json.dumps(
+            corpus.get("profile", {}), sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        manifest = {
+            "manifest_version": "surge-experiment-manifest-v1.3",
+            "execution_backend": "llama-completion",
+            "prompt_mode": "preformatted-chatml-noninteractive",
+            "prompt_transport": "utf8-temporary-file",
+            "source_commit": "c" * 40,
+            "llama_cpp_commit": lock["llama_cpp"]["commit"],
+            "model_lock_sha256": digest(lock_path),
+            "canonical_schema_sha256": digest(schema_path),
+            "corpus_sha256": digest(corpus_path),
+            "profile_sha256": profile_digest,
+            "llama_completion_path": "/usr/bin/llama-completion",
+            "runtime": {"llama_completion_version": "b1-fd4b137"},
+        }
+        model_reports = [{
+            "name": model["name"],
+            "repository": model["repo"],
+            "repository_revision": model["revision"],
+            "tokenizer_repository": model["tokenizer_repo"],
+            "tokenizer_revision": model["tokenizer_revision"],
+            "model_file": model["file"],
+        } for model in lock["models"] if model.get("enabled", True)]
+        report = {"experiment_manifest": manifest, "models": model_reports}
+
+        failures = _identity_audit(
+            report, lock_path, schema_path, corpus_path, "c" * 40
+        )
+        self.assertEqual(failures, [])
+
+        del manifest["prompt_transport"]
+        failures = _identity_audit(
+            report, lock_path, schema_path, corpus_path, "c" * 40
+        )
+        self.assertIn("manifest_prompt_transport_mismatch", failures)
 
     def test_complete_model_matrix_passes_execution_only(self):
         result = summarize(report(), identity_failures=[])

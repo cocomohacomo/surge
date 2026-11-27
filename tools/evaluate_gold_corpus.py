@@ -77,7 +77,7 @@ def evaluate_case(case, pred):
         raise ValueError(f"{case_id}: gold attributes/relations must be arrays")
     ga = {_attribute(item) for item in gold_attrs}
     ga.discard(None)
-    gold_spans = set()
+    gold_attribute_span_links = set()
     gold_attribute_spans = {}
     for item in gold_attrs:
         if isinstance(item, dict):
@@ -88,10 +88,11 @@ def evaluate_case(case, pred):
                 key = span_key(span, source_parts)
                 if key is None:
                     raise ValueError(f"{case_id}: invalid gold evidence span")
-                gold_spans.add(key)
                 identity = _attribute(item)
                 if identity is not None:
-                    gold_attribute_spans.setdefault(identity, set()).add(key)
+                    span_identity = (*identity, norm(item.get("category", "")))
+                    gold_attribute_spans.setdefault(span_identity, set()).add(key)
+                    gold_attribute_span_links.add((span_identity, key))
 
     schema_errors = 0
     canonical_schema_errors = list(_PROJECTOR_VALIDATOR.iter_errors(pred))
@@ -101,12 +102,13 @@ def evaluate_case(case, pred):
         schema_errors += 1
     parsed_attrs, unsupported = [], 0
     evidence_supported = 0
-    predicted_spans = []
+    predicted_attribute_span_links = []
     for item in raw_attrs:
         attr = _attribute(item)
         if attr is None:
             schema_errors += 1
             continue
+        span_identity = (*attr, norm(item.get("category", "")))
         parsed_attrs.append((attr, item))
         spans = item.get("evidence_spans", [])
         if not isinstance(spans, list):
@@ -119,11 +121,10 @@ def evaluate_case(case, pred):
                 schema_errors += 1
                 continue
             valid_spans.append(key)
-            predicted_spans.append(key)
-        quote = norm(item.get("evidence_quote", item.get("evidence", "")))
+            predicted_attribute_span_links.append((span_identity, key))
         # A syntactically valid span is not sufficient: it must be adjudicated
         # as evidence for this exact attribute in the Gold corpus.
-        adjudicated_spans = gold_attribute_spans.get(attr, set())
+        adjudicated_spans = gold_attribute_spans.get(span_identity, set())
         if adjudicated_spans.intersection(valid_spans):
             evidence_supported += 1
         else:
@@ -137,7 +138,7 @@ def evaluate_case(case, pred):
                           len(ga - unique_attrs))
 
     gr = set()
-    gold_relation_spans = set()
+    gold_relation_span_links = set()
     for item in gold_rels:
         if not isinstance(item, dict):
             raise ValueError(f"{case_id}: malformed gold relation")
@@ -152,7 +153,7 @@ def evaluate_case(case, pred):
             key = span_key(span, source_parts)
             if key is None:
                 raise ValueError(f"{case_id}: invalid gold relation evidence span")
-            gold_relation_spans.add(key)
+            gold_relation_span_links.add((values, key))
     raw_rels = pred.get("relations")
     if not isinstance(raw_rels, list):
         raw_rels = []
@@ -164,7 +165,8 @@ def evaluate_case(case, pred):
                 for key in ("type", "source", "target")):
             schema_errors += 1
             continue
-        parsed_rels.append(tuple(norm(item[key]) for key in ("type", "source", "target")))
+        relation_identity = tuple(norm(item[key]) for key in ("type", "source", "target"))
+        parsed_rels.append(relation_identity)
         spans = item.get("evidence_spans", [])
         if not isinstance(spans, list):
             schema_errors += 1
@@ -174,13 +176,13 @@ def evaluate_case(case, pred):
             if key is None:
                 schema_errors += 1
             else:
-                predicted_relation_spans.append(key)
-    unique_relation_spans = set(predicted_relation_spans)
-    duplicate_relation_spans = len(predicted_relation_spans) - len(unique_relation_spans)
+                predicted_relation_spans.append((relation_identity, key))
+    unique_relation_span_links = set(predicted_relation_spans)
+    duplicate_relation_spans = len(predicted_relation_spans) - len(unique_relation_span_links)
     relation_span_metrics = counts(
-        len(gold_relation_spans & unique_relation_spans),
-        len(unique_relation_spans - gold_relation_spans) + duplicate_relation_spans,
-        len(gold_relation_spans - unique_relation_spans))
+        len(gold_relation_span_links & unique_relation_span_links),
+        len(unique_relation_span_links - gold_relation_span_links) + duplicate_relation_spans,
+        len(gold_relation_span_links - unique_relation_span_links))
     unique_rels = set(parsed_rels)
     duplicate_rels = len(parsed_rels) - len(unique_rels)
     rel_metrics = counts(len(gr & unique_rels),
@@ -216,11 +218,12 @@ def evaluate_case(case, pred):
             len(category_pred - category_gold) + category_duplicates,
             len(category_gold - category_pred))
 
-    unique_spans = set(predicted_spans)
-    duplicate_spans = len(predicted_spans) - len(unique_spans)
-    attribute_span_metrics = counts(len(gold_spans & unique_spans),
-                                     len(unique_spans - gold_spans) + duplicate_spans,
-                                     len(gold_spans - unique_spans))
+    unique_attribute_span_links = set(predicted_attribute_span_links)
+    duplicate_spans = len(predicted_attribute_span_links) - len(unique_attribute_span_links)
+    attribute_span_metrics = counts(
+        len(gold_attribute_span_links & unique_attribute_span_links),
+        len(unique_attribute_span_links - gold_attribute_span_links) + duplicate_spans,
+        len(gold_attribute_span_links - unique_attribute_span_links))
     span_metrics = counts(
         attribute_span_metrics["tp"] + relation_span_metrics["tp"],
         attribute_span_metrics["fp"] + relation_span_metrics["fp"],
@@ -266,8 +269,8 @@ def evaluate_case(case, pred):
         "evidence_span_metrics": span_metrics,
         "attribute_evidence_span_metrics": attribute_span_metrics,
         "relation_evidence_span_metrics": relation_span_metrics,
-        "gold_evidence_span_count": len(gold_spans) + len(gold_relation_spans),
-        "predicted_evidence_span_count": len(predicted_spans) + len(predicted_relation_spans),
+        "gold_evidence_span_count": len(gold_attribute_span_links) + len(gold_relation_span_links),
+        "predicted_evidence_span_count": len(predicted_attribute_span_links) + len(predicted_relation_spans),
         "duplicate_evidence_span_count": duplicate_spans + duplicate_relation_spans,
         "duplicate_attribute_count": duplicate_attrs,
         "duplicate_relation_count": duplicate_rels,

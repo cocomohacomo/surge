@@ -263,14 +263,17 @@ def detect_execution_error(diagnostics, return_code=None):
     return None
 
 
-def build_completion_command(model_path, prompt, cli_path=None, threads=None):
-    """Build a raw-output, non-interactive llama-completion command for preformatted ChatML."""
+def build_completion_command(model_path, prompt_path, cli_path=None, threads=None):
+    """Build the non-interactive command using a UTF-8 prompt file, never argv prompt text."""
     binary = str(cli_path or COMPLETION_CLI)
     thread_count = configured_threads() if threads is None else threads
+    prompt_file = str(prompt_path)
+    if not prompt_file.strip():
+        raise ValueError("prompt_path must not be empty")
     if not isinstance(thread_count, int) or isinstance(thread_count, bool) or thread_count < 1:
         raise ValueError("threads must be a positive integer")
     return [
-        "/usr/bin/time", "-v", binary, "-m", str(model_path), "-p", prompt,
+        "/usr/bin/time", "-v", binary, "-m", str(model_path), "-f", prompt_file,
         "-n", str(MAX_GENERATION_TOKENS), "--temp", str(GENERATION_TEMPERATURE),
         "--top-k", str(GENERATION_TOP_K), "--threads", str(thread_count),
         "--no-conversation", "--no-display-prompt", "--simple-io",
@@ -364,11 +367,13 @@ def run(model, model_path, case):
         system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
         mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
     )
-    cmd = build_completion_command(model_path, prompt)
     started = time.perf_counter()
     try:
-        with tempfile.TemporaryDirectory(prefix="surge-llama-log-") as log_dir:
+        with tempfile.TemporaryDirectory(prefix="surge-llama-run-") as log_dir:
+            prompt_path = Path(log_dir) / "prompt.txt"
+            prompt_path.write_text(prompt, encoding="utf-8")
             log_path = Path(log_dir) / "llama-completion.log"
+            cmd = build_completion_command(model_path, prompt_path)
             cmd.extend(["--log-file", str(log_path)])
             try:
                 proc, timed_out = run_command(cmd, TIMEOUT_SECONDS)
@@ -447,7 +452,7 @@ def main():
     corpus_digest = sha256_file(corpus_path)
     profile_digest = hashlib.sha256(json.dumps(corpus.get("profile", {}), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     report = {
-        "matrix": "surge-structured-projector-matrix-v1.2",
+        "matrix": "surge-structured-projector-matrix-v1.3",
         "corpus_id": corpus.get("corpus_id"),
         "corpus_status": "SEED_NOT_INDEPENDENT",
         "qualification_gate": "NOT_RUN",
@@ -456,9 +461,10 @@ def main():
         "corpus_sha256": corpus_digest, "profile_sha256": profile_digest,
         "excluded_models": EXCLUDED_MODELS,
         "experiment_manifest": {
-            "manifest_version": "surge-experiment-manifest-v1.2",
+            "manifest_version": "surge-experiment-manifest-v1.3",
             "execution_backend": "llama-completion",
             "prompt_mode": "preformatted-chatml-noninteractive",
+            "prompt_transport": "utf8-temporary-file",
             "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
             "llama_cpp_repository": LOCK["llama_cpp"]["repository"],
             "llama_cpp_commit": llama_cpp_commit,

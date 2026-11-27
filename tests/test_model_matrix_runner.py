@@ -90,24 +90,33 @@ class StructuredRunnerOutputTests(unittest.TestCase):
             validate_matrix_corpus(corpus)
 
     def test_sampler_configuration_matches_manifest(self):
-        command = build_completion_command("model.gguf", "prompt", cli_path="/bin/llama-completion", threads=2)
+        command = build_completion_command("model.gguf", "/tmp/prompt.txt", cli_path="/bin/llama-completion", threads=2)
         self.assertEqual(command[command.index("--temp") + 1], "0.8")
         self.assertEqual(command[command.index("--top-k") + 1], "0")
         self.assertEqual(command[command.index("-n") + 1], "768")
 
     def test_noninteractive_chatml_uses_completion_binary(self):
         command = build_completion_command(
-            "model.gguf", "<|im_start|>assistant", cli_path="/bin/llama-completion", threads=2
+            "model.gguf", "/tmp/surge-prompt.txt", cli_path="/bin/llama-completion", threads=2
         )
         self.assertEqual(command[2], "/bin/llama-completion")
         self.assertIn("--no-conversation", command)
         self.assertIn("--json-schema-file", command)
+        self.assertIn("-f", command)
+        self.assertEqual(command[command.index("-f") + 1], "/tmp/surge-prompt.txt")
+        self.assertNotIn("-p", command)
         self.assertNotIn("--single-turn", command)
         self.assertNotIn("--no-show-timings", command)
 
     def test_completion_binary_is_the_default(self):
-        command = build_completion_command("model.gguf", "prompt", threads=2)
+        command = build_completion_command("model.gguf", "/tmp/prompt.txt", threads=2)
         self.assertTrue(command[2].endswith("llama-completion"))
+
+    def test_prompt_content_is_not_exposed_in_process_arguments(self):
+        command = build_completion_command("model.gguf", "/tmp/prompt.txt", threads=2)
+        self.assertNotIn("-p", command)
+        self.assertNotIn("<|im_start|>", command)
+        self.assertIn("/tmp/prompt.txt", command)
 
     def test_invalid_thread_count_is_rejected(self):
         with patch.dict(os.environ, {"SURGE_MODEL_THREADS": "0"}):
