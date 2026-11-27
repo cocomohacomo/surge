@@ -225,24 +225,27 @@ def evaluate_case(case, pred):
         attribute_span_metrics["tp"] + relation_span_metrics["tp"],
         attribute_span_metrics["fp"] + relation_span_metrics["fp"],
         attribute_span_metrics["fn"] + relation_span_metrics["fn"])
+    # Phenomena are explicit model predictions, never inferred from polarity,
+    # attribute category, relation type, or abstention presence.
     predicted_phenomena = set()
-    for _, item in parsed_attrs:
-        category = norm(item.get("category", ""))
-        polarity = norm(item.get("polarity", ""))
-        if polarity == "negative":
-            predicted_phenomena.add("negation")
-        if category == "contradiction":
-            predicted_phenomena.add("contradiction")
-        if category == "temporal_update":
-            predicted_phenomena.add("temporal_supersession")
-        if category == "ambiguity":
-            predicted_phenomena.add("ambiguity")
-    if any(item[0] == "contradicts" for item in parsed_rels):
-        predicted_phenomena.add("contradiction")
-    if any(item[0] == "supersedes" for item in parsed_rels):
-        predicted_phenomena.add("temporal_supersession")
-    if pred.get("abstentions"):
-        predicted_phenomena.add("ambiguity")
+    raw_phenomena = pred.get("phenomena", [])
+    if not isinstance(raw_phenomena, list):
+        schema_errors += 1
+        raw_phenomena = []
+    valid_phenomena = {"negation", "contradiction", "temporal_supersession", "ambiguity"}
+    for item in raw_phenomena:
+        if not isinstance(item, dict) or item.get("label") not in valid_phenomena:
+            schema_errors += 1
+            continue
+        spans = item.get("evidence_spans")
+        if not isinstance(spans, list) or not spans:
+            schema_errors += 1
+            continue
+        valid_evidence = [span_key(span, source_parts) for span in spans]
+        if any(span is None for span in valid_evidence):
+            schema_errors += 1
+            continue
+        predicted_phenomena.add(item["label"])
 
     evidence_total = len(parsed_attrs)
     return {
