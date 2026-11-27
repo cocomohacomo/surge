@@ -99,10 +99,10 @@ def parse_cli_streams(stdout, stderr):
     }
 
 def build_cli_command(model_path, prompt):
-    """Construct a stable CLI invocation. top-k=1 is greedy; temp stays valid for sampler initialization."""
+    """Build a conservative sampler chain; leave top-k disabled to avoid invalid sampler initialization."""
     return [
         "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
-        "-n", "768", "--temp", "1", "--top-k", "1", "--threads", str(THREADS),
+        "-n", "768", "--temp", "0.8", "--threads", str(THREADS),
         "--no-display-prompt", "--simple-io", "--single-turn",
         "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
     ]
@@ -196,7 +196,7 @@ def main():
             },
             "threads": THREADS,
             "generation": {
-                "max_tokens": 768, "temperature": 1, "top_k": 1,
+                "max_tokens": 768, "temperature": 0.8, "top_k": 0,
                 "timeout_seconds": 240, "constrained_decoding": "canonical-json-schema-file"
             },
             "system_prompt_sha256": hashlib.sha256(SYSTEM.encode()).hexdigest(),
