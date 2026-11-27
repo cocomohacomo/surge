@@ -81,8 +81,15 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
     for key, value in expected.items():
         if not value or manifest.get(key) != value:
             failures.append("manifest_mismatch:" + key)
-    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.4":
+    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.5":
         failures.append("manifest_version_mismatch")
+    retry_policy = report.get("retry_policy")
+    generation = manifest.get("generation")
+    if (not isinstance(retry_policy, dict)
+            or not isinstance(generation, dict)
+            or generation.get("json_max_retries") != retry_policy.get("max_retries_per_case")
+            or generation.get("retry_policy") != "bounded-json-schema-regeneration-v1"):
+        failures.append("manifest_retry_policy_mismatch")
     if manifest.get("execution_backend") != "llama-completion":
         failures.append("manifest_execution_backend_mismatch")
     if manifest.get("prompt_mode") != "preformatted-chatml-noninteractive":
@@ -95,6 +102,37 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
     if not isinstance(runtime, dict) or not isinstance(runtime.get("llama_completion_version"), str) or not runtime["llama_completion_version"]:
         failures.append("manifest_completion_version_missing")
     return failures
+
+
+def _retry_audit_valid(row, max_retries):
+    attempts = row.get("attempts")
+    if not isinstance(attempts, list) or not attempts or len(attempts) > max_retries + 1:
+        return False
+    for index, attempt in enumerate(attempts):
+        if not isinstance(attempt, dict) or attempt.get("attempt_number") != index + 1:
+            return False
+        if attempt.get("decoding_constraint") != "canonical-json-schema-file":
+            return False
+        if not isinstance(attempt.get("json_valid"), bool) or not isinstance(attempt.get("projector_schema_valid"), bool):
+            return False
+        if index < len(attempts) - 1:
+            if attempt.get("failure_reason") not in {
+                "empty_output", "invalid_json", "non_json_output",
+                "json_not_object", "schema_validation_failed",
+            }:
+                return False
+    final = attempts[-1]
+    if row.get("retry_count") != len(attempts) - 1:
+        return False
+    if row.get("json_valid") is not final.get("json_valid"):
+        return False
+    if row.get("projector_schema_valid") is not final.get("projector_schema_valid"):
+        return False
+    if row.get("initial_attempt_json_valid") is not attempts[0].get("json_valid"):
+        return False
+    if row.get("initial_attempt_schema_valid") is not attempts[0].get("projector_schema_valid"):
+        return False
+    return True
 
 
 def summarize(report, identity_failures=None):
@@ -127,6 +165,16 @@ def summarize(report, identity_failures=None):
         and len(names) == len(set(names))
         and case_contract_valid
     )
+
+    retry_policy = report.get("retry_policy")
+    retry_policy_present = isinstance(retry_policy, dict)
+    max_retries = retry_policy.get("max_retries_per_case") if retry_policy_present else None
+    retry_policy_valid = (
+        isinstance(max_retries, int) and not isinstance(max_retries, bool)
+        and 0 <= max_retries <= 2
+        and retry_policy.get("preserve_initial_attempt") is True
+        and retry_policy.get("evaluate_each_attempt_separately") is True
+    ) if retry_policy_present else False
 
     model_reports = []
     for model in models:
@@ -184,11 +232,27 @@ def summarize(report, identity_failures=None):
         evidence_valid_cases = sum(row.get("evidence_spans_valid") is True for row in rows)
         evidence_invalid_cases = len(rows) - evidence_valid_cases
         evidence_gate = "PASS" if rows and evidence_invalid_cases == 0 else "FAIL"
+        retry_audit_valid = (
+            retry_policy_valid and all(_retry_audit_valid(row, max_retries) for row in rows)
+        ) if retry_policy_present else True
+        first_attempts = [row.get("attempts", [])[0] for row in rows
+                          if isinstance(row.get("attempts"), list) and row.get("attempts")]
+        initial_json_failures = sum(not item.get("json_valid", False) for item in first_attempts)
+        initial_schema_failures = sum(not item.get("projector_schema_valid", False) for item in first_attempts)
+        retry_cases = sum(int(row.get("retry_count", 0)) > 0 for row in rows)
+        retry_recovered_cases = sum(row.get("retry_recovered") is True for row in rows)
+        retry_exhausted_cases = sum(row.get("retry_exhausted") is True for row in rows)
+        retry_attempts_total = sum(int(row.get("retry_count", 0)) for row in rows)
+        retry_reason_counts = {}
+        for row in rows:
+            for reason in row.get("retry_failure_reasons", []):
+                retry_reason_counts[reason] = retry_reason_counts.get(reason, 0) + 1
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid and counters_valid
         execution_pass = (
             bool(rows) and case_coverage_valid and not invalid_json and not invalid_schema
             and not execution_errors and not timeouts and not missing_rss
             and not nonzero_exit and complete_metrics and evidence_gate == "PASS"
+            and retry_audit_valid and retry_exhausted_cases == 0
         )
         model_reports.append({
             "name": model.get("name"), "cases": len(rows),
@@ -200,6 +264,15 @@ def summarize(report, identity_failures=None):
             "metrics_complete": complete_metrics, "counters_valid": counters_valid,
             "evidence_valid_cases": evidence_valid_cases, "evidence_invalid_cases": evidence_invalid_cases,
             "evidence_gate": evidence_gate,
+            "retry_audit_valid": retry_audit_valid,
+            "first_attempt_json_failures": initial_json_failures,
+            "first_attempt_schema_failures": initial_schema_failures,
+            "initial_attempt_gate": "PASS" if rows and not initial_json_failures and not initial_schema_failures else "FAIL",
+            "retry_cases": retry_cases,
+            "retry_recovered_cases": retry_recovered_cases,
+            "retry_exhausted_cases": retry_exhausted_cases,
+            "retry_attempts_total": retry_attempts_total,
+            "retry_failure_reasons": retry_reason_counts,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
             "categories": {
@@ -226,10 +299,20 @@ def summarize(report, identity_failures=None):
         model["execution_gate"] == "PASS" for model in model_reports
     ) and identity_gate == "PASS"
     evidence_pass = model_set_valid and all(model["evidence_gate"] == "PASS" for model in model_reports)
+    initial_attempt_pass = model_set_valid and retry_policy_present and retry_policy_valid and all(
+        model["initial_attempt_gate"] == "PASS" for model in model_reports
+    )
+    retry_recovery_pass = model_set_valid and retry_policy_present and retry_policy_valid and all(
+        model["retry_audit_valid"] and model["retry_exhausted_cases"] == 0
+        for model in model_reports
+    )
     corpus_status = report.get("corpus_status")
     return {
         "model_matrix_execution_gate": "PASS" if execution_pass else "FAIL",
         "model_matrix_evidence_gate": "PASS" if evidence_pass else "FAIL",
+        "initial_attempt_gate": ("PASS" if initial_attempt_pass else "FAIL") if retry_policy_present else "NOT_RUN",
+        "retry_recovery_gate": ("PASS" if retry_recovery_pass else "FAIL") if retry_policy_present else "NOT_RUN",
+        "retry_policy_valid": retry_policy_valid if retry_policy_present else None,
         "identity_gate": identity_gate,
         "identity_failures": identity_failures,
         "recognition_quality_gate": "NOT_RUN"

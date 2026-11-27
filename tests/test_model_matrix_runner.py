@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from tools.run_structured_model_matrix import (
     build_completion_command,
+    configured_json_retries,
     configured_threads,
+    classify_generation_failure,
     detect_execution_error,
     extract_json,
     parse_cli_streams,
@@ -239,6 +241,112 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         result = parse_cli_streams('llama.cpp banner\n{"attributes":[],"relations":[]}', "")
         self.assertFalse(result["generation_stream_valid"])
         self.assertIsNone(result["parsed_output"])
+
+
+    def test_retry_count_is_bounded_by_configuration(self):
+        with patch.dict(os.environ, {"SURGE_JSON_MAX_RETRIES": "2"}):
+            self.assertEqual(configured_json_retries(), 2)
+        for value in ("-1", "3", "many"):
+            with patch.dict(os.environ, {"SURGE_JSON_MAX_RETRIES": value}):
+                with self.assertRaisesRegex(RuntimeError, "from 0 to 2"):
+                    configured_json_retries()
+
+    def test_generation_failure_reasons_are_classified(self):
+        self.assertEqual(classify_generation_failure("", None, 0, False, None), "empty_output")
+        self.assertEqual(classify_generation_failure("{broken", None, 0, False, None), "invalid_json")
+        self.assertEqual(classify_generation_failure("not-json", None, 0, False, None), "non_json_output")
+        self.assertEqual(classify_generation_failure("[]", None, 0, False, None), "json_not_object")
+        self.assertEqual(classify_generation_failure("{}", {}, 0, False, None, [{"path": "/schema"}]),
+                         "schema_validation_failed")
+        self.assertEqual(classify_generation_failure("{}", None, 2, False, "llama_completion_nonzero_exit"),
+                         "execution_error:llama_completion_nonzero_exit")
+
+    def test_invalid_json_retries_once_and_preserves_both_attempts(self):
+        import subprocess
+        from tools.run_structured_model_matrix import run
+        valid_output = json.dumps({
+            "schema_version": "surge-projector-output-v1.0",
+            "attributes": [], "relations": [],
+        })
+        responses = [
+            (subprocess.CompletedProcess(["fake"], 0, "{broken", ""), False),
+            (subprocess.CompletedProcess(["fake"], 0, valid_output, ""), False),
+        ]
+        seen_prompts = []
+
+        def fake_run(command, timeout_seconds):
+            prompt_path = Path(command[command.index("-f") + 1])
+            seen_prompts.append(prompt_path.read_text(encoding="utf-8"))
+            self.assertIn("--json-schema-file", command)
+            self.assertEqual(command[command.index("--json-schema-file") + 1].endswith(
+                "surge-projector-output-v1.0.schema.json"), True)
+            return responses.pop(0)
+
+        case = {"case_id": "retry-case", "text": "予定は金曜日。", "context": "", "gold": {
+            "schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": [],
+        }}
+        with patch("tools.run_structured_model_matrix.run_command", side_effect=fake_run), \
+             patch("tools.run_structured_model_matrix.validate_projector_output", return_value=[]), \
+             patch("tools.run_structured_model_matrix.evaluate_case", return_value={"stub": True}):
+            result = run({"name": "test-model"}, "model.gguf", case, max_json_retries=1)
+
+        self.assertEqual(len(seen_prompts), 2)
+        self.assertNotIn("前回出力は", seen_prompts[0])
+        self.assertIn("前回出力はJSONオブジェクトとして読み取れませんでした", seen_prompts[1])
+        self.assertEqual(result["retry_count"], 1)
+        self.assertTrue(result["retry_recovered"])
+        self.assertFalse(result["retry_exhausted"])
+        self.assertFalse(result["attempts"][0]["json_valid"])
+        self.assertEqual(result["attempts"][0]["failure_reason"], "invalid_json")
+        self.assertTrue(result["attempts"][1]["json_valid"])
+        self.assertTrue(result["json_valid"])
+        self.assertEqual(result["final_attempt_number"], 2)
+
+    def test_retry_limit_is_enforced_and_exhaustion_is_visible(self):
+        import subprocess
+        from tools.run_structured_model_matrix import run
+        responses = [
+            (subprocess.CompletedProcess(["fake"], 0, "{bad", ""), False),
+            (subprocess.CompletedProcess(["fake"], 0, "{still-bad", ""), False),
+        ]
+        calls = []
+
+        def fake_run(command, timeout_seconds):
+            calls.append(command)
+            return responses.pop(0)
+
+        case = {"case_id": "retry-limit", "text": "x", "context": "", "gold": {
+            "schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": [],
+        }}
+        with patch("tools.run_structured_model_matrix.run_command", side_effect=fake_run), \
+             patch("tools.run_structured_model_matrix.validate_projector_output", return_value=[]):
+            result = run({"name": "test-model"}, "model.gguf", case, max_json_retries=1)
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["retry_count"], 1)
+        self.assertTrue(result["retry_exhausted"])
+        self.assertFalse(result["retry_recovered"])
+        self.assertEqual(result["generation_failure_reason"], "invalid_json")
+
+    def test_runtime_failure_is_not_retried(self):
+        import subprocess
+        from tools.run_structured_model_matrix import run
+        calls = []
+        def fake_run(command, timeout_seconds):
+            calls.append(command)
+            return subprocess.CompletedProcess(["fake"], 2, "", "model failure"), False
+
+        case = {"case_id": "runtime-error", "text": "x", "context": "", "gold": {
+            "schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": [],
+        }}
+        with patch("tools.run_structured_model_matrix.run_command", side_effect=fake_run):
+            result = run({"name": "test-model"}, "model.gguf", case, max_json_retries=2)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["retry_count"], 0)
+        self.assertEqual(result["execution_error"], "llama_completion_nonzero_exit")
+        self.assertEqual(result["generation_failure_reason"],
+                         "execution_error:llama_completion_nonzero_exit")
 
 
 if __name__ == "__main__":

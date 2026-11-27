@@ -119,7 +119,7 @@ class ModelMatrixSummaryTests(unittest.TestCase):
             corpus.get("profile", {}), sort_keys=True, separators=(",", ":")
         ).encode()).hexdigest()
         manifest = {
-            "manifest_version": "surge-experiment-manifest-v1.4",
+            "manifest_version": "surge-experiment-manifest-v1.5",
             "execution_backend": "llama-completion",
             "prompt_mode": "preformatted-chatml-noninteractive",
             "prompt_transport": "utf8-temporary-file",
@@ -173,6 +173,85 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         self.assertEqual(result["model_matrix_execution_gate"], "PASS")
         self.assertEqual(result["identity_gate"], "PASS")
         self.assertEqual(result["recognition_quality_gate"], "NOT_RUN")
+
+
+    def test_retry_recovery_does_not_hide_initial_failure(self):
+        row = valid_row()
+        first = {
+            "attempt_number": 1, "json_valid": False, "projector_schema_valid": False,
+            "failure_reason": "invalid_json", "decoding_constraint": "canonical-json-schema-file",
+        }
+        second = {
+            "attempt_number": 2, "json_valid": True, "projector_schema_valid": True,
+            "failure_reason": None, "decoding_constraint": "canonical-json-schema-file",
+        }
+        row.update({
+            "attempts": [first, second], "retry_count": 1, "retry_recovered": True,
+            "retry_exhausted": False, "retry_failure_reasons": ["invalid_json"],
+            "initial_attempt_json_valid": False, "initial_attempt_schema_valid": False,
+        })
+        data = report([row])
+        data["retry_policy"] = {
+            "max_retries_per_case": 1,
+            "preserve_initial_attempt": True,
+            "evaluate_each_attempt_separately": True,
+        }
+        result = summarize(data, identity_failures=[])
+        self.assertEqual(result["model_matrix_execution_gate"], "PASS")
+        self.assertEqual(result["initial_attempt_gate"], "FAIL")
+        self.assertEqual(result["retry_recovery_gate"], "PASS")
+        model = result["models"][0]
+        self.assertEqual(model["first_attempt_json_failures"], 1)
+        self.assertEqual(model["retry_recovered_cases"], 1)
+        self.assertEqual(model["retry_attempts_total"], 1)
+        self.assertEqual(model["retry_failure_reasons"], {"invalid_json": 1})
+
+    def test_retry_exhaustion_fails_execution_and_recovery_gate(self):
+        row = valid_row() | {
+            "json_valid": False, "projector_schema_valid": False,
+            "attempts": [
+                {"attempt_number": 1, "json_valid": False, "projector_schema_valid": False,
+                 "failure_reason": "invalid_json", "decoding_constraint": "canonical-json-schema-file"},
+                {"attempt_number": 2, "json_valid": False, "projector_schema_valid": False,
+                 "failure_reason": "invalid_json", "decoding_constraint": "canonical-json-schema-file"},
+            ],
+            "retry_count": 1, "retry_recovered": False, "retry_exhausted": True,
+            "retry_failure_reasons": ["invalid_json", "invalid_json"],
+            "initial_attempt_json_valid": False, "initial_attempt_schema_valid": False,
+        }
+        data = report([row])
+        data["retry_policy"] = {
+            "max_retries_per_case": 1,
+            "preserve_initial_attempt": True,
+            "evaluate_each_attempt_separately": True,
+        }
+        result = summarize(data, identity_failures=[])
+        self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
+        self.assertEqual(result["initial_attempt_gate"], "FAIL")
+        self.assertEqual(result["retry_recovery_gate"], "FAIL")
+
+    def test_retry_audit_rejects_hidden_or_overwritten_first_attempt(self):
+        row = valid_row()
+        row.update({
+            "attempts": [
+                {"attempt_number": 1, "json_valid": False, "projector_schema_valid": False,
+                 "failure_reason": "invalid_json", "decoding_constraint": "canonical-json-schema-file"},
+                {"attempt_number": 2, "json_valid": True, "projector_schema_valid": True,
+                 "failure_reason": None, "decoding_constraint": "canonical-json-schema-file"},
+            ],
+            "retry_count": 0, "retry_recovered": True, "retry_exhausted": False,
+            "retry_failure_reasons": ["invalid_json"],
+            "initial_attempt_json_valid": False, "initial_attempt_schema_valid": False,
+        })
+        data = report([row])
+        data["retry_policy"] = {
+            "max_retries_per_case": 1,
+            "preserve_initial_attempt": True,
+            "evaluate_each_attempt_separately": True,
+        }
+        result = summarize(data, identity_failures=[])
+        self.assertEqual(result["models"][0]["retry_audit_valid"], False)
+        self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
 
 
 if __name__ == "__main__":

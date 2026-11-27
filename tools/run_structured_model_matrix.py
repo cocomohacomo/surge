@@ -23,6 +23,12 @@ TIMEOUT_SECONDS = 240
 MAX_GENERATION_TOKENS = 768
 GENERATION_TEMPERATURE = 0.2
 GENERATION_TOP_K = 0
+DEFAULT_JSON_MAX_RETRIES = 1
+HARD_JSON_MAX_RETRIES = 2
+RETRYABLE_GENERATION_FAILURES = {
+    "empty_output", "invalid_json", "non_json_output",
+    "json_not_object", "schema_validation_failed",
+}
 SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
 
 # Runtime assets are loaded only by main(), keeping imports deterministic and testable.
@@ -99,6 +105,18 @@ def configured_threads():
     return value
 
 
+def configured_json_retries():
+    """Return a bounded retry count; the first generation is never counted as a retry."""
+    raw = os.environ.get("SURGE_JSON_MAX_RETRIES", str(DEFAULT_JSON_MAX_RETRIES))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("SURGE_JSON_MAX_RETRIES must be an integer from 0 to 2") from error
+    if value < 0 or value > HARD_JSON_MAX_RETRIES:
+        raise RuntimeError("SURGE_JSON_MAX_RETRIES must be an integer from 0 to 2")
+    return value
+
+
 def load_runtime_assets():
     global LOCK, ALL_MODELS, MODELS, EXCLUDED_MODELS, LOCKED_LLAMA_COMMIT, SCHEMA
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
@@ -145,7 +163,7 @@ PROMPT_TEMPLATE = (
     "上記原文のみを根拠にCanonical JSONを返してください。"
     "属性・関係を捏造せず、Evidence Spanのoffsetとquoteを照合してください。"
     "情報なしは空配列、情報はあるが判断不能はabstentionsです。"
-    "{mode_hint}<|im_end|>\n<|im_start|>assistant\n"
+    "{retry_hint}{mode_hint}<|im_end|>\n<|im_start|>assistant\n"
 )
 
 def sha256_file(path):
@@ -350,6 +368,13 @@ def _update_model_metrics(model_report):
     rows = model_report.get("results", [])
     elapsed = [row["elapsed_seconds"] for row in rows if "elapsed_seconds" in row]
     rss = [row["peak_rss_kib"] for row in rows if row.get("peak_rss_kib") is not None]
+    attempts = [attempt for row in rows for attempt in row.get("attempts", [])]
+    first_attempts = [row["attempts"][0] for row in rows if row.get("attempts")]
+    retry_reasons = {}
+    for attempt in attempts:
+        reason = attempt.get("failure_reason")
+        if reason:
+            retry_reasons[reason] = retry_reasons.get(reason, 0) + 1
     model_report.update({
         "json_valid_cases": sum(bool(row.get("json_valid")) for row in rows),
         "schema_valid_cases": sum(bool(row.get("projector_schema_valid")) for row in rows),
@@ -359,6 +384,14 @@ def _update_model_metrics(model_report):
         "latency_p50_seconds": median(elapsed) if elapsed else None,
         "latency_max_seconds": max(elapsed) if elapsed else None,
         "peak_rss_kib_max": max(rss) if rss else None,
+        "initial_attempt_json_valid_cases": sum(bool(item.get("json_valid")) for item in first_attempts),
+        "initial_attempt_schema_valid_cases": sum(bool(item.get("projector_schema_valid")) for item in first_attempts),
+        "initial_attempt_failures": sum(not (item.get("json_valid") and item.get("projector_schema_valid")) for item in first_attempts),
+        "retry_cases": sum(int(row.get("retry_count", 0)) > 0 for row in rows),
+        "retry_recovered_cases": sum(bool(row.get("retry_recovered")) for row in rows),
+        "retry_exhausted_cases": sum(bool(row.get("retry_exhausted")) for row in rows),
+        "retry_attempts_total": sum(int(row.get("retry_count", 0)) for row in rows),
+        "retry_failure_reasons": retry_reasons,
     })
 def validate_evidence_spans(prediction, case):
     """Validate emitted spans against the exact text/context source."""
@@ -398,79 +431,205 @@ def validate_evidence_spans(prediction, case):
     return {"valid": not errors, "span_count": span_count, "errors": errors}
 
 
-def run(model, model_path, case):
-    prompt = PROMPT_TEMPLATE.format(
-        system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
-        mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
+def _retry_prompt_hint(failure_reason, schema_errors=None):
+    """Build a short corrective hint without weakening the external JSON Schema constraint."""
+    if failure_reason == "schema_validation_failed":
+        paths = []
+        for error in (schema_errors or [])[:3]:
+            if isinstance(error, dict):
+                paths.append(str(error.get("path", "/")))
+        detail = " 対象パス: " + "、".join(paths) if paths else ""
+        return (
+            "\n前回出力はJSONでしたがCanonical JSON Schemaに不適合でした。"
+            "必須項目・型・enum・追加プロパティ禁止を守り、スキーマ適合JSONオブジェクト1個だけを再生成してください。"
+            + detail
+        )
+    return (
+        "\n前回出力はJSONオブジェクトとして読み取れませんでした。"
+        "説明・Markdown・コードフェンス・前置き・複数オブジェクトを出さず、"
+        "Canonical JSON Schemaに適合するJSONオブジェクト1個だけを生成してください。"
     )
-    started = time.perf_counter()
-    try:
-        with tempfile.TemporaryDirectory(prefix="surge-llama-run-") as log_dir:
-            prompt_path = Path(log_dir) / "prompt.txt"
-            prompt_path.write_text(prompt, encoding="utf-8")
-            log_path = Path(log_dir) / "llama-completion.log"
-            cmd = build_completion_command(model_path, prompt_path)
-            cmd.extend(["--log-file", str(log_path)])
-            try:
-                proc, timed_out = run_command(cmd, TIMEOUT_SECONDS)
-            except OSError as error:
-                return {
-                    "case_id": case["case_id"], "timeout": False,
-                    "execution_error": "llama_completion_launch_failed",
-                    "elapsed_seconds": time.perf_counter() - started,
-                    "raw_output": "", "stderr": str(error)[-4000:],
-                    "return_code": None, "json_valid": False,
-                    "projector_schema_valid": False,
-                }
-            log_output = _read_diagnostic_log(log_path)
-    except OSError as error:
-        return {
-            "case_id": case["case_id"], "timeout": False,
-            "execution_error": "llama_completion_log_error",
-            "elapsed_seconds": time.perf_counter() - started,
-            "raw_output": "", "stderr": str(error)[-4000:],
-            "return_code": None, "json_valid": False,
-            "projector_schema_valid": False,
-        }
 
-    elapsed = time.perf_counter() - started
-    diagnostics = "\n".join(part for part in (proc.stderr, log_output) if part)
-    execution_error = (
-        "generation_timeout" if timed_out
-        else detect_execution_error(diagnostics, proc.returncode)
-    )
-    streams = parse_cli_streams(proc.stdout, diagnostics, proc.returncode)
-    parsed = streams["parsed_output"]
-    rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
-    result = {
-        "case_id": case["case_id"], "return_code": proc.returncode,
-        "timeout": timed_out, "elapsed_seconds": elapsed,
-        "peak_rss_kib": int(rss[-1]) if rss else None,
-        "json_valid": parsed is not None, "parsed_output": parsed,
-        "generation_stream_valid": streams["generation_stream_valid"],
-        "stdout_rejected": streams["stdout_rejected"],
-        "raw_output": proc.stdout[:4000], "stderr": streams["diagnostic_stderr"],
-        "decoding_constraint": "canonical-json-schema-file",
-        "execution_error": execution_error,
+
+def classify_generation_failure(stdout, parsed, return_code, timed_out,
+                                execution_error, schema_errors=None):
+    """Classify output failures separately from infrastructure/runtime failures."""
+    if timed_out:
+        return "generation_timeout"
+    if execution_error:
+        return "execution_error:" + execution_error
+    if return_code != 0:
+        return "process_nonzero_exit"
+    candidate = stdout.strip() if isinstance(stdout, str) else ""
+    if not candidate:
+        return "empty_output"
+    marker = " [end of text]"
+    if candidate.endswith(marker):
+        candidate = candidate[:-len(marker)].rstrip()
+    try:
+        decoded = json.loads(candidate)
+    except (TypeError, json.JSONDecodeError):
+        if candidate.startswith(("{", "[")):
+            return "invalid_json"
+        return "non_json_output"
+    if not isinstance(decoded, dict):
+        return "json_not_object"
+    if parsed is None:
+        return "non_json_output"
+    if schema_errors:
+        return "schema_validation_failed"
+    return None
+
+
+def run(model, model_path, case, max_json_retries=None):
+    """Run one case with bounded JSON/Schema retries and preserve every attempt."""
+    max_retries = configured_json_retries() if max_json_retries is None else max_json_retries
+    if (not isinstance(max_retries, int) or isinstance(max_retries, bool)
+            or max_retries < 0 or max_retries > HARD_JSON_MAX_RETRIES):
+        raise ValueError("max_json_retries must be an integer from 0 to 2")
+
+    mode_hint = "/no_think" if model.get("format") == "chatml_no_think" else ""
+    prompt_values = {
+        "system": SYSTEM, "context": case.get("context", ""),
+        "text": case.get("text", ""), "mode_hint": mode_hint,
     }
-    if parsed is not None:
-        evidence_validation = validate_evidence_spans(parsed, case)
-        result["evidence_spans_valid"] = evidence_validation["valid"]
-        result["evidence_span_count"] = evidence_validation["span_count"]
-        result["evidence_span_errors"] = evidence_validation["errors"]
-        schema_errors = validate_projector_output(parsed, SCHEMA_PATH)
-        result["projector_schema_valid"] = not schema_errors
-        result["projector_schema_errors"] = schema_errors
-        result["engineering_semantic_metrics"] = evaluate_case(case, parsed)
-    else:
-        result["evidence_spans_valid"] = False
-        result["evidence_span_count"] = 0
-        result["evidence_span_errors"] = ["generation_not_json"]
-        result["projector_schema_valid"] = False
-        result["projector_schema_errors"] = [
-            {"path": "/", "message": "stdout is not exactly one JSON object from a successful process"}
-        ]
-    return result
+    attempts = []
+    total_started = time.perf_counter()
+
+    with tempfile.TemporaryDirectory(prefix="surge-llama-run-") as log_dir:
+        directory = Path(log_dir)
+        for attempt_number in range(1, max_retries + 2):
+            previous = attempts[-1] if attempts else None
+            retry_hint = (
+                _retry_prompt_hint(previous["failure_reason"], previous.get("projector_schema_errors"))
+                if previous else ""
+            )
+            prompt = PROMPT_TEMPLATE.format(**prompt_values, retry_hint=retry_hint)
+            prompt_path = directory / f"prompt-attempt-{attempt_number}.txt"
+            log_path = directory / f"llama-completion-attempt-{attempt_number}.log"
+            prompt_path.write_text(prompt, encoding="utf-8")
+            command = build_completion_command(model_path, prompt_path)
+            command.extend(["--log-file", str(log_path)])
+            attempt_started = time.perf_counter()
+
+            try:
+                proc, timed_out = run_command(command, TIMEOUT_SECONDS)
+                log_output = _read_diagnostic_log(log_path)
+                stdout = proc.stdout if isinstance(proc.stdout, str) else ""
+                stderr = proc.stderr if isinstance(proc.stderr, str) else ""
+                return_code = proc.returncode
+            except OSError as error:
+                stdout, stderr, log_output = "", str(error), ""
+                return_code, timed_out = None, False
+                launch_error = "llama_completion_launch_failed"
+            else:
+                launch_error = None
+
+            elapsed = time.perf_counter() - attempt_started
+            diagnostics = "\n".join(part for part in (stderr, log_output) if part)
+            execution_error = launch_error or (
+                "generation_timeout" if timed_out
+                else detect_execution_error(diagnostics, return_code)
+            )
+            streams = parse_cli_streams(stdout, diagnostics, return_code)
+            parsed = streams["parsed_output"]
+            schema_errors = validate_projector_output(parsed, SCHEMA_PATH) if parsed is not None else []
+            failure_reason = classify_generation_failure(
+                stdout, parsed, return_code, timed_out, execution_error, schema_errors
+            )
+            evidence = validate_evidence_spans(parsed, case) if parsed is not None else {
+                "valid": False, "span_count": 0, "errors": ["generation_not_json"]
+            }
+            rss_values = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", stderr)
+            semantic_metrics = None
+            if parsed is not None and not schema_errors:
+                semantic_metrics = evaluate_case(case, parsed)
+
+            attempt = {
+                "attempt_number": attempt_number,
+                "is_retry": attempt_number > 1,
+                "return_code": return_code,
+                "timeout": timed_out,
+                "elapsed_seconds": elapsed,
+                "peak_rss_kib": int(rss_values[-1]) if rss_values else None,
+                "json_valid": parsed is not None,
+                "projector_schema_valid": parsed is not None and not schema_errors,
+                "projector_schema_errors": schema_errors,
+                "failure_reason": failure_reason,
+                "retryable": failure_reason in RETRYABLE_GENERATION_FAILURES,
+                "decoding_constraint": "canonical-json-schema-file",
+                "schema_constraint_path": str(SCHEMA_PATH),
+                "generation_stream_valid": streams["generation_stream_valid"],
+                "stdout_rejected": streams["stdout_rejected"],
+                "raw_output": stdout[:4000],
+                "parsed_output": parsed,
+                "stderr": streams["diagnostic_stderr"],
+                "evidence_spans_valid": evidence["valid"],
+                "evidence_span_count": evidence["span_count"],
+                "evidence_span_errors": evidence["errors"],
+                "engineering_semantic_metrics": semantic_metrics,
+            }
+            attempts.append(attempt)
+
+            # Retry only output/Schema failures. Runtime failures and timeouts remain terminal.
+            if failure_reason is None or failure_reason not in RETRYABLE_GENERATION_FAILURES:
+                break
+            if attempt_number > max_retries:
+                break
+
+    final = attempts[-1]
+    initial = attempts[0]
+    retry_count = len(attempts) - 1
+    retry_recovered = retry_count > 0 and final["failure_reason"] is None
+    retry_exhausted = retry_count > 0 and final["failure_reason"] in RETRYABLE_GENERATION_FAILURES
+    total_elapsed = time.perf_counter() - total_started
+    rss_values = [item["peak_rss_kib"] for item in attempts if item.get("peak_rss_kib") is not None]
+
+    return {
+        "case_id": case["case_id"],
+        "attempts": attempts,
+        "attempt_count": len(attempts),
+        "retry_count": retry_count,
+        "retry_max_retries": max_retries,
+        "retry_recovered": retry_recovered,
+        "retry_exhausted": retry_exhausted,
+        "retry_failure_reasons": [
+            item["failure_reason"] for item in attempts if item.get("failure_reason")
+        ],
+        "initial_attempt_json_valid": initial["json_valid"],
+        "initial_attempt_schema_valid": initial["projector_schema_valid"],
+        "final_attempt_number": final["attempt_number"],
+        "return_code": final["return_code"],
+        "timeout": any(item["timeout"] for item in attempts),
+        "elapsed_seconds": total_elapsed,
+        "attempt_elapsed_seconds_total": sum(item["elapsed_seconds"] for item in attempts),
+        "peak_rss_kib": max(rss_values) if rss_values else None,
+        "json_valid": final["json_valid"],
+        "parsed_output": final["parsed_output"],
+        "generation_stream_valid": final["generation_stream_valid"],
+        "stdout_rejected": final["stdout_rejected"],
+        "raw_output": final["raw_output"],
+        "stderr": final["stderr"],
+        "decoding_constraint": final["decoding_constraint"],
+        "execution_error": (
+            final["failure_reason"].split(":", 1)[1]
+            if isinstance(final["failure_reason"], str)
+            and final["failure_reason"].startswith("execution_error:")
+            else (
+                "generation_timeout" if final["failure_reason"] == "generation_timeout"
+                else final["failure_reason"] if final["failure_reason"] in {
+                    "process_nonzero_exit", "llama_completion_launch_failed"
+                } else None
+            )
+        ),
+        "generation_failure_reason": final["failure_reason"],
+        "evidence_spans_valid": final["evidence_spans_valid"],
+        "evidence_span_count": final["evidence_span_count"],
+        "evidence_span_errors": final["evidence_span_errors"],
+        "projector_schema_valid": final["projector_schema_valid"],
+        "projector_schema_errors": final["projector_schema_errors"],
+        "engineering_semantic_metrics": final["engineering_semantic_metrics"],
+    }
 
 def main():
     llama_cpp_commit = validate_runtime_config()
@@ -494,8 +653,16 @@ def main():
         raise SystemExit("llama-completion --version failed")
     corpus_digest = sha256_file(corpus_path)
     profile_digest = hashlib.sha256(json.dumps(corpus.get("profile", {}), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    json_max_retries = configured_json_retries()
     report = {
-        "matrix": "surge-structured-projector-matrix-v1.3",
+        "matrix": "surge-structured-projector-matrix-v1.4",
+        "retry_policy": {
+            "policy": "bounded-json-schema-regeneration-v1",
+            "max_retries_per_case": json_max_retries,
+            "retryable_failure_reasons": sorted(RETRYABLE_GENERATION_FAILURES),
+            "preserve_initial_attempt": True,
+            "evaluate_each_attempt_separately": True,
+        },
         "corpus_id": corpus.get("corpus_id"),
         "corpus_status": "SEED_NOT_INDEPENDENT",
         "qualification_gate": "NOT_RUN",
@@ -504,7 +671,7 @@ def main():
         "corpus_sha256": corpus_digest, "profile_sha256": profile_digest,
         "excluded_models": EXCLUDED_MODELS,
         "experiment_manifest": {
-            "manifest_version": "surge-experiment-manifest-v1.4",
+            "manifest_version": "surge-experiment-manifest-v1.5",
             "execution_backend": "llama-completion",
             "prompt_mode": "preformatted-chatml-noninteractive",
             "prompt_transport": "utf8-temporary-file",
@@ -531,6 +698,10 @@ def main():
                 "top_k": GENERATION_TOP_K,
                 "timeout_seconds": TIMEOUT_SECONDS,
                 "constrained_decoding": "canonical-json-schema-file",
+                "json_max_retries": json_max_retries,
+                "retry_policy": "bounded-json-schema-regeneration-v1",
+                "retry_prompt_transport": "utf8-temporary-file",
+                "attempt_metrics": "initial-and-each-retry-preserved",
             },
             "system_prompt_sha256": hashlib.sha256(SYSTEM.encode()).hexdigest(),
             "prompt_template_sha256": hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest(),
