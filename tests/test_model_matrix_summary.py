@@ -131,6 +131,8 @@ class ModelMatrixSummaryTests(unittest.TestCase):
             "profile_sha256": profile_digest,
             "llama_completion_path": "/usr/bin/llama-completion",
             "runtime": {"llama_completion_version": "b1-fd4b137"},
+            "generation": {"json_max_retries": 1,
+                           "retry_policy": "bounded-json-schema-regeneration-v1"},
         }
         model_reports = [{
             "name": model["name"],
@@ -140,7 +142,19 @@ class ModelMatrixSummaryTests(unittest.TestCase):
             "tokenizer_revision": model["tokenizer_revision"],
             "model_file": model["file"],
         } for model in lock["models"] if model.get("enabled", True)]
-        report = {"experiment_manifest": manifest, "models": model_reports}
+        report = {
+            "experiment_manifest": manifest,
+            "models": model_reports,
+            "retry_policy": {
+                "max_retries_per_case": 1,
+                "retryable_failure_reasons": [
+                    "empty_output", "invalid_json", "non_json_output",
+                    "json_not_object", "schema_validation_failed",
+                ],
+                "preserve_initial_attempt": True,
+                "evaluate_each_attempt_separately": True,
+            },
+        }
 
         failures = _identity_audit(
             report, lock_path, schema_path, corpus_path, "c" * 40

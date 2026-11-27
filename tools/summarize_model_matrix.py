@@ -104,6 +104,11 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
     return failures
 
 
+def _safe_retry_count(row):
+    value = row.get("retry_count", 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
 def _retry_audit_valid(row, max_retries):
     attempts = row.get("attempts")
     if not isinstance(attempts, list) or not attempts or len(attempts) > max_retries + 1:
@@ -131,6 +136,15 @@ def _retry_audit_valid(row, max_retries):
     if row.get("initial_attempt_json_valid") is not attempts[0].get("json_valid"):
         return False
     if row.get("initial_attempt_schema_valid") is not attempts[0].get("projector_schema_valid"):
+        return False
+    expected_recovered = len(attempts) > 1 and final.get("failure_reason") is None
+    expected_exhausted = len(attempts) > 1 and final.get("failure_reason") in {
+        "empty_output", "invalid_json", "non_json_output",
+        "json_not_object", "schema_validation_failed",
+    }
+    if row.get("retry_recovered") is not expected_recovered:
+        return False
+    if row.get("retry_exhausted") is not expected_exhausted:
         return False
     return True
 
@@ -174,6 +188,10 @@ def summarize(report, identity_failures=None):
         and 0 <= max_retries <= 2
         and retry_policy.get("preserve_initial_attempt") is True
         and retry_policy.get("evaluate_each_attempt_separately") is True
+        and set(retry_policy.get("retryable_failure_reasons", [])) == {
+            "empty_output", "invalid_json", "non_json_output",
+            "json_not_object", "schema_validation_failed",
+        }
     ) if retry_policy_present else False
 
     model_reports = []
@@ -235,18 +253,23 @@ def summarize(report, identity_failures=None):
         retry_audit_valid = (
             retry_policy_valid and all(_retry_audit_valid(row, max_retries) for row in rows)
         ) if retry_policy_present else True
-        first_attempts = [row.get("attempts", [])[0] for row in rows
-                          if isinstance(row.get("attempts"), list) and row.get("attempts")]
+        first_attempts = [row["attempts"][0] for row in rows
+                          if isinstance(row.get("attempts"), list) and row.get("attempts")
+                          and isinstance(row["attempts"][0], dict)]
+        initial_audit_missing = len(rows) - len(first_attempts)
         initial_json_failures = sum(not item.get("json_valid", False) for item in first_attempts)
         initial_schema_failures = sum(not item.get("projector_schema_valid", False) for item in first_attempts)
-        retry_cases = sum(int(row.get("retry_count", 0)) > 0 for row in rows)
+        retry_cases = sum(_safe_retry_count(row) > 0 for row in rows)
         retry_recovered_cases = sum(row.get("retry_recovered") is True for row in rows)
         retry_exhausted_cases = sum(row.get("retry_exhausted") is True for row in rows)
-        retry_attempts_total = sum(int(row.get("retry_count", 0)) for row in rows)
+        retry_attempts_total = sum(_safe_retry_count(row) for row in rows)
         retry_reason_counts = {}
         for row in rows:
-            for reason in row.get("retry_failure_reasons", []):
-                retry_reason_counts[reason] = retry_reason_counts.get(reason, 0) + 1
+            reasons = row.get("retry_failure_reasons", [])
+            if isinstance(reasons, list):
+                for reason in reasons:
+                    if isinstance(reason, str) and reason:
+                        retry_reason_counts[reason] = retry_reason_counts.get(reason, 0) + 1
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid and counters_valid
         execution_pass = (
             bool(rows) and case_coverage_valid and not invalid_json and not invalid_schema
@@ -267,7 +290,8 @@ def summarize(report, identity_failures=None):
             "retry_audit_valid": retry_audit_valid,
             "first_attempt_json_failures": initial_json_failures,
             "first_attempt_schema_failures": initial_schema_failures,
-            "initial_attempt_gate": "PASS" if rows and not initial_json_failures and not initial_schema_failures else "FAIL",
+            "initial_attempt_gate": "PASS" if rows and not initial_audit_missing and retry_audit_valid and not initial_json_failures and not initial_schema_failures else "FAIL",
+            "initial_attempt_audit_missing": initial_audit_missing,
             "retry_cases": retry_cases,
             "retry_recovered_cases": retry_recovered_cases,
             "retry_exhausted_cases": retry_exhausted_cases,
