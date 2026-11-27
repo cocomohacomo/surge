@@ -21,7 +21,7 @@ OUT = Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT", ROOT / "model-matrix.json
 COMPLETION_CLI = os.environ.get("LLAMA_COMPLETION_CLI", "llama-completion")
 TIMEOUT_SECONDS = 240
 MAX_GENERATION_TOKENS = 768
-GENERATION_TEMPERATURE = 0.8
+GENERATION_TEMPERATURE = 0.2
 GENERATION_TOP_K = 0
 SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
 
@@ -133,9 +133,7 @@ SYSTEM = """あなたはSURGEの外部認識Projectorです。入力に明示さ
 attributesは入力から直接支持される属性だけを格納します。keyは属性名、valueは原文に沿った値、polarityはpositive/negative/uncertain/unknown、categoryは意味カテゴリです。
 relationsは原文が明示する二項関係だけを格納します。typeは関係名、sourceとtargetは関係の両端です。関係を推測で補いません。
 evidence_spansは各属性・関係を直接支持する最短の連続原文範囲です。sourceはtextまたはcontext、startは0始まりUnicodeコードポイント位置、endは排他的、quoteは原文[source][start:end]と完全一致させます。1つの属性に複数根拠が必要なら複数spanを付けます。
-具体例: textが「期限は水曜日です。」なら、期限属性はkey「期限」、value「水曜日」、polarity「positive」、category「temporal_update」、spanはsource「text」、start 3、end 6、quote「水曜日」です。
-具体例: textが「期限は水曜日ではありません。」なら、期限属性のpolarityは「negative」です。「水曜日」という値だけを見てpositiveにしてはいけません。
-具体例: textが「期限は水曜日です。AはBに提出する。」なら、属性deadlineのspanはsource「text」、start 3、end 6、quote「水曜日」です。関係のspanはsource「text」、start 9、end 18、quote「AはBに提出する。」です。関係はtype「提出先」、source「A」、target「B」です。出力形の一部は次のとおりです: {"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"deadline","value":"水曜日","polarity":"positive","category":"temporal_update","evidence_spans":[{"source":"text","start":3,"end":6,"quote":"水曜日"}]}],"relations":[{"type":"提出先","source":"A","target":"B","evidence_spans":[{"source":"text","start":9,"end":18,"quote":"AはBに提出する。"}]}]}
+根拠範囲は各出力対象の値・意味・現象を直接支持する原文内の最短連続範囲にしてください。offsetは入力ごとに原文から計算し、プロンプト内の他の文章のoffset・quoteを流用しません。出力前に source[start:end] と quote の完全一致を確認してください。contextとtextは別々の原文としてoffsetを計算します。情報を推測せず、曖昧なら属性・関係・現象を無理に出力せずabstentionsを使用してください。
 空配列と判断保留を区別します。該当情報が入力に存在しない場合、その配列は空にします。情報は存在するが指示対象・値・極性・関係が曖昧、矛盾、または確定不能な場合は、推測で属性や関係を作らずabstentionsにreasonを記録します。単に情報がないことをabstentionにしません。
 現象判定はattributes/relationから推測せず、phenomena配列に独立して出力します。各要素はlabelと、その現象を直接支持するEvidence Spanを持ちます。4現象はnegation、contradiction、temporal_supersession、ambiguityです。根拠がなければ出力しません。\nEvidenceが取れない属性・関係・現象は出力しません。空配列は許容されます。"""
 
@@ -362,7 +360,45 @@ def _update_model_metrics(model_report):
         "latency_max_seconds": max(elapsed) if elapsed else None,
         "peak_rss_kib_max": max(rss) if rss else None,
     })
-def run(model, model_path, case):
+def validate_evidence_spans(prediction, case):
+    """Validate emitted spans against the exact text/context source."""
+    if not isinstance(prediction, dict) or not isinstance(case, dict):
+        return {"valid": False, "span_count": 0, "errors": ["prediction_or_case_not_object"]}
+    sources = {"text": case.get("text", ""), "context": case.get("context", "")}
+    errors, span_count = [], 0
+    for collection in ("attributes", "relations", "phenomena", "abstentions"):
+        items = prediction.get(collection, [])
+        if not isinstance(items, list):
+            errors.append(collection + "_not_array")
+            continue
+        for item_index, item in enumerate(items):
+            if not isinstance(item, dict):
+                errors.append(f"{collection}[{item_index}]_not_object")
+                continue
+            spans = item.get("evidence_spans", [])
+            if not isinstance(spans, list) or not spans:
+                errors.append(f"{collection}[{item_index}]_missing_evidence")
+                continue
+            for span_index, span in enumerate(spans):
+                span_count += 1
+                path = f"{collection}[{item_index}].evidence_spans[{span_index}]"
+                if not isinstance(span, dict):
+                    errors.append(path + "_not_object")
+                    continue
+                source_name, start, end, quote = (span.get("source"), span.get("start"), span.get("end"), span.get("quote"))
+                if (not isinstance(source_name, str) or source_name not in sources
+                        or not isinstance(start, int) or isinstance(start, bool)
+                        or not isinstance(end, int) or isinstance(end, bool)
+                        or not isinstance(quote, str) or not quote or start < 0 or end <= start):
+                    errors.append(path + "_invalid_fields")
+                    continue
+                text = sources[source_name]
+                if not isinstance(text, str) or end > len(text) or text[start:end] != quote:
+                    errors.append(path + "_quote_offset_mismatch")
+    return {"valid": not errors, "span_count": span_count, "errors": errors}
+
+
+ def run(model, model_path, case):
     prompt = PROMPT_TEMPLATE.format(
         system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
         mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
@@ -418,11 +454,18 @@ def run(model, model_path, case):
         "execution_error": execution_error,
     }
     if parsed is not None:
+        evidence_validation = validate_evidence_spans(parsed, case)
+        result["evidence_spans_valid"] = evidence_validation["valid"]
+        result["evidence_span_count"] = evidence_validation["span_count"]
+        result["evidence_span_errors"] = evidence_validation["errors"]
         schema_errors = validate_projector_output(parsed, SCHEMA_PATH)
         result["projector_schema_valid"] = not schema_errors
         result["projector_schema_errors"] = schema_errors
         result["engineering_semantic_metrics"] = evaluate_case(case, parsed)
     else:
+        result["evidence_spans_valid"] = False
+        result["evidence_span_count"] = 0
+        result["evidence_span_errors"] = ["generation_not_json"]
         result["projector_schema_valid"] = False
         result["projector_schema_errors"] = [
             {"path": "/", "message": "stdout is not exactly one JSON object from a successful process"}
@@ -461,7 +504,7 @@ def main():
         "corpus_sha256": corpus_digest, "profile_sha256": profile_digest,
         "excluded_models": EXCLUDED_MODELS,
         "experiment_manifest": {
-            "manifest_version": "surge-experiment-manifest-v1.3",
+            "manifest_version": "surge-experiment-manifest-v1.4",
             "execution_backend": "llama-completion",
             "prompt_mode": "preformatted-chatml-noninteractive",
             "prompt_transport": "utf8-temporary-file",

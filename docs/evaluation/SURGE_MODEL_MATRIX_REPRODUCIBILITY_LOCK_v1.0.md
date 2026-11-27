@@ -1,4 +1,4 @@
-# SURGE Model Matrix Reproducibility Lock v1.3
+# SURGE Model Matrix Reproducibility Lock v1.4
 
 The model matrix MUST NOT resolve mutable `main` or `master` refs at execution time.
 
@@ -24,7 +24,7 @@ Changing any repository, revision, file, quantization, tokenizer source, or runt
 
 ## Experiment manifest
 
-Each model matrix report includes `surge-experiment-manifest-v1.3` with:
+Each model matrix report includes `surge-experiment-manifest-v1.4` with:
 - source commit, llama.cpp repository and immutable commit; execution backend, prompt mode and prompt transport;
 - model lock SHA-256;
 - model and tokenizer repositories/revisions;

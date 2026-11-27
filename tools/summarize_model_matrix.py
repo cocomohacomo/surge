@@ -81,7 +81,7 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
     for key, value in expected.items():
         if not value or manifest.get(key) != value:
             failures.append("manifest_mismatch:" + key)
-    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.3":
+    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.4":
         failures.append("manifest_version_mismatch")
     if manifest.get("execution_backend") != "llama-completion":
         failures.append("manifest_execution_backend_mismatch")
@@ -181,11 +181,14 @@ def summarize(report, identity_failures=None):
             and item[key] >= 0
             for item in semantic for key in counter_fields
         )
+        evidence_valid_cases = sum(row.get("evidence_spans_valid") is True for row in rows)
+        evidence_invalid_cases = len(rows) - evidence_valid_cases
+        evidence_gate = "PASS" if rows and evidence_invalid_cases == 0 else "FAIL"
         complete_metrics = bool(rows) and len(semantic) == len(rows) and metric_shape_valid and counters_valid
         execution_pass = (
             bool(rows) and case_coverage_valid and not invalid_json and not invalid_schema
             and not execution_errors and not timeouts and not missing_rss
-            and not nonzero_exit and complete_metrics
+            and not nonzero_exit and complete_metrics and evidence_gate == "PASS"
         )
         model_reports.append({
             "name": model.get("name"), "cases": len(rows),
@@ -195,6 +198,8 @@ def summarize(report, identity_failures=None):
             "execution_errors": execution_errors, "timeouts": timeouts,
             "missing_rss": missing_rss, "nonzero_exit": nonzero_exit,
             "metrics_complete": complete_metrics, "counters_valid": counters_valid,
+            "evidence_valid_cases": evidence_valid_cases, "evidence_invalid_cases": evidence_invalid_cases,
+            "evidence_gate": evidence_gate,
             "attribute": _aggregate(semantic, "attribute_metrics") if semantic and metric_shape_valid else None,
             "relation": _aggregate(semantic, "relation_metrics") if semantic and metric_shape_valid else None,
             "categories": {
@@ -220,9 +225,11 @@ def summarize(report, identity_failures=None):
     execution_pass = model_set_valid and all(
         model["execution_gate"] == "PASS" for model in model_reports
     ) and identity_gate == "PASS"
+    evidence_pass = model_set_valid and all(model["evidence_gate"] == "PASS" for model in model_reports)"
     corpus_status = report.get("corpus_status")
     return {
         "model_matrix_execution_gate": "PASS" if execution_pass else "FAIL",
+        "model_matrix_evidence_gate": "PASS" if evidence_pass else "FAIL",
         "identity_gate": identity_gate,
         "identity_failures": identity_failures,
         "recognition_quality_gate": "NOT_RUN"

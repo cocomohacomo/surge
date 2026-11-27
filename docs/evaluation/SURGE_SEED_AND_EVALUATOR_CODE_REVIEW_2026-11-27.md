@@ -80,3 +80,11 @@ Held-out cases must explicitly annotate the four-label vocabulary. Profiles must
 - Seed Corpus evaluation must remain NOT_RUN for qualification because it is not independently adjudicated.
 - Aggregate Gate must remain FAIL until both independent Core Integrity and Recognition Quality evidence tracks pass with identical commit/profile/corpus identity.
 - PR remains unmerged unless separately authorized.
+
+
+## Evidence span generation hardening (2026-11-28)
+
+- Removed fixed prompt examples that contained reusable offsets and quotes; the compact rule now requires offsets to be calculated from the current `text` or `context` and the quote to exactly equal that source slice.
+- Lowered generation temperature from 0.8 to 0.2. This improves repeatability but is not a semantic-quality claim.
+- Added strict Evidence Span validation for attributes, relations, phenomena, and abstentions. Emitted objects must contain evidence spans with a valid source, non-boolean integer offsets, nonempty quote, and exact source-slice equality.
+- Evidence validity is now a separate gate and participates in the overall model-matrix gate. The seed corpus remains non-independent; this change does not qualify Recognition Quality.

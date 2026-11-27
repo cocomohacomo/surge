@@ -91,7 +91,7 @@ class StructuredRunnerOutputTests(unittest.TestCase):
 
     def test_sampler_configuration_matches_manifest(self):
         command = build_completion_command("model.gguf", "/tmp/prompt.txt", cli_path="/bin/llama-completion", threads=2)
-        self.assertEqual(command[command.index("--temp") + 1], "0.8")
+        self.assertEqual(command[command.index("--temp") + 1], "0.2")
         self.assertEqual(command[command.index("--top-k") + 1], "0")
         self.assertEqual(command[command.index("-n") + 1], "768")
 
@@ -111,6 +111,32 @@ class StructuredRunnerOutputTests(unittest.TestCase):
     def test_completion_binary_is_the_default(self):
         command = build_completion_command("model.gguf", "/tmp/prompt.txt", threads=2)
         self.assertTrue(command[2].endswith("llama-completion"))
+
+    def test_evidence_span_validator_rejects_wrong_quote_offsets(self):
+        from tools.run_structured_model_matrix import validate_evidence_spans
+        case = {"text": "締切は水曜日。", "context": "前の期限は火曜日。"}
+        valid = {"attributes": [{"key": "deadline", "value": "水曜日",
+                 "evidence_spans": [{"source": "text", "start": 3, "end": 6, "quote": "水曜日"}]}],
+                 "relations": [], "phenomena": [], "abstentions": []}
+        self.assertTrue(validate_evidence_spans(valid, case)["valid"])
+        invalid = {"attributes": [{"key": "deadline", "value": "水曜日",
+                 "evidence_spans": [{"source": "text", "start": 3, "end": 6, "quote": "火曜日"}]}],
+                 "relations": [], "phenomena": [], "abstentions": []}
+        self.assertFalse(validate_evidence_spans(invalid, case)["valid"])
+        malformed = {"attributes": [{"key": "x", "value": "x", "evidence_spans": [
+            {"source": [], "start": 0, "end": 1, "quote": "x"}]}],
+            "relations": [], "phenomena": [], "abstentions": []}
+        self.assertFalse(validate_evidence_spans(malformed, {"text": "x", "context": ""})["valid"])
+
+    def test_evidence_validator_rejects_bool_offsets_and_missing_spans(self):
+        from tools.run_structured_model_matrix import validate_evidence_spans
+        case = {"text": "abc", "context": ""}
+        prediction = {"attributes": [{"key": "x", "value": "a", "evidence_spans": [
+            {"source": "text", "start": True, "end": 1, "quote": "a"}]}],
+            "relations": [], "phenomena": [], "abstentions": []}
+        self.assertFalse(validate_evidence_spans(prediction, case)["valid"])
+        prediction["attributes"][0]["evidence_spans"] = []
+        self.assertFalse(validate_evidence_spans(prediction, case)["valid"])
 
     def test_prompt_content_is_not_exposed_in_process_arguments(self):
         command = build_completion_command("model.gguf", "/tmp/prompt.txt", threads=2)

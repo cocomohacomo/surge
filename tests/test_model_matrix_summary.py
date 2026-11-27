@@ -18,6 +18,7 @@ def valid_row(case_id="case-1"):
                 "relation_evidence_span_metrics": metric}
     return {"case_id": case_id, "json_valid": True, "projector_schema_valid": True, "timeout": False,
             "return_code": 0, "peak_rss_kib": 100,
+            "evidence_spans_valid": True, "evidence_span_errors": [],
             "engineering_semantic_metrics": semantic}
 
 
@@ -118,7 +119,7 @@ class ModelMatrixSummaryTests(unittest.TestCase):
             corpus.get("profile", {}), sort_keys=True, separators=(",", ":")
         ).encode()).hexdigest()
         manifest = {
-            "manifest_version": "surge-experiment-manifest-v1.3",
+            "manifest_version": "surge-experiment-manifest-v1.4",
             "execution_backend": "llama-completion",
             "prompt_mode": "preformatted-chatml-noninteractive",
             "prompt_transport": "utf8-temporary-file",
@@ -151,6 +152,21 @@ class ModelMatrixSummaryTests(unittest.TestCase):
             report, lock_path, schema_path, corpus_path, "c" * 40
         )
         self.assertIn("manifest_prompt_transport_mismatch", failures)
+
+    def test_evidence_gate_fails_on_invalid_spans(self):
+        row = valid_row() | {"evidence_spans_valid": False, "evidence_span_errors": ["quote mismatch"]}
+        result = summarize(report([row]))
+        self.assertEqual(result["models"][0]["evidence_gate"], "FAIL")
+        self.assertEqual(result["models"][0]["evidence_invalid_cases"], 1)
+        self.assertEqual(result["model_matrix_evidence_gate"], "FAIL")
+        self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
+
+    def test_evidence_gate_passes_for_all_valid_cases(self):
+        row = valid_row() | {"evidence_spans_valid": True, "evidence_span_errors": []}
+        result = summarize(report([row]))
+        self.assertEqual(result["models"][0]["evidence_gate"], "PASS")
+        self.assertEqual(result["models"][0]["evidence_valid_cases"], 1)
+        self.assertEqual(result["model_matrix_evidence_gate"], "PASS")
 
     def test_complete_model_matrix_passes_execution_only(self):
         result = summarize(report(), identity_failures=[])
