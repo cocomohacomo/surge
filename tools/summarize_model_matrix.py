@@ -31,7 +31,56 @@ def _aggregate(metrics, key):
             if precision + recall else 0.0}
 
 
-def summarize(report):
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit):
+    manifest = report.get("experiment_manifest")
+    failures = []
+    if not isinstance(manifest, dict):
+        return ["manifest_missing"]
+    lock = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    enabled = {item["name"]: item for item in lock.get("models", [])
+               if isinstance(item, dict) and item.get("enabled", True)}
+    actual_models = report.get("models", [])
+    actual_names = {item.get("name") for item in actual_models if isinstance(item, dict)}
+    if actual_names != set(enabled):
+        failures.append("model_lock_names_mismatch")
+    for item in actual_models:
+        if not isinstance(item, dict):
+            failures.append("model_entry_invalid")
+            continue
+        locked = enabled.get(item.get("name"))
+        if locked is None:
+            continue
+        for actual_key, lock_key in (("repository", "repo"),
+                                     ("repository_revision", "revision"),
+                                     ("tokenizer_repository", "tokenizer_repo"),
+                                     ("tokenizer_revision", "tokenizer_revision"),
+                                     ("model_file", "file")):
+            if item.get(actual_key) != locked.get(lock_key):
+                failures.append("model_lock_mismatch:" + str(item.get("name")) + ":" + actual_key)
+    expected = {
+        "llama_cpp_commit": lock.get("llama_cpp", {}).get("commit"),
+        "model_lock_sha256": _sha256(lock_path),
+        "canonical_schema_sha256": _sha256(schema_path),
+        "corpus_sha256": _sha256(corpus_path),
+        "source_commit": expected_commit,
+    }
+    for key, value in expected.items():
+        if not value or manifest.get(key) != value:
+            failures.append("manifest_mismatch:" + key)
+    if manifest.get("manifest_version") != "surge-experiment-manifest-v1.1":
+        failures.append("manifest_version_mismatch")
+    return failures
+
+
+def summarize(report, identity_failures=None):
     if not isinstance(report, dict):
         raise ValueError("model matrix report must be an object")
     models = report.get("models")
