@@ -28,10 +28,19 @@ ROOT = Path(os.environ.get("SURGE_MODEL_MATRIX_DIR", "model-matrix"))
 OUT = Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT", ROOT / "model-matrix.json"))
 CLI = os.environ.get("LLAMA_CLI", "llama-cli")
 THREADS = max(1, int(os.environ.get("SURGE_MODEL_THREADS", "2")))
-LLAMA_CPP_COMMIT = os.environ.get("LLAMA_CPP_COMMIT", "")
 LOCKED_LLAMA_COMMIT = LOCK["llama_cpp"]["commit"]
-if not re.fullmatch(r"[0-9a-f]{40}", LOCKED_LLAMA_COMMIT) or LLAMA_CPP_COMMIT != LOCKED_LLAMA_COMMIT:
-    raise SystemExit("LLAMA_CPP_COMMIT must match the full immutable commit in the model lock")
+
+
+def validate_runtime_config():
+    """Validate execution-only settings lazily so importing helpers is side-effect free."""
+    llama_cpp_commit = os.environ.get("LLAMA_CPP_COMMIT", "")
+    if (not isinstance(LOCKED_LLAMA_COMMIT, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", LOCKED_LLAMA_COMMIT)
+            or llama_cpp_commit != LOCKED_LLAMA_COMMIT):
+        raise RuntimeError(
+            "LLAMA_CPP_COMMIT must match the full immutable commit in the model lock"
+        )
+    return llama_cpp_commit
 SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
 SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -117,6 +126,7 @@ def run(model, model_path, case):
     return result
 
 def main():
+    llama_cpp_commit = validate_runtime_config()
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as error:
@@ -148,7 +158,7 @@ def main():
             "manifest_version": "surge-experiment-manifest-v1.1",
             "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
             "llama_cpp_repository": LOCK["llama_cpp"]["repository"],
-            "llama_cpp_commit": LLAMA_CPP_COMMIT,
+            "llama_cpp_commit": llama_cpp_commit,
             "model_lock_sha256": sha256_file(LOCK_PATH),
             "canonical_schema_sha256": sha256_file(SCHEMA_PATH),
             "llama_cli_path": str(Path(CLI).resolve()),
