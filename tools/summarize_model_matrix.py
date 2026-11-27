@@ -3,6 +3,7 @@
 import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -66,11 +67,15 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
                                      ("model_file", "file")):
             if item.get(actual_key) != locked.get(lock_key):
                 failures.append("model_lock_mismatch:" + str(item.get("name")) + ":" + actual_key)
+    corpus = json.loads(Path(corpus_path).read_text(encoding="utf-8"))
+    profile_digest = hashlib.sha256(json.dumps(corpus.get("profile", {}), sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
     expected = {
         "llama_cpp_commit": lock.get("llama_cpp", {}).get("commit"),
         "model_lock_sha256": _sha256(lock_path),
         "canonical_schema_sha256": _sha256(schema_path),
         "corpus_sha256": _sha256(corpus_path),
+        "profile_sha256": profile_digest,
         "source_commit": expected_commit,
     }
     for key, value in expected.items():
@@ -218,7 +223,16 @@ def summarize(report, identity_failures=None):
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: summarize_model_matrix.py INPUT.json OUTPUT.json")
-    result = summarize(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")))
+    report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    root = Path(__file__).resolve().parents[1]
+    lock_path = Path(os.environ.get("SURGE_MODEL_MATRIX_LOCK", root / "config/model-matrix-lock-v1.0.json"))
+    schema_path = root / "schemas/surge-projector-output-v1.0.schema.json"
+    corpus_path = Path(os.environ.get("SURGE_GOLD_CORPUS", root / "tests/fixtures/semantic/gold_seed_v0.1.json"))
+    expected_commit = os.environ.get("GITHUB_SHA")
+    identity_failures = _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit)
+    if not expected_commit:
+        identity_failures.append("source_commit_unavailable")
+    result = summarize(report, identity_failures=identity_failures)
     Path(sys.argv[2]).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                                  encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
