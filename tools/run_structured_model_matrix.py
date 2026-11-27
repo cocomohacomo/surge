@@ -6,6 +6,7 @@ NOT_RUN until independently adjudicated held-out data is supplied.
 """
 import hashlib, json, os, platform, re, shutil, subprocess, time
 import sys
+import tempfile
 from pathlib import Path
 from statistics import median
 
@@ -106,24 +107,34 @@ def run(model, model_path, case):
         "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
         "-n", "768", "--temp", "0", "--top-k", "1", "--threads", str(THREADS),
         "--no-display-prompt", "--simple-io", "--single-turn",
-        "--no-show-timings", "--log-disable", "--json-schema-file", str(SCHEMA_PATH)
+        "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
     ]
     started = time.perf_counter()
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=240
-        )
+        # The pinned llama.cpp CLI supports --log-file. Route its logger away
+        # from stdout so the generation stream can be parsed without log scraping.
+        with tempfile.TemporaryDirectory(prefix="surge-llama-log-") as log_dir:
+            log_path = Path(log_dir) / "llama-cli.log"
+            cmd.extend(["--log-file", str(log_path)])
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=240
+            )
+            log_output = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
     except subprocess.TimeoutExpired:
         return {"case_id": case["case_id"], "timeout": True, "elapsed_seconds": 240}
     elapsed = time.perf_counter() - started
-    parsed = extract_json(proc.stdout)
+    diagnostics = "\n".join(part for part in (proc.stderr, log_output) if part)
+    streams = parse_cli_streams(proc.stdout, diagnostics)
+    parsed = streams["parsed_output"]
     rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
     result = {
         "case_id": case["case_id"], "return_code": proc.returncode,
         "elapsed_seconds": elapsed, "peak_rss_kib": int(rss[-1]) if rss else None,
         "json_valid": parsed is not None, "parsed_output": parsed,
-        "raw_output": proc.stdout[:4000], "stderr": proc.stderr[-1000:],
+        "generation_stream_valid": streams["generation_stream_valid"],
+        "stdout_rejected": streams["stdout_rejected"],
+        "raw_output": proc.stdout[:4000], "stderr": streams["diagnostic_stderr"],
         "decoding_constraint": "canonical-json-schema-file"
     }
     if parsed is not None:
