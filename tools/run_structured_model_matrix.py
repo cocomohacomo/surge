@@ -18,22 +18,45 @@ from validate_projector_output import validate as validate_projector_output
 LOCK_PATH = Path(os.environ.get("SURGE_MODEL_MATRIX_LOCK", "config/model-matrix-lock-v1.0.json"))
 if not LOCK_PATH.is_absolute():
     LOCK_PATH = REPO_ROOT / LOCK_PATH
-LOCK = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
-ALL_MODELS = LOCK["models"]
-MODELS = [model for model in ALL_MODELS if model.get("enabled", True)]
-EXCLUDED_MODELS = [
-    {"name": model["name"], "reason": model.get("exclusion_reason", "disabled in model lock")}
-    for model in ALL_MODELS if model not in MODELS
-]
 ROOT = Path(os.environ.get("SURGE_MODEL_MATRIX_DIR", "model-matrix"))
 OUT = Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT", ROOT / "model-matrix.json"))
 CLI = os.environ.get("LLAMA_CLI", "llama-cli")
 THREADS = max(1, int(os.environ.get("SURGE_MODEL_THREADS", "2")))
-LOCKED_LLAMA_COMMIT = LOCK["llama_cpp"]["commit"]
+SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
+
+# Runtime assets are loaded only by main(), keeping imports deterministic and testable.
+LOCK = None
+ALL_MODELS = []
+MODELS = []
+EXCLUDED_MODELS = []
+LOCKED_LLAMA_COMMIT = None
+SCHEMA = None
+
+
+def load_runtime_assets():
+    global LOCK, ALL_MODELS, MODELS, EXCLUDED_MODELS, LOCKED_LLAMA_COMMIT, SCHEMA
+    LOCK = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    ALL_MODELS = LOCK.get("models")
+    if not isinstance(ALL_MODELS, list) or not ALL_MODELS:
+        raise RuntimeError("model lock must contain a non-empty models array")
+    if any(not isinstance(model, dict) or not isinstance(model.get("name"), str)
+           or not isinstance(model.get("repo"), str)
+           or not isinstance(model.get("revision"), str)
+           or not isinstance(model.get("file"), str) for model in ALL_MODELS):
+        raise RuntimeError("model lock contains an invalid model entry")
+    MODELS = [model for model in ALL_MODELS if model.get("enabled", True)]
+    EXCLUDED_MODELS = [
+        {"name": model["name"], "reason": model.get("exclusion_reason", "disabled in model lock")}
+        for model in ALL_MODELS if not model.get("enabled", True)
+    ]
+    LOCKED_LLAMA_COMMIT = LOCK.get("llama_cpp", {}).get("commit")
+    SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    return LOCK
 
 
 def validate_runtime_config():
-    """Validate execution-only settings lazily so importing helpers is side-effect free."""
+    """Load and validate pinned runtime settings; importing helpers performs no I/O."""
+    load_runtime_assets()
     llama_cpp_commit = os.environ.get("LLAMA_CPP_COMMIT", "")
     if (not isinstance(LOCKED_LLAMA_COMMIT, str)
             or not re.fullmatch(r"[0-9a-f]{40}", LOCKED_LLAMA_COMMIT)
@@ -42,8 +65,6 @@ def validate_runtime_config():
             "LLAMA_CPP_COMMIT must match the full immutable commit in the model lock"
         )
     return llama_cpp_commit
-SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
-SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 SYSTEM = """あなたはSURGEの外部認識Projectorです。入力に明示された情報だけを抽出し、真偽や常識を補完しません。
 出力は指定されたCanonical JSON Schemaに適合するJSONオブジェクト1個だけです。Markdown、コードフェンス、説明文は禁止です。
@@ -116,7 +137,7 @@ def build_cli_command(model_path, prompt):
     return [
         "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
         "-n", "768", "--temp", "0.8", "--threads", str(THREADS),
-        "--no-display-prompt", "--simple-io", "--single-turn",
+        "--no-conversation", "--no-display-prompt", "--simple-io",
         "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
     ]
 
@@ -138,8 +159,23 @@ def run(model, model_path, case):
                 errors="replace", timeout=240
             )
             log_output = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-    except subprocess.TimeoutExpired:
-        return {"case_id": case["case_id"], "timeout": True, "elapsed_seconds": 240}
+    except subprocess.TimeoutExpired as error:
+        elapsed = time.perf_counter() - started
+        def _partial_text(value):
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return value if isinstance(value, str) else ""
+        partial_stdout = _partial_text(error.stdout)
+        partial_stderr = _partial_text(error.stderr)
+        return {
+            "case_id": case["case_id"], "timeout": True,
+            "execution_error": "generation_timeout",
+            "elapsed_seconds": elapsed,
+            "raw_output": partial_stdout[-4000:],
+            "stderr": partial_stderr[-4000:],
+            "return_code": None, "json_valid": False,
+            "projector_schema_valid": False
+        }
     elapsed = time.perf_counter() - started
     diagnostics = "\n".join(part for part in (proc.stderr, log_output) if part)
     streams = parse_cli_streams(proc.stdout, diagnostics)
