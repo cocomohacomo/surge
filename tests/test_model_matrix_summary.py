@@ -88,6 +88,12 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         row["engineering_semantic_metrics"]["relation_metrics"]["tp"] = -1
         self.assertEqual(summarize(report([row]))["model_matrix_execution_gate"], "FAIL")
 
+    def test_manifest_identity_failure_fails_closed(self):
+        result = summarize(report(), identity_failures=["manifest_mismatch:model_lock_sha256"])
+        self.assertEqual(result["identity_gate"], "FAIL")
+        self.assertEqual(result["model_matrix_execution_gate"], "FAIL")
+        self.assertIn("manifest_mismatch:model_lock_sha256", result["identity_failures"])
+
     def test_complete_model_matrix_passes_execution_only(self):
         result = summarize(report())
         self.assertEqual(result["model_matrix_execution_gate"], "PASS")
