@@ -233,8 +233,10 @@ def main():
         }
         for case in corpus["cases"]:
             row = run(model, model_path, case)
-            if row.get("return_code", 0) != 0 and not row.get("timeout"):
-                raise RuntimeError(f"model command failed: {model['name']} {case['case_id']}")
+            if row.get("timeout"):
+                row["execution_error"] = "generation_timeout"
+            elif row.get("return_code", 0) != 0 and not row.get("execution_error"):
+                row["execution_error"] = "llama_cli_nonzero_exit"
             model_report["results"].append(row)
             if row.get("execution_error"):
                 model_report["execution_error"] = row["execution_error"]
