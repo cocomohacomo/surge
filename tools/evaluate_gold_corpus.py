@@ -78,6 +78,7 @@ def evaluate_case(case, pred):
     ga = {_attribute(item) for item in gold_attrs}
     ga.discard(None)
     gold_spans = set()
+    gold_attribute_spans = {}
     for item in gold_attrs:
         if isinstance(item, dict):
             spans = item.get("evidence_spans", [])
@@ -88,6 +89,9 @@ def evaluate_case(case, pred):
                 if key is None:
                     raise ValueError(f"{case_id}: invalid gold evidence span")
                 gold_spans.add(key)
+                identity = _attribute(item)
+                if identity is not None:
+                    gold_attribute_spans.setdefault(identity, set()).add(key)
 
     schema_errors = 0
     canonical_schema_errors = list(_PROJECTOR_VALIDATOR.iter_errors(pred))
@@ -117,9 +121,10 @@ def evaluate_case(case, pred):
             valid_spans.append(key)
             predicted_spans.append(key)
         quote = norm(item.get("evidence_quote", item.get("evidence", "")))
-        if valid_spans:
-            evidence_supported += 1
-        elif quote and quote in source:
+        # A syntactically valid span is not sufficient: it must be adjudicated
+        # as evidence for this exact attribute in the Gold corpus.
+        adjudicated_spans = gold_attribute_spans.get(attr, set())
+        if adjudicated_spans.intersection(valid_spans):
             evidence_supported += 1
         else:
             unsupported += 1
