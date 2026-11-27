@@ -70,6 +70,38 @@ class GoldCorpusEvaluatorTests(unittest.TestCase):
                                       "relations": []})
         self.assertEqual(result["unsupported_attribute_count"], 1)
 
+
+    def test_valid_but_unrelated_span_does_not_support_attribute(self):
+        case = {
+            "case_id": "unrelated-evidence",
+            "text": "期限は水曜です。担当は佐藤です。",
+            "gold": {
+                "schema_version": "surge-projector-output-v1.0",
+                "attributes": [{
+                    "key": "期限", "value": "水曜", "polarity": "positive",
+                    "category": "temporal_update",
+                    "evidence_spans": [{
+                        "source": "text", "start": 3, "end": 5, "quote": "水曜"
+                    }]
+                }],
+                "relations": []
+            }
+        }
+        prediction = {
+            "schema_version": "surge-projector-output-v1.0",
+            "attributes": [{
+                "key": "期限", "value": "水曜", "polarity": "positive",
+                "category": "temporal_update",
+                "evidence_spans": [{
+                    "source": "text", "start": 10, "end": 12, "quote": "佐藤"
+                }]
+            }],
+            "relations": []
+        }
+        result = evaluate_case(case, prediction)
+        self.assertEqual(result["unsupported_attribute_count"], 1)
+        self.assertEqual(result["evidence_support_rate"], 0.0)
+
     def test_unadjudicated_seed_is_not_run(self):
         corpus = {"schema_version": "surge-gold-corpus-v1.0", "cases": [{"case_id": "seed", "split": "seed", "gold": {"schema_version": "surge-projector-output-v1.0", "attributes": [], "relations": []}}],
                   "annotation": {"independent_adjudication": False}, "profile": {}}
