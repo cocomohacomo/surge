@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from tools.run_structured_model_matrix import extract_json, validate_runtime_config
+from tools.run_structured_model_matrix import extract_json, parse_cli_streams, validate_runtime_config
 
 
 class StructuredRunnerOutputTests(unittest.TestCase):
@@ -33,3 +33,14 @@ class StructuredRunnerOutputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_cli_diagnostics_are_never_merged_into_generation(self):
+        result = parse_cli_streams('{"attributes":[],"relations":[]}', 'llama.cpp banner\\nsampler initialized')
+        self.assertTrue(result["generation_stream_valid"])
+        self.assertEqual(result["parsed_output"]["attributes"], [])
+        self.assertIn("sampler initialized", result["diagnostic_stderr"])
+
+    def test_banner_or_prompt_echo_on_stdout_is_rejected(self):
+        result = parse_cli_streams('llama.cpp banner\\n{"attributes":[],"relations":[]}', '')
+        self.assertFalse(result["generation_stream_valid"])
+        self.assertIsNone(result["parsed_output"])
