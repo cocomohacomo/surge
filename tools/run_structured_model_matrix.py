@@ -132,6 +132,10 @@ def run(model, model_path, case):
     streams = parse_cli_streams(proc.stdout, diagnostics)
     parsed = streams["parsed_output"]
     rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
+    sampler_failure = bool(re.search(
+        r"Failed to initialize samplers|failed to launch slot with task",
+        diagnostics, re.IGNORECASE
+    ))
     result = {
         "case_id": case["case_id"], "return_code": proc.returncode,
         "elapsed_seconds": elapsed, "peak_rss_kib": int(rss[-1]) if rss else None,
@@ -139,7 +143,8 @@ def run(model, model_path, case):
         "generation_stream_valid": streams["generation_stream_valid"],
         "stdout_rejected": streams["stdout_rejected"],
         "raw_output": proc.stdout[:4000], "stderr": streams["diagnostic_stderr"],
-        "decoding_constraint": "canonical-json-schema-file"
+        "decoding_constraint": "canonical-json-schema-file",
+        "execution_error": "sampler_initialization_failed" if sampler_failure else None
     }
     if parsed is not None:
         schema_errors = validate_projector_output(parsed, SCHEMA_PATH)
@@ -231,6 +236,9 @@ def main():
             if row.get("return_code", 0) != 0 and not row.get("timeout"):
                 raise RuntimeError(f"model command failed: {model['name']} {case['case_id']}")
             model_report["results"].append(row)
+            if row.get("execution_error"):
+                model_report["execution_error"] = row["execution_error"]
+                break
         rows = model_report["results"]
         elapsed = [row["elapsed_seconds"] for row in rows if "elapsed_seconds" in row]
         rss = [row["peak_rss_kib"] for row in rows if row.get("peak_rss_kib") is not None]
@@ -246,9 +254,11 @@ def main():
         })
         report["models"].append(model_report)
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    execution_failed = any(model.get("execution_error") for model in report["models"])
+    report["model_matrix_execution_gate"] = "FAIL" if execution_failed else "NOT_QUALIFIED"
     OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0
+    return 1 if execution_failed else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
