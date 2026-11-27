@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Strict model-matrix execution audit; this never certifies semantic quality."""
+import hashlib
 import json
 import math
 import sys
@@ -81,6 +82,13 @@ def _identity_audit(report, lock_path, schema_path, corpus_path, expected_commit
 
 
 def summarize(report, identity_failures=None):
+    """Summarize execution metrics and fail the execution gate on identity audit failures.
+
+    Identity audit is performed by the caller; omitted audit is explicitly NOT_RUN.
+    """
+    identity_audit_executed = identity_failures is not None
+    identity_failures = list(identity_failures or [])
+    identity_gate = "PASS" if identity_audit_executed and not identity_failures else ("FAIL" if identity_failures else "NOT_RUN")
     if not isinstance(report, dict):
         raise ValueError("model matrix report must be an object")
     models = report.get("models")
@@ -192,10 +200,12 @@ def summarize(report, identity_failures=None):
 
     execution_pass = model_set_valid and all(
         model["execution_gate"] == "PASS" for model in model_reports
-    )
+    ) and identity_gate == "PASS"
     corpus_status = report.get("corpus_status")
     return {
         "model_matrix_execution_gate": "PASS" if execution_pass else "FAIL",
+        "identity_gate": identity_gate,
+        "identity_failures": identity_failures,
         "recognition_quality_gate": "NOT_RUN"
         if corpus_status == "SEED_NOT_INDEPENDENT" else "PENDING",
         "model_count": len(model_reports), "expected_model_count": expected_count,
