@@ -11,10 +11,10 @@ class StructuredRunnerOutputTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "LLAMA_CPP_COMMIT"):
                 validate_runtime_config()
 
-    def test_sampler_configuration_uses_valid_temperature_and_greedy_top_k(self):
+    def test_sampler_configuration_avoids_top_k_sampler(self):
         command = build_cli_command("model.gguf", "prompt")
-        self.assertEqual(command[command.index("--temp") + 1], "1")
-        self.assertEqual(command[command.index("--top-k") + 1], "1")
+        self.assertEqual(command[command.index("--temp") + 1], "0.8")
+        self.assertNotIn("--top-k", command)
 
     def test_accepts_one_complete_json_object(self):
         self.assertEqual(extract_json('{"attributes":[],"relations":[]}'),
