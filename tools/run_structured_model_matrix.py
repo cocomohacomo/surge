@@ -27,7 +27,7 @@ DEFAULT_JSON_MAX_RETRIES = 1
 HARD_JSON_MAX_RETRIES = 2
 RETRYABLE_GENERATION_FAILURES = {
     "empty_output", "invalid_json", "non_json_output",
-    "json_not_object", "schema_validation_failed",
+    "json_not_object", "schema_validation_failed", "evidence_validation_failed",
 }
 SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
 
@@ -433,6 +433,14 @@ def validate_evidence_spans(prediction, case):
 
 def _retry_prompt_hint(failure_reason, schema_errors=None):
     """Build a short corrective hint without weakening the external JSON Schema constraint."""
+    if failure_reason == "evidence_validation_failed":
+        return (
+            "\\n前回出力はJSON Schemaに適合しましたが、Evidence Spanのsource・start・end・quoteが原文と一致しませんでした。"
+            "各属性・関係・現象・abstentionの意味を直接支持する最短の連続範囲を、"
+            "textとcontextを別々に0始まりUnicodeコードポイントで数えて再計算してください。"
+            "quoteは必ず該当source[start:end]と完全一致させ、根拠がない項目は出力しないでください。"
+            "Canonical JSON Schemaの必須項目・型・enum・追加プロパティ禁止は変更しないでください。"
+        )
     if failure_reason == "schema_validation_failed":
         paths = []
         for error in (schema_errors or [])[:3]:
@@ -452,7 +460,7 @@ def _retry_prompt_hint(failure_reason, schema_errors=None):
 
 
 def classify_generation_failure(stdout, parsed, return_code, timed_out,
-                                execution_error, schema_errors=None):
+                                execution_error, schema_errors=None, evidence_valid=None):
     """Classify output failures separately from infrastructure/runtime failures."""
     if timed_out:
         return "generation_timeout"
@@ -478,6 +486,8 @@ def classify_generation_failure(stdout, parsed, return_code, timed_out,
         return "non_json_output"
     if schema_errors:
         return "schema_validation_failed"
+    if evidence_valid is False:
+        return "evidence_validation_failed"
     return None
 
 
@@ -534,12 +544,14 @@ def run(model, model_path, case, max_json_retries=None):
             streams = parse_cli_streams(stdout, diagnostics, return_code)
             parsed = streams["parsed_output"]
             schema_errors = validate_projector_output(parsed, SCHEMA_PATH) if parsed is not None else []
-            failure_reason = classify_generation_failure(
-                stdout, parsed, return_code, timed_out, execution_error, schema_errors
-            )
-            evidence = validate_evidence_spans(parsed, case) if parsed is not None else {
-                "valid": False, "span_count": 0, "errors": ["generation_not_json"]
+            evidence = validate_evidence_spans(parsed, case) if parsed is not None and not schema_errors else {
+                "valid": False, "span_count": 0,
+                "errors": ["generation_not_json"] if parsed is None else ["schema_validation_failed"]
             }
+            failure_reason = classify_generation_failure(
+                stdout, parsed, return_code, timed_out, execution_error,
+                schema_errors, evidence["valid"] if parsed is not None and not schema_errors else None
+            )
             rss_values = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", stderr)
             semantic_metrics = None
             if parsed is not None and not schema_errors:

@@ -258,6 +258,8 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         self.assertEqual(classify_generation_failure("[]", None, 0, False, None), "json_not_object")
         self.assertEqual(classify_generation_failure("{}", {}, 0, False, None, [{"path": "/schema"}]),
                          "schema_validation_failed")
+        self.assertEqual(classify_generation_failure("{}", {}, 0, False, None, [], False),
+                         "evidence_validation_failed")
         self.assertEqual(classify_generation_failure("{}", None, 2, False, "llama_completion_nonzero_exit"),
                          "execution_error:llama_completion_nonzero_exit")
 

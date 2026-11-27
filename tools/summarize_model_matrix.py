@@ -123,7 +123,7 @@ def _retry_audit_valid(row, max_retries):
         if index < len(attempts) - 1:
             if attempt.get("failure_reason") not in {
                 "empty_output", "invalid_json", "non_json_output",
-                "json_not_object", "schema_validation_failed",
+                "json_not_object", "schema_validation_failed", "evidence_validation_failed",
             }:
                 return False
     final = attempts[-1]
@@ -140,7 +140,7 @@ def _retry_audit_valid(row, max_retries):
     expected_recovered = len(attempts) > 1 and final.get("failure_reason") is None
     expected_exhausted = len(attempts) > 1 and final.get("failure_reason") in {
         "empty_output", "invalid_json", "non_json_output",
-        "json_not_object", "schema_validation_failed",
+        "json_not_object", "schema_validation_failed", "evidence_validation_failed",
     }
     if row.get("retry_recovered") is not expected_recovered:
         return False
