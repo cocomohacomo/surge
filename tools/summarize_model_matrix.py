@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+RETRYABLE_GENERATION_FAILURES = frozenset({"empty_output", "invalid_json", "non_json_output", "json_not_object", "schema_validation_failed", "evidence_validation_failed"})
+
 
 def _valid_metric(metric):
     if not isinstance(metric, dict):
@@ -121,10 +123,7 @@ def _retry_audit_valid(row, max_retries):
         if not isinstance(attempt.get("json_valid"), bool) or not isinstance(attempt.get("projector_schema_valid"), bool):
             return False
         if index < len(attempts) - 1:
-            if attempt.get("failure_reason") not in {
-                "empty_output", "invalid_json", "non_json_output",
-                "json_not_object", "schema_validation_failed", "evidence_validation_failed",
-            }:
+            if attempt.get("failure_reason") not in RETRYABLE_GENERATION_FAILURES:
                 return False
     final = attempts[-1]
     if row.get("retry_count") != len(attempts) - 1:
@@ -138,10 +137,7 @@ def _retry_audit_valid(row, max_retries):
     if row.get("initial_attempt_schema_valid") is not attempts[0].get("projector_schema_valid"):
         return False
     expected_recovered = len(attempts) > 1 and final.get("failure_reason") is None
-    expected_exhausted = len(attempts) > 1 and final.get("failure_reason") in {
-        "empty_output", "invalid_json", "non_json_output",
-        "json_not_object", "schema_validation_failed", "evidence_validation_failed",
-    }
+    expected_exhausted = len(attempts) > 1 and final.get("failure_reason") in RETRYABLE_GENERATION_FAILURES
     if row.get("retry_recovered") is not expected_recovered:
         return False
     if row.get("retry_exhausted") is not expected_exhausted:
@@ -188,10 +184,9 @@ def summarize(report, identity_failures=None):
         and 0 <= max_retries <= 2
         and retry_policy.get("preserve_initial_attempt") is True
         and retry_policy.get("evaluate_each_attempt_separately") is True
-        and set(retry_policy.get("retryable_failure_reasons", [])) == {
-            "empty_output", "invalid_json", "non_json_output",
-            "json_not_object", "schema_validation_failed",
-        }
+        and isinstance(retry_policy.get("retryable_failure_reasons"), list)
+        and set(retry_policy.get("retryable_failure_reasons")) == RETRYABLE_GENERATION_FAILURES
+        and len(retry_policy.get("retryable_failure_reasons")) == len(RETRYABLE_GENERATION_FAILURES)
     ) if retry_policy_present else False
 
     model_reports = []
