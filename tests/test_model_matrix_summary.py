@@ -95,8 +95,9 @@ class ModelMatrixSummaryTests(unittest.TestCase):
         self.assertIn("manifest_mismatch:model_lock_sha256", result["identity_failures"])
 
     def test_complete_model_matrix_passes_execution_only(self):
-        result = summarize(report())
+        result = summarize(report(), identity_failures=[])
         self.assertEqual(result["model_matrix_execution_gate"], "PASS")
+        self.assertEqual(result["identity_gate"], "PASS")
         self.assertEqual(result["recognition_quality_gate"], "NOT_RUN")
 
 
