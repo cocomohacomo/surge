@@ -11,10 +11,15 @@ class StructuredRunnerOutputTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "LLAMA_CPP_COMMIT"):
                 validate_runtime_config()
 
-    def test_sampler_configuration_avoids_top_k_sampler(self):
+    def test_sampler_configuration_avoids_explicit_top_k_override(self):
         command = build_cli_command("model.gguf", "prompt")
         self.assertEqual(command[command.index("--temp") + 1], "0.8")
         self.assertNotIn("--top-k", command)
+
+    def test_preformatted_chatml_prompt_disables_automatic_conversation_wrapping(self):
+        command = build_cli_command("model.gguf", "<|im_start|>assistant")
+        self.assertIn("--no-conversation", command)
+        self.assertNotIn("--single-turn", command)
 
     def test_detects_sampler_failure_even_when_cli_exits_zero(self):
         self.assertEqual(
