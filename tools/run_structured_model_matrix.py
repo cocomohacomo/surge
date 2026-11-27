@@ -98,6 +98,19 @@ def parse_cli_streams(stdout, stderr):
         "stdout_rejected": generated is None,
     }
 
+def detect_execution_error(diagnostics):
+    """Return a stable failure code for fatal llama.cpp diagnostics."""
+    if not isinstance(diagnostics, str):
+        return None
+    if re.search(
+        r"Failed to initialize samplers|failed to launch slot with task",
+        diagnostics,
+        re.IGNORECASE,
+    ):
+        return "sampler_initialization_failed"
+    return None
+
+
 def build_cli_command(model_path, prompt):
     """Build a conservative sampler chain; leave top-k disabled to avoid invalid sampler initialization."""
     return [
@@ -132,10 +145,7 @@ def run(model, model_path, case):
     streams = parse_cli_streams(proc.stdout, diagnostics)
     parsed = streams["parsed_output"]
     rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
-    sampler_failure = bool(re.search(
-        r"Failed to initialize samplers|failed to launch slot with task",
-        diagnostics, re.IGNORECASE
-    ))
+    execution_error = detect_execution_error(diagnostics)
     result = {
         "case_id": case["case_id"], "return_code": proc.returncode,
         "elapsed_seconds": elapsed, "peak_rss_kib": int(rss[-1]) if rss else None,
@@ -144,7 +154,7 @@ def run(model, model_path, case):
         "stdout_rejected": streams["stdout_rejected"],
         "raw_output": proc.stdout[:4000], "stderr": streams["diagnostic_stderr"],
         "decoding_constraint": "canonical-json-schema-file",
-        "execution_error": "sampler_initialization_failed" if sampler_failure else None
+        "execution_error": execution_error
     }
     if parsed is not None:
         schema_errors = validate_projector_output(parsed, SCHEMA_PATH)
