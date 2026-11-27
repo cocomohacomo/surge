@@ -4,10 +4,8 @@
 The synthetic seed corpus is engineering-only. Recognition qualification remains
 NOT_RUN until independently adjudicated held-out data is supplied.
 """
-import hashlib, json, os, platform, re, shutil, subprocess, time
-import sys
-import tempfile
-from pathlib import Path
+import hashlib, json, os, platform, re, shutil, signal, subprocess, sys, tempfile, time
+from pathlib import Path, PurePosixPath
 from statistics import median
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +18,11 @@ if not LOCK_PATH.is_absolute():
     LOCK_PATH = REPO_ROOT / LOCK_PATH
 ROOT = Path(os.environ.get("SURGE_MODEL_MATRIX_DIR", "model-matrix"))
 OUT = Path(os.environ.get("SURGE_MODEL_MATRIX_REPORT", ROOT / "model-matrix.json"))
-CLI = os.environ.get("LLAMA_CLI", "llama-cli")
-THREADS = max(1, int(os.environ.get("SURGE_MODEL_THREADS", "2")))
+COMPLETION_CLI = os.environ.get("LLAMA_COMPLETION_CLI", "llama-completion")
+TIMEOUT_SECONDS = 240
+MAX_GENERATION_TOKENS = 768
+GENERATION_TEMPERATURE = 0.8
+GENERATION_TOP_K = 0
 SCHEMA_PATH = REPO_ROOT / "schemas" / "surge-projector-output-v1.0.schema.json"
 
 # Runtime assets are loaded only by main(), keeping imports deterministic and testable.
@@ -33,27 +34,88 @@ LOCKED_LLAMA_COMMIT = None
 SCHEMA = None
 
 
+def validate_model_lock(lock):
+    """Validate model identity and file paths before any remote model download."""
+    if not isinstance(lock, dict) or lock.get("lock_version") != "surge-model-matrix-lock-v1.0":
+        raise RuntimeError("unsupported or malformed model lock")
+    llama = lock.get("llama_cpp")
+    if not isinstance(llama, dict):
+        raise RuntimeError("model lock must contain llama_cpp metadata")
+    if (llama.get("repository") != "https://github.com/ggml-org/llama.cpp"
+            or not isinstance(llama.get("commit"), str)
+            or not re.fullmatch(r"[0-9a-f]{40}", llama["commit"])):
+        raise RuntimeError("llama.cpp repository and full immutable commit are required")
+    models = lock.get("models")
+    if not isinstance(models, list) or not models:
+        raise RuntimeError("model lock must contain a non-empty models array")
+    names = set()
+    enabled_count = 0
+    required_strings = ("name", "repo", "revision", "tokenizer_repo",
+                        "tokenizer_revision", "file")
+    for index, model in enumerate(models):
+        if not isinstance(model, dict):
+            raise RuntimeError(f"model lock entry {index} must be an object")
+        for field in required_strings:
+            value = model.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise RuntimeError(f"model lock entry {index} has invalid {field}")
+        name = model["name"]
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+            raise RuntimeError(f"unsafe model name: {name!r}")
+        if name in names:
+            raise RuntimeError(f"duplicate model name: {name}")
+        names.add(name)
+        for field in ("repo", "tokenizer_repo"):
+            if not re.fullmatch(r"[^/\s]+/[^/\s]+", model[field]):
+                raise RuntimeError(f"invalid Hugging Face repository in {field}: {model[field]!r}")
+        for field in ("revision", "tokenizer_revision"):
+            if not re.fullmatch(r"[0-9a-fA-F]{7,40}", model[field]):
+                raise RuntimeError(f"{field} must be a pinned commit prefix or full SHA")
+        filename = model["file"]
+        relative_path = PurePosixPath(filename)
+        if (relative_path.is_absolute() or ".." in relative_path.parts
+                or "\\" in filename or relative_path.suffix.lower() != ".gguf"):
+            raise RuntimeError(f"unsafe GGUF model file path: {filename!r}")
+        enabled = model.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise RuntimeError(f"model {name} enabled must be a boolean")
+        if enabled:
+            enabled_count += 1
+        elif not isinstance(model.get("exclusion_reason"), str) or not model["exclusion_reason"].strip():
+            raise RuntimeError(f"disabled model {name} requires an exclusion_reason")
+    if enabled_count == 0:
+        raise RuntimeError("model lock must enable at least one model")
+    return models
+
+
+def configured_threads():
+    raw = os.environ.get("SURGE_MODEL_THREADS", "2")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("SURGE_MODEL_THREADS must be a positive integer") from error
+    if value < 1:
+        raise RuntimeError("SURGE_MODEL_THREADS must be a positive integer")
+    return value
+
+
 def load_runtime_assets():
     global LOCK, ALL_MODELS, MODELS, EXCLUDED_MODELS, LOCKED_LLAMA_COMMIT, SCHEMA
-    LOCK = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
-    ALL_MODELS = LOCK.get("models")
-    if not isinstance(ALL_MODELS, list) or not ALL_MODELS:
-        raise RuntimeError("model lock must contain a non-empty models array")
-    if any(not isinstance(model, dict) or not isinstance(model.get("name"), str)
-           or not isinstance(model.get("repo"), str)
-           or not isinstance(model.get("revision"), str)
-           or not isinstance(model.get("file"), str) for model in ALL_MODELS):
-        raise RuntimeError("model lock contains an invalid model entry")
-    MODELS = [model for model in ALL_MODELS if model.get("enabled", True)]
+    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    models = validate_model_lock(lock)
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    if not isinstance(schema, dict):
+        raise RuntimeError("canonical projector schema must be a JSON object")
+    LOCK = lock
+    ALL_MODELS = models
+    MODELS = [model for model in models if model.get("enabled", True)]
     EXCLUDED_MODELS = [
-        {"name": model["name"], "reason": model.get("exclusion_reason", "disabled in model lock")}
-        for model in ALL_MODELS if not model.get("enabled", True)
+        {"name": model["name"], "reason": model["exclusion_reason"]}
+        for model in models if not model.get("enabled", True)
     ]
-    LOCKED_LLAMA_COMMIT = LOCK.get("llama_cpp", {}).get("commit")
-    SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    LOCKED_LLAMA_COMMIT = lock["llama_cpp"]["commit"]
+    SCHEMA = schema
     return LOCK
-
-
 def validate_runtime_config():
     """Load and validate pinned runtime settings; importing helpers performs no I/O."""
     load_runtime_assets()
@@ -109,9 +171,58 @@ def extract_json(text):
     return value if isinstance(value, dict) else None
 
 
-def parse_cli_streams(stdout, stderr):
-    """Keep model stdout and CLI diagnostics separate; never merge or scrape logs."""
-    generated = extract_json(stdout)
+def validate_matrix_corpus(corpus):
+    """Reject malformed, duplicated or incorrectly offset Gold examples before model runs."""
+    if not isinstance(corpus, dict) or corpus.get("schema_version") != "surge-gold-corpus-v1.0":
+        raise RuntimeError("unsupported or malformed Gold corpus")
+    cases = corpus.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise RuntimeError("Gold corpus must contain at least one case")
+    seen = set()
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            raise RuntimeError(f"Gold case {index} must be an object")
+        case_id = case.get("case_id")
+        if not isinstance(case_id, str) or not case_id.strip() or case_id in seen:
+            raise RuntimeError(f"Gold case {index} has a missing or duplicate case_id")
+        seen.add(case_id)
+        if not isinstance(case.get("text"), str) or not isinstance(case.get("context", ""), str):
+            raise RuntimeError(f"Gold case {case_id} text/context must be strings")
+        gold = case.get("gold")
+        if not isinstance(gold, dict):
+            raise RuntimeError(f"Gold case {case_id} has no canonical gold object")
+        schema_errors = validate_projector_output(gold, SCHEMA_PATH)
+        if schema_errors:
+            raise RuntimeError(f"Gold case {case_id} violates the canonical schema: {schema_errors[0]}")
+        sources = {"text": case.get("text", ""), "context": case.get("context", "")}
+        for collection in ("attributes", "relations", "phenomena", "abstentions"):
+            entries = gold.get(collection, [])
+            if not isinstance(entries, list):
+                raise RuntimeError(f"Gold case {case_id} {collection} must be an array")
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise RuntimeError(f"Gold case {case_id} contains a malformed {collection} entry")
+                spans = entry.get("evidence_spans", [])
+                if not isinstance(spans, list):
+                    raise RuntimeError(f"Gold case {case_id} has malformed evidence_spans")
+                for span in spans:
+                    if not isinstance(span, dict):
+                        raise RuntimeError(f"Gold case {case_id} has malformed evidence span")
+                    source = span.get("source")
+                    start, end, quote = span.get("start"), span.get("end"), span.get("quote")
+                    if (source not in sources
+                            or not isinstance(start, int) or isinstance(start, bool)
+                            or not isinstance(end, int) or isinstance(end, bool)
+                            or not isinstance(quote, str)
+                            or start < 0 or end <= start or end > len(sources[source])
+                            or sources[source][start:end] != quote):
+                        raise RuntimeError(f"Gold case {case_id} contains an invalid evidence offset")
+    return cases
+
+
+def parse_cli_streams(stdout, stderr, return_code=0):
+    """Accept generated JSON only from a successful, non-interactive completion process."""
+    generated = extract_json(stdout) if return_code == 0 else None
     return {
         "parsed_output": generated,
         "generation_stream_valid": generated is not None,
@@ -119,78 +230,178 @@ def parse_cli_streams(stdout, stderr):
         "stdout_rejected": generated is None,
     }
 
-def detect_execution_error(diagnostics):
-    """Return a stable failure code for fatal llama.cpp diagnostics."""
+
+def detect_execution_error(diagnostics, return_code=None):
+    """Classify known runtime failures without confusing them with JSON-quality failures."""
     if not isinstance(diagnostics, str):
-        return None
+        diagnostics = ""
     if re.search(
         r"Failed to initialize samplers|failed to launch slot with task",
-        diagnostics,
-        re.IGNORECASE,
+        diagnostics, re.IGNORECASE,
     ):
         return "sampler_initialization_failed"
+    if re.search(r"invalid argument|unknown argument|unrecognized option",
+                 diagnostics, re.IGNORECASE):
+        return "llama_completion_invalid_argument"
+    if re.search(r"failed to parse grammar|failed to parse schema|failed to open file",
+                 diagnostics, re.IGNORECASE):
+        return "constrained_decoding_initialization_failed"
+    if re.search(r"failed to load model|error loading model|unable to load model",
+                 diagnostics, re.IGNORECASE):
+        return "model_load_failed"
+    if return_code not in (None, 0):
+        return "llama_completion_nonzero_exit"
     return None
 
 
-def build_cli_command(model_path, prompt):
-    """Build a conservative sampler chain; leave top-k disabled to avoid invalid sampler initialization."""
+def build_completion_command(model_path, prompt, cli_path=None, threads=None):
+    """Build a raw-output, non-interactive llama-completion command for preformatted ChatML."""
+    binary = str(cli_path or COMPLETION_CLI)
+    thread_count = configured_threads() if threads is None else threads
+    if not isinstance(thread_count, int) or isinstance(thread_count, bool) or thread_count < 1:
+        raise ValueError("threads must be a positive integer")
     return [
-        "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
-        "-n", "768", "--temp", "0.8", "--top-k", "0", "--threads", str(THREADS),
+        "/usr/bin/time", "-v", binary, "-m", str(model_path), "-p", prompt,
+        "-n", str(MAX_GENERATION_TOKENS), "--temp", str(GENERATION_TEMPERATURE),
+        "--top-k", str(GENERATION_TOP_K), "--threads", str(thread_count),
         "--no-conversation", "--no-display-prompt", "--simple-io",
-        "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
+        "--json-schema-file", str(SCHEMA_PATH),
     ]
 
+
+def _signal_process_tree(process, sig):
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.poll() is None:
+                process.send_signal(sig)
+    elif process.poll() is None:
+        if sig == getattr(signal, "SIGKILL", signal.SIGTERM):
+            process.kill()
+        else:
+            process.terminate()
+
+
+def run_command(command, timeout_seconds=TIMEOUT_SECONDS):
+    """Run a command in its own process group and reap it, including descendants, on timeout."""
+    if (not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool) or timeout_seconds <= 0):
+        raise ValueError("timeout_seconds must be positive")
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace",
+        start_new_session=(os.name == "posix"),
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _signal_process_tree(process, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            _signal_process_tree(process, getattr(signal, "SIGKILL", signal.SIGTERM))
+            stdout, stderr = process.communicate()
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr), timed_out
+
+
+def _read_diagnostic_log(log_path):
+    if not log_path.exists():
+        return ""
+    try:
+        return log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        return f"Unable to read llama-completion log: {error}"
+
+
+def _write_json_atomic(path, payload):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _update_model_metrics(model_report):
+    rows = model_report.get("results", [])
+    elapsed = [row["elapsed_seconds"] for row in rows if "elapsed_seconds" in row]
+    rss = [row["peak_rss_kib"] for row in rows if row.get("peak_rss_kib") is not None]
+    model_report.update({
+        "json_valid_cases": sum(bool(row.get("json_valid")) for row in rows),
+        "schema_valid_cases": sum(bool(row.get("projector_schema_valid")) for row in rows),
+        "coverage": sum(bool(row.get("engineering_semantic_metrics")) for row in rows) / len(rows) if rows else 0.0,
+        "timeouts": sum(bool(row.get("timeout")) for row in rows),
+        "latency_mean_seconds": sum(elapsed) / len(elapsed) if elapsed else None,
+        "latency_p50_seconds": median(elapsed) if elapsed else None,
+        "latency_max_seconds": max(elapsed) if elapsed else None,
+        "peak_rss_kib_max": max(rss) if rss else None,
+    })
 def run(model, model_path, case):
     prompt = PROMPT_TEMPLATE.format(
         system=SYSTEM, context=case.get("context", ""), text=case.get("text", ""),
         mode_hint="/no_think" if model.get("format") == "chatml_no_think" else ""
     )
-    cmd = build_cli_command(model_path, prompt)
+    cmd = build_completion_command(model_path, prompt)
     started = time.perf_counter()
     try:
-        # The pinned llama.cpp CLI supports --log-file. Route its logger away
-        # from stdout so the generation stream can be parsed without log scraping.
         with tempfile.TemporaryDirectory(prefix="surge-llama-log-") as log_dir:
-            log_path = Path(log_dir) / "llama-cli.log"
+            log_path = Path(log_dir) / "llama-completion.log"
             cmd.extend(["--log-file", str(log_path)])
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=240
-            )
-            log_output = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-    except subprocess.TimeoutExpired as error:
-        elapsed = time.perf_counter() - started
-        def _partial_text(value):
-            if isinstance(value, bytes):
-                return value.decode("utf-8", errors="replace")
-            return value if isinstance(value, str) else ""
-        partial_stdout = _partial_text(error.stdout)
-        partial_stderr = _partial_text(error.stderr)
+            try:
+                proc, timed_out = run_command(cmd, TIMEOUT_SECONDS)
+            except OSError as error:
+                return {
+                    "case_id": case["case_id"], "timeout": False,
+                    "execution_error": "llama_completion_launch_failed",
+                    "elapsed_seconds": time.perf_counter() - started,
+                    "raw_output": "", "stderr": str(error)[-4000:],
+                    "return_code": None, "json_valid": False,
+                    "projector_schema_valid": False,
+                }
+            log_output = _read_diagnostic_log(log_path)
+    except OSError as error:
         return {
-            "case_id": case["case_id"], "timeout": True,
-            "execution_error": "generation_timeout",
-            "elapsed_seconds": elapsed,
-            "raw_output": partial_stdout[-4000:],
-            "stderr": partial_stderr[-4000:],
+            "case_id": case["case_id"], "timeout": False,
+            "execution_error": "llama_completion_log_error",
+            "elapsed_seconds": time.perf_counter() - started,
+            "raw_output": "", "stderr": str(error)[-4000:],
             "return_code": None, "json_valid": False,
-            "projector_schema_valid": False
+            "projector_schema_valid": False,
         }
+
     elapsed = time.perf_counter() - started
     diagnostics = "\n".join(part for part in (proc.stderr, log_output) if part)
-    streams = parse_cli_streams(proc.stdout, diagnostics)
+    execution_error = (
+        "generation_timeout" if timed_out
+        else detect_execution_error(diagnostics, proc.returncode)
+    )
+    streams = parse_cli_streams(proc.stdout, diagnostics, proc.returncode)
     parsed = streams["parsed_output"]
     rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
-    execution_error = detect_execution_error(diagnostics)
     result = {
         "case_id": case["case_id"], "return_code": proc.returncode,
-        "elapsed_seconds": elapsed, "peak_rss_kib": int(rss[-1]) if rss else None,
+        "timeout": timed_out, "elapsed_seconds": elapsed,
+        "peak_rss_kib": int(rss[-1]) if rss else None,
         "json_valid": parsed is not None, "parsed_output": parsed,
         "generation_stream_valid": streams["generation_stream_valid"],
         "stdout_rejected": streams["stdout_rejected"],
         "raw_output": proc.stdout[:4000], "stderr": streams["diagnostic_stderr"],
         "decoding_constraint": "canonical-json-schema-file",
-        "execution_error": execution_error
+        "execution_error": execution_error,
     }
     if parsed is not None:
         schema_errors = validate_projector_output(parsed, SCHEMA_PATH)
@@ -199,7 +410,9 @@ def run(model, model_path, case):
         result["engineering_semantic_metrics"] = evaluate_case(case, parsed)
     else:
         result["projector_schema_valid"] = False
-        result["projector_schema_errors"] = [{"path": "/", "message": "stdout is not exactly one JSON object"}]
+        result["projector_schema_errors"] = [
+            {"path": "/", "message": "stdout is not exactly one JSON object from a successful process"}
+        ]
     return result
 
 def main():
@@ -210,45 +423,56 @@ def main():
         raise SystemExit("model matrix requires huggingface_hub; install requirements-model-matrix.txt") from error
     if not MODELS:
         raise SystemExit("model lock has no enabled candidates")
-    if not shutil.which(CLI):
-        raise SystemExit(f"llama-cli missing: {CLI}")
+    threads = configured_threads()
+    if not shutil.which(COMPLETION_CLI):
+        raise SystemExit(f"llama-completion missing: {COMPLETION_CLI}")
     corpus_path = Path(os.environ.get("SURGE_GOLD_CORPUS", "tests/fixtures/semantic/gold_seed_v0.1.json"))
     if not corpus_path.is_absolute():
         corpus_path = REPO_ROOT / corpus_path
     corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+    cases = validate_matrix_corpus(corpus)
     ROOT.mkdir(parents=True, exist_ok=True)
-    cli_version = subprocess.run([CLI, "--version"], capture_output=True, text=True, timeout=30)
-    if cli_version.returncode != 0:
-        raise SystemExit("llama-cli --version failed")
+    completion_version = subprocess.run([COMPLETION_CLI, "--version"], capture_output=True, text=True, timeout=30)
+    if completion_version.returncode != 0:
+        raise SystemExit("llama-completion --version failed")
     corpus_digest = sha256_file(corpus_path)
     profile_digest = hashlib.sha256(json.dumps(corpus.get("profile", {}), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     report = {
-        "matrix": "surge-structured-projector-matrix-v1.1",
+        "matrix": "surge-structured-projector-matrix-v1.2",
         "corpus_id": corpus.get("corpus_id"),
         "corpus_status": "SEED_NOT_INDEPENDENT",
         "qualification_gate": "NOT_RUN",
         "expected_model_count": len(MODELS),
-        "expected_case_ids": [case["case_id"] for case in corpus.get("cases", [])],
+        "expected_case_ids": [case["case_id"] for case in cases],
         "corpus_sha256": corpus_digest, "profile_sha256": profile_digest,
         "excluded_models": EXCLUDED_MODELS,
         "experiment_manifest": {
-            "manifest_version": "surge-experiment-manifest-v1.1",
+            "manifest_version": "surge-experiment-manifest-v1.2",
+            "execution_backend": "llama-completion",
+            "prompt_mode": "preformatted-chatml-noninteractive",
             "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
             "llama_cpp_repository": LOCK["llama_cpp"]["repository"],
             "llama_cpp_commit": llama_cpp_commit,
             "model_lock_sha256": sha256_file(LOCK_PATH),
             "canonical_schema_sha256": sha256_file(SCHEMA_PATH),
-            "llama_cli_path": str(Path(CLI).resolve()),
+            "llama_completion_path": str(Path(COMPLETION_CLI).resolve()),
             "runtime": {
                 "python": sys.version, "platform": platform.platform(),
                 "machine": platform.machine(), "processor": platform.processor(),
                 "huggingface_hub": __import__("huggingface_hub").__version__,
-                "llama_cli_version": (cli_version.stdout or cli_version.stderr).strip()
+                "llama_completion_version": (completion_version.stdout or completion_version.stderr).strip()
             },
-            "threads": THREADS,
+            "threads": threads,
+            "build_configuration": {
+                "cmake_build_type": "Release", "ggml_native": True,
+                "ggml_openmp": True, "target": "llama-completion",
+            },
             "generation": {
-                "max_tokens": 768, "temperature": 0.8, "top_k": 0,
-                "timeout_seconds": 240, "constrained_decoding": "canonical-json-schema-file"
+                "max_tokens": MAX_GENERATION_TOKENS,
+                "temperature": GENERATION_TEMPERATURE,
+                "top_k": GENERATION_TOP_K,
+                "timeout_seconds": TIMEOUT_SECONDS,
+                "constrained_decoding": "canonical-json-schema-file",
             },
             "system_prompt_sha256": hashlib.sha256(SYSTEM.encode()).hexdigest(),
             "prompt_template_sha256": hashlib.sha256(PROMPT_TEMPLATE.encode()).hexdigest(),
@@ -261,50 +485,65 @@ def main():
         },
         "models": []
     }
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    report["model_matrix_execution_gate"] = "NOT_RUN"
+    _write_json_atomic(OUT, report)
+
     for model in MODELS:
-        destination = ROOT / model["name"]
-        destination.mkdir(parents=True, exist_ok=True)
-        model_path = Path(hf_hub_download(
-            repo_id=model["repo"], filename=model["file"],
-            revision=model["revision"], local_dir=str(destination)
-        ))
         model_report = {
             "name": model["name"], "repository": model["repo"],
             "repository_revision": model["revision"],
             "tokenizer_repository": model["tokenizer_repo"],
             "tokenizer_revision": model["tokenizer_revision"],
             "tokenizer_source": "embedded GGUF tokenizer metadata; same immutable repository revision",
-            "model_file": model["file"], "file_bytes": model_path.stat().st_size,
-            "file_sha256": sha256_file(model_path), "results": []
+            "model_file": model["file"], "results": [],
         }
-        for case in corpus["cases"]:
-            row = run(model, model_path, case)
-            if row.get("timeout"):
-                row["execution_error"] = "generation_timeout"
-            elif row.get("return_code", 0) != 0 and not row.get("execution_error"):
-                row["execution_error"] = "llama_cli_nonzero_exit"
+        report["models"].append(model_report)
+        try:
+            destination = ROOT / model["name"]
+            destination.mkdir(parents=True, exist_ok=True)
+            model_path = Path(hf_hub_download(
+                repo_id=model["repo"], filename=model["file"],
+                revision=model["revision"], local_dir=str(destination)
+            ))
+            if not model_path.is_file():
+                raise OSError("download did not produce a regular model file")
+            model_report.update({
+                "file_bytes": model_path.stat().st_size,
+                "file_sha256": sha256_file(model_path),
+            })
+        except Exception as error:
+            model_report["execution_error"] = "model_download_or_verification_failed"
+            model_report["diagnostic"] = f"{type(error).__name__}: model acquisition failed"
+            _update_model_metrics(model_report)
+            _write_json_atomic(OUT, report)
+            break
+
+        for case in cases:
+            try:
+                row = run(model, model_path, case)
+            except Exception as error:
+                row = {
+                    "case_id": case["case_id"], "timeout": False,
+                    "execution_error": "runner_internal_error",
+                    "diagnostic": f"{type(error).__name__}: model case execution failed",
+                    "return_code": None, "json_valid": False,
+                    "projector_schema_valid": False,
+                }
             model_report["results"].append(row)
             if row.get("execution_error"):
                 model_report["execution_error"] = row["execution_error"]
+            _update_model_metrics(model_report)
+            _write_json_atomic(OUT, report)
+            if row.get("execution_error"):
                 break
-        rows = model_report["results"]
-        elapsed = [row["elapsed_seconds"] for row in rows if "elapsed_seconds" in row]
-        rss = [row["peak_rss_kib"] for row in rows if row.get("peak_rss_kib") is not None]
-        model_report.update({
-            "json_valid_cases": sum(bool(row.get("json_valid")) for row in rows),
-            "schema_valid_cases": sum(bool(row.get("projector_schema_valid")) for row in rows),
-            "coverage": sum(bool(row.get("engineering_semantic_metrics")) for row in rows) / len(rows) if rows else 0.0,
-            "timeouts": sum(bool(row.get("timeout")) for row in rows),
-            "latency_mean_seconds": sum(elapsed) / len(elapsed) if elapsed else None,
-            "latency_p50_seconds": median(elapsed) if elapsed else None,
-            "latency_max_seconds": max(elapsed) if elapsed else None,
-            "peak_rss_kib_max": max(rss) if rss else None
-        })
-        report["models"].append(model_report)
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    execution_failed = any(model.get("execution_error") for model in report["models"])
+
+    execution_failed = (
+        len(report["models"]) != len(MODELS)
+        or any(model.get("execution_error") for model in report["models"])
+    )
     report["model_matrix_execution_gate"] = "FAIL" if execution_failed else "NOT_QUALIFIED"
-    OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_json_atomic(OUT, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 1 if execution_failed else 0
 

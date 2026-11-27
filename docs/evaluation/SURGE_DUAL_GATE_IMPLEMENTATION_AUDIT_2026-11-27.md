@@ -27,7 +27,20 @@ This audit records code-level conformance only. It is not a Core Integrity or Re
 7. The runner now emits the expected case-ID set and corpus/profile digests.
 8. The strict prediction schema no longer accepts the legacy candidates alias in place of canonical attributes.
 
-## Follow-up refactor: constrained projector generation (2026-11-27)\n\n- The pinned llama.cpp CLI supports `--json-schema-file`; the runner now supplies the exact Canonical Projector Output Schema v1.0 at generation time and retains independent post-generation Draft 2020-12 validation.\n- The Japanese prompt now includes concrete attribute, relation and Evidence Span examples, including exact Unicode code-point offsets, negative polarity, and the distinction between absent information (empty arrays) and unresolved information (`abstentions`).\n- CLI output parsing now accepts only a single JSON object occupying all stdout. Banner/prompt echo, code fences, stray braces and concatenated objects fail closed.\n- Added parser regression tests for these output-boundary cases.\n- The first full Python-suite run exposed an optional-dependency coupling: importing the runner required `huggingface_hub` even when only testing its parser. The download import is now lazy inside the matrix execution entry point; general evaluator/parser tests no longer require model-download dependencies.\n- Qwen3 0.6B remains the active candidate for the constrained rerun. SmolLM2 135M is disabled in the active matrix after 8/8 invalid JSON in the previous unconstrained run; its lock entry and exclusion reason remain auditable.\n- The constrained 8-case rerun is pending CI execution. No model-quality improvement is claimed until the artifact is inspected.\n\n## Remaining conformance gaps
+## Follow-up refactor: constrained projector execution (2026-11-27)
+
+- The first constrained run on commit c36b12d failed before model loading. The runner invoked llama-cli with --no-conversation, but the pinned llama.cpp revision exposes that option only for the LLAMA_EXAMPLE_COMPLETION program. The previous CLI contract test only inspected the argument list and did not verify it against the pinned executable. This was a confirmed integration-test gap.
+- The pinned source shows that llama-cli is a conversation UI: it writes a banner, echoes the prompt, and prints an exit message. Its stdout is therefore incompatible with the runner's strict stdout-is-one-JSON-object contract even if its arguments are corrected.
+- The runner and CI now build and invoke the pinned llama-completion target. This is the non-interactive completion executable; --no-conversation, --no-display-prompt, --simple-io, --json-schema-file and --log-file are supported in the pinned revision. The CLI-only --no-show-timings flag was removed.
+- The preformatted ChatML prompt is sent as a completion prompt with conversation wrapping disabled. Model output remains isolated on stdout; runtime diagnostics are retained separately.
+- Timeout handling now starts a new process session and terminates/reaps the process group, preventing the /usr/bin/time wrapper from leaving the model process alive. Diagnostic logs are read before the temporary log directory is removed.
+- Model Lock validation rejects duplicate names, unpinned revisions, malformed Hugging Face repository IDs, non-boolean enablement flags, disabled entries without reasons and unsafe GGUF paths before model download.
+- Gold corpus preflight verifies unique case IDs, canonical schema conformance and exact Unicode code-point offsets for every annotated evidence span.
+- The matrix report is atomically persisted before execution and after each case so failed model acquisition or generation retains actionable evidence. The experiment manifest identifies llama-completion and its exact runtime version.
+- Regression tests cover the executable contract, version-specific arguments, invalid lock entries, corpus identity/evidence offsets, nonzero-exit JSON rejection and timeout process cleanup.
+- These changes repair the execution harness only. They do not claim improved model quality. The synthetic seed corpus remains non-independent, so Recognition Quality must remain NOT_RUN.
+
+## Remaining conformance gaps
 
 ### Recognition Quality
 
