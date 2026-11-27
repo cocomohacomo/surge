@@ -8,8 +8,8 @@ from tools.validate_projector_output import validate as validate_projector_outpu
 class GoldCorpusEvaluatorTests(unittest.TestCase):
     def test_attribute_relation_and_evidence_exact_match(self):
         case = {"case_id": "x", "text": "締切は水曜日", "gold": {"schema_version": "surge-projector-output-v1.0", 
-            "attributes": [{"key": "deadline", "value": "水曜日", "polarity": "positive"}],
-            "relations": [{"type": "supersedes", "source": "new", "target": "old"}]}}
+            "attributes": [{"key": "deadline", "value": "水曜日", "polarity": "positive", "evidence_spans": [{"source": "text", "start": 3, "end": 6, "quote": "水曜日"}}],
+            "relations": [{"type": "supersedes", "source": "new", "target": "old", "evidence_spans": [{"source": "text", "start": 0, "end": 7, "quote": "締切は水曜日"}}]}}
         pred = {"attributes": [{"key": "deadline", "value": "水曜日",
                                 "polarity": "positive", "evidence_quote": "締切は水曜日"}],
                 "relations": [{"type": "supersedes", "source": "new", "target": "old"}]}
