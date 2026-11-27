@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from tools.run_structured_model_matrix import extract_json, parse_cli_streams, validate_runtime_config
+from tools.run_structured_model_matrix import build_cli_command, extract_json, parse_cli_streams, validate_runtime_config
 
 
 class StructuredRunnerOutputTests(unittest.TestCase):
@@ -10,6 +10,11 @@ class StructuredRunnerOutputTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "LLAMA_CPP_COMMIT"):
                 validate_runtime_config()
+
+    def test_sampler_configuration_uses_valid_temperature_and_greedy_top_k(self):
+        command = build_cli_command("model.gguf", "prompt")
+        self.assertEqual(command[command.index("--temp") + 1], "1")
+        self.assertEqual(command[command.index("--top-k") + 1], "1")
 
     def test_accepts_one_complete_json_object(self):
         self.assertEqual(extract_json('{"attributes":[],"relations":[]}'),
