@@ -136,7 +136,7 @@ def build_cli_command(model_path, prompt):
     """Build a conservative sampler chain; leave top-k disabled to avoid invalid sampler initialization."""
     return [
         "/usr/bin/time", "-v", CLI, "-m", str(model_path), "-p", prompt,
-        "-n", "768", "--temp", "0.8", "--threads", str(THREADS),
+        "-n", "768", "--temp", "0.8", "--top-k", "0", "--threads", str(THREADS),
         "--no-conversation", "--no-display-prompt", "--simple-io",
         "--no-show-timings", "--json-schema-file", str(SCHEMA_PATH)
     ]
