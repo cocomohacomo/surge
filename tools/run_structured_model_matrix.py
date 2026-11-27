@@ -53,7 +53,7 @@ evidence_spansは各属性・関係を直接支持する最短の連続原文範
 具体例: textが「期限は水曜日ではありません。」なら、期限属性のpolarityは「negative」です。「水曜日」という値だけを見てpositiveにしてはいけません。
 具体例: textが「期限は水曜日です。AはBに提出する。」なら、属性deadlineのspanはsource「text」、start 3、end 6、quote「水曜日」です。関係のspanはsource「text」、start 9、end 18、quote「AはBに提出する。」です。関係はtype「提出先」、source「A」、target「B」です。出力形の一部は次のとおりです: {"schema_version":"surge-projector-output-v1.0","attributes":[{"key":"deadline","value":"水曜日","polarity":"positive","category":"temporal_update","evidence_spans":[{"source":"text","start":3,"end":6,"quote":"水曜日"}]}],"relations":[{"type":"提出先","source":"A","target":"B","evidence_spans":[{"source":"text","start":9,"end":18,"quote":"AはBに提出する。"}]}]}
 空配列と判断保留を区別します。該当情報が入力に存在しない場合、その配列は空にします。情報は存在するが指示対象・値・極性・関係が曖昧、矛盾、または確定不能な場合は、推測で属性や関係を作らずabstentionsにreasonを記録します。単に情報がないことをabstentionにしません。
-Evidenceが取れない属性・関係は出力しません。空配列は許容されます。"""
+現象判定はattributes/relationから推測せず、phenomena配列に独立して出力します。各要素はlabelと、その現象を直接支持するEvidence Spanを持ちます。4現象はnegation、contradiction、temporal_supersession、ambiguityです。根拠がなければ出力しません。\nEvidenceが取れない属性・関係・現象は出力しません。空配列は許容されます。"""
 
 PROMPT_TEMPLATE = (
     "<|im_start|>system\n{system}<|im_end|>\n"
@@ -74,7 +74,7 @@ def sha256_file(path):
     return digest.hexdigest()
 
 def extract_json(text):
-    """Accept exactly one JSON object; never scan banners/prompts for a stray brace."""
+    """Accept only a complete JSON object from the generation-only stdout stream."""
     if not isinstance(text, str):
         return None
     candidate = text.strip()
@@ -85,6 +85,17 @@ def extract_json(text):
     except json.JSONDecodeError:
         return None
     return value if isinstance(value, dict) else None
+
+
+def parse_cli_streams(stdout, stderr):
+    """Keep model stdout and CLI diagnostics separate; never merge or scrape logs."""
+    generated = extract_json(stdout)
+    return {
+        "parsed_output": generated,
+        "generation_stream_valid": generated is not None,
+        "diagnostic_stderr": stderr[-4000:] if isinstance(stderr, str) else "",
+        "stdout_rejected": generated is None,
+    }
 
 def run(model, model_path, case):
     prompt = PROMPT_TEMPLATE.format(
