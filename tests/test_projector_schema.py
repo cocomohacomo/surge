@@ -11,7 +11,7 @@ class ProjectorSchemaTests(unittest.TestCase):
                 "key": "deadline", "value": "水曜日", "polarity": "positive",
                 "category": "temporal_update",
                 "evidence_spans": [{
-                    "source": "text", "start": 4, "end": 8, "quote": "水曜日"
+                    "source": "text", "start": 3, "end": 6, "quote": "水曜日"
                 }]
             }],
             "relations": []
@@ -19,6 +19,17 @@ class ProjectorSchemaTests(unittest.TestCase):
 
     def test_canonical_payload_passes(self):
         self.assertEqual(validate(self.valid_payload()), [])
+
+    def test_evidence_span_offsets_match_original_source(self):
+        source = "期限は水曜日です。"
+        span = self.valid_payload()["attributes"][0]["evidence_spans"][0]
+        self.assertEqual(source[span["start"]:span["end"]], span["quote"])
+
+    def test_evidence_span_rejects_wrong_source_offsets(self):
+        source = "期限は水曜日です。"
+        span = self.valid_payload()["attributes"][0]["evidence_spans"][0]
+        span["start"], span["end"] = 4, 8
+        self.assertNotEqual(source[span["start"]:span["end"]], span["quote"])
 
     def test_missing_schema_version_fails(self):
         payload = self.valid_payload()
