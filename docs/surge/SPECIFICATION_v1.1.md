@@ -2,11 +2,12 @@
 
 ## Streaming Information Projection and Cluster-Native Context Core
 
-- Version: 1.1.0
+- Version: 1.1.1
+- Clarification: SURGE-owned Cognitive Bias classification and weighting
 - Status: Normative architecture redesign
 - Supersedes: `SPECIFICATION_v1.0.md` as the target architecture
 - Migration baseline: v1.0 implementation and journal contracts remain readable
-- Primary principle: **Project meaning outside; evolve context inside.**
+- Primary principle: **Project minimum information; let SURGE's cognition classify, weight, and evolve context inside.**
 
 ---
 
@@ -14,9 +15,9 @@
 
 SURGE is a model-independent, streaming-native framework for retaining information and evolving its contextual structure over time.
 
-SURGE Core is **not** a semantic parser, language model, evidence-span extractor, or truth classifier. It does not need to understand why two pieces of information are related. A replaceable external Projector interprets incoming information against a versioned view of the existing Cluster inventory and supplies a minimal projection.
+SURGE Core is **not** a language model, evidence-span extractor, or truth classifier. A replaceable external Projector performs only the minimum external projection: it supplies incoming Information, the nearest existing Cluster (if any), and the associated distance/score. It MUST NOT decide SURGE's final classification or membership weight.
 
-The Core owns durable admission, cluster membership, lifecycle, lineage, temporal ordering, replay, and context-control state. Semantic interpretation is an upstream policy and may be supplied by an LLM, embedding model, rules, a domain engine, a human, or a hybrid system.
+SURGE owns an internal, versioned **Cognitive Bias** policy. This policy evaluates the minimal projection against SURGE-held cognition state, including association affinity, current Focus, Interest, unresolved Question pressure, novelty, and recurrence. SURGE itself determines the cognitive classification and membership weight, then persists the decision trace and graph changes. The bias policy is an explicit part of the framework's cognition, not an external Projector output.
 
 The framework must support a tiny acknowledgement, a word, a sentence, a document span, or a long-running stream without assuming that input length determines importance.
 
@@ -53,7 +54,7 @@ These may exist as optional, separately versioned enrichment products. They are 
 1. **Information preservation.** Admitted information is immutable. Corrections are new events with explicit supersession/lineage; they never rewrite the original payload.
 2. **Cluster-native memory.** Every admitted information item MUST have at least one durable Cluster membership in the same atomic transaction.
 3. **Projection is not truth.** Membership means contextual placement only. It does not assert equivalence, truth, causality, agreement, or identity.
-4. **Core semantic neutrality.** The Core preserves the Projector's declared result. It does not independently reinterpret, rank, normalize, or silently replace the semantic decision.
+4. **Core cognitive autonomy.** The Core does not accept external classification or membership weight as authoritative. It applies its own versioned Cognitive Bias policy to the minimal projection and current internal state. The Projector's target and distance are provenance inputs, not final cognition decisions.
 5. **Replaceable Projector.** The Core contract is independent of the model, language, vector dimension, tokenizer, prompt, and inference runtime.
 6. **Append-only evolution.** Changes to membership, cluster lifecycle, lineage, and projection are recorded as new durable events.
 7. **No distance-only merge.** A distance value MUST NOT independently authorize cluster merge, split, deletion, or identity resolution.
@@ -70,10 +71,10 @@ These may exist as optional, separately versioned enrichment products. They are 
 | Component | Responsibility | Must not do |
 |---|---|---|
 | Input Adapter | Convert source formats into immutable Information plus transport metadata | Build a parallel context graph |
-| External Projector | Interpret Information, retrieve candidate Clusters, choose nearest candidate, calculate declared distance | Commit Core state |
+| External Projector | Provide Information, nearest candidate Cluster, distance/score and metric profile | Decide SURGE classification or membership weight; commit Core state |
 | Cluster Inventory API | Return read-only Cluster/member summaries and a revision token | Expose mutable internal storage |
 | Admission Gateway | Validate envelope, revision, target existence, idempotency and resource budget | Validate semantic correctness |
-| SURGE Core | Persist Information, projection, membership, cluster lifecycle and context state | Run mandatory semantic extraction |
+| SURGE Core | Apply Cognitive Bias, determine classification and membership weight, persist Information, decision trace, membership, lifecycle and context state | Depend on external semantic labels/weights or require model-generated extraction |
 | Event Journal | Atomic append, idempotency and deterministic replay | Treat uncommitted frames as state |
 | Optional Enrichment | Add Claims, typed Relations, Evidence references, temporal interpretation or other domain data | Block minimal admission |
 | Observer / Retrieval | Read graph views under explicit budget and completeness metadata | Mutate state through a read API |
@@ -85,7 +86,7 @@ These may exist as optional, separately versioned enrichment products. They are 
 3. Projector interprets Information against that exact snapshot.
 4. Projector returns one nearest Cluster and a distance under a declared metric profile, or explicitly returns no candidate.
 5. Admission Gateway checks structural validity and that the inventory revision and target are still current.
-6. Core atomically stores the Information, projection observation and membership. If no candidate was supplied, Core creates a provisional singleton Cluster (or uses an explicitly configured initial holding Cluster policy); it does not infer a semantic parent.
+6. Core applies its internal Cognitive Bias policy using the projection and current cognition state, determines classification and membership weight, then atomically stores Information, projection provenance, bias decision trace and membership. If no candidate was supplied, Core uses its unresolved/new-information bias path and creates a provisional singleton Cluster or configured holding ChaosCluster.
 7. Later projections may associate further Information with that Cluster. Any merge, split or re-parenting is a separate lifecycle operation with lineage.
 
 The Projector can be replaced without changing the Core. A Projector is free to use a different model, provided it emits the same contract and declares a compatible metric profile.
@@ -136,7 +137,7 @@ The Core MUST NOT assume that a larger or smaller value means closer. A Projecto
 - `normalization_id`: normalization/calibration identity, or `none`;
 - `projector_id` and `projector_version`.
 
-The Core stores the numeric value and profile identity without transforming it. Values from incompatible profiles MUST NOT be compared, averaged, or ranked by Core policy. If the Projector uses a similarity score, the field name remains `distance` for wire compatibility only; the profile direction defines its meaning. A later protocol version may rename this field to `score`.
+The Core stores the numeric value and profile identity. It may normalize the value only within the declared metric profile to derive association affinity for its own Cognitive Bias policy. Values from incompatible profiles MUST NOT be compared, averaged, or ranked against one another. If the Projector uses a similarity score, the field name remains `distance` for wire compatibility only; the profile direction defines its meaning. A later protocol version may rename this field to `score`.
 
 The Projector is responsible for applying its own candidate threshold. If no candidate meets its threshold, it returns null target and null distance. Core MUST NOT invent a universal threshold.
 
@@ -159,23 +160,38 @@ For non-text inputs, a future profile MAY allow `information` to be an immutable
 
 ## 5. Cluster lifecycle and growth
 
-### 5.1 Admission with an existing target
+### 5.1 SURGE-owned Cognitive Bias decision
 
-When `target_cluster` identifies a current Cluster, Core atomically:
+The minimal projection is deliberately information-poor. SURGE uses its own current state and a versioned policy to classify and weight it. The initial deterministic policy exposes these bias dimensions:
+
+- Association affinity: derived from the supplied distance and its declared metric profile.
+- Focus alignment: relationship to the current logical Focus.
+- Interest activation: existing Interest allocated to the target or related context.
+- Question pressure: unresolved Questions associated with the target context.
+- Novelty: how little the incoming information is already represented in the current context.
+- Recurrence: repeated contextual activation, with safeguards against repetition being mistaken for importance.
+
+The policy produces a cognitive classification (the dominant bias axis), a membership weight in [0,1], and a trace containing policy identity, normalized affinity, evaluated internal signals, and per-axis contributions. These classifications describe SURGE's way of attending to and organizing information; they are not semantic labels such as DOG, PERSON, or LOCATION, and they are not truth/confidence judgments.
+
+The default policy is a deterministic baseline, not a universal cognitive law. It MUST be versioned and calibrated against independent cases. Missing internal signals are UNKNOWN and MUST NOT silently be converted to strong positive evidence. Policy evaluation and graph mutation MUST be deterministic for a pinned state version.
+
+### 5.2 Admission with an existing target
+
+When `target_cluster` identifies a current Cluster, Core applies the Cognitive Bias decision and atomically:
 1. creates the immutable Information node or immutable source reference;
 2. records the projection observation, including target, distance and metric profile;
 3. creates the membership edge from the target Cluster to the Information;
 4. advances the journal/state version once.
 
-The membership records the Projector's value and profile as provenance. Core MUST NOT convert distance into a membership weight unless a separately versioned, explicitly configured mapping policy is applied. The raw projection value remains recoverable.
+The membership records SURGE's Cognitive Bias weight. The raw Projector distance, metric profile, policy version, evaluated signals and contribution trace remain recoverable. The external Projector does not supply the final Contains-edge weight.
 
-### 5.2 Admission without a target
+### 5.3 Admission without a target
 
 When target and distance are null, Core MUST still retain the Information. The default policy is to create a provisional singleton Cluster and membership atomically. The new Cluster receives a deterministic or replay-stable ID and a lifecycle marker indicating provisional/unclassified placement. This is structural isolation, not a semantic label.
 
 An implementation MAY instead place the Information in a configured holding ChaosCluster. The policy MUST be explicit and deterministic. It MUST NOT silently discard or transiently buffer the item without durable membership.
 
-### 5.3 Growth is not automatic fusion
+### 5.4 Growth is not automatic fusion
 
 A later Information item projected to an existing Cluster grows that Cluster by adding a member. This does not require merging two pre-existing Clusters.
 
@@ -189,11 +205,11 @@ If two existing Clusters should be combined, Core requires an explicit merge ope
 
 Split and re-parent operations follow the same explicit, append-only lifecycle principle. Distance alone never triggers them.
 
-### 5.4 Multi-membership
+### 5.5 Multi-membership
 
 The v1.1 base projection selects at most one target Cluster. The Core graph MAY support a node belonging to multiple Clusters, but multi-target Projector output is a future protocol extension. Multiple memberships added by later explicit Core operations must reference the same canonical Information node; payload duplication is prohibited.
 
-### 5.5 Cluster types
+### 5.6 Cluster types
 
 - **Provisional Cluster:** newly created structural container for information with no supplied target.
 - **Context Cluster:** a cluster receiving subsequent contextual membership.
