@@ -20,12 +20,13 @@ class EvidenceResolverTests(unittest.TestCase):
 
     def test_keeps_valid_offsets_unchanged(self):
         case = {"text": "今日は雨です。", "context": ""}
-        span = {"source": "text", "start": 2, "end": 4, "quote": "雨で"}
+        # Python string offsets count Unicode code points: 雨で occupies [3, 5).
+        span = {"source": "text", "start": 3, "end": 5, "quote": "雨で"}
         prediction = self.make_prediction(span)
         result = resolve_evidence_offsets(prediction, case)
         self.assertEqual(result["repaired"], 0)
-        self.assertEqual(span["start"], 2)
-        self.assertEqual(span["end"], 4)
+        self.assertEqual(span["start"], 3)
+        self.assertEqual(span["end"], 5)
 
     def test_does_not_guess_duplicate_quote(self):
         case = {"text": "はい、はい", "context": ""}
