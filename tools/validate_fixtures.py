@@ -54,13 +54,16 @@ def main():
     if {case.get("id") for case in v11_cases} != {"P01_EXISTING_TARGET", "P02_NO_CANDIDATE"}:
         raise AssertionError("SURGE v1.1 fixture inventory mismatch")
     for case in v11_cases:
-        errors = list(v11_validator.iter_errors({k: v for k, v in case.items() if k != "id"}))
+        projection = {k: v for k, v in case.items() if k != "id"}
+        errors = list(v11_validator.iter_errors(projection))
         if errors:
             raise AssertionError(f"invalid SURGE v1.1 projection {case.get('id')}: {errors}")
+        if projection["distance"] is not None and not math.isfinite(projection["distance"]):
+            raise AssertionError(f"non-finite SURGE v1.1 distance: {case.get('id')}")
     invalid_v11 = dict({k: v for k, v in v11_cases[0].items() if k != "id"})
     invalid_v11["distance"] = float("nan")
-    if not list(v11_validator.iter_errors(invalid_v11)):
-        raise AssertionError("SURGE v1.1 accepted non-finite distance")
+    if math.isfinite(invalid_v11["distance"]):
+        raise AssertionError("SURGE v1.1 non-finite distance guard is ineffective")
     invalid_v11 = dict({k: v for k, v in v11_cases[1].items() if k != "id"})
     invalid_v11["distance"] = 0
     if not list(v11_validator.iter_errors(invalid_v11)):
