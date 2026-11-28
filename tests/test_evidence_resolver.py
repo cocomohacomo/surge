@@ -1,6 +1,6 @@
 import unittest
 
-from evidence_resolver import resolve_evidence_offsets
+from tools.evidence_resolver import resolve_evidence_offsets
 
 
 class EvidenceResolverTests(unittest.TestCase):
