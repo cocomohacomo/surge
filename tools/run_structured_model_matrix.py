@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluate_gold_corpus import evaluate_case
 from validate_projector_output import validate as validate_projector_output
+from evidence_resolver import resolve_evidence_offsets
 
 LOCK_PATH = Path(os.environ.get("SURGE_MODEL_MATRIX_LOCK", "config/model-matrix-lock-v1.0.json"))
 if not LOCK_PATH.is_absolute():
@@ -544,6 +545,7 @@ def run(model, model_path, case, max_json_retries=None):
             streams = parse_cli_streams(stdout, diagnostics, return_code)
             parsed = streams["parsed_output"]
             schema_errors = validate_projector_output(parsed, SCHEMA_PATH) if parsed is not None else []
+            evidence_resolution = resolve_evidence_offsets(parsed, case) if parsed is not None else {"repaired": 0, "unresolved": []}
             evidence = validate_evidence_spans(parsed, case) if parsed is not None and not schema_errors else {
                 "valid": False, "span_count": 0,
                 "errors": ["generation_not_json"] if parsed is None else ["schema_validation_failed"]
@@ -576,6 +578,8 @@ def run(model, model_path, case, max_json_retries=None):
                 "raw_output": stdout[:4000],
                 "parsed_output": parsed,
                 "stderr": streams["diagnostic_stderr"],
+                "evidence_resolution_repaired_spans": evidence_resolution["repaired"],
+                "evidence_resolution_unresolved": evidence_resolution["unresolved"],
                 "evidence_spans_valid": evidence["valid"],
                 "evidence_span_count": evidence["span_count"],
                 "evidence_span_errors": evidence["errors"],
