@@ -1,6 +1,6 @@
 # SURGE Minimal Information Projection v0.1
 
-**Status:** Proposed migration contract (non-breaking; does not replace v0.9/v1.0 contracts yet)  
+**Status:** Historical migration draft; superseded as normative contract by [SPECIFICATION_v1.1.md](SPECIFICATION_v1.1.md). The implementation notes below remain a factual snapshot of the v1.0 migration path.  
 **Intent:** Reduce Core's semantic input to an information payload and an external projection onto the nearest existing context cluster.
 
 ## 1. Boundary
