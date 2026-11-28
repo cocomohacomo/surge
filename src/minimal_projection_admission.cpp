@@ -14,7 +14,7 @@ bool MinimalProjectionAdmission::validate(const MinimalProjectionEnvelope& e, st
     error = "MISSING_REQUIRED_ENVELOPE_METADATA"; return false;
   }
   if (e.projection.information.empty() ||
-      e.projection.information.find_first_not_of(" \t\r\n") == std::string::npos) {
+      e.projection.information.find_first_not_of(" \\t\\r\\n") == std::string::npos) {
     error = "INFORMATION_MUST_NOT_BE_BLANK"; return false;
   }
   if (e.projection.has_target_cluster && e.projection.target_cluster.empty()) {
@@ -59,6 +59,8 @@ bool MinimalProjectionAdmission::apply_recovered(const MinimalProjectionEnvelope
   return true;
 }
 bool MinimalProjectionAdmission::recover() {
+  // A failed retry must never leave a previously recovered index writable.
+  recovered_ = false;
   projections_.clear(); idempotency_.clear();
   for (const auto& event : journal_.committed_events()) {
     if (event.kind != kEventKind) continue;
