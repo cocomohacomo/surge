@@ -19,6 +19,37 @@
 
 namespace surge {
 namespace {
+// Deterministic, dependency-free retrieval features. ASCII keeps whitespace-delimited
+// terms; non-ASCII text additionally emits UTF-8 code-point unigrams and bigrams.
+// This is lexical candidate recall only, never a semantic classification decision.
+std::vector<std::string> recall_features(const std::string& text) {
+  std::set<std::string> features;
+  std::istringstream words(text);
+  std::string word;
+  while (words >> word) {
+    bool non_ascii = false;
+    for (const unsigned char ch : word) if (ch >= 0x80) { non_ascii = true; break; }
+    features.insert(word);
+    if (!non_ascii) continue;
+    std::vector<std::string> codepoints;
+    for (std::size_t i = 0; i < word.size();) {
+      const unsigned char lead = static_cast<unsigned char>(word[i]);
+      std::size_t width = lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2 :
+          (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1;
+      if (i + width > word.size()) width = 1;
+      bool valid = width == 1 || true;
+      for (std::size_t j = 1; j < width; ++j)
+        if ((static_cast<unsigned char>(word[i + j]) & 0xC0) != 0x80) valid = false;
+      if (!valid) width = 1;
+      codepoints.emplace_back(word.substr(i, width));
+      i += width;
+    }
+    for (const auto& point : codepoints) features.insert(point);
+    for (std::size_t i = 1; i < codepoints.size(); ++i)
+      features.insert(codepoints[i - 1] + codepoints[i]);
+  }
+  return {features.begin(), features.end()};
+}
 const char* node_kind_name(NodeKind k){switch(k){case NodeKind::Cluster:return "CLUSTER";case NodeKind::ChaosCluster:return "CHAOS_CLUSTER";case NodeKind::Entity:return "ENTITY";case NodeKind::Evidence:return "EVIDENCE";case NodeKind::Claim:return "CLAIM";case NodeKind::Question:return "QUESTION";case NodeKind::QuestionAspect:return "QUESTION_ASPECT";case NodeKind::Dependency:return "DEPENDENCY";case NodeKind::Interest:return "INTEREST";case NodeKind::ClusterLifecycle:return "CLUSTER_LIFECYCLE";}return "UNKNOWN";}
 bool valid_rfc3339_timestamp(const std::string& value);
 bool decode_cluster_lifecycle_content(const std::string& content,
@@ -2678,16 +2709,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
         corpus.push_back(' ');
         corpus += ref;
       }
-      std::vector<std::string> tokens;
-      std::string token;
-      for (const unsigned char ch : corpus) {
-        if (std::isspace(ch)) {
-          if (!token.empty()) { tokens.push_back(std::move(token)); token.clear(); }
-        } else token.push_back(static_cast<char>(ch));
-      }
-      if (!token.empty()) tokens.push_back(std::move(token));
-      std::sort(tokens.begin(), tokens.end());
-      tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+      const auto tokens = recall_features(corpus);
       const auto posting = std::make_pair(std::make_pair(membership.member_node_id,
           membership.cluster_node_id), membership.upstream_weight);
       recall_member_postings_[membership.member_node_id].push_back(posting);
@@ -2700,10 +2722,15 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
   // Resolve query terms through the inverted index, avoiding the full Membership
   // scan on every Recall. Substring matching is retained at token granularity.
   std::map<std::pair<std::string, std::string>, std::vector<std::string>> matched_postings;
+  std::set<std::string> query_features;
   for (const auto& term : query_terms) {
     if (term.empty()) continue;
-    // Query terms are expected to be caller-tokenized. Direct lookup avoids
-    // scanning the entire vocabulary for substring matches on every input.
+    const auto features = recall_features(term);
+    query_features.insert(features.begin(), features.end());
+  }
+  for (const auto& term : query_features) {
+    // Exact feature lookup avoids scanning the complete vocabulary. Japanese
+    // unigrams/bigrams make short concepts retrievable without a tokenizer.
     const auto indexed = recall_term_postings_.find(term);
     if (indexed == recall_term_postings_.end()) continue;
     for (const auto& posting : indexed->second) {
@@ -2761,7 +2788,7 @@ std::vector<CognitionCandidate> ContextGraph::recall_cognition_candidates(
     if (cluster.kind != NodeKind::Cluster && cluster.kind != NodeKind::ChaosCluster)
       continue;
     double label_signal = 0.0;
-    for (const auto& term : query_terms) {
+    for (const auto& term : query_features) {
       if (!term.empty() && cluster.content.find(term) != std::string::npos)
         label_signal += 0.25;
     }
