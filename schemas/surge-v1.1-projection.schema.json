@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocomohacomo.github.io/surge/schemas/surge-v1.1-projection.schema.json",
+  "title": "SURGE v1.1 Minimal Information Projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "packet_id",
+    "idempotency_key",
+    "source_id",
+    "observed_at",
+    "information",
+    "target_cluster",
+    "distance",
+    "projector_profile",
+    "inventory_revision"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "packet_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "information": {
+      "type": "string"
+    },
+    "target_cluster": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "distance": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "projector_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projector_id",
+        "projector_version",
+        "metric_id",
+        "metric_version",
+        "direction",
+        "scale",
+        "normalization_id"
+      ],
+      "properties": {
+        "projector_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projector_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metric_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "distance_lower_is_closer",
+            "similarity_higher_is_closer"
+          ]
+        },
+        "scale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalization_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "inventory_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "information_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target_cluster": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "target_cluster"
+        ]
+      },
+      "then": {
+        "properties": {
+          "distance": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target_cluster": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_cluster"
+        ]
+      },
+      "then": {
+        "properties": {
+          "distance": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  ]
+}
