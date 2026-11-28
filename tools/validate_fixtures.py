@@ -44,6 +44,29 @@ def main():
         raise AssertionError("minimal projection distance must be finite")
     print("Minimal Information Projection v0.1 schema and 2 fixtures: valid")
 
+    v11_schema = load(ROOT / "schemas/surge-v1.1-projection.schema.json")
+    Draft202012Validator.check_schema(v11_schema)
+    v11_validator = Draft202012Validator(v11_schema, format_checker=FormatChecker())
+    v11_suite = load(ROOT / "tests/conformance/SURGE_v1.1_MINIMAL_PROJECTION.json")
+    if v11_suite.get("schema_version") != "1.1.0":
+        raise AssertionError("SURGE v1.1 fixture version mismatch")
+    v11_cases = v11_suite.get("cases", [])
+    if {case.get("id") for case in v11_cases} != {"P01_EXISTING_TARGET", "P02_NO_CANDIDATE"}:
+        raise AssertionError("SURGE v1.1 fixture inventory mismatch")
+    for case in v11_cases:
+        errors = list(v11_validator.iter_errors({k: v for k, v in case.items() if k != "id"}))
+        if errors:
+            raise AssertionError(f"invalid SURGE v1.1 projection {case.get('id')}: {errors}")
+    invalid_v11 = dict({k: v for k, v in v11_cases[0].items() if k != "id"})
+    invalid_v11["distance"] = float("nan")
+    if not list(v11_validator.iter_errors(invalid_v11)):
+        raise AssertionError("SURGE v1.1 accepted non-finite distance")
+    invalid_v11 = dict({k: v for k, v in v11_cases[1].items() if k != "id"})
+    invalid_v11["distance"] = 0
+    if not list(v11_validator.iter_errors(invalid_v11)):
+        raise AssertionError("SURGE v1.1 accepted distance without a target")
+    print("SURGE v1.1 minimal projection schema and 2 positive/negative fixtures: valid")
+
     projection_schema = load(ROOT / "schemas/projection-batch-v0.1.schema.json")
     Draft202012Validator.check_schema(projection_schema)
     projection_validator = Draft202012Validator(projection_schema, format_checker=FormatChecker())
