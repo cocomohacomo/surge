@@ -4,6 +4,11 @@ Universal Context Cognition Framework.
 
 ## Adoption and evaluation\n\n- **v0.9 implementation map:** [docs/surge/IMPLEMENTATION_MAP_v0.1.md](docs/surge/IMPLEMENTATION_MAP_v0.1.md)\n- **Single-use-case evaluation protocol:** [docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md](docs/evaluation/MEETING_DECISIONS_EVALUATION_v0.1.md)\n- **Journal operations, backup and migration:** [docs/surge/JOURNAL_OPERATIONS_v0.1.md](docs/surge/JOURNAL_OPERATIONS_v0.1.md)\n- **Backup/verify/restore tool:** `python tools/journal_backup.py --help`\n- **Common adapter runner:** `python tools/run_meeting_decision_adapter.py --help`\n- **Independent gold corpus staging:** [tests/benchmark/meeting_decisions/README.md](tests/benchmark/meeting_decisions/README.md)\n\n- **Minimal Information Projection v0.1 (migration contract):** [docs/surge/MINIMAL_INFORMATION_PROJECTION_v0.1.md](docs/surge/MINIMAL_INFORMATION_PROJECTION_v0.1.md)\n- **Minimal Projection schema:** [schemas/surge-minimal-projection-v0.1.schema.json](schemas/surge-minimal-projection-v0.1.schema.json)\n- **Minimal Projection fixtures:** [tests/conformance/SURGE_MINIMAL_PROJECTION_v0.1.json](tests/conformance/SURGE_MINIMAL_PROJECTION_v0.1.json)\n\n## Current specification
 
+- **Foundational architecture v1.1.0 (new normative target):** [docs/surge/SPECIFICATION_v1.1.md](docs/surge/SPECIFICATION_v1.1.md)
+- **v1.1 minimal projection schema:** [schemas/surge-v1.1-projection.schema.json](schemas/surge-v1.1-projection.schema.json)
+- **v1.1 minimal projection conformance fixtures:** [tests/conformance/SURGE_v1.1_MINIMAL_PROJECTION.json](tests/conformance/SURGE_v1.1_MINIMAL_PROJECTION.json)
+- v1.0 remains the implementation/migration baseline during the additive transition; it is no longer the target architecture. Earlier versions remain historical records.
+
 - **Foundational specification v1.0.0:** [docs/surge/SPECIFICATION_v1.0.md](docs/surge/SPECIFICATION_v1.0.md)
 - **Chaos Cluster Model v1.0:** [docs/surge/CHAOS_CLUSTER_MODEL_v1.0.md](docs/surge/CHAOS_CLUSTER_MODEL_v1.0.md)
 - **Chaos Cluster Schema:** [schemas/surge-chaos-cluster-v1.0.schema.json](schemas/surge-chaos-cluster-v1.0.schema.json)
