@@ -1,52 +1,68 @@
-# SURGE CPU Projector Model Benchmark v0.1
+# SURGE CPU Minimal Projector Benchmark v0.2
 
 ## Purpose
 
-Compare small, openly licensed GGUF instruction models as external Projector candidates for Japanese SURGE inputs. The benchmark does not alter SURGE Core's two primitives (cognition-information clusters and Focus). Model outputs remain untrusted proposals; Core validates structure and persists accepted projections without deciding truth or relevance.
+Evaluate small CPU-only instruction models for the new Minimal Projection contract.
+The model receives one information item and a bounded list of existing cluster
+candidates. It returns only:
 
-## Initial candidates
+- `information`: exact input echo
+- `target_cluster`: one supplied cluster ID or `null`
+- `distance`: numeric score
+
+The benchmark deliberately excludes attribute extraction, relation generation,
+phenomena, evidence spans, offsets, and explanatory prose. Those outputs are not
+part of the minimal Core ingress contract.
+
+## Candidate models
 
 | Model | Quantization | Approximate file size | License | Role |
 |---|---|---:|---|---|
-| Qwen3-0.6B | Q4_K_M | 484 MB | Apache-2.0 | Primary Japanese/multilingual candidate |
-| SmolLM2-135M-Instruct | Q4_K_M | 105 MB | Apache-2.0 | Very-low-footprint baseline; primarily English |
+| Qwen3-0.6B | Q4_K_M | 484 MB | Apache-2.0 | Japanese/multilingual primary candidate |
+| SmolLM2-135M-Instruct | Q4_K_M | 105 MB | Apache-2.0 | Low-footprint baseline; primarily English |
 
-Sources:
-- Qwen3 model card: https://huggingface.co/Qwen/Qwen3-0.6B
-- Qwen3 GGUF conversion: https://huggingface.co/gvij/qwen3-0.6b-gguf
-- SmolLM2 model card: https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct
-- SmolLM2 GGUF conversion: https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF
+Model weights are downloaded at benchmark time and are not committed to the repository.
 
-The GGUF files are downloaded individually by the benchmark. No model weights are committed to this repository.
+## Inference budget
 
-## Execution
+- CPU-only llama.cpp runtime
+- 2 threads by default
+- Maximum 64 generated tokens per case
+- Temperature 0 and top-k 1
+- Bounded candidate inventory supplied in the prompt
+- No retry loop and no semantic repair
 
-The `cpu-projector-model-benchmark` GitHub Actions job builds llama.cpp with CPU/OpenMP support, limits inference to two threads, downloads the GGUF files, and runs the same five Japanese prompts against both models.
+The benchmark measures elapsed time, tokens/second when reported by llama.cpp,
+peak RSS, strict projection validity, and target-cluster accuracy.
 
-Run locally after installing llama.cpp and `huggingface_hub`:
+## Distance semantics
 
-```sh
-LLAMA_CLI=/path/to/llama-cli \
-SURGE_MODEL_THREADS=2 \
-python tools/benchmark_cpu_projectors.py
-```
+For this benchmark only, `distance` is a similarity score from 0 to 100:
+100 means the closest match; 0 is used for no candidate. This profile is named
+`benchmark_similarity_0_100`.
 
-The JSON report records model file size, per-case wall time, llama.cpp token throughput when present in logs, peak RSS from `/usr/bin/time -v`, JSON parse success, candidate/relation counts, simple expected-marker coverage, and bounded output excerpts.
+This convention is not imposed on SURGE Core. Core stores the number as opaque
+Projector output and does not compare, normalize, threshold, or interpret it.
+A production Projector profile must declare its own stable score semantics.
 
 ## Cases
 
-1. Short contextual acknowledgement (「うん」).
-2. Conflicting Tuesday/Wednesday deadline statements.
-3. General rule and disaster exception.
-4. Effective date across old and revised制度.
-5. Cross-block reference resolution.
+1. `柴犬` against dog and cat clusters.
+2. `三毛猫` against dog and cat clusters.
+3. Meeting deadline statement against meeting and deadline clusters.
+4. Disaster application exception against application and weather clusters.
+5. Unrelated astronomical information against dog and budget clusters, expecting no target.
 
-## Interpretation limits
+## Quality gates and interpretation
 
-- Five synthetic prompts are a smoke test, not a statistically valid Japanese benchmark.
-- Marker coverage is only a weak lexical indicator. It is not semantic correctness.
-- GitHub-hosted runner latency/RSS are comparative measurements, not measurements on a deployment target such as i5-10310 / 8 GB.
-- Model quality must be evaluated separately for evidence-span fidelity, relation precision/recall, contradiction preservation, exception scope, date normalization, and hallucination rate.
-- SmolLM2's official model card says it primarily understands and generates English. Its result is a size/latency baseline, not a likely Japanese production choice.
-- No model is selected for production by this benchmark alone.
-- No Focus geometry, Focus depth, or logical Focus region is changed by model inference.
+A model output is valid only if it contains exactly the three contract keys,
+echoes the input exactly, selects a supplied cluster ID or null, and returns an
+integer score in the benchmark range. Target accuracy is reported separately
+from structural validity.
+
+These five synthetic cases are a smoke test, not a statistically valid Japanese
+quality certification. SmolLM2 is primarily English-oriented and is a footprint
+baseline, not a presumed production choice. GitHub runner latency and RSS are
+comparative measurements, not measurements on the i5-10310 / 8 GB target.
+
+No production model is selected by this benchmark alone.
