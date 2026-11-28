@@ -116,8 +116,8 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
     parsed = extract_json(proc.stdout)
     ids = {item["id"] for item in case["clusters"]}
     valid = validate_projection(parsed, case["information"], ids)
-    speed = re.findall(r"([0-9]+(?:\\.[0-9]+)?)\\s*tokens per second", proc.stderr + proc.stdout)
-    rss = re.findall(r"Maximum resident set size \\(kbytes\\):\\s*(\\d+)", proc.stderr)
+    speed = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*tokens per second", proc.stderr + proc.stdout)
+    rss = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", proc.stderr)
     actual = parsed.get("target_cluster") if valid else None
     return {
         "case_id": case["id"], "return_code": proc.returncode,
