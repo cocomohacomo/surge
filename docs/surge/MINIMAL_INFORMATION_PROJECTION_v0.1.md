@@ -106,3 +106,20 @@ Projection should identify the cluster-inventory revision or digest used for nea
 - Whether projection is one candidate or a candidate set in a future version.
 - Cluster growth weighting and decay rules.
 - Exact cluster-snapshot version/digest protocol.
+
+
+## 10. Implementation status (2026-11-28)
+
+The repository currently includes a strict external-adapter boundary in
+`surge_adapter/minimal_projection.py`. It validates the three-field contract,
+rejects non-finite distance values, preserves the information string and does
+not interpret distance polarity or trigger cluster lifecycle operations.
+Unit coverage is provided by `tests/test_minimal_projection.py`, and the
+fixture validator checks this contract's schema and positive fixtures.
+
+This is **not yet a Core admission implementation**. The existing
+`ProjectionBatch` path still requires source-event and Evidence references
+and emits a structured `SemanticDelta`. A separate journal-backed minimal
+admission command, durable distance/projection provenance, replay support,
+and cluster-growth behavior remain pending. Do not describe the Core as
+minimal-projection capable until those operations and restart tests pass.
