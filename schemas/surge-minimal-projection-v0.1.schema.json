@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge-framework.invalid/schemas/surge-minimal-projection-v0.1.schema.json",
+  "title": "SURGE Minimal Information Projection v0.1",
+  "description": "Non-breaking migration contract; distance semantics are projector-profile-defined.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["information", "target_cluster", "distance"],
+  "properties": {
+    "information": {
+      "description": "Incoming information payload, unchanged by Core.",
+      "type": "string",
+      "minLength": 1
+    },
+    "target_cluster": {
+      "description": "Nearest cluster ID supplied by the external Projector, or null if no candidate is supplied.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "distance": {
+      "description": "Numeric distance/score; scale and polarity are declared by a projector profile, not fixed here.",
+      "type": "number"
+    }
+  }
+}
