@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.1.0",
+  "cases": [
+    {
+      "id": "P01_EXISTING_TARGET",
+      "packet_id": "pkt-shiba-001",
+      "idempotency_key": "idem-shiba-001",
+      "source_id": "source-demo",
+      "source_sequence": 1,
+      "observed_at": "2026-11-28T13:55:00+09:00",
+      "information": "柴犬",
+      "target_cluster": "cluster-dog",
+      "distance": 100,
+      "projector_profile": {
+        "projector_id": "demo-projector",
+        "projector_version": "1.0.0",
+        "metric_id": "demo-similarity",
+        "metric_version": "1",
+        "direction": "similarity_higher_is_closer",
+        "scale": "0..100",
+        "normalization_id": "demo-v1"
+      },
+      "inventory_revision": "inv-42"
+    },
+    {
+      "id": "P02_NO_CANDIDATE",
+      "packet_id": "pkt-shiba-002",
+      "idempotency_key": "idem-shiba-002",
+      "source_id": "source-demo",
+      "source_sequence": 2,
+      "observed_at": "2026-11-28T13:55:01+09:00",
+      "information": "柴犬",
+      "target_cluster": null,
+      "distance": null,
+      "projector_profile": {
+        "projector_id": "demo-projector",
+        "projector_version": "1.0.0",
+        "metric_id": "demo-similarity",
+        "metric_version": "1",
+        "direction": "similarity_higher_is_closer",
+        "scale": "0..100",
+        "normalization_id": "demo-v1"
+      },
+      "inventory_revision": "inv-42"
+    }
+  ]
+}
