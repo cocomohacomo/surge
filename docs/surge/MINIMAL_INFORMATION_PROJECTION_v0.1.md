@@ -110,16 +110,25 @@ Projection should identify the cluster-inventory revision or digest used for nea
 
 ## 10. Implementation status (2026-11-28)
 
-The repository currently includes a strict external-adapter boundary in
-`surge_adapter/minimal_projection.py`. It validates the three-field contract,
-rejects non-finite distance values, preserves the information string and does
-not interpret distance polarity or trigger cluster lifecycle operations.
-Unit coverage is provided by `tests/test_minimal_projection.py`, and the
-fixture validator checks this contract's schema and positive fixtures.
+The repository includes a strict external-adapter boundary in
+`surge_adapter/minimal_projection.py`, a journal-backed ingress record in
+`MinimalProjectionAdmission`, and a read-only, revision-tagged candidate
+retrieval API in `ContextGraph::recall_cognition_candidates`.
 
-This is **not yet a Core admission implementation**. The existing
-`ProjectionBatch` path still requires source-event and Evidence references
-and emits a structured `SemanticDelta`. A separate journal-backed minimal
-admission command, durable distance/projection provenance, replay support,
-and cluster-growth behavior remain pending. Do not describe the Core as
-minimal-projection capable until those operations and restart tests pass.
+The candidate index is derived from the committed graph and rebuilt only when
+the graph state version changes. It now indexes ASCII whitespace-delimited
+terms plus UTF-8 code-point unigrams and bigrams, allowing Japanese substring
+recall (for example, query 「犬」 can retrieve a member containing 「柴犬」)
+without a tokenizer or embedding model. Candidate ranking remains retrieval
+only: it does not mutate membership or turn recall scores into Contains weights.
+The C++ regression suite includes a Japanese n-gram recall case.
+
+Core already has deterministic typed-cluster construction through
+`ContextGraph::append_cluster_membership` and persists weighted Contains
+edges in the graph journal. However, the minimal admission record is still a
+separate ingress path: it does not yet atomically create the graph member,
+apply the selected target membership, or update a Core-owned membership-weight
+policy. The minimal route must be connected to the graph in one transaction,
+with target-ID and inventory-revision validation, before it can be called a
+complete production path. Legacy `ProjectionBatch` and Evidence-based APIs
+remain available during migration.
