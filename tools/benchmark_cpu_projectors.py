@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""CPU-only SURGE projector model smoke benchmark.
+"""CPU-only benchmark for the SURGE minimal information projector.
 
-Downloads pinned GGUF files, runs identical Japanese recognition prompts through
-llama.cpp, and emits a machine-readable report. This is a model capability smoke
-test, not a semantic-quality certification.
+The model selects one candidate cluster (or null) and emits one opaque numeric
+score. It does not extract attributes, relations, phenomena, or evidence spans.
 """
 from __future__ import annotations
 
@@ -19,152 +18,117 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 ROOT = Path(os.environ.get("SURGE_MODEL_BENCH_DIR", "model-bench"))
-REPORT = Path(os.environ.get("SURGE_MODEL_BENCH_REPORT", ROOT / "report.json"))
+REPORT = Path(os.environ.get("SURGE_MODEL_BENCH_REPORT", ROOT / "minimal-projector-report.json"))
 LLAMA_CLI = os.environ.get("LLAMA_CLI", "llama-cli")
-THREADS = max(1, int(os.environ.get("SURGE_MODEL_THREADS", str(os.cpu_count() or 2))))
+THREADS = max(1, int(os.environ.get("SURGE_MODEL_THREADS", "2")))
+MAX_TOKENS = 64
 
 MODELS = [
-    {
-        "name": "qwen3-0.6b-q4_k_m",
-        "repo": "gvij/qwen3-0.6b-gguf",
-        "file": "qwen3-0.6b-q4_k_m.gguf",
-        "format": "qwen3-chatml-no-think",
-    },
-    {
-        "name": "smollm2-135m-instruct-q4_k_m",
-        "repo": "bartowski/SmolLM2-135M-Instruct-GGUF",
-        "file": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
-        "format": "chatml",
-    },
+    {"name": "qwen3-0.6b-q4_k_m", "repo": "gvij/qwen3-0.6b-gguf",
+     "file": "qwen3-0.6b-q4_k_m.gguf", "format": "qwen3"},
+    {"name": "smollm2-135m-instruct-q4_k_m", "repo": "bartowski/SmolLM2-135M-Instruct-GGUF",
+     "file": "SmolLM2-135M-Instruct-Q4_K_M.gguf", "format": "chatml"},
 ]
 
 CASES = [
-    {
-        "id": "short_ack_context",
-        "context": "会議で担当者が『明日までに提出できますか』と質問した。",
-        "input": "うん",
-        "must_contain": ["うん"],
-        "expected_candidate_markers": ["承諾", "同意", "了承", "回答"],
-        "expected_relation_types": [],
-        "task": "短い応答を文脈付きで候補化する。断定しすぎない。",
-    },
-    {
-        "id": "contradiction",
-        "context": "同じ会議について、前半では『締切は火曜日』、後半では『締切は水曜日』と発言された。",
-        "input": "締切は水曜日です。",
-        "must_contain": ["水曜日"],
-        "expected_candidate_markers": ["水曜日"],
-        "expected_relation_types": ["contradicts"],
-        "task": "既存候補と新規候補を両方保持し、矛盾候補の関係を出す。",
-    },
-    {
-        "id": "exception_and_scope",
-        "context": "原則は申請期限を30日とする。ただし災害時はこの限りではない。",
-        "input": "災害時は申請期限の例外とする。",
-        "must_contain": ["災害", "例外"],
-        "expected_candidate_markers": ["災害", "例外"],
-        "expected_relation_types": ["exception_of"],
-        "task": "一般規則と例外の適用範囲を分離する。",
-    },
-    {
-        "id": "effective_date",
-        "context": "旧制度は4月1日から適用。改正制度は翌年4月1日から適用。",
-        "input": "改正制度の適用開始日は2027年4月1日です。",
-        "must_contain": ["2027年4月1日"],
-        "expected_candidate_markers": ["2027年4月1日"],
-        "expected_relation_types": ["temporal_qualifier"],
-        "task": "制度と適用時期を混同せず候補化する。",
-    },
-    {
-        "id": "cross_block_reference",
-        "context": "第1ブロック: A地区の工事費は120万円。第2ブロック: この費用は補助対象外とする。",
-        "input": "この費用は補助対象外です。",
-        "must_contain": ["補助対象外"],
-        "expected_candidate_markers": ["補助対象外", "120万円", "A地区"],
-        "expected_relation_types": ["refers_to"],
-        "task": "指示語の参照先候補を明示し、根拠が不足する場合は不確実性を残す。",
-    },
+    {"id": "shiba_to_dog", "information": "柴犬",
+     "clusters": [{"id": "cluster-dog", "description": "犬に関する情報"},
+                  {"id": "cluster-cat", "description": "猫に関する情報"}],
+     "expected_target": "cluster-dog"},
+    {"id": "cat_to_cat", "information": "三毛猫",
+     "clusters": [{"id": "cluster-dog", "description": "犬に関する情報"},
+                  {"id": "cluster-cat", "description": "猫に関する情報"}],
+     "expected_target": "cluster-cat"},
+    {"id": "meeting_deadline", "information": "締切は水曜日です。",
+     "clusters": [{"id": "cluster-meeting", "description": "会議の進行と議題"},
+                  {"id": "cluster-deadline", "description": "提出期限と日程"}],
+     "expected_target": "cluster-deadline"},
+    {"id": "disaster_exception", "information": "災害時は申請期限の例外とする。",
+     "clusters": [{"id": "cluster-application", "description": "申請手続と期限"},
+                  {"id": "cluster-weather", "description": "天候と季節"}],
+     "expected_target": "cluster-application"},
+    {"id": "no_candidate", "information": "青い彗星が南の空に見えた。",
+     "clusters": [{"id": "cluster-dog", "description": "犬に関する情報"},
+                  {"id": "cluster-budget", "description": "予算と会計"}],
+     "expected_target": None},
 ]
 
 SYSTEM = (
-    "あなたはSURGEの外部Projectorです。真偽や採否を決定せず、"
-    "入力から認知候補を抽出してください。必ずJSONオブジェクトだけを返してください。"
-    "形式: {\"candidates\":[{\"text\":\"...\",\"kind\":\"claim|question|uncertain\","
-    "\"confidence\":0.0,\"evidence_quote\":\"...\"}],"
-    "\"relations\":[{\"type\":\"supports|contradicts|refers_to|exception_of\","
-    "\"source\":\"...\",\"target\":\"...\"}],"
-    "\"uncertainties\":[\"...\"]}。"
-    "confidenceは候補生成上の目安であり真偽確率ではありません。"
+    "あなたはSURGEの外部Minimal Projectorです。新規情報を既存クラスター候補と比較し、"
+    "最も近い候補を1つ選んでください。十分に近い候補がなければtarget_clusterはnullです。"
+    "情報の意味属性、関係、根拠位置、説明文は生成しません。"
+    "出力はJSONオブジェクト1個のみ。キーはinformation,target_cluster,distanceです。"
+    "informationは入力をそのまま複写。target_clusterは候補IDまたはnull。"
+    "distanceはこのベンチマーク内の近さスコアで0から100の整数、100が最も近く、"
+    "候補なしは0。余分なキーは禁止。"
 )
 
 def make_prompt(model_format: str, case: dict) -> str:
-    user = (
-        f"タスク: {case['task']}\n"
-        f"既存文脈: {case['context']}\n"
-        f"新規入力: {case['input']}\n"
-        "JSONを返してください。"
-    )
-    if model_format.startswith("qwen3"):
-        return (
-            f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
-            f"<|im_start|>user\n{user}<|im_end|>\n"
-            "<|im_start|>assistant\n"
-        )
+    payload = {
+        "information": case["information"],
+        "candidate_clusters": case["clusters"],
+    }
+    user = "次の情報を候補クラスターへ投射してください。\n" + json.dumps(payload, ensure_ascii=False)
     return (
         f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
         f"<|im_start|>user\n{user}<|im_end|>\n"
         "<|im_start|>assistant\n"
     )
 
-def extract_json(text: str):
-    decoder = json.JSONDecoder()
-    for index, char in enumerate(text):
-        if char == "{":
-            try:
-                value, _ = decoder.raw_decode(text[index:])
-                if isinstance(value, dict):
-                    return value
-            except json.JSONDecodeError:
-                continue
-    return None
+def extract_json(output: str):
+    if not isinstance(output, str):
+        return None
+    candidate = output.strip()
+    try:
+        value = json.loads(candidate)
+    except json.JSONDecodeError:
+        marker = " [end of text]"
+        if not candidate.endswith(marker):
+            return None
+        try:
+            value = json.loads(candidate[:-len(marker)].rstrip())
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
+
+def validate_projection(value, information: str, candidate_ids: set[str]) -> bool:
+    if not isinstance(value, dict) or set(value) != {"information", "target_cluster", "distance"}:
+        return False
+    if value["information"] != information:
+        return False
+    target = value["target_cluster"]
+    if target is not None and (not isinstance(target, str) or target not in candidate_ids):
+        return False
+    distance = value["distance"]
+    return isinstance(distance, int) and not isinstance(distance, bool) and 0 <= distance <= 100
 
 def run_case(model_path: Path, model: dict, case: dict) -> dict:
     prompt = make_prompt(model["format"], case)
     command = [
         "/usr/bin/time", "-v", LLAMA_CLI, "-m", str(model_path), "-p", prompt,
-        "-n", "192", "--temp", "0", "--top-k", "1",
+        "-n", str(MAX_TOKENS), "--temp", "0", "--top-k", "1",
         "--threads", str(THREADS), "--no-display-prompt", "--simple-io",
     ]
-    start = time.perf_counter()
-    proc = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240)
-    elapsed = time.perf_counter() - start
-    output = proc.stdout.strip()
-    parsed = extract_json(output)
-    candidates = parsed.get("candidates", []) if parsed else []
-    relations = parsed.get("relations", []) if parsed else []
-    uncertainties = parsed.get("uncertainties", []) if parsed else []
-    combined = json.dumps(parsed, ensure_ascii=False) if parsed else output
-    expected_hits = sum(token in combined for token in case["must_contain"])
-    perf_text = proc.stderr + "\n" + proc.stdout
-    speed_matches = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*tokens per second", perf_text)
-    rss_matches = re.findall(r"Maximum resident set size \(kbytes\):\s*(\d+)", perf_text)
+    started = time.perf_counter()
+    proc = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=180)
+    elapsed = time.perf_counter() - started
+    parsed = extract_json(proc.stdout)
+    ids = {item["id"] for item in case["clusters"]}
+    valid = validate_projection(parsed, case["information"], ids)
+    speed = re.findall(r"([0-9]+(?:\\.[0-9]+)?)\\s*tokens per second", proc.stderr + proc.stdout)
+    rss = re.findall(r"Maximum resident set size \\(kbytes\\):\\s*(\\d+)", proc.stderr)
+    actual = parsed.get("target_cluster") if valid else None
     return {
-        "case_id": case["id"],
-        "return_code": proc.returncode,
+        "case_id": case["id"], "return_code": proc.returncode,
         "elapsed_seconds": round(elapsed, 4),
-        "tokens_per_second": float(speed_matches[-1]) if speed_matches else None,
-        "peak_rss_kib": int(rss_matches[-1]) if rss_matches else None,
-        "json_valid": parsed is not None,
-        "candidate_count": len(candidates) if isinstance(candidates, list) else None,
-        "relation_count": len(relations) if isinstance(relations, list) else None,
-        "uncertainty_count": len(uncertainties) if isinstance(uncertainties, list) else None,
-        "expected_marker_hits": expected_hits,
-        "expected_marker_total": len(case["must_contain"]),
-        "expected_candidate_markers": case.get("expected_candidate_markers", []),
-        "expected_relation_types": case.get("expected_relation_types", []),
-        "parsed_output": parsed,
-        "output_excerpt": output[:1600],
-        "stderr_excerpt": proc.stderr[-1200:],
+        "tokens_per_second": float(speed[-1]) if speed else None,
+        "peak_rss_kib": int(rss[-1]) if rss else None,
+        "json_valid": parsed is not None, "projection_valid": valid,
+        "expected_target": case["expected_target"], "actual_target": actual,
+        "target_correct": valid and actual == case["expected_target"],
+        "output": parsed, "output_excerpt": proc.stdout[-1000:],
+        "stderr_excerpt": proc.stderr[-1000:],
     }
 
 def main() -> int:
@@ -172,40 +136,47 @@ def main() -> int:
         raise SystemExit(f"llama-cli not found: {LLAMA_CLI}")
     ROOT.mkdir(parents=True, exist_ok=True)
     report = {
-        "benchmark": "surge-japanese-projector-cpu-smoke-v0.1",
-        "runtime": "llama.cpp CPU",
-        "threads": THREADS,
-        "cases": len(CASES),
+        "benchmark": "surge-minimal-projector-cpu-v0.2",
+        "runtime": "llama.cpp CPU", "threads": THREADS,
+        "max_generation_tokens": MAX_TOKENS,
+        "output_contract": ["information", "target_cluster", "distance"],
+        "distance_profile": "benchmark_similarity_0_100_only",
         "models": [],
         "limitations": [
-            "GitHub-hosted CPU runner measurements are comparative, not target-device benchmarks.",
-            "Five synthetic cases are a smoke test, not a statistically valid Japanese quality evaluation.",
-            "Model output is untrusted projector input; SURGE Core remains responsible only for structural validation and persistence.",
+            "Synthetic five-case smoke test; not a Japanese production-quality certification.",
+            "The benchmark score profile is local to this benchmark; Core treats distance as opaque.",
+            "GitHub runner RSS and latency are not target-device measurements.",
+            "SmolLM2 is primarily English-oriented and serves as a footprint baseline.",
         ],
     }
     for model in MODELS:
         model_dir = ROOT / model["name"]
         model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = Path(hf_hub_download(
-            repo_id=model["repo"], filename=model["file"], local_dir=str(model_dir)
-        ))
-        model_result = {"name": model["name"], "repo": model["repo"], "file": model["file"], "file_bytes": model_path.stat().st_size, "results": []}
+        model_path = Path(hf_hub_download(repo_id=model["repo"], filename=model["file"],
+                                          local_dir=str(model_dir)))
+        results = []
         for case in CASES:
             try:
                 result = run_case(model_path, model, case)
             except subprocess.TimeoutExpired:
-                result = {"case_id": case["id"], "timeout": True}
+                result = {"case_id": case["id"], "timeout": True,
+                          "projection_valid": False, "target_correct": False}
             if result.get("return_code", 0) != 0:
                 raise RuntimeError(f"{model['name']} failed on {case['id']}: {result.get('stderr_excerpt', '')}")
-            model_result["results"].append(result)
-        valid = [r for r in model_result["results"] if r.get("json_valid")]
-        model_result["json_valid_cases"] = len(valid)
-        model_result["expected_marker_hits"] = sum(r.get("expected_marker_hits", 0) for r in model_result["results"])
-        model_result["expected_marker_total"] = sum(r.get("expected_marker_total", 0) for r in model_result["results"])
-        model_result["mean_elapsed_seconds"] = round(
-            sum(r.get("elapsed_seconds", 0) for r in model_result["results"]) / len(CASES), 4
-        )
-        report["models"].append(model_result)
+            results.append(result)
+        valid = sum(bool(item.get("projection_valid")) for item in results)
+        correct = sum(bool(item.get("target_correct")) for item in results)
+        model_report = {
+            "name": model["name"], "repo": model["repo"], "file": model["file"],
+            "file_bytes": model_path.stat().st_size, "results": results,
+            "valid_projection_cases": valid, "correct_target_cases": correct,
+            "target_accuracy": round(correct / len(CASES), 4),
+            "mean_elapsed_seconds": round(
+                sum(item.get("elapsed_seconds", 0) for item in results) / len(CASES), 4),
+            "max_peak_rss_kib": max(
+                (item.get("peak_rss_kib", 0) for item in results), default=0),
+        }
+        report["models"].append(model_report)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
