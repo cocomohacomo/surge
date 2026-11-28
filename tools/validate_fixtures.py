@@ -62,8 +62,12 @@ def main():
             raise AssertionError(f"non-finite SURGE v1.1 distance: {case.get('id')}")
     invalid_v11 = dict({k: v for k, v in v11_cases[0].items() if k != "id"})
     invalid_v11["distance"] = float("nan")
-    if math.isfinite(invalid_v11["distance"]):
-        raise AssertionError("SURGE v1.1 non-finite distance guard is ineffective")
+    try:
+        json.dumps(invalid_v11, allow_nan=False)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("SURGE v1.1 non-finite distance was JSON-serialized")
     invalid_v11 = dict({k: v for k, v in v11_cases[1].items() if k != "id"})
     invalid_v11["distance"] = 0
     if not list(v11_validator.iter_errors(invalid_v11)):
