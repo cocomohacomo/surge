@@ -1,0 +1,52 @@
+name: SURGE minimal CPU projector benchmark
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tools/benchmark_cpu_projectors.py"
+      - "tests/test_minimal_projector_benchmark.py"
+      - "docs/surge/CPU_PROJECTOR_BENCHMARK_v0.1.md"
+      - ".github/workflows/minimal-projector-benchmark.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  minimal-projector-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+      - name: Install benchmark dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libopenblas-dev time
+          python -m pip install -r requirements-model-matrix.txt
+      - name: Run minimal projector contract tests
+        run: python -m unittest tests.test_minimal_projector_benchmark -v
+      - name: Build pinned llama.cpp CPU runtime
+        run: |
+          git init "$RUNNER_TEMP/llama.cpp"
+          git -C "$RUNNER_TEMP/llama.cpp" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$RUNNER_TEMP/llama.cpp" fetch --depth 1 origin fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002
+          git -C "$RUNNER_TEMP/llama.cpp" checkout --detach fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002
+          test "$(git -C "$RUNNER_TEMP/llama.cpp" rev-parse HEAD)" = "fd4b137e38c9fdb24b3f4fe3bc9e5fcc3c8f0002"
+          cmake -S "$RUNNER_TEMP/llama.cpp" -B "$RUNNER_TEMP/llama.cpp/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=ON
+          cmake --build "$RUNNER_TEMP/llama.cpp/build" --target llama-cli --parallel 2
+      - name: Run Japanese minimal projection model matrix
+        env:
+          LLAMA_CLI: ${{ runner.temp }}/llama.cpp/build/bin/llama-cli
+          SURGE_MODEL_BENCH_DIR: ${{ runner.temp }}/surge-minimal-models
+          SURGE_MODEL_BENCH_REPORT: ${{ runner.temp }}/surge-minimal-projector-report.json
+          SURGE_MODEL_THREADS: "2"
+        run: python tools/benchmark_cpu_projectors.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: surge-minimal-projector-cpu-report
+          path: ${{ runner.temp }}/surge-minimal-projector-report.json
+          if-no-files-found: warn
