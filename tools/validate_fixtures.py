@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate v0.9 schemas and v1.0 Chaos Cluster contracts."""
 import hashlib
+import math
 import json
 import pathlib
 import subprocess
@@ -21,6 +22,27 @@ def main():
         schema = load(path)
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema, format_checker=FormatChecker())
+
+    minimal_schema = load(ROOT / "schemas/surge-minimal-projection-v0.1.schema.json")
+    Draft202012Validator.check_schema(minimal_schema)
+    minimal_validator = Draft202012Validator(minimal_schema)
+    minimal_suite = load(ROOT / "tests/conformance/SURGE_MINIMAL_PROJECTION_v0.1.json")
+    if minimal_suite.get("contract") != "surge-minimal-projection-v0.1":
+        raise AssertionError("minimal projection contract identifier mismatch")
+    minimal_cases = minimal_suite.get("cases", [])
+    if {case.get("case_id") for case in minimal_cases} != {
+        "existing-nearest-cluster", "no-candidate"
+    }:
+        raise AssertionError("minimal projection fixture case inventory mismatch")
+    for case in minimal_cases:
+        errors = list(minimal_validator.iter_errors(case.get("projection", {})))
+        if errors:
+            raise AssertionError(
+                f"invalid minimal projection fixture {case.get('case_id')}: {errors}"
+            )
+    if any(not math.isfinite(case["projection"]["distance"]) for case in minimal_cases):
+        raise AssertionError("minimal projection distance must be finite")
+    print("Minimal Information Projection v0.1 schema and 2 fixtures: valid")
 
     projection_schema = load(ROOT / "schemas/projection-batch-v0.1.schema.json")
     Draft202012Validator.check_schema(projection_schema)
