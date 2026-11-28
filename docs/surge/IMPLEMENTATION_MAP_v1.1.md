@@ -7,16 +7,17 @@
 
 ## Architecture target
 
-SURGE v1.1 separates external semantic projection from Core-owned contextual memory. The mandatory semantic input is Information, an optional nearest existing Cluster ID, and a profile-scoped distance. Operational envelope fields support idempotency, ordering, provenance and stale-inventory detection.
+SURGE v1.1.1 separates minimum external projection from Core-owned cognition. The Projector supplies Information, an optional nearest Cluster ID and profile-scoped distance. SURGE's internal Cognitive Bias policy, not the Projector, determines cognitive classification and membership weight from Core-held Focus, Interest, Question, novelty and recurrence signals. Operational envelope fields support idempotency, ordering, provenance and stale-inventory detection.
 
 ## Status by capability
 
 | Capability | v1.1 target | Repository evidence at redesign | Remaining work |
 |---|---|---|---|
-| Minimal projection contract | Three semantic fields; profile-scoped distance | v1.1 specification, JSON Schema and fixtures added | Expand fixtures and API conformance |
+| Minimal projection contract | Information + nearest Cluster + profile-scoped distance | v1.1 specification, JSON Schema and fixtures added | Expand fixtures and API conformance |
 | External Projector boundary | Model/runtime independent | v0.1 minimal adapter exists | Formalize inventory snapshot client and remove Core inference dependencies |
 | Cluster Inventory | Read-only, revisioned, complete/paginated | Revision-tagged candidate recall exists | Bind completeness and revision checks to admission |
-| Atomic minimal admission | Information + projection + membership in one transaction | Minimal ingress record exists | Connect to ContextGraph membership in same journal transaction |
+| Cognitive Bias evaluator | Core-owned classification and weight policy | C++ evaluator, policy trace and CMake conformance target added | Derive signals from graph state; UNKNOWN semantics; calibration |
+| Atomic minimal admission | Information + projection + bias decision + membership in one transaction | Minimal ingress record exists; bias evaluator is standalone | Connect evaluator, Information node and ContextGraph membership in same journal transaction |
 | No-candidate handling | Provisional singleton or explicit holding Cluster | Contract specified | Implement deterministic IDs, lifecycle and replay |
 | Cluster growth | Add membership without semantic attributes | Membership helper exists | End-to-end admission and growth tests |
 | Merge / split | Explicit, lineage-preserving lifecycle | Cluster ledger has partial operations | Gate all routes and test atomic graph integration |
@@ -28,14 +29,16 @@ SURGE v1.1 separates external semantic projection from Core-owned contextual mem
 
 ## Required implementation sequence
 
-1. **Admission transaction:** create the Information record, projection observation and membership atomically.
-2. **No-candidate lifecycle:** create a provisional singleton or configured holding membership deterministically.
-3. **Inventory consistency:** validate exact inventory revision and target lifecycle at commit.
-4. **Projector isolation:** ensure Core has no model/runtime dependency; Projector reads a versioned inventory snapshot.
-5. **Question / Interest / Focus decoupling:** preserve their state machines while allowing triggers from optional analyzers and structural events.
-6. **Replay and failure injection:** test every transaction boundary, duplicate retry, stale inventory and snapshot-tail restore.
-7. **Shadow evaluation:** compare legacy and minimal routes without letting the legacy schema define the new Core contract.
-8. **Deprecation:** remove mandatory Attribute/Evidence/Relation generation only after the preceding gates pass.
+1. **Core signal derivation:** derive Focus, Interest, Question pressure, novelty and recurrence signals from the pinned ContextGraph state; define UNKNOWN behavior.
+2. **Bias decision trace:** persist policy identity, per-axis inputs/contributions, cognitive classification and membership weight.
+3. **Admission transaction:** create the Information record, projection observation, bias trace and membership atomically.
+4. **No-candidate lifecycle:** create a provisional singleton or configured holding membership deterministically.
+5. **Inventory consistency:** validate exact inventory revision and target lifecycle at commit.
+6. **Projector isolation:** ensure Core has no model/runtime dependency; Projector reads a versioned inventory snapshot.
+7. **Question / Interest / Focus decoupling:** preserve their state machines and feed their internal signals to Cognitive Bias.
+8. **Replay and failure injection:** test every transaction boundary, duplicate retry, stale inventory and snapshot-tail restore.
+9. **Shadow evaluation:** compare legacy and minimal routes without letting the legacy schema define the new Core contract.
+10. **Deprecation:** remove mandatory Attribute/Evidence/Relation generation only after the preceding gates pass.
 
 ## Release gates
 
