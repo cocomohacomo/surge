@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -63,6 +64,13 @@ struct CognitiveBiasResult {
   double association_affinity{0.0};
   std::string policy_id;
   std::string policy_version;
+  CognitiveBiasSignals evaluated_signals;
+  double association_contribution{0.0};
+  double focus_contribution{0.0};
+  double interest_contribution{0.0};
+  double question_contribution{0.0};
+  double novelty_contribution{0.0};
+  double recurrence_contribution{0.0};
 };
 
 class CognitiveBiasEngine {
@@ -119,14 +127,18 @@ class CognitiveBiasEngine {
       return result;
     }
 
-    const double contributions[] = {
-      input.has_target_cluster ? policy.association_weight * result.association_affinity : 0.0,
-      policy.focus_weight * input.signals.focus_alignment,
-      policy.interest_weight * input.signals.interest_activation,
-      policy.question_weight * input.signals.unresolved_question_pressure,
-      policy.novelty_weight * input.signals.novelty,
-      policy.recurrence_weight * input.signals.recurrence
-    };
+    result.evaluated_signals = input.signals;
+    result.association_contribution = input.has_target_cluster
+        ? policy.association_weight * result.association_affinity : 0.0;
+    result.focus_contribution = policy.focus_weight * input.signals.focus_alignment;
+    result.interest_contribution = policy.interest_weight * input.signals.interest_activation;
+    result.question_contribution = policy.question_weight * input.signals.unresolved_question_pressure;
+    result.novelty_contribution = policy.novelty_weight * input.signals.novelty;
+    result.recurrence_contribution = policy.recurrence_weight * input.signals.recurrence;
+    const double contributions[] = {result.association_contribution,
+      result.focus_contribution, result.interest_contribution,
+      result.question_contribution, result.novelty_contribution,
+      result.recurrence_contribution};
     const CognitiveBiasClass classes[] = {
       CognitiveBiasClass::Association, CognitiveBiasClass::Focus,
       CognitiveBiasClass::Interest, CognitiveBiasClass::QuestionPressure,
