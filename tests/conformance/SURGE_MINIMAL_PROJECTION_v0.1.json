@@ -1,0 +1,22 @@
+{
+  "contract": "surge-minimal-projection-v0.1",
+  "note": "Illustrative fixtures. The value 100 is not assigned a universal scale or polarity.",
+  "cases": [
+    {
+      "case_id": "existing-nearest-cluster",
+      "projection": {
+        "information": "柴犬",
+        "target_cluster": "cluster-dog",
+        "distance": 100
+      }
+    },
+    {
+      "case_id": "no-candidate",
+      "projection": {
+        "information": "柴犬",
+        "target_cluster": null,
+        "distance": 0
+      }
+    }
+  ]
+}
