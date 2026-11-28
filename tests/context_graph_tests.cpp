@@ -1656,6 +1656,36 @@ int main(){
     CHECK(live_error=="FOCUS_SNAPSHOT_GRAPH_ROOT_INVALID");
   }
 
+  // Japanese candidate recall must find a short concept inside an unsegmented
+  // Japanese member string without introducing a tokenizer/model dependency.
+  {
+    ContextGraph graph((root/"japanese-ngram-recall.sgj").string());
+    CHECK(graph.open());
+    SemanticDelta seed;
+    seed.delta_id="japanese-ngram-seed";
+    seed.idempotency_key=seed.delta_id;
+    seed.expected_state_version=graph.state_version();
+    seed.nodes={
+      {{"jp-dog-cluster",NodeKind::Cluster,"犬・動物",{} }},
+      {{"jp-cat-cluster",NodeKind::Cluster,"猫・動物",{} }},
+      {{"jp-input",NodeKind::Entity,"新しい情報",{} }},
+      {{"jp-dog-member",NodeKind::Evidence,"柴犬は日本原産の犬種です。",{} }},
+      {{"jp-cat-member",NodeKind::Evidence,"三毛猫は猫の一種です。",{} }}
+    };
+    seed.relations={
+      {{"jp-dog-membership",RelationKind::Contains,"jp-dog-cluster","jp-dog-member",0.8}},
+      {{"jp-cat-membership",RelationKind::Contains,"jp-cat-cluster","jp-cat-member",0.8}}
+    };
+    CHECK(graph.apply(seed).committed);
+    const auto candidates=graph.recall_cognition_candidates("jp-input",{"犬"},8);
+    CHECK(!candidates.empty());
+    CHECK(candidates.front().cluster_id=="jp-dog-cluster");
+    CHECK(std::find(candidates.front().supporting_member_ids.begin(),
+        candidates.front().supporting_member_ids.end(),"jp-dog-member")!=
+        candidates.front().supporting_member_ids.end());
+    CHECK(candidates.front().memory_state_version==graph.state_version());
+  }
+
   std::filesystem::remove_all(root);
   std::cout<<"SURGE ContextGraph tests: retention event ownership passed\n";
 }
