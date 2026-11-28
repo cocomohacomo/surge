@@ -37,7 +37,7 @@ std::vector<std::string> recall_features(const std::string& text) {
       std::size_t width = lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2 :
           (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1;
       if (i + width > word.size()) width = 1;
-      bool valid = width == 1 || true;
+      bool valid = true;
       for (std::size_t j = 1; j < width; ++j)
         if ((static_cast<unsigned char>(word[i + j]) & 0xC0) != 0x80) valid = false;
       if (!valid) width = 1;
