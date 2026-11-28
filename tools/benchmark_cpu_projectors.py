@@ -15,7 +15,6 @@ import sys
 import time
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
 
 ROOT = Path(os.environ.get("SURGE_MODEL_BENCH_DIR", "model-bench"))
 REPORT = Path(os.environ.get("SURGE_MODEL_BENCH_REPORT", ROOT / "minimal-projector-report.json"))
@@ -132,6 +131,7 @@ def run_case(model_path: Path, model: dict, case: dict) -> dict:
     }
 
 def main() -> int:
+    from huggingface_hub import hf_hub_download
     if not shutil.which(LLAMA_CLI):
         raise SystemExit(f"llama-cli not found: {LLAMA_CLI}")
     ROOT.mkdir(parents=True, exist_ok=True)
