@@ -1,5 +1,6 @@
 #pragma once
 #include "surge/event_journal.hpp"
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
