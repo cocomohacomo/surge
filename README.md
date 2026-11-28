@@ -79,7 +79,10 @@ python tools/validate_fixtures.py  # includes RecognitionPacket adapter tests
 
 ## Specification hierarchy
 
-v1.0 is the current normative cognitive specification and adds the open-world Chaos Cluster contract to v0.9. v0.9 remains the normative execution and transaction baseline until v1.0 Core operations are implemented. Earlier specifications remain immutable historical design records. Schema validation and fixture inventory validation do not imply full Core conformance.
+- **v1.1 is the normative target architecture:** minimal external Information Projection, Cluster-native admission, model-independent Core, and optional semantic enrichment.
+- **v1.0 is the migration/implementation baseline:** its journal, graph, ChaosCluster, lifecycle and context-control components remain readable and reusable, but its structured semantic recognition requirements are not the v1.1 admission contract.
+- **v0.9 and earlier are historical compatibility specifications.** Existing records and APIs remain readable during the additive migration.
+- See [v1.1 implementation map](docs/surge/IMPLEMENTATION_MAP_v1.1.md) for code-backed status and gates. Schema/fixture validation does not imply full Core conformance.
 
 ## Core principles
 
